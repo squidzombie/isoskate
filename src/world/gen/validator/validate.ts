@@ -55,7 +55,7 @@ const HEAD_EPS = 1e-6;
  *  a measured 2.07 s is a real pocket of < 2.0 s; the static asserts report the measured maximum. */
 export const DEAD_END_TOL = 3;
 /** Development switch: attach ground-plane dumps to some rejections. */
-export const VAL_DEBUG = { dump: false };
+export const VAL_DEBUG = { dump: false, calls: 0 };
 
 export function initialState(t: number, x = 0): ValState {
   const j = Math.ceil(t / SLICE - 1e-9), c = cellOf(x);
@@ -66,6 +66,7 @@ export function initialState(t: number, x = 0): ValState {
 
 export function validate(st: ValState, inp: ValInput): ValResult {
   const r = RASTER;
+  VAL_DEBUG.calls++;
   const j0 = st.jH, jS = st.jE;
   const jT = Math.ceil(inp.t1 / SLICE - 1e-9), jN = jT + 30;
   const n = jN - j0 + 1;

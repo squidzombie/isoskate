@@ -153,6 +153,7 @@ export interface StreetOpts {
   /** No curb edges at all (gateways that fade the curbs out). */
   noCurbEdges?: boolean;
   /** [s0, s1, x] stretches where a base edge failed rule (d): no edge there (and none ending in it). */
+  /** Edge bans [s0, s1, x] (x NaN = every base edge): no curb / lip edge piece over [s0 − 0.5, s1 + exit zone]. */
   noEdges?: readonly (readonly [number, number, number])[];
 }
 
@@ -185,7 +186,7 @@ export function buildStreet(l: StreetLayout, s0: number, s1: number, p: PropCtx,
       if (isWalk && l.curbX !== null && !o.noCurbEdges) {
         const ex = bd.x0 < 0 ? -l.curbX : l.curbX;
         if (Math.abs(Math.abs(bd.x0 < 0 ? bd.x1 : bd.x0) - l.curbX) < 1e-6) {
-          const banned = (o.noEdges ?? []).filter((n) => Math.abs(n[2] - ex) < 0.05).map((n) => [n[0] - 0.5, n[1] + zone] as [number, number]);
+          const banned = (o.noEdges ?? []).filter((n) => Number.isNaN(n[2]) || Math.abs(n[2] - ex) < 0.05).map((n) => [n[0] - 0.5, n[1] + zone] as [number, number]);
           const pieces = cutEdgePieces(ob.s, round1cm(u1), ex, y, s1, zone, o.obstacles ?? [], [...drive.map(([a, c]) => [a - 0.5, c + 0.5] as [number, number]), ...banned]);
           addEdgePieces(ob, pieces, ex, y, 'curb', l.curbKind === 'neon_curb' ? 'neon' : 'concrete', true, p);
           if (l.curbKind === 'neon_curb') ob.params = { ...ob.params, neon: 1 };
@@ -212,7 +213,7 @@ export function buildLipEdges(s0: number, s1: number, p: PropCtx, obstacles: rea
     topSlab: false, tags: o.tags ?? 0, landmark: o.landmark, params: { body: 0 } }, p);
   ob.solids.length = 0;
   const zone = EXIT_ZONE_SEC * v;
-  const banned = (o.noEdges ?? []).filter((n) => Math.abs(n[2] - LIP.x0) < 0.05).map((n) => [n[0] - 0.5, n[1] + zone] as [number, number]);
+  const banned = (o.noEdges ?? []).filter((n) => Number.isNaN(n[2]) || Math.abs(n[2] - LIP.x0) < 0.05).map((n) => [n[0] - 0.5, n[1] + zone] as [number, number]);
   addEdgePieces(ob, cutEdgePieces(ob.s, round1cm(o.to ?? s1), LIP.x0, y, s1, zone, obstacles, banned), LIP.x0, y, 'lip', 'metal', false, p);
   return ob.edges.length ? ob : null;
 }

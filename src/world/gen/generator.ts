@@ -314,11 +314,15 @@ export class Generator implements WorldGen {
       return Math.max(d, c.datum) + bandRange(layout, x0, x1).hi;
     };
     const exit = out.exit ?? [[-4.5, 4.5]];
+    // No base edge may end in the 2.2 s before a gate row: its exit zone would face the row far from the openings.
+    const rowBan = (tr: number): [number, number, number] => [round1cm(sAt(tr - GEN.gate.edgeBan)), round1cm(sAt(tr) + 0.3), Number.NaN];
+    if (out.gateT !== undefined) noEdges.push(rowBan(out.gateT));
     const run = (obs: Obstacle[], guides?: readonly { t0: number; t1: number; x0: number; x1: number }[]): ValResult => {
       for (let k = 0; ; k++) {
         const r = run1(obs, guides);
         // A base curb / lip edge that fails rule (d) (its exit zone faces a blocker or no viable state): trim it, retry.
         if (r.ok || !r.edge || k >= 4) return r;
+        GEN_DEBUG.onReject?.({ index, t0, tpl: tpl.id, tier: plan.tier, attempt, why: `  trim ${r.why} ${r.detail ?? ''}` });
         noEdges.push([r.edge.s0, r.edge.s1, r.edge.x]);
       }
     };
@@ -332,8 +336,6 @@ export class Generator implements WorldGen {
         groundHi, greedy: true, guides: [...(out.guides ?? []), ...(guides ?? [])], relax: bare && attempt > GEN.rerolls + 2,
       });
     };
-    let res = run(obstacles);
-    if (!res.ok) { if (GEN_DEBUG.onReject && res.detail) GEN_DEBUG.onReject({ index, t0, tpl: tpl.id, tier: plan.tier, attempt, why: `  detail ${res.detail}` }); return fail(res.why); }
     // A-clock mapping for this segment (clocks pause in T0 and before clockFromT).
     const clocks = !t0Stretch && !bare && !fixed;
     const tc0 = Math.max(t0, c.clockFromT);
@@ -344,45 +346,70 @@ export class Generator implements WorldGen {
     const fw = obstacles.find((o) => o.tags & ObTag.FullWidth);
     const fullWidthA = fw ? aOf(tAt(fw.s)) : null;
     if (clocks && t1 > c.clockFromT && !fw && plan.reason === 'draw' && aEnd > c.lastFwA + a3Range(phase)[1] + 0.5) return fail('a3');
-    // Gate row (A1 / A2 / straight-bot guarantee) due inside this template: overlay one at the deadline.
+    // Gate row (A1 / A2 / straight-bot guarantee) due inside this template: overlay one at the deadline. It goes into
+    // the last template that can hold it before the deadline (the next one could not host it in time).
     let gateX: number[] | undefined = out.gateX, gateT: number | undefined = out.gateT;
-    // The row goes into the last template that can hold it before the deadline (the next one could not host it in time).
-    if (clocks && tpl.id !== 'S_GATE' && t1 > c.gateDueT - (GEN.gate.lead + 1.4)) {
+    const wantRow = clocks && tpl.id !== 'S_GATE' && t1 > c.gateDueT - (GEN.gate.lead + 1.4);
+    let got: ValResult | null = null;
+    // Row slots: times in the deadline window where the row can stand (beside the template's obstacles, never across
+    // pits, slopes, or a grind edge's end: exit zone, rail-end rule).
+    const slots: { tr: number; keepOut: [number, number][] }[] = [];
+    if (wantRow) {
       const tLo = Math.max(t0 + GEN.gate.lead, earliest + T_SHIFT(3.0) + 0.3), tHi = Math.min(c.gateDueT, t1 - 0.6);
-      let placed = false;
-      for (let tr = tHi, tries = 0; tr >= tLo && tries < 3; tr -= 0.25) {
+      for (let tr = tHi; tr >= tLo && slots.length < 3; tr -= 0.25) {
         const sr = sAt(tr), vr = speedAt(tr);
-        // The row passes beside the template's obstacles (their spans are part of the wall), never across pits,
-        // slopes, or a grind edge's end (exit zone, rail-end rule).
         const keepOut: [number, number][] = [];
         let bad = false;
         for (const o of obstacles) {
-          if (o.kind === 'curb' || o.kind === 'dock_lip' || o.s > sr + 2.0 || o.s + o.len < sr - 2.5) continue;
-          if (o.pits.length || o.slabs.some((sl) => sl.kind !== 'flat' || sl.layer === 1)) { bad = true; break; }
+          if (o.kind === 'curb' || o.kind === 'dock_lip' || o.s > sr + 2.0 || o.s + o.len < sr - Math.max(2.5, vr * 1.1 + 0.3)) continue;
           if (o.edges.some((e) => e.b.s > sr - vr * 1.1 && e.b.s < sr + 1.0)) { bad = true; break; }
+          if (o.s + o.len < sr - 2.5) continue;
+          if (o.pits.length || o.slabs.some((sl) => sl.kind !== 'flat' || sl.layer === 1)) { bad = true; break; }
           for (const so of o.solids) keepOut.push([so.box.x0, so.box.x1]);
         }
-        if (bad) continue;
-        tries++;
-        const x0 = res.line.xAt(tr - 0.7);
+        if (!bad) slots.push({ tr, keepOut });
+      }
+    }
+    // Without a row here, the next one comes in the next segment (or after the gateway): too late → a gate instead.
+    const rowLate = (): boolean => {
+      const gw = gatewayWindow(t1 - 1e-6, this.startArea);
+      const nextRow = (gw.start - t1 < GEN.gate.fit && t1 < gw.end) ? gw.end + GEN.gate.lead : t1 + GEN.gate.lead;
+      return nextRow > c.gateDueT + 0.3;
+    };
+    if (wantRow && !slots.length && rowLate()) return fail('gate');
+    const tryRows = (xAt: (t: number) => number, from: number, maxTries: number): boolean => {
+      for (let k = from; k < Math.min(slots.length, from + maxTries); k++) {
+        const { tr, keepOut } = slots[k]!;
+        const sr = sAt(tr);
         const gt = Math.max(2, plan.tier) as Tier;
-        const centres = gateOpeningsFor(rng, x0, c.lastGateX, gt, keepOut);
+        const centres = gateOpeningsFor(rng, xAt(tr - 0.7), c.lastGateX, gt, keepOut);
         if (!centres) continue;
         const row = gateRow(round1cm(sr), centres, GEN.gate.width[gt], props, rng, keepOut);
         const guide = [{ t0: tr - 0.45, t1: tr + 0.15, x0: centres[0]! - 0.25, x1: centres[0]! + 0.25 }];
+        const nb = noEdges.length;
+        noEdges.push(rowBan(tr));
         const r2 = run([...obstacles, ...row], guide);
-        if (!r2.ok) { GEN_DEBUG.onReject?.({ index, t0, tpl: tpl.id, tier: plan.tier, attempt, why: `  detail overlay@${tr.toFixed(2)} ${r2.why} ${r2.detail ?? ''}` }); continue; }
-        obstacles.push(...row); res = r2; gateX = centres; gateT = tr; placed = true;
-        break;
+        if (!r2.ok) { noEdges.length = nb; GEN_DEBUG.onReject?.({ index, t0, tpl: tpl.id, tier: plan.tier, attempt, why: `  detail overlay@${tr.toFixed(2)} ${r2.why} ${r2.detail ?? ''}` }); continue; }
+        obstacles.push(...row); got = r2; gateX = centres; gateT = tr;
+        return true;
       }
-      if (!placed) GEN_DEBUG.onReject?.({ index, t0, tpl: tpl.id, tier: plan.tier, attempt, why: `  detail overlay none in [${tLo.toFixed(2)}, ${tHi.toFixed(2)}]` });
-      if (!placed) {
-        // Without a row here, the next one comes in the next segment (or after the gateway): too late → a gate instead.
-        const gw = gatewayWindow(t1 - 1e-6, this.startArea);
-        const nextRow = (gw.start - t1 < GEN.gate.fit && t1 < gw.end) ? gw.end + GEN.gate.lead : t1 + GEN.gate.lead;
-        if (nextRow > c.gateDueT + 0.3) return fail('gate');
-      }
+      return false;
+    };
+    // First try: openings chosen from the entry line x, validated with the template in one pass.
+    let placed = wantRow && tryRows(() => c.safeX, 0, 1);
+    if (!got) {
+      const r0 = run(obstacles);
+      if (!r0.ok) { if (GEN_DEBUG.onReject && r0.detail) GEN_DEBUG.onReject({ index, t0, tpl: tpl.id, tier: plan.tier, attempt, why: `  detail ${r0.detail}` }); return fail(r0.why); }
+      got = r0;
+      // Then from the template's own line.
+      if (wantRow) placed = tryRows((t) => r0.line.xAt(t), 0, 2);
     }
+    if (wantRow && !placed) {
+      GEN_DEBUG.onReject?.({ index, t0, tpl: tpl.id, tier: plan.tier, attempt, why: '  detail overlay none' });
+      if (rowLate()) return fail('gate');
+    }
+    let res = got as ValResult;
+    if (!res.ok) return fail(res.why);
     let wander = c.wander;
     let walls = 0;
     const fillers = 0;

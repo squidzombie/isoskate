@@ -49,6 +49,8 @@ export const GEN = {
   /** S_GATE (DESIGN §10.4): openings 2.5 / 2.2 / 2.0 m by tier, ≥ 3 m (≤ 3.6 m) from the last wander's safe x. */
   gate: { width: { 0: 2.5, 1: 2.5, 2: 2.5, 3: 2.2, 4: 2.0 } as Record<Tier, number>, maxC: 3.3, shift: [3.2, 4.4] as readonly [number, number],
     second: { 2: 0.6, 3: 0.3 } as Partial<Record<Tier, number>>, secondOff: [3.6, 6.6] as readonly [number, number], lead: 2.3,
+    /** No base curb / lip edge ends in this many seconds before a row (its exit zone would face the row). */
+    edgeBan: 2.2,
     /** Consecutive rows ≤ gap seconds apart (run time, T0 included): a straight lane passes at most one of two rows
      *  (openings ≥ `apart` from the last row's), so every lane dies within two rows (DESIGN §10.7 guarantees). */
     gap: { opening: 8.0, warm: 6.5, build: 5.5, plateau: 5 } as Record<PhaseId, number>, apart: 2.4,

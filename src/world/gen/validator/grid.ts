@@ -105,6 +105,14 @@ export class Raster {
 
   cellGy(i: number, c: number): number { return this.gy[i * NC + c]!; }
 
+  /** The class of a flat take-off height (1 cm), adding it while there is room; −1 = no class. */
+  private classOf(y: number): number {
+    for (let q = 0; q < this.nh; q++) if (Math.abs(this.classes[q]! - y) < 0.005) return q;
+    if (this.nh >= NH_MAX) return -1;
+    this.classes[this.nh] = y;
+    return this.nh++;
+  }
+
   /** Rasterize slices [j0, j0 + n) over the obstacles; slices from `extFrom` on are the 1 s open-entry extension with
    *  the layout's base street at `extDatum` and only `exit` cells open at the end. */
   build(j0: number, n: number, obstacles: readonly Obstacle[], extFrom: number, ext: { layout: StreetLayout; datum: number;
@@ -199,43 +207,56 @@ export class Raster {
         this.caps.push({ s0: e.a.s, s1: e.b.s, xa: e.a.x, xb: e.b.x, ya: e.a.y, yb: e.b.y });
       }
     }
-    // 3. Per slice: ground levels, ground OK mask, class table and flat-class masks.
+    // 3. Per slice: ground levels (distinct heights with their cell masks), the ground OK mask (per level: one
+    //    threshold pass instead of one per cell), the class table and the flat-class masks. Classes are the distinct
+    //    flat take-off heights (1 cm) in order of first appearance; more than NH_MAX → extra ones get no class (no
+    //    take-off there: conservative). Cells past LV_CAP levels in a slice take the per-cell path.
     this.nh = 0;
     let minG = Infinity;
-    for (let i = 0; i < n; i++) {
-      let lo = 0, hi = 0;
-      this.lvN[i] = 0;
-      const pl = this.pit[i * 2]!, ph = this.pit[i * 2 + 1]!;
-      for (let c = 1; c < NC - 1; c++) {
-        const y = this.gy[i * NC + c]!;
-        minG = Math.min(minG, y);
-        this.addLevel(i, y, c);
-        if (bitTest(pl, ph, c)) continue;
-        if (this.blockedAt(i, c, y)) continue;
-        if (c < 32) lo |= 1 << c; else hi |= 1 << (c - 32);
-      }
-      this.gOK[i * 2] = lo | 0; this.gOK[i * 2 + 1] = hi | 0;
-    }
-    // Classes: distinct flat take-off heights (1 cm), in order of first appearance; more than NH_MAX → extra ones
-    // get no class (no take-off there: conservative).
-    for (let i = 0; i < n; i++) {
-      const sl = this.slope[i * 2]!, sh = this.slope[i * 2 + 1]!, pl = this.pit[i * 2]!, ph = this.pit[i * 2 + 1]!;
-      for (let c = 1; c < NC - 1; c++) {
-        if (bitTest(sl, sh, c) || bitTest(pl, ph, c)) continue;
-        const y = Math.round(this.gy[i * NC + c]! * 100) / 100;
-        let h = -1;
-        for (let q = 0; q < this.nh; q++) if (Math.abs(this.classes[q]! - y) < 0.005) { h = q; break; }
-        if (h < 0 && this.nh < NH_MAX) { h = this.nh++; this.classes[h] = y; }
-      }
-    }
+    const gy = this.gy, lvY = this.lvY, lvM = this.lvM, entThr = this.entThr, entBot = this.entBot, entM = this.entM;
     this.flat.fill(0, 0, n * NH_MAX * 2);
     for (let i = 0; i < n; i++) {
-      const sl = this.slope[i * 2]!, sh = this.slope[i * 2 + 1]!, pl = this.pit[i * 2]!, ph = this.pit[i * 2 + 1]!;
+      const l0 = i * LV_CAP, row = i * NC;
+      let nl = 0, last = -1, restLo = 0, restHi = 0;
       for (let c = 1; c < NC - 1; c++) {
-        if (bitTest(sl, sh, c) || bitTest(pl, ph, c)) continue;
-        const y = Math.round(this.gy[i * NC + c]! * 100) / 100;
-        for (let q = 0; q < this.nh; q++) if (Math.abs(this.classes[q]! - y) < 0.005) { this.setBitW(this.flat, (i * NH_MAX + q) * 2, c); break; }
+        const y = gy[row + c]!;
+        if (y < minG) minG = y;
+        let l = -1;
+        if (last >= 0 && Math.abs(lvY[l0 + last]! - y) < 1e-4) l = last;
+        else for (let q = 0; q < nl; q++) if (Math.abs(lvY[l0 + q]! - y) < 1e-4) { l = q; break; }
+        if (l < 0 && nl < LV_CAP) { l = nl++; lvY[l0 + l] = y; lvM[(l0 + l) * 2] = 0; lvM[(l0 + l) * 2 + 1] = 0; }
+        if (l < 0) { if (c < 32) restLo |= 1 << c; else restHi |= 1 << (c - 32); continue; }
+        last = l;
+        if (c < 32) lvM[(l0 + l) * 2] = lvM[(l0 + l) * 2]! | (1 << c); else lvM[(l0 + l) * 2 + 1] = lvM[(l0 + l) * 2 + 1]! | (1 << (c - 32));
       }
+      this.lvN[i] = nl;
+      const pl = this.pit[i * 2]!, ph = this.pit[i * 2 + 1]!, sl = this.slope[i * 2]!, sh = this.slope[i * 2 + 1]!;
+      const e0 = i * ENT_CAP, ne = this.entN[i]!;
+      let okLo = 0, okHi = 0;
+      for (let l = 0; l < nl; l++) {
+        const y = lvY[l0 + l]!, ml = lvM[(l0 + l) * 2]!, mh = lvM[(l0 + l) * 2 + 1]!;
+        let bl = 0, bh = 0;
+        for (let e = 0; e < ne; e++) {
+          if (y < entThr[e0 + e]! - 1e-6 && y + HITBOX.h > entBot[e0 + e]! + 1e-6) { bl |= entM[(e0 + e) * 2]!; bh |= entM[(e0 + e) * 2 + 1]!; }
+        }
+        okLo |= ml & ~bl; okHi |= mh & ~bh;
+        // Class of this level's flat cells.
+        const fl = ml & ~sl & ~pl, fh = mh & ~sh & ~ph;
+        if (!(fl | fh)) continue;
+        const q = this.classOf(Math.round(y * 100) / 100);
+        if (q >= 0) { const o = (i * NH_MAX + q) * 2; this.flat[o] = this.flat[o]! | fl; this.flat[o + 1] = this.flat[o + 1]! | fh; }
+      }
+      if (restLo | restHi) {
+        for (let c = 1; c < NC - 1; c++) {
+          if (!bitTest(restLo, restHi, c)) continue;
+          const y = gy[row + c]!;
+          if (!this.blockedAt(i, c, y)) { if (c < 32) okLo |= 1 << c; else okHi |= 1 << (c - 32); }
+          if (bitTest(sl, sh, c) || bitTest(pl, ph, c)) continue;
+          const q = this.classOf(Math.round(y * 100) / 100);
+          if (q >= 0) this.setBitW(this.flat, (i * NH_MAX + q) * 2, c);
+        }
+      }
+      this.gOK[i * 2] = okLo & ~pl; this.gOK[i * 2 + 1] = okHi & ~ph;
     }
     for (let h = 0; h < this.nh; h++) {
       const h0 = this.classes[h]!;
@@ -348,14 +369,6 @@ export class Raster {
       this.entThr[e0 + e] = Math.max(this.entThr[e0 + e]!, thr); this.entBot[e0 + e] = Math.min(this.entBot[e0 + e]!, bot);
       this.entM[(e0 + e) * 2] = this.entM[(e0 + e) * 2]! | lo; this.entM[(e0 + e) * 2 + 1] = this.entM[(e0 + e) * 2 + 1]! | hi;
     }
-  }
-  private addLevel(i: number, y: number, c: number): void {
-    const l0 = i * LV_CAP, n = this.lvN[i]!;
-    for (let l = 0; l < n; l++) if (Math.abs(this.lvY[l0 + l]! - y) < 1e-4) { this.setBitW(this.lvM, (l0 + l) * 2, c); return; }
-    if (n >= LV_CAP) return;
-    this.lvY[l0 + n] = y; this.lvM[(l0 + n) * 2] = 0; this.lvM[(l0 + n) * 2 + 1] = 0;
-    this.setBitW(this.lvM, (l0 + n) * 2, c);
-    this.lvN[i] = n + 1;
   }
   setBit(a: Int32Array, i: number, c: number): void { this.setBitW(a, i * 2, c); }
   clearBit(a: Int32Array, i: number, c: number): void { if (c < 32) a[i * 2] = a[i * 2]! & ~(1 << c); else a[i * 2 + 1] = a[i * 2 + 1]! & ~(1 << (c - 32)); }
