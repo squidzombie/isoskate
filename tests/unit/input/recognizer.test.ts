@@ -201,6 +201,16 @@ describe('misfire traces (Mobile review)', () => {
     const s = swipes(run(makeRec(), new Trace(1, 0, 150, CY).flick(0.3, 0, 300).flick(1.2, 180, 60).up().samples));
     expect(s.at(-1)).toMatchObject({ dir: 'l', fromRest: false });
   });
+
+  it('a still park (no samples, as on hardware) of ~60 ms is enough at 60 and 120 Hz; 40 ms is not (DESIGN §4.2)', () => {
+    // The first flick sample after a sample-less park is fast: the gap itself was the rest (review: it needed ~110 ms).
+    const go = (park: number, step: number) => swipes(run(makeRec(),
+      new Trace(1, 0, 150, CY).flick(0.3, 0, 320, step).rest(park).flick(1.2, 180, 64, step).up().samples))[0];
+    for (const step of [16, 8]) {
+      expect(go(70, step), `70 ms @ ${step}`).toMatchObject({ dir: 'l', steer: true, fromRest: true, fast: true });
+      expect(go(40, step), `40 ms @ ${step}`).toMatchObject({ dir: 'l', steer: true, fromRest: false });
+    }
+  });
 });
 
 describe('direction: sectors, arc compensation, simple tricks', () => {

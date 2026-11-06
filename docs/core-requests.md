@@ -265,6 +265,43 @@ behaviour and is behind a flag.
   input/recognizer.ts DEFAULT_RECOGNIZER (400 for now, see request 1). Every trick point moved from tricks/defs.ts into score.config.ts › POINTS
   (DESIGN §22: score.config holds every scoring number); TRICKS is unchanged in content.
 
+### 6. GameEvent 'grindSwitch' marks a late re-pick   (status: open; additive optional field)
+- File / symbol: core/events.ts › GameEvent 'grindSwitch'
+- Change: `{ t: 'grindSwitch'; tick: number; from: GrindId; to: GrindId; late?: true }`
+- Why: a pick swipe in the 0.12 s after lock (DESIGN §6.3) changes the grind just locked; it is not a switch (no new
+  link, no switch counted). Without the flag AU's switch cue and MU's switch popup fire for it. Consumers: treat a
+  `late` switch as the grind's real name (update the popup / last-trick label; no switch cue).
+- Local workaround meanwhile: the sim already pushes `sim/grind.ts › GrindSwitchEventExt` with `late: true`.
+
+### 7. Design question: back-to-back manuals keep the heat running   (status: open, for the design owner; no core change)
+- DESIGN §6.4 last bullet pauses the combo heat in every manual. With that, manual → roll → manual (release and
+  re-press, or pulse the manual key one tick) holds a combo for a whole area visit without a real trick (review probe:
+  35 manuals, 38 s, 13,992 pending from one kickflip; touch re-press 15 s), against §13.2 "you have to keep doing real
+  tricks".
+- Shipped: `RULES.backToBackManualPausesHeat = false`: a manual started without leaving the ground since the previous
+  manual keeps the heat running (the combo's one linked manual excepted); if the heat runs out in it, the combo banks
+  when the manual ends, its points included. The first manual after every touchdown still pauses the heat, so the
+  3.0 / 2.2 / 1.6 / 1.2 / 1.0 budgets stay usable between real tricks (the acceptance sequence still holds in one
+  combo). `true` restores §6.4 exactly. Suggested DESIGN wording: "Manualling pauses combo heat, except a manual
+  started straight after another one without leaving the ground."
+- Tests: tests/unit/sim/tricks.test.ts (back-to-back manuals, key and touch).
+
+### 8. Design question: a deliberate manual outside a combo starts one   (status: open, for the design owner; no core change)
+- §4.4 rule 3 says a manual "scores only inside a combo", §12.3 (Lesson Line, manual pads) says "Hold = manual. The
+  combo counter and bank arc appear", §13.2 "any scored trick starts a combo".
+- Shipped: a manual that the touch rules allow outside a combo (a HOLD on a pad or raised landable top, the manual key
+  on a top, a pre-press held through a touchdown, a grab held through touchdown) starts a combo and is its one link
+  (75 + 100/s). The manual key on flat ground outside a combo rides unscored, as a resting thumb there starts nothing
+  (rule 3 parity between touch and keys, and no free combo from holding S).
+
+### 9. Frozen M0 contact detail changed by the DESIGN §7 edge nudge   (status: open; info for WG's validator, copy into TECH §6.4)
+- File / symbol: sim/collide.ts (landable top from above), sim/landing.ts › edgeNudge; core/tuning.ts › LAND.edgeNudge (0.15, already in core)
+- Change: an air landing on a raised landable top moves the board centre ≥ LAND.edgeNudge (0.15 m) inside the top's
+  side edge (M0: 0.02 m), and targetX with it. Ground contact (rolling onto a top) keeps the M0 0.02 m. Same surface,
+  same landed / crash classification; only x differs (≤ 0.13 m toward the top's centre).
+- Why: ROADMAP W1a "full landing rules … the edge nudge" (DESIGN §7). The validator models landings on tops; if it
+  replays x exactly, mirror `edgeNudge` (min(0.15, width / 2) from each side edge).
+
 ### Behaviour other packages can rely on (no contract change)
 - **Event timing** (VFX / audio / popups): `flipStart`, `flipUpgrade`, `spinStart`, `grabStart`, `grindStart`,
   `grindSwitch`, `manualStart` on the tick the trick starts; `trickScored` for flips, spins and the grab on the
@@ -296,6 +333,24 @@ behaviour and is behind a flag.
 - **Manual start on a top:** a HOLD manuals outside a combo on any raised landable top (it has a landable body), not
   only the TOP_KINDS list. The slow-device HOLD note from G0 is mitigated by `manualHoldSec` (a late first touchmove
   ends the hold before the 0.30 s).
+- **After the GP review (G1):**
+  - `combo.pending` counts up every tick while a grind or manual is ridden (the running entry is live); `trickScored`
+    for grinds and manuals still arrives at their end (or at a switch / Nose Manual), with `comboPts` equal to the
+    pending value shown. MU: the HUD's last-trick label should also follow `grindStart`, `grindSwitch` and
+    `manualStart` (today it updates on `trickScored` only, so it shows the previous trick during a long grind).
+  - A gateway bank mid-grind or mid-manual banks the part ridden so far; the rest scores into a new combo (no entry
+    points again, no second link), like a flip still rotating at the gateway.
+  - A manual outside a combo on a pad / top, from a pre-press or a held grab starts a combo (request 8): MU's combo
+    pill appears with it. Back-to-back manuals keep the heat running (request 7); the bank arc shows it shrinking.
+  - The link window: a roll-off landing opens it when that air scored a trick or the combo has no running window
+    (e.g. the combo began in that air); a plain roll-off still keeps the running window.
+  - Grab: a touch HOLD grabs only if that touch went down in this air (a thumb resting since the ground, while
+    another finger pops, never grabs; Q still grabs whenever held). Three same-direction picks keep the double
+    (←←← Lipslide). A pick in the 0.12 s after lock emits `grindSwitch` with `late: true` (request 6).
+  - Recognizer `fromRest`: a sample-less gap of more than 40 ms is a rest that ended one sample interval before the
+    next sample, so a still park of ~60 ms (one sample of slack) then a flick is `fromRest` (it needed ~110 ms at
+    60 Hz). With tremor samples the 40 ms speed window still applies (~80–95 ms): a dodge's turnaround must not read
+    as a rest, so that margin is kept on purpose.
 
 ## WG: World-gen (W1b)
 

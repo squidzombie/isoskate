@@ -266,8 +266,17 @@ export function createRecognizerImpl(partial?: Partial<RecognizerConfigExt>): Re
       tc.steerX = tc.x;
     }
 
-    // Rest tracking (fromRest). A parked thumb sends no samples, so a slow segment since the previous sample means
-    // the rest began at that sample.
+    // Rest tracking (fromRest). A parked thumb sends no samples (input/pointer.ts feeds every hardware sample,
+    // coalesced ones included), so a slow segment since the previous sample means the rest began at that sample, and
+    // a gap of more than restWinMs with no sample at all was a rest that ended about one sample interval before this
+    // one: a thumb parked 60 ms then flicked hard is `fromRest` even though its first flick sample is fast (DESIGN
+    // §4.2; without this it needed ~110 ms at 60 Hz). Tremor samples keep the 40 ms speed window (a dodge's
+    // turnaround must not read as a rest).
+    const gap = t - prevT;
+    if (tc.moving && gap > RECOGNIZER_INTERNALS.restWinMs && tc.trail.length >= 3) {
+      const iv = Math.min(RECOGNIZER_INTERNALS.speedWinMs, Math.max(4, prevT - tc.trail[tc.trail.length - 3]!.t));
+      tc.lastRestLen = gap - iv; tc.motionStart = t - iv;
+    }
     const vr = speed(tc, RECOGNIZER_INTERNALS.restWinMs);
     if (vr < config.restSpeed * k) {
       if (tc.moving) {

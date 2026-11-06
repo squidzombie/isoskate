@@ -88,6 +88,17 @@ describe('recognizer labels → sim (DESIGN §4.3 steering-stroke rule)', () => 
     expect(flips(r.events)).toEqual(['kickflip']);
   });
 
+  it('a park of ~70 ms is enough (DESIGN §4.2: parked ≥ 60 ms); a 30 ms hesitation is still steering', () => {
+    for (const [park, want] of [[70, ['kickflip']], [30, []]] as const) {
+      const r = rig();
+      const thumb = new Trace(1, 0, 195, 700).move(50, 0, 300, 16).rest(park).flick(1.0, 180, 70, 16);
+      r.play(thumb, tapAt(240));
+      r.until(1300);
+      expect(r.swipes.at(-1), `park ${park}`).toMatchObject({ dir: 'l', fromRest: park >= 60, steer: true });
+      expect(flips(r.events), `park ${park}`).toEqual(want);
+    }
+  });
+
   it('a hard ↓ from a steering thumb that is still moving pop shove-its', () => {
     const r = rig();
     const thumb = new Trace(1, 0, 195, 600).move(-60, 0, 240).move(-30, 0, 120).flick(1.2, 270, 70);
