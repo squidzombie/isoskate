@@ -333,7 +333,9 @@ class WorldViewImpl implements WorldView {
           if (g) m.set(g.uuid, `${o.parent?.name ? o.parent.name + '/' : ''}${o.name || o.type}${o.visible ? '' : '(hidden)'}${g._listeners?.dispose?.length ? '' : '?'}`);
         });
         return [...m.values()];
-      } };
+      },
+      /** Debug: shows / hides every scene object whose name starts with `prefix` (perf triage). */
+      show: (prefix: string, on: boolean) => { let n = 0; this.ctx.scene.traverse((o) => { if (o.name.startsWith(prefix)) { o.visible = on; n++; } }); return n; } };
   }
 
   /** Debug / wa.spec: rebuilds the live chunk under `index` (default: the nearest ahead) n times into scratch buffers
