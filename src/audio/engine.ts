@@ -10,7 +10,8 @@ import {
   AREA_MUSIC, BUS, COIN, COMBO_FILTER, DRUM_LEVEL, DUCK_TAU, FEEDBACK, FORM_BARS, INTENSITY, MALLET, NEEDLE_DROP_SEC, PAD,
   SCHED, SLIDER_CURVE, TAPE, TAPE_STOP, BREAK_SWEEP, type ChordSpec, type MusicArea,
 } from './mix.config';
-import { kitFor, playDrum, prepareKit, stepKits } from './music/drums';
+import { prioritize } from './bank';
+import { playDrum } from './music/drums';
 import { areaMallet, Bass, playArp, playClank, playEp, playMallet, playPad } from './music/instruments';
 import { chordAt, feedbackMidi, pivotChord } from './music/progressions';
 import { composeBar, drumLpFor, formAt, LAYERS, layersFor, progression, sectionStart, type Layer, type Level, type NoteEv } from './music/sequencer';
@@ -32,7 +33,13 @@ const UI_CUES = new Set<string>(['uiTap', 'uiBack', 'uiToggle', 'uiError', 'purc
 interface Song { area: MusicArea; seed: number; alt: boolean; clock: SongClock; bar: number; pivotBar: number; pivot: ChordSpec | null; pivotTo: MusicArea | null }
 interface Queued { at: number; ev: NoteEv; area: MusicArea }
 export interface CoreOptions { seed: number; nowMs?: () => number; offline?: boolean }
-export interface PerfStats { frames: number; msPerFrame: number; p95: number; max: number; tickMs: number; slowest: { ms: number; what: string } }
+/** Main-thread audio cost per rendered frame since attach: `msPerFrame` and `p95` over every frame (p95 to 0.025 ms),
+ *  `recent*` over the last 600; `attachMs` is building the graph (the unlocking gesture). */
+export interface PerfStats {
+  frames: number; msPerFrame: number; p95: number; recentMsPerFrame: number; recentP95: number; max: number; tickMs: number;
+  attachMs: number; slowest: { ms: number; what: string };
+}
+const PERF_BIN_MS = 0.025, PERF_BINS = 400;
 
 const START_A = sectionStart('A');
 const clampLevel = (l: number): Level => (l <= 0 ? 0 : l >= 3 ? 3 : (Math.round(l) as Level));
@@ -62,39 +69,52 @@ export class AudioCore {
   private loops: Voice[] = [];
   private coinN = 0; private lastCoinTick = -1e9;
   private lastVoicing: readonly number[] = [55, 59, 62, 65];
-  // Perf counter (main-thread ms spent in audio code, per rendered frame).
+  // Perf counter (main-thread ms spent in audio code, per rendered frame, from attach on): whole-session sum and a
+  // 0.025 ms histogram (average and p95 over every frame), plus the last 600 frames.
   private readonly nowMs: () => number;
   private acc = 0; private depth = 0; private t0 = 0;
   private readonly ring = new Float64Array(600); private ringN = 0; private frames = 0; private maxMs = 0; private tickAcc = 0; private ticks = 0;
+  private sumMs = 0; private readonly hist = new Uint32Array(PERF_BINS + 1); private attachMs = 0;
 
   constructor(readonly opts: CoreOptions) { this.nowMs = opts.nowMs ?? (() => 0); }
 
   // ── perf ──────────────────────────────────────────────────────────────────────────────────────────────────────
-  private label = '';
+  private label = ''; private sub = '';
   private slowest = { ms: 0, what: '' };
-  begin(label = ''): void { if (this.depth++ === 0) this.t0 = this.nowMs(); if (label) this.label = label; }
+  begin(label: string, sub = ''): void { if (this.depth++ === 0) this.t0 = this.nowMs(); if (label) { this.label = label; this.sub = sub; } }
   end(): void {
     if (--this.depth !== 0) return;
     const d = this.nowMs() - this.t0;
     this.acc += d;
-    if (d > this.slowest.ms) this.slowest = { ms: d, what: this.label };
+    if (d > this.slowest.ms) this.slowest = { ms: d, what: this.sub ? `${this.label}:${this.sub}` : this.label };
   }
   /** Frame boundary (called from roll(), which wiring calls every rendered frame). */
   private frame(): void {
-    this.ring[this.ringN++ % this.ring.length] = this.acc;
-    this.frames++;
-    this.maxMs = Math.max(this.maxMs, this.acc);
+    const a = this.acc;
     this.acc = 0;
+    if (!this.g) return;
+    this.ring[this.ringN++ % this.ring.length] = a;
+    this.frames++;
+    this.sumMs += a;
+    this.hist[Math.min(PERF_BINS, Math.floor(a / PERF_BIN_MS))]!++;
+    this.maxMs = Math.max(this.maxMs, a);
   }
   perf(): PerfStats {
     const n = Math.min(this.ringN, this.ring.length);
     const a = Array.from(this.ring.subarray(0, n)).sort((x, y) => x - y);
-    const sum = a.reduce((s, x) => s + x, 0);
-    return { frames: this.frames, msPerFrame: n ? sum / n : 0, p95: n ? a[Math.floor(n * 0.95)]! : 0, max: this.maxMs, tickMs: this.ticks ? this.tickAcc / this.ticks : 0, slowest: { ...this.slowest } };
+    const recent = a.reduce((s, x) => s + x, 0);
+    let k = 0, p95 = 0;
+    for (let i = 0; i <= PERF_BINS; i++) { k += this.hist[i]!; if (k >= this.frames * 0.95) { p95 = (i + 1) * PERF_BIN_MS; break; } }
+    return {
+      frames: this.frames, msPerFrame: this.frames ? this.sumMs / this.frames : 0, p95: this.frames ? p95 : 0,
+      recentMsPerFrame: n ? recent / n : 0, recentP95: n ? a[Math.floor(n * 0.95)]! : 0,
+      max: this.maxMs, tickMs: this.ticks ? this.tickAcc / this.ticks : 0, attachMs: this.attachMs, slowest: { ...this.slowest },
+    };
   }
 
   // ── lifecycle ─────────────────────────────────────────────────────────────────────────────────────────────────
   attach(ctx: BaseAudioContext): void {
+    const t0 = this.nowMs();
     const g = buildGraph(ctx, this.opts.seed);
     this.g = g;
     this.bass = new Bass(g);
@@ -111,8 +131,11 @@ export class AudioCore {
     if (this.scene === 'run') this.resumeMusic(now, this.runArea, this.opts.offline ? START_A : 0);
     else this.resumeMusic(now, 'menu', 0);
     this.amb.setArea(this.scene === 'run' ? this.runArea : 'menu', now);
-    if (!this.opts.offline) for (const area of Object.keys(AREA_MUSIC) as MusicArea[]) prepareKit(g, area, AREA_MUSIC[area]);
+    this.attachMs = this.nowMs() - t0;
   }
+
+  /** The area whose song attach() will start (its drum kit must be ready by then). */
+  firstSongArea(): MusicArea { return this.scene === 'run' ? this.runArea : 'menu'; }
 
   setVolumes(v: { music: number; sfx: number }): void {
     this.vol = { music: clamp01(v.music), sfx: clamp01(v.sfx) };
@@ -164,7 +187,6 @@ export class AudioCore {
     const now = g.ctx.currentTime, horizon = now + SCHED.lookahead;
     this.amb?.tick(now, horizon);
     if (this.playing && this.song) this.schedule(now, horizon);
-    if (stepKits(g)) this.label = 'kit';                  // the other areas' drum kits, one drum per tick
     this.tickAcc += this.nowMs() - a; this.ticks++;
     this.end();
   }
@@ -198,7 +220,7 @@ export class AudioCore {
 
   private advanceBar(t: number): void {
     let s = this.song!;
-    this.label = `bar:${s.area}`;
+    this.label = 'bar'; this.sub = s.area;
     const p = this.pending;
     if (p && p.stage === 'cut') {
       this.pending = null;
@@ -285,14 +307,14 @@ export class AudioCore {
       case 'arp': playArp(g, t, e.midi, vel, e.pan); return;
       case 'clank': playClank(g, t, e.midi, vel, e.pan); return;
       case 'bass': this.bass!.note(t, e.midi, vel, e.dur, true); return;
-      default: playDrum(g, e.inst, t, vel, item.area, a);
+      default: playDrum(g, e.inst, t, vel, item.area);
     }
   }
 
   private applyArea(area: MusicArea, t: number): void {
     const g = this.g!, m = g.music, a = AREA_MUSIC[area];
     m.epLp.frequency.setTargetAtTime(a.epLp, t, 0.2);
-    kitFor(g, area, a);                                   // synthesize the area's drum kit now, not on the first hit
+    prioritize(`kit:${area}:`);                           // if the idle build is still going, this kit next
     m.chorusWet.gain.setTargetAtTime(a.chorus ? PAD_CHORUS_MIX : 0, t, 0.5);
     const echo = MALLET.echo.sixteenths * sixteenthSec(a.bpm);
     m.echo.delayTime.setTargetAtTime(echo, t, 0.08);
@@ -442,7 +464,7 @@ export class AudioCore {
   cue(id: Cue, o: CueOpts = {}, at?: number): void {
     const g = this.g;
     if (!g) return;
-    this.begin(`cue:${id}`);
+    this.begin('cue', id);
     const t = Math.max(at ?? 0, g.ctx.currentTime);
     if (UI_CUES.has(id)) playUi(g, id, t, o, this.keyInfo(t));
     else playOneShot(g, id, t, o, this.keyInfo(t));
@@ -493,7 +515,10 @@ export class AudioCore {
       song: this.song?.area ?? 'none', bar: this.song?.bar ?? -1, bpm: this.song?.clock.bpm ?? 0,
     };
   }
-  voicePeak(): number { return this.g?.voices.peak ?? 0; }
+  voiceStats(): { peak: number; stolen: number; dropped: number } {
+    const v = this.g?.voices;
+    return { peak: v?.peak ?? 0, stolen: v?.stolen ?? 0, dropped: v?.dropped ?? 0 };
+  }
   now(): number { return this.g?.ctx.currentTime ?? 0; }
   /** Offline stems: mute buses (multiplies the user volumes). */
   stems: { music: boolean; sfx: boolean; amb: boolean; fb: boolean; vinyl: boolean } = { music: true, sfx: true, amb: true, fb: true, vinyl: true };

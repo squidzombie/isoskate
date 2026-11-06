@@ -9,13 +9,14 @@ import { filter, gain, noiseSrc, osc, voice, type VoiceOut } from '../synth';
 import { PRI } from '../voices';
 
 const L = GRIND_LOOP;
+const KIND_CODE = { metal: 1, concrete: 2, wood: 3, neon: 4 } as const;
 
 export class GrindLoop {
-  private cur: { v: VoiceOut; key: string; creak: OscillatorNode | null; creakGain: GainNode | null; nextCreak: number } | null = null;
+  private cur: { v: VoiceOut; key: number; creak: OscillatorNode | null; creakGain: GainNode | null; nextCreak: number } | null = null;
   constructor(private readonly g: Graph) {}
 
   update(now: number, active: boolean, material: EdgeMaterial | null, slide: boolean): void {
-    const key = active && material ? `${GRIND_MATERIAL[material]}${slide ? '+s' : ''}` : '';
+    const key = active && material ? KIND_CODE[GRIND_MATERIAL[material]] * 2 + (slide ? 1 : 0) : 0;   // 0 = no grind
     if (this.cur && this.cur.key !== key) this.release(now);
     if (!key || this.cur) { if (this.cur) this.creak(now); return; }
     this.start(now, GRIND_MATERIAL[material!], slide, key);
@@ -31,7 +32,7 @@ export class GrindLoop {
     c.v.v.end = now + L.release + 0.05;
   }
 
-  private start(now: number, kind: 'metal' | 'concrete' | 'wood' | 'neon', slide: boolean, key: string): void {
+  private start(now: number, kind: 'metal' | 'concrete' | 'wood' | 'neon', slide: boolean, key: number): void {
     const g = this.g, ctx = g.ctx;
     const v = voice(g, g.sfx, now, Infinity, PRI.loop - 1);
     if (!v) return;

@@ -5,7 +5,8 @@ import type { Surface } from '../../core/ids';
 import { V_MAX } from '../../core/tuning';
 import { ROLL, WIND, type SurfaceRoll } from '../mix.config';
 import type { Graph } from '../graph';
-import { biquad } from './noise';
+import { after, pcm, tick, type Pcm } from '../bank';
+import { biquad, whitePcm } from './noise';
 import { filter, gain, lfo, noiseOffset, noiseSrc, osc, voice } from '../synth';
 import { PRI, type Voice } from '../voices';
 
@@ -102,11 +103,10 @@ export class RollLoop {
     }
   }
 
-  /** A joint tick: 8 ms of noise high-passed at 1.5 kHz plus a short thump, pre-rendered per thump pitch. */
+  /** A joint tick: 8 ms of noise high-passed at 1.5 kHz plus a short thump, pre-rendered per thump pitch (bank). */
   private joint(t: number, sf: SurfaceRoll, g0: number): void {
     const g = this.g;
-    let b = this.ticks.get(sf.thumpHz);
-    if (!b) { b = jointBuffer(g, sf.thumpHz); this.ticks.set(sf.thumpHz, b); }
+    const b = jointPcm(sf.thumpHz).buffer(g.ctx);
     const v = voice(g, this.lp, t, t + b.duration, PRI.sfx);
     if (!v) return;
     v.out.gain.value = g0 * ROLL.jointGain * 8;
@@ -115,18 +115,24 @@ export class RollLoop {
     src.connect(v.out);
     v.src(src, t, t + b.duration);
   }
-  private readonly ticks = new Map<number, AudioBuffer>();
 }
 
-function jointBuffer(g: Graph, thumpHz: number): AudioBuffer {
-  const sr = g.ctx.sampleRate, n = Math.ceil(0.05 * sr);
-  const b = g.ctx.createBuffer(1, n, sr), o = b.getChannelData(0), w = g.noise.white.getChannelData(0);
-  const hp = biquad('highpass', ROLL.jointHp, Math.pow(10, 0.7 / 20), sr);
-  const jd = ROLL.jointMs / 1000;
-  for (let i = 0; i < n; i++) {
-    const t = i / sr;
-    const e = (a: number, d: number) => (t < a ? t / a : Math.exp((-6.9 * (t - a)) / d));
-    o[i] = hp(w[i]!) * e(0.0005, jd) + Math.sin(2 * Math.PI * thumpHz * t) * 1.6 * e(0.001, 0.04);
-  }
-  return b;
+/** The joint tick buffer for a thump pitch (registered at boot for every surface's pitch). */
+export function jointPcm(thumpHz: number): Pcm {
+  const white = whitePcm();
+  return pcm(`joint:${thumpHz}`, 1, 0.05, function* (out, sr) {
+    yield* after(white);
+    const o = out[0]!, w = white.data()[0]!;
+    const hp = biquad('highpass', ROLL.jointHp, Math.pow(10, 0.7 / 20), sr);
+    const jd = ROLL.jointMs / 1000;
+    for (let i = 0; i < o.length; i++) {
+      const t = i / sr;
+      const e = (a: number, d: number) => (t < a ? t / a : Math.exp((-6.9 * (t - a)) / d));
+      o[i] = hp(w[i]!) * e(0.0005, jd) + Math.sin(2 * Math.PI * thumpHz * t) * 1.6 * e(0.001, 0.04);
+      if (tick(i)) yield;
+    }
+  });
+}
+export function registerJoints(): void {
+  for (const sf of Object.values(ROLL.surfaces) as SurfaceRoll[]) if (sf.joint) jointPcm(sf.thumpHz);
 }

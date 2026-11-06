@@ -1,7 +1,8 @@
-// audio/sfx/noise.ts: pre-rendered buffers (DESIGN §19.2 "noise buffers are pre-rendered at boot") from seeded
-// sample math, so live play and offline renders are bit-identical: white, pink and brown noise loops (seamless,
-// crossfaded at the loop point) and the 4 s vinyl loop (hiss + Poisson pops, §19.1).
+// audio/sfx/noise.ts: the noise buffers of the bank (DESIGN §19.2 "noise buffers are pre-rendered at boot"), seeded
+// sample math run in chunks by audio/bank.ts: white, pink and brown noise loops (seamless, crossfaded at the loop
+// point) and the 4 s vinyl loop (hiss + Poisson pops, §19.1). Also the sample-math biquad the kits use.
 import { Sfc32 } from '../../core/rng';
+import { pcm, tick, type Pcm } from '../bank';
 import { VINYL } from '../mix.config';
 
 /** RBJ-cookbook biquad on sample arrays (used only to pre-render buffers). */
@@ -20,58 +21,56 @@ export function biquad(type: 'lowpass' | 'highpass' | 'bandpass', f: number, q: 
   };
 }
 
-/** n samples of a generator, made loopable: the tail beyond n is equal-power crossfaded over the head. */
-export function loopable(n: number, fade: number, gen: () => number): Float32Array {
-  const raw = new Float32Array(n + fade);
-  for (let i = 0; i < raw.length; i++) raw[i] = gen();
-  const out = raw.slice(0, n);
+/** Fills `o` with a generator, made loopable: the next `fade` samples are equal-power crossfaded over the head. */
+function* loopableInto(o: Float32Array, fade: number, gen: () => number): Generator<void, void, void> {
+  const n = o.length;
+  for (let i = 0; i < n; i++) { o[i] = gen(); if (tick(i)) yield; }
   for (let i = 0; i < fade; i++) {
     const u = i / fade;
-    out[i] = raw[i]! * Math.sin(u * Math.PI / 2) + raw[n + i]! * Math.cos(u * Math.PI / 2);
+    o[i] = o[i]! * Math.sin(u * Math.PI / 2) + gen() * Math.cos(u * Math.PI / 2);
   }
-  return out;
 }
-function normalize(a: Float32Array, peak: number): Float32Array {
+/** Removes the mean, then scales to `peak`. */
+function* normalizeInto(a: Float32Array, peak: number): Generator<void, void, void> {
   let mean = 0;
-  for (let i = 0; i < a.length; i++) mean += a[i]!;
+  for (let i = 0; i < a.length; i++) { mean += a[i]!; if (tick(i)) yield; }
   mean /= a.length;
   let m = 1e-9;
-  for (let i = 0; i < a.length; i++) { a[i]! -= mean; m = Math.max(m, Math.abs(a[i]!)); }
-  for (let i = 0; i < a.length; i++) a[i]! *= peak / m;
-  return a;
+  for (let i = 0; i < a.length; i++) { a[i]! -= mean; m = Math.max(m, Math.abs(a[i]!)); if (tick(i)) yield; }
+  const k = peak / m;
+  for (let i = 0; i < a.length; i++) { a[i]! *= k; if (tick(i)) yield; }
 }
 
-export function whiteSamples(n: number, seed: number): Float32Array {
-  const r = new Sfc32(seed);
-  return normalize(loopable(n, 256, () => r.float() * 2 - 1), 0.9);
-}
-/** Pink noise (Paul Kellet's economy filter). */
-export function pinkSamples(n: number, seed: number): Float32Array {
-  const r = new Sfc32(seed);
-  let b0 = 0, b1 = 0, b2 = 0;
-  return normalize(loopable(n, 4096, () => {
-    const w = r.float() * 2 - 1;
-    b0 = 0.99765 * b0 + w * 0.0990460; b1 = 0.96300 * b1 + w * 0.2965164; b2 = 0.57000 * b2 + w * 1.0526913;
-    return b0 + b1 + b2 + w * 0.1848;
-  }), 0.9);
-}
-/** Brown noise: leaky-integrated white noise (no DC drift). */
-export function brownSamples(n: number, seed: number): Float32Array {
-  const r = new Sfc32(seed);
-  let y = 0;
-  return normalize(loopable(n, 8192, () => { y = 0.996 * y + (r.float() * 2 - 1) * 0.06; return y; }), 0.9);
+/** Seamless 2 s noise loops, normalized to 0.9: white; pink (Paul Kellet's economy filter); brown (leaky-integrated
+ *  white, no DC drift). */
+function noiseFill(kind: 'white' | 'pink' | 'brown', seed: number) {
+  return function* (out: readonly Float32Array[]): Generator<void, void, void> {
+    const o = out[0]!, r = new Sfc32(seed);
+    if (kind === 'white') yield* loopableInto(o, 256, () => r.float() * 2 - 1);
+    else if (kind === 'pink') {
+      let b0 = 0, b1 = 0, b2 = 0;
+      yield* loopableInto(o, 4096, () => {
+        const w = r.float() * 2 - 1;
+        b0 = 0.99765 * b0 + w * 0.0990460; b1 = 0.96300 * b1 + w * 0.2965164; b2 = 0.57000 * b2 + w * 1.0526913;
+        return b0 + b1 + b2 + w * 0.1848;
+      });
+    } else {
+      let y = 0;
+      yield* loopableInto(o, 8192, () => { y = 0.996 * y + (r.float() * 2 - 1) * 0.06; return y; });
+    }
+    yield* normalizeInto(o, 0.9);
+  };
 }
 
 /** The 4 s stereo vinyl loop: band-passed hiss plus Poisson pops (1–3 samples, high-passed). */
-export function vinylSamples(sr: number, seed: number): [Float32Array, Float32Array] {
-  const n = Math.round(VINYL.sec * sr);
-  const chans: Float32Array[] = [];
+function* vinylFill(out: readonly Float32Array[], sr: number): Generator<void, void, void> {
   for (let ch = 0; ch < 2; ch++) {
-    const r = new Sfc32(seed + 17 * ch);
+    const o = out[ch]!, n = o.length;
+    const r = new Sfc32(NOISE_SEED + 4 + 17 * ch);
     const bp = biquad('bandpass', VINYL.hissHz, VINYL.hissQ, sr);
     const hp = biquad('highpass', VINYL.popHpHz, 0.7, sr);
-    const hiss = loopable(n, 512, () => bp(r.float() * 2 - 1));
-    normalize(hiss, 1);
+    yield* loopableInto(o, 512, () => bp(r.float() * 2 - 1));
+    yield* normalizeInto(o, 1);
     const pops = new Float32Array(n);
     const rate = VINYL.popsPerSec / sr;
     for (let i = 0; i < n; i++) {
@@ -79,20 +78,24 @@ export function vinylSamples(sr: number, seed: number): [Float32Array, Float32Ar
         const len = r.int(1, 3), amp = r.range(VINYL.popAmp[0], VINYL.popAmp[1]) * (r.chance(0.5) ? 1 : -1);
         for (let k = 0; k < len && i + k < n; k++) pops[i + k]! += amp * (1 - k / (len + 1));
       }
+      if (tick(i)) yield;
     }
-    const out = new Float32Array(n);
-    for (let i = 0; i < n; i++) out[i] = hiss[i]! * VINYL.hissGain * 2.2 + hp(pops[i]!);
-    chans.push(out);
+    for (let i = 0; i < n; i++) { o[i] = o[i]! * VINYL.hissGain * 2.2 + hp(pops[i]!); if (tick(i)) yield; }
   }
-  return [chans[0]!, chans[1]!];
 }
 
+/** Fixed seed: the noise is the same for every song and render (only offsets into it are seeded per song). */
+const NOISE_SEED = 0x6e6f6973;
+export const NOISE_SEC = 2;
+export const whitePcm = (): Pcm => pcm('noise:white', 1, NOISE_SEC, noiseFill('white', NOISE_SEED + 1));
+export const pinkPcm = (): Pcm => pcm('noise:pink', 1, NOISE_SEC, noiseFill('pink', NOISE_SEED + 2));
+export const brownPcm = (): Pcm => pcm('noise:brown', 1, NOISE_SEC, noiseFill('brown', NOISE_SEED + 3));
+export const vinylPcm = (): Pcm => pcm('noise:vinyl', 2, VINYL.sec, vinylFill);
+/** Registers the noise buffers (boot order: these first, every kit needs the white loop). */
+export function registerNoise(): void { whitePcm(); pinkPcm(); brownPcm(); vinylPcm(); }
+
 export interface NoiseBank { white: AudioBuffer; pink: AudioBuffer; brown: AudioBuffer; vinyl: AudioBuffer }
-export function makeNoiseBank(ctx: BaseAudioContext, seed: number): NoiseBank {
-  const sr = ctx.sampleRate, n = Math.round(2 * sr);
-  const mono = (a: Float32Array) => { const b = ctx.createBuffer(1, a.length, sr); b.getChannelData(0).set(a); return b; };
-  const [vl, vr] = vinylSamples(sr, seed + 4);
-  const vinyl = ctx.createBuffer(2, vl.length, sr);
-  vinyl.getChannelData(0).set(vl); vinyl.getChannelData(1).set(vr);
-  return { white: mono(whiteSamples(n, seed + 1)), pink: mono(pinkSamples(n, seed + 2)), brown: mono(brownSamples(n, seed + 3)), vinyl };
+/** The noise AudioBuffers for a context (finished now if the idle build has not got there yet). */
+export function noiseBank(ctx: BaseAudioContext): NoiseBank {
+  return { white: whitePcm().buffer(ctx), pink: pinkPcm().buffer(ctx), brown: brownPcm().buffer(ctx), vinyl: vinylPcm().buffer(ctx) };
 }

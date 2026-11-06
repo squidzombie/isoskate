@@ -1,5 +1,6 @@
 // audio.spec (TECH §11.3, ROADMAP W3b): a real tap on the Title unlocks audio (context running), and a 2-minute
-// god-mode run with scripted gestures keeps the voice count ≤ 32 with the main-thread audio cost ≤ 0.3 ms per frame.
+// god-mode run with scripted gestures keeps the voice count ≤ 32 (no sound refused at the cap) with the main-thread
+// audio cost ≤ 0.3 ms per frame over the whole run, the unlocking tap and the boot-time buffer build included.
 import { expect, test, type Page } from '@playwright/test';
 
 declare global {
@@ -62,16 +63,23 @@ test('2-minute god-mode run with gestures: voices ≤ 32, audio main-thread cost
   });
   await page.waitForTimeout(SEC * 1000);
   const r = await page.evaluate(() => ({ log: window.__auLog!, perf: window.__skateAudio!.perf(), stats: window.__skateAudio!.stats(),
-    events: window.__skate!.events().map((e) => e.t) }));
-  // The scheduler's work follows musical time, not frames: at SwiftShader's ~25 fps a frame carries ~2.4× the work of
-  // a 60 fps phone frame. Both numbers are reported; the budget is asserted on the measured per-rendered-frame cost.
+    prep: window.__skateAudio!.prep(), events: window.__skate!.events().map((e) => e.t) }));
+  // perf() covers every rendered frame since the unlocking tap built the graph (whole-run sum and histogram), so the
+  // startup is included. The scheduler's work follows musical time, not frames: at SwiftShader's ~30 fps a frame
+  // carries ~2× the work of a 60 fps phone frame, so the per-rendered-frame number asserted here is the stricter one.
   const per60 = (r.perf.msPerFrame * r.perf.frames) / (SEC * 60);
   const maxVoices = Math.max(...r.log.voices);
-  console.log(`audio.spec: slowest call ${r.perf.slowest.ms.toFixed(2)} ms in ${r.perf.slowest.what}; ${r.log.voices.length} samples, max voices ${maxVoices} (pool peak ${r.stats.peak}), intensity ${Math.max(...r.log.intensity)}, ` +
-    `gestures ${r.log.gestures}, frames ${r.perf.frames} (${(r.perf.frames / SEC).toFixed(1)} fps), audio ms/frame avg ${r.perf.msPerFrame.toFixed(3)} (≈ ${per60.toFixed(3)} per 60 Hz frame) p95 ${r.perf.p95.toFixed(3)} max ${r.perf.max.toFixed(2)}, tick ${r.perf.tickMs.toFixed(3)} ms`);
+  console.log(`audio.spec: slowest call ${r.perf.slowest.ms.toFixed(2)} ms in ${r.perf.slowest.what}; ${r.log.voices.length} samples, max voices ${maxVoices} ` +
+    `(pool peak ${r.stats.peak}, stolen ${r.stats.stolen}, dropped ${r.stats.dropped}), intensity ${Math.max(...r.log.intensity)}, gestures ${r.log.gestures}, ` +
+    `frames ${r.perf.frames} (${(r.perf.frames / SEC).toFixed(1)} fps), audio ms/frame avg ${r.perf.msPerFrame.toFixed(3)} (≈ ${per60.toFixed(3)} per 60 Hz frame) ` +
+    `p95 ${r.perf.p95.toFixed(3)} max ${r.perf.max.toFixed(2)}, last 600 frames avg ${r.perf.recentMsPerFrame.toFixed(3)} p95 ${r.perf.recentP95.toFixed(3)}, ` +
+    `tick ${r.perf.tickMs.toFixed(3)} ms, attach ${r.perf.attachMs.toFixed(1)} ms; boot buffers ${JSON.stringify(r.prep)}`);
   expect(r.log.voices.length).toBeGreaterThan(SEC * 5);
   expect(maxVoices).toBeLessThanOrEqual(32);
   expect(r.stats.peak).toBeLessThanOrEqual(32);
+  expect(r.stats.dropped).toBe(0);                            // the cap never had to refuse a sound (stealing is allowed)
+  expect(r.prep.pending).toBe(0);                             // every boot buffer was built ...
+  expect(r.prep.forcedMs).toBe(0);                            // ... in idle time, none on demand inside a frame or gesture
   expect(maxVoices).toBeGreaterThan(4);                       // the music and the beds were really playing
   expect(r.log.states.every((s) => s === 'running')).toBe(true);
   expect(r.events).toContain('ollie');

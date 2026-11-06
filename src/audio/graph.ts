@@ -14,7 +14,7 @@ import {
 } from './mix.config';
 import { buildTape, type Tape } from './music/tape';
 import { startVinyl } from './music/vinyl';
-import { makeNoiseBank } from './sfx/noise';
+import { noiseBank } from './sfx/noise';
 import { filter, gain, lfo, osc, type Synth } from './synth';
 import { VoicePool } from './voices';
 
@@ -33,7 +33,7 @@ export interface Graph extends Synth {
 }
 
 export function buildGraph(ctx: BaseAudioContext, seed: number): Graph {
-  const noise = makeNoiseBank(ctx, seed);
+  const noise = noiseBank(ctx);                 // pre-rendered at boot (audio/bank.ts); finished now if not yet
   const voices = new VoicePool();
   const rng = new Sfc32(seed ^ 0x5fd1);
 

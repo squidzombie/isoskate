@@ -24,17 +24,24 @@ import type { Bus } from '../core/bus';
 import type { AppEvent, GameEvent } from '../core/events';
 import { hash32 } from '../core/rng';
 import { readFlags } from '../platform';
+import { prepStats, startPrep, whenReady } from './bank';
 import { bindAll, GAME_BINDINGS, type BindState } from './bindings';
 import { AudioCore, type PerfStats, type Scene } from './engine';
 import { AREA_MUSIC, SCHED, type MusicArea } from './mix.config';
+import { registerKit } from './music/drums';
+import { registerNoise } from './sfx/noise';
 import type { CueOpts } from './sfx/oneshots';
+import { registerJoints } from './sfx/roll';
 
 type AudioCtor = typeof AudioContext;
 type OfflineCtor = typeof OfflineAudioContext;
 
 /** Extra introspection beyond the frozen AudioEngine (debug, e2e, render-check). */
 export interface AudioDebug {
-  stats(): ReturnType<AudioCore['stats']> & { contextState: string; unlocked: boolean; peak: number };
+  stats(): ReturnType<AudioCore['stats']> & { contextState: string; unlocked: boolean; peak: number; stolen: number; dropped: number };
+  /** The boot-time buffer build (audio/bank.ts): pending buffers, idle ms spent, slices, the longest slice, and the ms
+   *  spent finishing buffers on demand (a tap before the idle build got there). */
+  prep(): ReturnType<typeof prepStats>;
   perf(): PerfStats;
   renderScene(o: SceneOptions): Promise<{ buffer: AudioBuffer; marks: { id: string; t: number }[] } | null>;
 }
@@ -44,7 +51,17 @@ const LIVE_SEED = 0x64736b6c;
 /** The save's default sliders (save/defaults.ts): offline renders use them so the analysis hears what players hear. */
 const DEFAULT_VOLUMES = { music: 0.8, sfx: 0.9 } as const;
 
+/** Boot: queue every pre-rendered buffer (noise and vinyl first, then the menu and start-area kits) and build them in
+ *  idle time, before any gesture, so the unlocking tap only creates nodes (DESIGN §19.2). */
+function prepareBank(): void {
+  registerNoise();
+  registerJoints();
+  for (const area of ['menu', 'downtown', 'suburbs', 'docks', 'neon'] as const) registerKit(area);
+  startPrep();
+}
+
 export function createAudio(): AudioEngine {
+  if (typeof window !== 'undefined') prepareBank();
   const core = new AudioCore({ seed: LIVE_SEED, nowMs: () => performance.now() });
   let ctx: AudioContext | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
@@ -61,8 +78,13 @@ export function createAudio(): AudioEngine {
     const nav = navigator as Navigator & { audioSession?: { type: string } };
     if (nav.audioSession) { try { nav.audioSession.type = 'ambient'; } catch { /* read-only on some builds */ } }
     const c = new Ctor({ latencyHint: 'interactive' });
-    core.attach(c);
-    timer = setInterval(() => core.tick(), SCHED.tickMs);
+    // Inside the gesture only the context is created and resumed; the graph is built from the pre-rendered buffers,
+    // at once when the boot-time build is done (the usual case), else as soon as it has finished the noise and the
+    // first song's kit in short tasks (a tap in the first moments after boot: the music starts a moment later).
+    whenReady(['noise:', 'joint:', 'kit:menu:', 'kit:downtown:', `kit:${core.firstSongArea()}:`], () => {
+      core.attach(c);
+      timer = setInterval(() => core.tick(), SCHED.tickMs);
+    });
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('pageshow', onVisibility);
     return c;
@@ -108,7 +130,8 @@ export function createAudio(): AudioEngine {
       return { voices: s.voices, contextState: ctx?.state ?? 'none', scene: s.scene, intensity: s.intensity };
     },
     debug: {
-      stats: () => ({ ...core.stats(), contextState: ctx?.state ?? 'none', unlocked: ctx?.state === 'running', peak: core.voicePeak() }),
+      stats: () => ({ ...core.stats(), contextState: ctx?.state ?? 'none', unlocked: ctx?.state === 'running', ...core.voiceStats() }),
+      prep: () => prepStats(),
       perf: () => core.perf(),
       renderScene: (o) => renderScene(o),
     },
@@ -138,7 +161,7 @@ export async function renderScene(o: SceneOptions): Promise<{ buffer: AudioBuffe
   const w = globalThis as unknown as { OfflineAudioContext?: OfflineCtor; webkitOfflineAudioContext?: OfflineCtor };
   const Ctor = w.OfflineAudioContext ?? w.webkitOfflineAudioContext;
   if (!Ctor || !(o.sec > 0)) return null;
-  const sr = o.sampleRate ?? 44100;
+  const sr = o.sampleRate ?? 48000;                // the bank's rate and most phones' context rate
   const ctx = new Ctor(2, Math.ceil(sr * o.sec), sr);
   const script = o.script ?? 'demo';
   const area = o.area;

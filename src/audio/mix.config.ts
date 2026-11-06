@@ -36,6 +36,14 @@ export const SCHED = {
   lateDrop: 0.05,           // an event more than 50 ms late (stalled main thread) is dropped, never bunched
   resyncAfter: 0.5,         // the song clock jumps forward if the scheduler fell this far behind
 } as const;
+/** Pre-rendered sample buffers (noise loops, vinyl, drum kits, joint ticks; audio/bank.ts): built at boot, before any
+ *  gesture, in idle time, so the unlocking tap only creates nodes. Fixed rate (buffer sources resample to the context). */
+export const PREP = {
+  sr: 48000,
+  chunk: 1024,              // samples of sample math between yield points (≈ 0.1–0.6 ms on a phone)
+  idleMs: 4,                // at most this much work per idle callback (setTimeout fallback where there is no rIC)
+  timeoutMs: 1500,          // requestIdleCallback timeout: a busy boot still makes progress
+} as const;
 /** Feedback / quantized notes snap to the next 16th only if it is at most this far away (§9). */
 export const QUANTIZE_MAX = 0.04;
 
