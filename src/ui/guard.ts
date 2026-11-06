@@ -31,8 +31,12 @@ export function createLayoutGuard(install: boolean): LayoutGuard {
   if (!install || typeof window === 'undefined') return g;
   const hit = () => {
     if (!g.active || allowed > 0) return;
+    // frames: [Error, hit, the patched accessor, caller, …]. Reads from injected tooling (devtools, the e2e trace
+    // recorder, page.evaluate) have no script URL; only the game's own scripts count.
+    const frames = (new Error().stack ?? '').split('\n').slice(3, 6).map((s) => s.trim());
+    if (!frames[0] || frames[0].includes('<anonymous>') || !frames[0].includes('://')) return;
     reads++;
-    if (samples.length < 6) samples.push((new Error().stack ?? '').split('\n').slice(2, 5).map((s) => s.trim()).join(' < '));
+    if (samples.length < 6) samples.push(frames.join(' < '));
   };
   const w = window as unknown as Record<string, { prototype: object } | undefined>;
   for (const [cls, names] of GETTERS) {
