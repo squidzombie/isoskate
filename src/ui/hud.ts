@@ -20,8 +20,9 @@ import { DISPLAY_FONT, fitPx, hudColumns, UI_FONT, type HudColumns } from './fit
 import { h, setText } from './h';
 import { createHints, type Hints } from './hints';
 import { createPopups, type PopupKind, type Popups } from './popups';
+import { HUD_TIMING } from './ui.config';
 
-export const HUD_TIMING = { textHz: 15, rollSec: 0.3, trickHoldSec: 1.6, trickMinPx: 8, rewardSec: 2.7, bankWarnSec: 0.75 } as const;
+export { HUD_TIMING };
 const SPEED_STAMP = ['', 'CRUISE', 'FLOW', 'FULL SEND'] as const;
 
 /** HUD layout preview values (debug `__skate.ext.hud`). */

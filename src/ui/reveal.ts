@@ -12,8 +12,9 @@ import { isMetaExt } from '../meta';
 import { itemArt } from './art';
 import { h, setText } from './h';
 import { btn, coinTag, fmtN, RARITY_LABEL, type ScreenCtx } from './screens/common';
+import { REVEAL } from './ui.config';
 
-export const REVEAL = { taps: 3, lidMs: 520, riseMs: 950, coinsMs: 900 } as const;
+export { REVEAL };
 const TIER_NAME: Readonly<Record<CrateTier, string>> = { cardboard: 'Cardboard Box', street: 'Street Crate', pro: 'Pro Crate' };
 
 export interface RevealOptions { onClose?: () => void; onEquip?: (id: string) => void; equipLabel?: string }

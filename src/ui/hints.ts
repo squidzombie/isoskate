@@ -5,6 +5,7 @@
 //     resting thumb doesn't cover it; the ghost acts the gesture (drag, tap, flick, hold) with transform/opacity only;
 //   - keys (fine pointer): chunky key caps in the chip instead ("[A] [D] TO STEER").
 import { h, setText } from './h';
+import { REST_MARK_SEC } from './ui.config';
 
 export type Gesture = 'drag' | 'tap' | 'swipeL' | 'swipeD' | 'swipeUR' | 'hold';
 export interface HintText { touch: string; keys: string; caps: readonly string[]; keysLabel: string; gesture: Gesture }
@@ -23,8 +24,7 @@ export const HINT_TEXT: Readonly<Record<string, HintText>> = {
   pit: { touch: 'OLLIE THE TRENCH', keys: 'OLLIE THE TRENCH', caps: ['SPACE'], keysLabel: 'THE TRENCH', gesture: 'tap' },
 };
 
-/** The "rest here" ring stays up this long into runs 1–3 even without a hint (the Roll-out). */
-export const REST_MARK_SEC = 9;
+export { REST_MARK_SEC };
 
 export interface Hints {
   readonly els: readonly HTMLElement[];

@@ -16,8 +16,9 @@ import { h, setText, type Child } from '../h';
 import { icon } from '../icons';
 import type { Reveal } from '../reveal';
 import { bar, btn, coinTag, fmtN, RARITY_LABEL, section, type Screen, type ScreenCtx } from './common';
+import { RESULTS_ANIM } from '../ui.config';
 
-export const RESULTS_ANIM = { scoreMs: 800, coinsAt: 450, coinsMs: 700, xpAt: 900, xpMsPerLevel: 650, rewardsAt: 1300 } as const;
+export { RESULTS_ANIM };
 const ease = (u: number) => 1 - (1 - u) ** 3;
 
 export interface ResultsHooks { reveal(): Reveal; onShown(runId: string): void }
@@ -235,7 +236,7 @@ export function resultsScreen(ctx: ScreenCtx, hooks: ResultsHooks): Screen {
       inFlip = !inFlip;                                          // restart the slide-up without a layout read
       el.classList.toggle('in-a', inFlip); el.classList.toggle('in-b', !inFlip);
       const best = !!w?.newBest;
-      setText(head, best ? 'NEW BEST!' : r ? (r.crash ? 'BAILED' : 'RUN OVER') : 'RESULTS');
+      setText(head, best ? 'NEW BEST!' : wx && wx.runIndex > 0 ? `RUN ${wx.runIndex}` : 'RESULTS');
       head.classList.toggle('best', best);
       setText(vTricks, r ? fmtScore(r.trickPts) : '—');
       setText(vDist, r ? `${fmtN(r.distance)} m` : '—');

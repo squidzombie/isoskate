@@ -6,13 +6,14 @@
 import { LAND } from '../core/tuning';
 import type { SkaterState } from '../core/sim';
 import { h } from './h';
+import { POPUP } from './ui.config';
 
 export type PopupKind = 'flip' | 'grind' | 'manual' | 'gap' | 'perfect' | 'sketchy' | 'bonus';
 export const POPUP_COLOR: Readonly<Record<PopupKind, string>> = {
   flip: '#FFE3A3', grind: '#8FE3FF', manual: '#C3A8FF', gap: '#FF9E7A', perfect: '#FFC94A', sketchy: '#D8D0C6', bonus: '#9CF0C8',
 };
 export const CORAL = '#FF5E6C';
-export const POPUP = { sec: 0.5, popIn: 0.12, holdTo: 0.3, dx: 72, dy: -46, pool: 4, edge: 64 } as const;
+export { POPUP };
 
 /** Would the current flip/spin land sketchy or bail if nothing changes (DESIGN §13.8 popup tint)? */
 export function badLandingPredicted(cur: Readonly<SkaterState>): boolean {

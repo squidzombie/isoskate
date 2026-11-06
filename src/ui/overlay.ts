@@ -5,8 +5,9 @@
 //   Neon only: 2 px scanlines at 4% opacity.
 //   "Reduce effects" removes the whole overlay.
 import { h } from './h';
+import { LOFI } from './ui.config';
 
-export const LOFI = { tile: 128, alpha: 0.05, fps: 8, scanAlpha: 0.04 } as const;
+export { LOFI };
 
 export interface LofiState { effects: boolean; reducedMotion: boolean; tier: 'low' | 'med' | 'high'; neon: boolean; visible: boolean }
 export interface Lofi { set(p: Partial<LofiState>): void; readonly state: Readonly<LofiState> }

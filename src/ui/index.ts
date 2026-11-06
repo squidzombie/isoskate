@@ -21,6 +21,7 @@ import type { UiApi, UiIntent } from '../core/ui';
 import { isMetaExt, type MetaExt } from '../meta';
 import { createMonetization, readFlags } from '../platform';
 import { clearMeasureCache } from './fit';
+import { TOAST } from './ui.config';
 import { TRICKS } from '../tricks';
 import { crashCause, fmtShort, trickName } from './format';
 import { createLayoutGuard, type LayoutGuard } from './guard';
@@ -78,8 +79,8 @@ export function createUiImpl(root: HTMLElement): UiExt {
   const lofi = createLofi(root.querySelector<HTMLElement>('#lofi'));
 
   // Toasts: informational only (pointer-events:none), at most 2 stacked, below the HUD band.
-  const toast = (text: string, ms = 2000) => {
-    while (toastsEl.children.length >= 2) toastsEl.firstElementChild?.remove();
+  const toast = (text: string, ms: number = TOAST.defaultMs) => {
+    while (toastsEl.children.length >= TOAST.maxStacked) toastsEl.firstElementChild?.remove();
     const t = h('div', { class: 'toast' }, text);
     toastsEl.append(t);
     setTimeout(() => t.classList.add('out'), Math.max(200, ms - 220));
@@ -190,7 +191,7 @@ export function createUiImpl(root: HTMLElement): UiExt {
           if (!d || e.id === 'ollie' || d.trickBook.includes(e.id) || discovered.has(e.id)) return;
           discovered.add(e.id);
           const glyph = TRICK_GLYPH.get(e.id);
-          toast(`${glyph ? `${glyph} ` : ''}${trickName(e.id).toUpperCase()} — new!`, 1400);
+          toast(`${glyph ? `${glyph} ` : ''}${trickName(e.id).toUpperCase()} — new!`, TOAST.discoveryMs);
         }),
         game.on('comboBanked', (e) => { run.banks++; run.bankMax = Math.max(run.bankMax, e.total); run.bankSum += e.total; run.maxLinks = Math.max(run.maxLinks, e.links); }),
         game.on('areaEnter', (e) => {
