@@ -19,6 +19,7 @@ import { PICK_MISS_TICKS } from './consts';
 
 export function magnet(k: Ctx, applied: number): void {
   const st = k.st, c = st.cur, pr = st.pred;
+  if (c.mode === 'air') st.air.steerNet += applied;
   if (c.mode !== 'air' || c.magnetCancelled || pr.magnetEdge < 0) { c.magnetEdge = null; return; }
   const dx = pr.magnetX - c.p.x;
   if (Math.abs(dx) > 1e-6) st.air.steerAway -= Math.sign(dx) * applied;
@@ -90,10 +91,11 @@ export function updatePickWindow(k: Ctx): void {
   c.pickWindow = { edgeId: pk.edgeId, tCapture: c.t + pr.tCapture };
 }
 
-/** A swipe inside the window: a repeat of the same direction makes a double (←← Lipslide); a new one replaces it. */
-export function addPick(k: Ctx, dir: Dir8): void {
+/** A swipe inside the window: a repeat of the same direction makes a double (←← Lipslide); a new one replaces it.
+ *  A keyboard amend (`amend`) replaces the last pick with the diagonal (← then ↓ = ↙ Tailslide). */
+export function addPick(k: Ctx, dir: Dir8, amend = false): void {
   const pk = k.st.pick;
-  if (pk.dirs.length > 0 && pk.dirs[0] === dir && pk.dirs.length < 2) pk.dirs.push(dir);
+  if (!amend && pk.dirs.length > 0 && pk.dirs[0] === dir && pk.dirs.length < 2) pk.dirs.push(dir);
   else { pk.dirs.length = 0; pk.dirs.push(dir); }
-  pk.tick = k.st.cur.tick;
+  if (!amend || pk.tick < 0) pk.tick = k.st.cur.tick;
 }

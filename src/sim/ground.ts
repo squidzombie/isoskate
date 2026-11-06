@@ -6,7 +6,8 @@
 import type { GroundHit, GroundSlab, Obstacle } from '../core/world';
 import { COYOTE, PIT_FALL_EPS, STEP_UP } from '../core/tuning';
 import { ROLL_OFF_DROP, STICKY_DROP } from './consts';
-import { freshAir, type Ctx } from './state';
+import type { Ctx } from './state';
+import { beginAir } from './air';
 
 
 /** Obstacle id owning a slab (−1 for none / the bare street). */
@@ -56,14 +57,9 @@ export function rollGround(k: Ctx): 'ok' | 'bump' | 'air' | 'crash' {
     return up ? 'bump' : 'ok';
   }
   // Roll off an edge: airborne, with coyote time unless over a pit.
-  c.mode = 'air';
+  beginAir(k, 'rollOff');
   c.vel.y = 0;
-  c.airT = 0;
   c.coyote = g.pit ? 0 : COYOTE + 1e-9;
-  c.flip = null; c.spin = null; c.flipsThisAir = 0; c.airTricks.length = 0;
-  st.air = freshAir();
-  st.air.reason = 'rollOff';
-  st.air.takeoffY = c.p.y;
   k.ev.push({ t: 'airborne', tick: c.tick, reason: 'rollOff' });
   return 'air';
 }

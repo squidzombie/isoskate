@@ -23,7 +23,7 @@ export function pickups(k: Ctx): void {
   }
   // Ids are only ever looked up near the skater: forget the ones far behind now and then (bounded snapshots).
   if (c.tick % PRUNE_EVERY === 0) {
-    for (const set of [st.collected, st.warned, st.knocked, st.ghosted]) {
+    for (const set of [st.collected, st.warned, st.knocked, st.ghosted, st.gapped]) {
       if (set.size < 64) continue;
       const keep = new Set<number>();
       for (const ob of k.obs) if (set.has(ob.id)) keep.add(ob.id);
@@ -55,6 +55,7 @@ export function markers(k: Ctx): void {
   }
   if (a.area !== st.area) {
     st.area = a.area;
+    st.landmarksPaid.length = 0;                  // landmarks pay once per area visit
     // Arrivals through a gateway count; the starting area never counts as "reached" (DESIGN §12.1).
     const first = !sc.areasReached.includes(a.area) && a.area !== (st.cfg.startArea ?? 'downtown');
     if (first) sc.areasReached.push(a.area);

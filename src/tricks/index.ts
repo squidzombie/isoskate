@@ -5,10 +5,11 @@ import { TRICK_TABLES } from './defs';
 
 export const TRICKS: TrickTables = TRICK_TABLES;
 export { FLIPS, SPINS, GRINDS, MANUALS, GRABS } from './defs';
-export { SCORE } from './score.config';
-export { interpret, swipeCounts, type Intent, type InterpretView } from './interpret';
+export { RULES, SCORE } from './score.config';
+export { emptyView, interpret, swipeCounts, type AmendView, type InputFrameExt, type Intent, type InterpretView } from './interpret';
 export {
   addBonus, addLink, addTrick, bank, emptyCombo, finishTrick, lose, openWindow, pauseWindow, recompute, refreshHeat,
+  refreshWindow, retarget,
   tickCombo, type BankReason, type TrickOpts,
 } from './combo';
 export { comboCoins, comboValue, decayFactor, multiplierOf, trickPoints, uniqueNamesOf, varietyOf } from './scoring';

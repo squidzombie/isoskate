@@ -71,16 +71,35 @@ export function finishTrick(sc: ScoreState, ev: GameEvent[], tick: number, mode:
   if (sc.combo.entries.includes(entry)) emitScored(sc, ev, tick, entry);
 }
 
+/** Re-target a link-capable entry to another trick in place (a late grind pick, a switch's double or amend): its
+ *  decay factor, link and repetition window entry follow the new id (DESIGN §13.4: grinds decay per type). */
+export function retarget(sc: ScoreState, entry: ComboEntry, id: TrickId, base: number, mod: number): void {
+  if (entry.id === id) return;
+  const c = sc.combo, old = entry.id;
+  const i = sc.recent.lastIndexOf(old);
+  if (i >= 0) sc.recent.splice(i, 1);
+  const factor = decayFactor(sc.recent, id);
+  if (i >= 0) sc.recent.splice(i, 0, id);
+  sc.tricks[old] = Math.max(0, (sc.tricks[old] ?? 1) - 1);
+  sc.tricks[id] = (sc.tricks[id] ?? 0) + 1;
+  const link = factor >= SCORE.decay.noLinkBelow;
+  if (entry.link !== link) c.links += link ? 1 : -1;
+  entry.id = id; entry.factor = factor; entry.mod = mod; entry.link = link;
+  entry.pts = trickPoints(base, mod, factor);
+  recompute(sc, 'grind');
+}
+
 function emitScored(sc: ScoreState, ev: GameEvent[], tick: number, e: ComboEntry): void {
   const c = sc.combo;
   ev.push({ t: 'trickScored', tick, id: e.id, pts: e.pts, factor: e.factor, link: e.link, comboPts: c.pending,
     links: c.links, seq: Math.max(0, c.entries.indexOf(e)) });
 }
 
-/** A link without a trick entry (linked Revert, Transfer). */
-export function addLink(sc: ScoreState, mode: SkaterMode): void {
+/** A link without a trick entry (linked Revert, Transfer). `heat`: it also refreshes the combo heat. */
+export function addLink(sc: ScoreState, mode: SkaterMode, heat = false): void {
   if (!sc.combo.active) return;
   sc.combo.links++;
+  if (heat) sc.combo.heat = SCORE.heat;
   recompute(sc, mode);
 }
 
@@ -91,11 +110,21 @@ export function addBonus(sc: ScoreState, ev: GameEvent[], tick: number, mode: Sk
   ev.push({ t: 'bonus', tick, id, name, pts });
 }
 
-/** A link-adding trick started: refresh the heat. */
-export function refreshHeat(sc: ScoreState): void { if (sc.combo.active) sc.combo.heat = SCORE.heat; }
+/** A link-adding trick started: refresh the heat. With `id`, a trick that would be decayed below the link floor
+ *  (SCORE.decay.noLinkBelow) adds no link, so it does not refresh the heat either: repeating one trick cannot keep a
+ *  combo alive (DESIGN §13.2, §13.4). */
+export function refreshHeat(sc: ScoreState, id?: TrickId): void {
+  if (!sc.combo.active) return;
+  if (id !== undefined && decayFactor(sc.recent, id) < SCORE.decay.noLinkBelow) return;
+  sc.combo.heat = SCORE.heat;
+}
 
 /** Ground touchdown / manual end: the link window (re)starts. */
 export function openWindow(sc: ScoreState): void { if (sc.combo.active) sc.combo.window = SCORE.linkWindow; }
+
+/** Near miss: refreshes a running link window (rolling); a paused one (air, grind, manual) restarts on its own. Never
+ *  the heat (DESIGN §13.2). */
+export function refreshWindow(sc: ScoreState): void { if (sc.combo.active && sc.combo.window >= 0) sc.combo.window = SCORE.linkWindow; }
 
 /** Air, grind, manual: the window is paused. */
 export function pauseWindow(sc: ScoreState): void { if (sc.combo.active) sc.combo.window = -1; }
@@ -136,6 +165,6 @@ export function lose(sc: ScoreState, ev: GameEvent[], tick: number): void {
 }
 
 function reset(c: ComboState): void {
-  c.active = false; c.entries = []; c.flat = 0; c.links = 0; c.manualLinked = false; c.manualCount = 0;
+  c.active = false; c.entries.length = 0; c.flat = 0; c.links = 0; c.manualLinked = false; c.manualCount = 0;
   c.window = -1; c.heat = SCORE.heat; c.bankIn = 0; c.pending = 0; c.uniqueNames = 0;
 }

@@ -16,7 +16,8 @@ import { insetOf } from '../world/gen';
 import { BUMP_WOBBLE } from './consts';
 import { SCORE, addBonus } from '../tricks';
 import { modeOf, type Ctx } from './state';
-import { touchdown } from './landing';
+import { edgeNudge, touchdown } from './landing';
+import { nearTouch } from './nearmiss';
 import { endManual } from './manual';
 
 /** Inset of one axis: FACE_INSET, but never more than a quarter of the extent (one definition, shared with the
@@ -89,9 +90,10 @@ export function collide(k: Ctx): void {
           c.targetX = out < 0 ? Math.min(c.targetX, c.p.x) : Math.max(c.targetX, c.p.x);   // re-anchor: no pull back in
           continue;
         }
-        // Landable top from above: the board lands on it; the centre is nudged onto the supported side.
-        if (c.p.x < b.x0 + 0.02) c.p.x = b.x0 + 0.02;
-        if (c.p.x > b.x1 - 0.02) c.p.x = b.x1 - 0.02;
+        // Landable top from above: the board lands on it; the centre is nudged onto the supported side (DESIGN §7:
+        // within LAND.edgeNudge of the edge it moves onto the top, targetX with it).
+        if (c.mode === 'air') edgeNudge(k, b.x0, b.x1);
+        else { if (c.p.x < b.x0 + 0.02) c.p.x = b.x0 + 0.02; if (c.p.x > b.x1 - 0.02) c.p.x = b.x1 - 0.02; }
         c.p.y = top;
         const sl = topSlab(ob, top);
         HIT.y = top; HIT.layer = sl?.layer ?? 0; HIT.surface = sl?.surface ?? c.surface; HIT.slab = sl; HIT.pit = null;
@@ -117,6 +119,7 @@ export function collide(k: Ctx): void {
       c.vel.x = side * SIDE_BUMP_V;
       c.targetX = c.p.x;
       c.wobble = Math.max(c.wobble, BUMP_WOBBLE);
+      nearTouch(k, ob.id, I.s1);
       k.ev.push({ t: 'bump', tick: c.tick, side, kind: ob.kind });
       if (c.mode === 'manual') endManual(k, 'bump');
     }

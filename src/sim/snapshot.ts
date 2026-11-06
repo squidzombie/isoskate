@@ -21,6 +21,7 @@ export function hashState(st: Readonly<SimState>): number {
   q(c.p.s); q(c.p.x); q(c.p.y); q(c.vel.x); q(c.vel.y); q(c.targetX);
   word(MODES.indexOf(c.mode)); word(c.layer); q(c.groundY); q(c.airT); q(c.wobble);
   q(c.flip ? c.flip.t : -1); q(c.spin ? c.spin.t : -1); q(c.grind ? c.grind.u : -1); q(c.manual ? c.manual.t : -1);
+  q(c.grab ? c.grab.t : -1); word(st.pick.dirs.length); word(st.rewindsLeft);
   word(c.grind ? c.grind.edgeId : -1); word(c.magnetEdge ?? -1); word(c.magnetCancelled ? 1 : 0); word(c.fakie ? 1 : 0);
   word(sc.total); word(sc.trickPts); word(sc.bonusPts); word(sc.coins); word(sc.coinPayouts);
   word(sc.combo.links); word(sc.combo.pending); q(sc.combo.window); q(sc.combo.heat);
