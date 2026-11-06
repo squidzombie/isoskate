@@ -17,16 +17,17 @@ const HZ = FX.noFog | FX.matte;
 const boxOf = (ob: Obstacle) => ob.solids[0]?.box;
 
 /** A lit sign quad from the sign atlas on the emissive target (front face toward −s). */
-export function litSign(c: KitCtx, key: string, x0: number, x1: number, y0: number, y1: number, s: number, k = 1.6, anim = 0): void {
+export function litSign(c: KitCtx, key: string, x0: number, x1: number, y0: number, y1: number, s: number, k = 1.6, anim = 0, flags = 0): void {
   const K = c.K, r = signRect(key), t = K.t;
-  K.to('e').glowing(k, -1, FX.noFog, anim).col(0xffffff);
+  K.to('e').glowing(k, -1, FX.noFog | flags, anim).col(0xffffff);
   K.quad(x0, y0, s, x1, y0, s, x1, y1, s, x0, y1, s, [r.u0, r.v0, r.u1, r.v0, r.u1, r.v1, r.u0, r.v1]);
   K.to(t);
 }
-export function glowCard(c: KitCtx, x: number, y: number, s: number, w: number, h: number, hex: number, k = 0.6): void {
+/** An additive glow card (fx.w carries the flag bits: FX.near hides it with the decor it belongs to). */
+export function glowCard(c: KitCtx, x: number, y: number, s: number, w: number, h: number, hex: number, k = 0.6, flags = 0): void {
   if (c.glowLeft <= 0) return;
   c.glowLeft--;
-  c.K.col(hex).fxs(0, 0, k, 0).card(x, y, s, w, h);
+  c.K.col(hex).fxs(0, 0, k, flags).card(x, y, s, w, h);
 }
 
 /** Guard rail (long, low, grindable) at x = ±3.0: posts, a rail body with a cyan glow strip (the cream edge on top

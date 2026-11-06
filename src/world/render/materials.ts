@@ -49,6 +49,8 @@ const VERT_HIDE = /* glsl */`
 { int fl = int(fx.z + 0.5);
   if ((fl & 2) != 0 || ((fl & 4) != 0 && uHideNear > 0.5)) gl_Position = vec4(2.0, 2.0, 2.0, 1.0); }
 `;
+/** Glow cards keep (corner u, corner v, intensity) in fx.xyz, so their flag bits live in fx.w. */
+const VERT_HIDE_GLOW = VERT_HIDE.replace('fx.z', 'fx.w');
 const FRAG_PARS = /* glsl */`
 varying vec4 vFx;
 varying vec2 vAuv;
@@ -160,7 +162,7 @@ function patchGlow(m: MeshBasicMaterial, u: SharedUniforms): void {
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>\n${VERT_PARS}`)
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvFx = fx; vAuv = auv; vLocal = position; vObjN = normal;')
-      .replace('#include <project_vertex>', `#include <project_vertex>\n${VERT_HIDE}`);
+      .replace('#include <project_vertex>', `#include <project_vertex>\n${VERT_HIDE_GLOW}`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>\nuniform float uGlow;\nuniform float uDesat;\nvarying vec4 vFx;\nvarying vec2 vAuv;\nvarying vec3 vLocal;\nvarying vec3 vObjN;`)
       .replace('#include <color_fragment>', /* glsl */`#include <color_fragment>

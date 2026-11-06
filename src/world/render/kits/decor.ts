@@ -47,7 +47,7 @@ const streetLamp: DecorFn = (c, d) => {
   else if (area === 'neon') K.sphere(hx, d.y + h - 0.3, d.s, 0.2, 6, 4, 1.25);
   else K.box(hx - 0.2, d.y + h - 0.12, d.s - 0.1, hx + 0.2, d.y + h - 0.08, d.s + 0.1, FACE.sides5 | FACE.bottom);
   K.to('b');
-  glowCard(c, hx, d.y + h - 0.3, d.s - 0.2, 1.4, 1.4, lampCol, 0.55);
+  glowCard(c, hx, d.y + h - 0.3, d.s - 0.2, 1.4, 1.4, lampCol, 0.55, nf);
 };
 
 const tree: DecorFn = (c, d) => {
@@ -161,8 +161,8 @@ const holoBillboard: DecorFn = (c, d) => {
   const x0 = Math.min(xi, xo), x1 = Math.max(xi, xo), y0 = d.y + pole;
   K.reset().to('b').lit(0, 0, nf).col(0x2a2648).cyl((x0 + x1) / 2, d.s + 0.1, d.y, y0, 0.12, 6, false);
   K.box(x0, y0 - 0.12, d.s, x1, y0, d.s + 0.2);
-  litSign(c, `holo:${(d.variant + Math.max(0, num(d, 'brand', 0))) % 4}`, x0, x1, y0, y0 + h, d.s, 1.8, num(d, 'flicker', 1) ? 1 : 0);
-  glowCard(c, (x0 + x1) / 2, y0 + h / 2, d.s - 0.1, w * 1.4, h * 1.4, 0x8a5cff, 0.45);
+  litSign(c, `holo:${(d.variant + Math.max(0, num(d, 'brand', 0))) % 4}`, x0, x1, y0, y0 + h, d.s, 1.8, num(d, 'flicker', 1) ? 1 : 0, nf);
+  glowCard(c, (x0 + x1) / 2, y0 + h / 2, d.s - 0.1, w * 1.4, h * 1.4, 0x8a5cff, 0.45, nf);
 };
 
 const vendingMachine: DecorFn = (c, d) => {
@@ -173,9 +173,9 @@ const vendingMachine: DecorFn = (c, d) => {
     const s = d.s + i * 1.02;
     K.lit(0, 0, nf).col(i % 2 ? 0x8f86c4 : 0x7a6fb0).chamfer(Math.min(xa, xb), d.y, s, Math.max(xa, xb), d.y + 1.8, s + 0.98, 0.04, 0x9489c8);
     // Lit front facing the camera (−s face of each machine) and on the street face.
-    litSign(c, `vend:${(i + d.variant) % 4}`, Math.min(xa, xb) + 0.1, Math.max(xa, xb) - 0.1, d.y + 0.6, d.y + 1.65, s - 0.01, 1.5);
+    litSign(c, `vend:${(i + d.variant) % 4}`, Math.min(xa, xb) + 0.1, Math.max(xa, xb) - 0.1, d.y + 0.6, d.y + 1.65, s - 0.01, 1.5, 0, nf);
   }
-  glowCard(c, (xa + xb) / 2, d.y + 1.1, d.s - 0.15, 1.6, 2, 0xbff9ff, 0.4);
+  glowCard(c, (xa + xb) / 2, d.y + 1.1, d.s - 0.15, 1.6, 2, 0xbff9ff, 0.4, nf);
 };
 
 const foodCartSide: DecorFn = (c, d) => {
@@ -189,11 +189,11 @@ const foodCartSide: DecorFn = (c, d) => {
   K.lit(0, 0, nf).col(0xc4473d);
   for (let i = 0; i < 3; i++) K.box(x0 + i * 0.4 + 0.02, d.y + 1.55, s0 - 0.02, x0 + (i + 1) * 0.4 - 0.02, d.y + 1.95, s0, FACE.front);
   const word = num(d, 'word', -1), brand = num(d, 'brand', -1);
-  if (word >= 0 || brand >= 0) litSign(c, word >= 0 ? `w:${word % NEON_SIGN_WORDS.length}` : `b:neon:${brand % DECOR_BRANDS.neon.length}`, x0 + 0.05, x1 - 0.05, d.y + 1.6, d.y + 1.9, s0 - 0.03, 1.2);
+  if (word >= 0 || brand >= 0) litSign(c, word >= 0 ? `w:${word % NEON_SIGN_WORDS.length}` : `b:neon:${brand % DECOR_BRANDS.neon.length}`, x0 + 0.05, x1 - 0.05, d.y + 1.6, d.y + 1.9, s0 - 0.03, 1.2, 0, nf);
   K.lit(0, 0, nf).col(0x3a2a3e).box(x0 - 0.1, d.y + 1.95, s0 - 0.1, x1 + 0.1, d.y + 2.05, s1 + 0.1);
   K.to('e').glowing(1.6, -1, nf).col(0xff5a3c).sphere((x0 + x1) / 2, d.y + 2.3, (s0 + s1) / 2, 0.2, 7, 4, 1.3);
   K.to('b');
-  glowCard(c, (x0 + x1) / 2, d.y + 1, s0 - 0.15, 2, 1.4, 0xffb07a, 0.4);
+  glowCard(c, (x0 + x1) / 2, d.y + 1, s0 - 0.15, 2, 1.4, 0xffb07a, 0.4, nf);
 };
 
 const paperLantern: DecorFn = (c, d) => {
@@ -201,7 +201,7 @@ const paperLantern: DecorFn = (c, d) => {
   K.reset().to('b').lit(0, 0, nf).col(0x2b2140).cyl(d.x, d.s, d.y, d.y + h - 0.5, 0.035, 5, false);
   K.to('e').glowing(num(d, 'glow', 1.2) * 1.3, -1, nf).col(red ? 0xff5a3c : 0xffd39a).cyl(d.x, d.s, d.y + h - 0.5, d.y + h, 0.18, 8, true);
   K.to('b');
-  glowCard(c, d.x, d.y + h - 0.25, d.s - 0.2, 1.1, 1.1, red ? 0xff5a3c : 0xffd39a, 0.5);
+  glowCard(c, d.x, d.y + h - 0.25, d.s - 0.2, 1.1, 1.1, red ? 0xff5a3c : 0xffd39a, 0.5, nf);
 };
 
 const cafeUmbrella: DecorFn = (c, d) => {

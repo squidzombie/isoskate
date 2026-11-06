@@ -248,7 +248,7 @@ export function bladeSignAt(c: KitCtx, xFace: number, s: number, y0: number, h: 
     K.to('e').glowing(1.8, -1, flags).col(0xffffff);
     K.quad(x0, y0, s - 0.085, x1, y0, s - 0.085, x1, y0 + h, s - 0.085, x0, y0 + h, s - 0.085, [r.u0, r.v0, r.u1, r.v0, r.u1, r.v1, r.u0, r.v1]);
     K.to('b');
-    if (c.glowLeft > 0) { c.glowLeft--; K.col(pick % 2 ? 0xff3fa4 : 0x3ff2ff).fxs(0, 0, 0.5, 0).card((x0 + x1) / 2, y0 + h / 2, s - 0.15, (x1 - x0) * 2.4, h * 1.3); }
+    if (c.glowLeft > 0) { c.glowLeft--; K.col(pick % 2 ? 0xff3fa4 : 0x3ff2ff).fxs(0, 0, 0.5, flags).card((x0 + x1) / 2, y0 + h / 2, s - 0.15, (x1 - x0) * 2.4, h * 1.3); }
   } else {
     K.lit(0, 0, flags);
     board(K, key, x0, x1, y0, y0 + h, s - 0.085);
@@ -280,7 +280,7 @@ export function endWall(c: KitCtx, d: Decor): void {
     K.to('e').glowing(1.8, -1, near).col(0xffffff);
     K.quad(x0 + 0.5, y + 3.1, s0 - 0.03, x0 + 0.5 + Math.min(5, x1 - x0 - 1), y + 3.1, s0 - 0.03, x0 + 0.5 + Math.min(5, x1 - x0 - 1), y + 4.3, s0 - 0.03, x0 + 0.5, y + 4.3, s0 - 0.03, [r.u0, r.v0, r.u1, r.v0, r.u1, r.v1, r.u0, r.v1]);
     K.to('b');
-    if (c.glowLeft > 0) { c.glowLeft--; K.col(0xff3fa4).fxs(0, 0, 0.45, 0).card(x0 + 0.5 + Math.min(2.5, (x1 - x0 - 1) / 2), y + 3.7, s0 - 0.1, Math.min(6, x1 - x0), 2.2); }
+    if (c.glowLeft > 0) { c.glowLeft--; K.col(0xff3fa4).fxs(0, 0, 0.45, near).card(x0 + 0.5 + Math.min(2.5, (x1 - x0 - 1) / 2), y + 3.7, s0 - 0.1, Math.min(6, x1 - x0), 2.2); }
   } else if (style === 2) {
     K.lit(PAT.ribsH, 0, near).col(0x9c9aa8).quad(x0 + 0.6, y, s0 - 0.02, x0 + 4.4, y, s0 - 0.02, x0 + 4.4, y + 4, s0 - 0.02, x0 + 0.6, y + 4, s0 - 0.02);
     const brand = num(d, 'brand', d.variant);
@@ -356,7 +356,7 @@ export function tunnel(c: KitCtx, d: Decor): void {
     for (let s = d.s + 1; s < d.s + len; s += every) {
       K.glowing(1.9, -1, near).col(0xffb35c);
       K.box(xi - side * 0.06, d.y + h - 0.9, s, xi, d.y + h - 0.7, s + 1.6, side < 0 ? FACE.right | FACE.front : FACE.left | FACE.front);
-      if (c.glowLeft > 0) { c.glowLeft--; K.to('g').col(0xffb35c).fxs(0, 0, 0.7, 0).card(xi - side * 0.6, d.y + h - 1, s + 0.8, 2.2, 1.6); K.to('e'); }
+      if (c.glowLeft > 0) { c.glowLeft--; K.to('g').col(0xffb35c).fxs(0, 0, 0.7, near).card(xi - side * 0.6, d.y + h - 1, s + 0.8, 2.2, 1.6); K.to('e'); }
     }
     K.to('b');
     // Portal arch band at the entry: ≥ 4 m up, ≤ 0.6 m deep, only over the side (never a ceiling over the corridor).
