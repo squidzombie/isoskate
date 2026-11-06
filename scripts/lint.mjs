@@ -5,7 +5,7 @@
 //  2. Import boundaries: a module may import another module only through its index.ts (or anything in core/);
 //     the deterministic layers may import only core/, sim/, tricks/ and world/gen/.
 // Usage: node scripts/lint.mjs   (exit code 1 on any violation)
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -64,7 +64,8 @@ for (const f of files) {
 
   if (det) {
     for (const b of BANNED) {
-      const re = new RegExp(`(?<![\\w$.])${b.replace('.', '\\s*\\.\\s*')}(?![\\w$])`, 'g');
+      // Not a property access (x.window) nor a member name (window: number).
+      const re = new RegExp(`(?<![\\w$.])${b.replace('.', '\\s*\\.\\s*')}(?![\\w$]|\\s*\\??:)`, 'g');
       for (const m of code.matchAll(re)) err(f, lineOf(code, m.index), `determinism: '${b}' is banned in ${DETERMINISTIC.join(', ')}`);
     }
   }
@@ -73,7 +74,7 @@ for (const f of files) {
   for (const m of withStrings.matchAll(importRe)) {
     const isType = !!m[1];
     const spec = m[3] ?? m[5];
-    const line = lineOf(withStrings, m.index);
+    const line = lineOf(withStrings, m.index + m[0].search(/import|export/));
     if (!spec.startsWith('.')) {
       if (spec === 'three' || spec.startsWith('three/')) {
         if (!ALLOWED_BARE.has(spec)) err(f, line, `three: only 'three' and BufferGeometryUtils may be imported (got '${spec}')`);
@@ -83,7 +84,8 @@ for (const f of files) {
     }
     const target = resolve(dirname(f), spec);
     if (!target.startsWith(SRC + sep)) { err(f, line, `boundary: import escapes src/ ('${spec}')`); continue; }
-    const tmod = moduleOf(target.endsWith('.ts') || target.endsWith('.css') ? target : target + '.ts');
+    const isDir = existsSync(target) && statSync(target).isDirectory();
+    const tmod = moduleOf(isDir ? join(target, 'index.ts') : /\.(ts|css)$/.test(target) ? target : target + '.ts');
     if (tmod === mod) continue;
     const trel = relative(SRC, target).split(sep).join('/').replace(/\.ts$/, '');
     if (mod === 'core' && tmod !== 'core') err(f, line, `boundary: core/ must be self-contained (imports '${spec}')`);

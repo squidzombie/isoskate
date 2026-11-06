@@ -1,6 +1,6 @@
 import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig, type PluginOption } from 'vite';
 import { viteSingleFile } from 'vite-plugin-singlefile';
 
 /** Build stamp injected as `__BUILD__` (core/ids.ts). Also defined in vitest.config.ts. */
@@ -16,7 +16,7 @@ const port = Number(process.env.PORT ?? 5173);
 
 export default defineConfig(({ mode }) => {
   const single = mode === 'single';
-  const plugins: Plugin[] = [];
+  const plugins: PluginOption[] = [];
   // Single-file build (M4): everything inlined into dist-single/index.html. Stubbed config only in M0.
   if (single) plugins.push(viteSingleFile());
   return {

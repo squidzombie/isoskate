@@ -35,11 +35,13 @@
 | `vite-plugin-singlefile` | **2.3.4** | Peer dependency `vite ^7` is OK |
 | `@fontsource/bungee` | **5.3.0** | devDependency. Only `files/bungee-latin-400-normal.woff2` is used. |
 | `@fontsource/nunito` | **5.3.0** | devDependency. Only `files/nunito-latin-{700,800,900}-normal.woff2` are used. |
+| `@types/node` | **22.20.5** | devDependency (INT, M0): types for `vite.config.ts`, `playwright.config.ts` and Node scripts. Not part of the bundle. |
 | *(no ESLint)* | — | The global ESLint 10 can't parse TypeScript without extra plugins, so **`scripts/lint.mjs`** (about 80 lines, no dependencies) enforces two kinds of rule. **Determinism bans** (regex over the stripped source): `Math.random`, `Date.now`, `performance`, `window`, `document`, `requestAnimationFrame` and any `three` import in `src/sim/`, `src/tricks/`, `src/world/gen/` and `src/core/` (`core/view.ts` may use `import type` from three). **Import boundaries:** `sim/`, `tricks/` and `world/gen/` may not import `content/`, `skater/`, `ui/`, `audio/` or `meta/`; no module may import another module's internals, only its `index.ts` or `core/`. |
 
 **Rules**
 - Node 22 (local has v22.23.4). `package.json` sets `"type": "module"` and `"engines": { "node": ">=20" }`.
 - Exact versions, with no `^`. Commit `package-lock.json`.
+- `.npmrc` sets `legacy-peer-deps=true`: npm 10.9 crashes (`Cannot read properties of null (reading 'edgesOut')`) while resolving vitest 4's optional peer sets. Every peer we need (`vite`) is a direct dependency, so nothing is lost. `npm ci` uses the same setting.
 - **Agents never add dependencies.** Only the integrator does.
 - **Fonts are self-hosted.** `src/fonts/fonts.css` (INT) declares four `@font-face` rules whose `src` is the woff2 file inside the `@fontsource` package (woff2 only, `font-display: swap`). `main.ts` imports it, so Vite hashes the files in `dist/` and inlines them in the single-file build. The game makes **no third-party requests**.
 
@@ -65,7 +67,8 @@ isoskate/
     main.ts                                                                    INT
     fonts/     fonts.css (self-hosted @font-face, §1)                          INT
     core/      FROZEN contract (§4): ids, math, rng, tuning, world, input, sim, view,
-               tricks, cosmetics, events, bus, save, meta, audio, platform, debug, ui   INT
+               tricks, cosmetics, events, bus, save, meta, audio, platform, debug, ui,
+               decor (DECOR_KINDS: the Decor.kind vocabulary, §4.14)                    INT
     game/      app.ts (screen state machine), loop.ts (fixed step + interpolation),
                wiring.ts (creates all modules), runSession.ts, onboarding.ts        INT
     sim/       index.ts step.ts kinematics.ts ground.ts collide.ts air.ts predict.ts
@@ -73,7 +76,7 @@ isoskate/
     tricks/    index.ts defs.ts interpret.ts combo.ts scoring.ts score.config.ts           GP
     input/     index.ts recognizer.ts pointer.ts keyboard.ts gamepad.ts frames.ts          GP
     world/gen/ index.ts schedule.ts generator.ts cursor.ts areas.ts lesson.ts coins.ts
-               movers.ts decor.ts (DECOR_KINDS vocabulary for WA) query.ts gen.config.ts
+               movers.ts decor.ts (emits Decor; uses core/decor.ts DECOR_KINDS) query.ts gen.config.ts
                props/{shared,downtown,suburbs,docks,neon}.ts     (physical prop builders)
                templates/{shared,downtown,suburbs,docks,neon}.ts
                validator/{grid,sweep,path,rules}.ts                                         WG
@@ -1030,6 +1033,11 @@ export function createMonetization(flags: { fakeAds: boolean }): MonetizationPro
 export function createHaptics(): Haptics;                                                          // platform
 export function installDebugApi(deps: object): void;                                              // debug
 ```
+
+### 4.14 `core/decor.ts`: decor vocabulary (added in M0, SCHEDULE.md)
+- `export const DECOR_KINDS` is the single vocabulary of `Decor.kind` values: each entry has a `zone` (`ground`, `side`, `backdrop`, `overhead`, `ambient`), the areas/gateways that may use it, a default `castShadow`, a doc string and a doc string per `Decor.params` key. `DecorKind = keyof typeof DECOR_KINDS`, `isDecorKind(k)`.
+- `DECOR_LIMITS` holds the placement rules (side band |x| ≥ 4.6, signs |x| ≥ 4.9, backdrop |x| ≥ 5, overhead y ≥ 3.2 m and ≤ 0.3 m thick, maglev at 7 m). `DECOR_BRANDS` (DESIGN §18.6) and `NEON_SIGN_WORDS` (the reviewed Japanese list) are what `brand` / `word` params index into.
+- WG emits only these kinds (`world/gen/decor.ts` uses it, never redefines it); WA renders every kind in every listed area skin. `Decor.kind` stays `string` in `core/world.ts` for compatibility.
 
 ---
 
