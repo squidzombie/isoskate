@@ -236,6 +236,14 @@ The first block is the frozen behaviour later packages (GP, WG, WA, the bots) ca
   wants 260 ms taps to stay taps there, the recognizer / interpret rule is GP's call.
 - Why: 0 unintended tricks (gate.thumb). Local workaround: the cap.
 
+### BOTS.safe is the planner bot now; record sim fixtures with BOTS.conformance   (status: info for GP; no core change)
+- File / symbol: debug/bots/registry.ts › BOTS.safe, BOTS.conformance; tests/unit/sim/bench.test.ts, replay.test.ts (GP)
+- Change: none. `BOTS.safe` was the SafeKey follower at M0; it is now the planner bot of TECH §11.2 (delayed view,
+  latency, jitter), about 5× costlier per tick to record with. The old behaviour is `BOTS.conformance`. GP's sim bench
+  and replay tests record 2-minute runs with `BOTS.safe` and, on a machine at load ≈ 10, can pass their default 5 s
+  test timeout (they pass alone in ~5 s). Suggest recording with `BOTS.conformance` (or a longer timeout).
+- Why: hand-off. Local workaround: the safe bot re-plans only when its view changed (≥ every 0.3 s).
+
 ### Decor anchors   (status: info for WA; no core change)
 - Decor records use only `DECOR_KINDS` with their documented params; billboards stand at |x| ≥ 4.9 (inner edge); end
   walls every 8–12 s of an area visit; shadow casters, lantern strings and blade signs follow the area recipes in
