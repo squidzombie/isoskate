@@ -22,7 +22,8 @@
 import type { Dir8 } from '../core/ids';
 import type { Gesture, GestureRecognizer, PointerSample, RecognizerConfig } from '../core/input';
 
-/** Local extension of the frozen RecognizerConfig (requested in docs/core-requests.md, M0-io section). */
+/** RecognizerConfig with the screen metrics required (core has them optional since G0; the live config always holds
+ *  numbers, so the recognizer never tests for undefined). */
 export interface RecognizerConfigExt extends RecognizerConfig {
   /** Screen width in CSS px: arc compensation applies to strokes starting in the outer `arcOuterFrac` of it.
    *  0 = unknown → 390·k. The DOM binding keeps it live. */

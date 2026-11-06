@@ -283,6 +283,11 @@ export const CHUNK_LEN = 32, GEN_AHEAD_SEC = 12, ORIGIN_REBASE = 512;
 export const CHUNK_WINDOW = { behind: 1, ahead: 3 } as const;
 export const ROLLOUT_SEC = 9, LESSON_SEC = 40;
 export const REWIND = { sec: 1.5, max: 3, snapEveryTicks: 15, ring: 8 } as const;
+// Sim tunables moved from sim/consts.ts (applied @G0, docs/core-requests.md M0-sim section).
+export const ROLL_OFF_DROP = 0.05, STICKY_DROP = 0.3;                 // TECH §6.3 step 5 (roll-off, sticky slabs)
+export const BUMP_WOBBLE = 0.3, MANUAL_END_WOBBLE = 0.3;              // s (side bump TECH §6.4, manual budget end)
+export const COIN_VOLUME = { lat: 0.3, fwd: 0.4, vert: 0.7, centreUp: 0.75 } as const;   // DESIGN §10.8
+export const COIN_CHAIN_TICKS = 30, PICK_MISS_TICKS = 3;
 ```
 
 ### 4.3 `core/world.ts`: world data model
@@ -433,6 +438,9 @@ export interface RecognizerConfig {
   simpleTricks: boolean;                                            // Settings: diagonals snap to cardinals
   deadZoneBottomPx: number;                                         // safeBottom + 12
   k: number;                                                        // clamp(screenW/390, 0.85, 1.3)
+  // CSS px (added @G0): arc compensation uses the outer arcOuterFrac of screenW; touch-starts below
+  // screenH − deadZoneBottomPx are ignored. 0 / absent = 390·k / no dead zone.
+  screenW?: number; screenH?: number;
 }
 export interface GestureRecognizer {                       // pure; unit-tested with synthetic traces
   feed(s: PointerSample): Gesture[];                       // 'cancel' → no tap/swipe, ends hold, frees steering
@@ -448,6 +456,9 @@ export interface InputSource {
   setPreset(p: 'A' | 'B'): void;
   onAnyInput(f: () => void): () => void;                   // fires on pointerup/touchend/click/keydown (user activation): audio unlock
   setSimpleTricks?(on: boolean): void;                     // Settings "Simple tricks" → RecognizerConfig.simpleTricks (added @m0-core)
+  /** Schedules a synthetic trace through the real recognizer and frame binning: the first sample lands at `atMs`
+   *  (default now), later samples keep their relative times (debug `__skate.pointer` in rAF mode; added @G0). */
+  inject?(samples: readonly PointerSample[], atMs?: number): void;
   dispose(): void;
 }
 ```
@@ -623,7 +634,11 @@ export interface CameraRig {
   /** Projects a track-space point to CSS px (HUD anchor, popups). */
   project(p: { s: number; x: number; y: number }): { x: number; y: number };
 }
-export interface Vfx { update(f: RenderFrame): void; setQuality(q: QualityTier): void; clear(): void }
+export interface Vfx {
+  update(f: RenderFrame): void; setQuality(q: QualityTier): void; clear(): void;
+  /** Legendary cosmetic particles requested by skater/ (TECH §8.5; added @G0, implemented by WA / M5). */
+  emit?(kind: 'steam' | 'leaves' | 'petals' | 'glyphs' | 'lightTrail', p: { s: number; x: number; y: number }, n?: number): void;
+}
 ```
 
 ### 4.7 `core/tricks.ts` and `core/cosmetics.ts`: trick definitions and look parameters
@@ -725,7 +740,7 @@ import type { RunResult, SkaterMode } from './sim';
 
 /** Sim events: emitted inside Sim.step in order, dispatched by the loop after the tick. Deterministic. */
 export type GameEvent =
-  | { t: 'runStart'; tick: number; seed: number; mode: 'lesson' | 'normal' }
+  | { t: 'runStart'; tick: number; seed: number; mode: 'lesson' | 'normal'; startArea?: AreaId }   // startArea added @G0
   | { t: 'ollie'; tick: number; from: SkaterMode; linked: boolean }
   | { t: 'airborne'; tick: number; reason: 'pop' | 'rollOff' | 'grindEnd' }
   | { t: 'flipStart'; tick: number; id: FlipId; dur: number }
@@ -886,7 +901,8 @@ import type { AppEvent, GameEvent } from './events';
 export type SfxId = 'pop' | 'whoosh' | 'catch' | 'land' | 'sketchy' | 'perfect' | 'perfectLock' | 'stair'
   | 'bump' | 'knock' | 'coin' | 'nearMiss' | 'hazardTick' | 'comboBank' | 'comboLost' | 'crash' | 'newBest'
   | 'newArea' | 'grindEntry' | 'grindExit' | 'uiTap' | 'uiBack' | 'uiToggle' | 'uiError' | 'purchase'
-  | 'levelUp' | 'crateShake' | 'crateOpen' | 'revealCommon' | 'revealRare' | 'revealEpic' | 'revealLegendary';
+  | 'levelUp' | 'crateShake' | 'crateOpen' | 'revealCommon' | 'revealRare' | 'revealEpic' | 'revealLegendary'
+  | 'spin' | 'revert' | 'pickChime' | 'rewind' | 'needle' | 'grindSwitch';   // internal cues, added @G0
 export interface AudioEngine {
   unlock(): Promise<boolean>; readonly unlocked: boolean;
   suspend(): void; resume(): void;
@@ -977,10 +993,39 @@ export interface DebugAPI {
   quality(q: QualityTier | 'auto'): void;
   save: { get(): SaveV1; set(s: SaveV1): void; reset(): void };
   ui(screen: ScreenId, params?: object): void;
-  audio(): { unlocked: boolean; voices: number; scene: string; intensity: number };
+  audio(): { unlocked: boolean; voices: number; scene: string; intensity: number;
+    // added @G0: AudioContext state, whole-session average cost per rendered frame (ms), voice peak, dropped voices
+    contextState?: string; msPerFrame?: number; voicePeak?: number; voicesDropped?: number };
   /** shots --audio: `sec` seconds of `area` rendered offline, as a 16-bit stereo WAV in base64 plus its peak (0..1).
    *  Resolves null until AU ships audio/index.ts `renderOffline` (added @m0-core). */
   renderAudio?(area: AreaId, sec: number): Promise<{ wavBase64: string; peak: number; sampleRate: number; sec: number } | null>;
+  /** Tooling hooks for scripts/shots.mjs and the e2e specs (frozen @G0 as a hook; see DebugExt). */
+  ext?: DebugExt;
+}
+
+// ── __skate.ext (added @G0): the tooling hooks shots.mjs and the e2e specs use, so later packages never edit them ──
+/** HUD layout preview values (shots --hud): replace the live numbers until cleared with null. */
+export interface HudPreview { score?: number; dist?: number; speed?: number; combo?: number; links?: number; coins?: number; trick?: string }
+/** One measured hazard or grind edge of the DESIGN §18.4 contrast gate. */
+export interface ContrastItem {
+  cls: 'hazard' | 'edge'; kind: string; id: number; ratio: number; fg: number; bg: number; px: number;
+  at: { x0: number; y0: number; x1: number; y1: number };     // screen box in CSS px where it was measured
+}
+export interface ContrastReport { hazard: number; edge: number; worst: { kind: string; ratio: number } | null; items: ContrastItem[] }
+/** An isolated turntable view of the skater (shots --cosmetics), angles relative to the direction toward the camera. */
+export interface CaptureView { azDeg?: number; elevDeg?: number; part?: 'all' | 'board' | 'head'; fovDeg?: number; pad?: number }
+export interface DebugExt {
+  overlay(on?: boolean): boolean; perfHud(on?: boolean): boolean; tuning(on?: boolean): boolean;
+  contrastReport(): ContrastReport;                        // every measured hazard and edge of the current frame
+  /** PNG data URL: the whole canvas, or a square crop around the skater (`native`: at rendered pixels; `view`: the
+   *  skater alone on a plain `bg`, framed by its own perspective camera). */
+  capture(o?: { target?: 'canvas' | 'skater'; size?: number; pad?: number; bg?: string; native?: boolean; view?: CaptureView }):
+    { dataUrl: string; rect: { x: number; y: number; w: number; h: number } | null; skaterCss?: { w: number; h: number } };
+  tryOn(id: string | null): boolean;                       // one catalog item over the equipped loadout (null = equipped)
+  catalog(): { id: string; slot: string; name: string; rarity: string; source: string; theme?: string; look: unknown }[];
+  hud(v: HudPreview | null): void;                         // HUD layout preview with fake values (null = live)
+  world(): unknown;                                        // world-view internals when available
+  readonly clockMs: number;                                // the synthetic clock of manual stepping (ms)
 }
 declare global { interface Window { __skate?: DebugAPI } }
 ```
@@ -1000,7 +1045,8 @@ export interface HudApi {
 }
 export interface UiApi {
   readonly hud: HudApi;
-  show(screen: ScreenId, params?: { result?: RunResult; rewards?: RunRewards; rotate?: boolean }): void;   // rotate: landscape card on Pause
+  show(screen: ScreenId, params?: { result?: RunResult; rewards?: RunRewards; rotate?: boolean;   // rotate: landscape card on Pause
+    settings?: Readonly<SaveV1['settings']> }): void;                                             // Settings: current values (added @G0)
   readonly current: ScreenId;
   toast(text: string, ms?: number): void;
   attach(game: Bus<GameEvent>, app: Bus<AppEvent>, meta: MetaApi): () => void;
@@ -1117,6 +1163,9 @@ interface GenCursor {
 - **Chunk lists.** Each chunk holds `obstacles`, sorted by `s0`. Lookups map `s` to the chunk index, scan neighbouring chunks, and de-duplicate by id with a tick-stamped `Uint32Array` mark table, so nothing is allocated.
 - **`groundAt(s, x, yMax)`.** The highest slab top ≤ `yMax` covering `(s, x)`. Stairs and inclines interpolate `y0 → y1`. Pits are reported only when no slab covers the point, with `y = lipY` (pit level = lip level).
 - **`moverOffset`.** `dxTotal · clamp((playerS − sStart)/(sEnd − sStart), 0, 1)`. The sim adds it to the mover's solids.
+- **SafeKeys** (fixed @G0, from M0-sim). The vertices of the safe line in run time `t`, sorted by `t`, with `x` linear between consecutive keys. An `action: 'ollie'` key is the take-off: tap on the tick whose time is nearest `key.t`. There is a key at every vertex and at least every 0.5 s; segment boundaries repeat the boundary key with the same `x`.
+- **`groundAt` fallbacks** (fixed @G0). If no slab covers the point it returns the pit at lip level, or else the implicit street datum (`y = 0`, `'asphalt'`). M0 emits sidewalk slabs (+0.15) but no road slab.
+- **`FastQuery`** (fixed @G0). world/gen also registers an allocation-free `fastQueryOf(world)` (`obstaclesInto`, `coinsInto`, `groundInto`, `areaGatewayInto`) that the sim uses each tick; other worlds (test fixtures) fall back to the contract. Keep it when rewriting `query.ts`.
 
 ### 5.4 Determinism
 - RNG streams are per segment and per purpose (`core/rng.ts`). Changing decor never changes layout.
@@ -1187,6 +1236,13 @@ tAt(s): piecewise inverse; Newton (≤ 6 iterations) on the middle piece.
 - **Near miss.** Track every crash-face solid whose s-range the skater passed. Award once if the min lateral gap was ≤ 0.35 m, or the vertical clearance at crossing was ≤ 0.20 m, with no contact. Inside a combo it is +75 and refreshes the link window only; outside a combo it is +25, banked directly.
 - **Pits.** The pit's level is its `lipY`. If the board centre is over a pit and the board bottom is ≤ `lipY + PIT_FALL_EPS`, crash with the pit's `cause`. Landing with the centre past the far edge is safe. Coyote time never applies over a pit.
 - **God mode.** Crashes are emitted as `crash` events with `god: true` and ignored.
+- **Details fixed in M0 code and tests** (@G0; the validator mirrors them to the centimetre):
+  - The inset is `min(FACE_INSET, extent / 4)` per axis (`insetOf`, one definition in world/gen/validator/path.ts), so a 0.05 m rail keeps a body.
+  - Overlap uses the inset box. Skim compares the **true** top (`box.y1`) with the board bottom (`≤ STEP_UP`): a 0.19 m landable body slams, a 0.18 m one skims.
+  - The first-contact axis is the one that started overlapping last (slab method, prev → cur). Knock tops are knocked from every side.
+  - After rolling off a top **sideways**, its body pushes the board out to the side and re-anchors `targetX`; it never re-lands on that top.
+  - Gravity is integrated exactly (`y += vy·DT − ½G·DT²`), so a flat ollie lasts 36 ticks (0.600 s), pop tick included.
+  - A roll-off drop (a curb, a ledge end) keeps the link window running and does not refresh it on landing.
 
 ### 6.5 Air, flips, spins and landing
 - **`airLeft` prediction** (`predict.ts`). Each air tick, integrate forward with DT (≤ 90 steps) against `groundAt` and candidate capture bands. This gives the predicted time to touchdown or capture, used for:
@@ -1215,6 +1271,7 @@ tAt(s): piecewise inverse; Newton (≤ 6 iterations) on the middle piece.
 - **Magnet.** Each tick, move `targetX` toward the edge axis by `rate·DT`, with `rate = MAGNET.rateMax · clamp((range − |dx|)/(range − inner), 0, 1)` (3 m/s at the inner radius). After popping off an edge with another edge reachable, it uses `transferRange` / `transferRate`. **Cancel:** net steering away from the edge of ≥ `cancelDragM` this jump, counting only steering that was not removed by consumed swipes.
 - **Ground align.** If rolling on a collision course with a non-`pickOnly` grindable 0.2–1.0 s ahead, move `targetX` toward its centreline at ≤ 1.5 m/s. It never creates a collision course.
 - **Pick window.** It opens when the predicted capture is ≤ 0.25 s away (emit `pickWindow open`) and lasts until 0.12 s after lock. While it is open, `interpret` turns **every** swipe into a pick (↑ included) and discards a buffered TAP at capture. Doubles need 2 same-direction swipes inside the window. For `pickOnly` edges the window opens only within `CAPTURE.latPickOnly` (0.6 m), and capture requires a pick.
+- **Capture order and start** (fixed @G0). In an air tick capture is tested **before** collisions, so a board coming down onto a ledge or rail locks before it touches the crash top. Capture starts when the board's front half reaches the edge start (centre `s ≥ a.s − HITBOX.l/2`), in the sim, the prediction and the validator. Ground align aims at the grindable's centreline (the mean of its non-`pickOnly` edge axes). The pick window survives up to `PICK_MISS_TICKS` air ticks without a predicted capture.
 - **Capture.** When `|dx| ≤ 0.9` (0.6 and a pick for `pickOnly`), board bottom ∈ [top − 0.30, top + 0.45] and `vy ≤ 1.5`:
   - Enter `grind`.
   - The lateral/vertical snap eases over 0.08 s.

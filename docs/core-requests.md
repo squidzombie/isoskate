@@ -37,13 +37,29 @@ Entry format:
 - **Generator invariants encoded in `tests/e2e/smoke.spec.ts`** (M0-sim keeps them true): a straight run with no input slams (`crash.cause 'slam'`) before tick 400 for seeds 1–3 (the 3.5 s Roll-out chain, DESIGN §12.3), and `snapshot().nextObstacles` is non-empty at tick 600 of a god run (seed 1).
 - **Tests:** `npm test` runs `tests/unit/**` and `tests/bots/quick*.test.ts` only; everything else in `tests/bots/` runs under `npm run test:bots` (`BOTS_RELEASE=1` with `--release`).
 
+### Applied @G0 (gate G0; additive, TECH §4 updated to match)
+- `core/tuning.ts`: `ROLL_OFF_DROP`, `STICKY_DROP`, `BUMP_WOBBLE`, `MANUAL_END_WOBBLE`, `COIN_VOLUME`, `COIN_CHAIN_TICKS`, `PICK_MISS_TICKS` (M0-sim).
+- `core/input.ts`: `RecognizerConfig.screenW? / screenH?`, `InputSource.inject?` (M0-io).
+- `core/debug.ts`: `DebugAPI.ext?: DebugExt` plus `HudPreview`, `CaptureView`, `ContrastItem`, `ContrastReport` (M0-io); `audio()` gains optional `contextState`, `msPerFrame`, `voicePeak`, `voicesDropped` (AU).
+- `core/ui.ts`: `UiApi.show` params `settings?` (M0-io). `game/app.ts` passes `save.data.settings`; Pause has a Settings button and Back / Esc return to Pause.
+- `core/audio.ts`: `SfxId` gains `spin`, `revert`, `pickChime`, `rewind`, `needle`, `grindSwitch` (AU).
+- `core/events.ts`: `runStart.startArea?` (AU); the sim emits it.
+- `core/view.ts`: `Vfx.emit?` (SK; implemented by WA / M5).
+- TECH §5.3 / §6.4 / §6.6 now carry M0-sim's SafeKey, groundAt, FastQuery, inset, skim and capture details.
+- Deferred: `gfx › sharedUniforms` / `uDesat` (SK) to WA, because nothing desaturates the world yet. The board-identity design question (SK) stays with the design owner at G2.
+- Gate decisions: `GEN_FLAGS.trench = true` (the grey-box view draws pits, and now draws the plank above the pit face; seed 1 trench at t ≈ 22.6 s checked on screen). `tests/unit/integration/labels.test.ts` proves the real recognizer's `steer` / `fast` / `fromRest` labels reach the real sim as DESIGN §4.3 intends.
+
+### Hooks added @G0 (later packages can rely on them)
+- **HUD (MU keeps them):** `data-hud="score|dist|combo|trick|coins|pause"` on the HUD pieces and an optional `preview(values | null)` on the HudApi object (`__skate.ext.hud`).
+- **`__skate.ext`** is part of the contract now (core/debug.ts › DebugExt); shots.mjs and the e2e specs use only it and the DebugAPI.
+
 ## M0-sim (sim/, tricks/, world/gen/ minimum, debug/bots/ SafeKey follower)
 
 No change to `src/core/` is needed for M0 to work: everything below is implemented inside sim/, tricks/, world/gen/
 and debug/bots/. One additive request (sim tunables into `core/tuning.ts`) is open for G0.
 The first block is the frozen behaviour later packages (GP, WG, WA, the bots) can rely on; the rest are open notes.
 
-### Frozen M0 contact details the validator mirrors   (status: open, informational)
+### Frozen M0 contact details the validator mirrors   (status: applied @G0: copied into TECH §6.4 / §6.6)
 - File / symbol: sim/collide.ts, sim/grind.ts, sim/magnet.ts, world/gen/validator/path.ts (TECH §6.4, §6.6)
 - Change: none. Details TECH §6.4 / §6.6 leave implicit, now fixed in code and tests:
   - The inset is `min(FACE_INSET, extent / 4)` per axis, so a 0.05 m rail keeps a body (`insetOf`, one definition in
@@ -66,7 +82,7 @@ The first block is the frozen behaviour later packages (GP, WG, WA, the bots) ca
 - Why: the validator's path check and the sim must agree to the centimetre.
 - Local workaround meanwhile: n/a.
 
-### SafeKey and WorldQuery semantics   (status: open, informational)
+### SafeKey and WorldQuery semantics   (status: applied @G0: copied into TECH §5.3)
 - File / symbol: core/world.ts › SafeKey, WorldQuery.groundAt
 - Change: none (please copy into TECH §5.3 at G0).
   - SafeKeys are the vertices of the safe line in run time t, sorted by t, with x linear between consecutive keys.
@@ -80,7 +96,7 @@ The first block is the frozen behaviour later packages (GP, WG, WA, the bots) ca
 - Why: bots, the debug overlay and coins read keys this way, and GP's fixture worlds need the same ground rules.
 - Local workaround meanwhile: n/a.
 
-### Sim tunables into core/tuning.ts   (status: open, for G0)
+### Sim tunables into core/tuning.ts   (status: applied @G0; sim/consts.ts re-exports them)
 - File / symbol: core/tuning.ts (additive), today in sim/consts.ts
 - Change: add verbatim, then make sim/consts.ts re-export them from core:
   ```ts
@@ -92,7 +108,7 @@ The first block is the frozen behaviour later packages (GP, WG, WA, the bots) ca
 - Why: DESIGN §22 puts movement and physics numbers in core/tuning.ts; these were implicit in TECH.
 - Local workaround meanwhile: sim/consts.ts is their single home (re-exported by sim/index.ts).
 
-### Pits and trench planks must be drawn; S_TRENCH is off until they are   (status: open, G0 checklist + M0-io / WA)
+### Pits and trench planks must be drawn; S_TRENCH is off until they are   (status: applied @G0: pits drawn, plank drawn above the pit face, `GEN_FLAGS.trench = true`)
 - File / symbol: world/render (grey-box chunk builder) › Obstacle.pits; world/gen/gen.config.ts › GEN_FLAGS.trench
 - Change: none to core. S_TRENCH emits `kind: 'trench'` with three `pits` (road lip 0, sidewalk lips 0.15). It also
   emits one 1.2 m plank slab at y = 0 (surface 'wood') and `params { plankX, plankW, depth }`, and cuts the sidewalk
@@ -104,7 +120,7 @@ The first block is the frozen behaviour later packages (GP, WG, WA, the bots) ca
   world/gen/gen.config.ts (one line). Tests force both settings, so no golden value changes. To look at one: with the
   flag on, seed 1 has a trench at t ≈ 22.6 s (s = 158.3, plank at x = −0.51).
 
-### A1/A2 stand-in, GenStats timing, Lesson mode   (status: open, for WG)
+### A1/A2 stand-in, GenStats timing, Lesson mode   (status: open, hand-off for WG; no core change)
 - File / symbol: world/gen/schedule.ts, gen.config.ts › GEN.gate; core/world.ts › GenStats.msPerSegment
 - Change: none.
   - Instead of A1 column fillers, M0 schedules S_GATE rows by a run-time deadline: consecutive rows ≤ `GEN.gate.gap`
@@ -120,37 +136,37 @@ The first block is the frozen behaviour later packages (GP, WG, WA, the bots) ca
 
 ## M0-io (input/, platform/, ui/ debug HUD, world/render/ grey-box, gfx/ additions, debug/ api, shots, e2e)
 
-### RecognizerConfig: screen size for arc compensation and the dead zone   (status: open)
+### RecognizerConfig: screen size for arc compensation and the dead zone   (status: applied @G0 as optional fields)
 - File / symbol: core/input.ts › RecognizerConfig
 - Change: `screenW?: number; screenH?: number;   // CSS px; arc compensation uses the outer arcOuterFrac of screenW, touch-starts below screenH − deadZoneBottomPx are ignored (0/absent = 390·k / no dead zone)`
 - Why: DESIGN §4.2 arc compensation needs the screen width ("outer 40%"), which `k` cannot give back once clamped; the dead zone needs the height. With both in the config the pure recognizer (thumb bot) applies the same rules as the DOM binding.
 - Local workaround meanwhile: `input/recognizer.ts › RecognizerConfigExt` (fields required, default 0); `createRecognizer(cfg)` passes them through; `createInput` keeps them live from the viewport.
 
-### InputSource: synthetic traces in real time   (status: open)
+### InputSource: synthetic traces in real time   (status: applied @G0 as optional `inject?`)
 - File / symbol: core/input.ts › InputSource
 - Change: `inject?(samples: readonly PointerSample[], atMs?: number): void;   // schedules a trace (first sample at atMs, default now) through the real recognizer`
 - Why: `__skate.pointer()` in rAF mode (smoke.spec) must go through the live recognizer and frame binning, not a parallel path.
 - Local workaround meanwhile: `input/index.ts › InjectableInput` + `isInjectable()`; debug/api.ts duck-types `host.input`. In manual mode `pointer()` uses its own InputPipeline on the synthetic 60 Hz clock.
 
-### DebugAPI: freeze `__skate.ext` as a hook   (status: open)
+### DebugAPI: freeze `__skate.ext` as a hook   (status: applied @G0: `DebugAPI.ext?: DebugExt` with HudPreview, CaptureView, ContrastReport in core/debug.ts)
 - File / symbol: core/debug.ts › DebugAPI (or only the "Hooks … P2 packages can rely on" list above)
 - Change: `ext?: DebugExt` with `overlay(on?)`, `perfHud(on?)`, `tuning(on?)`, `contrastReport()`, `capture({ target: 'canvas' | 'skater', size, pad, bg })`, `catalog()`, `hud(preview | null)`, `world()`, `clockMs` (debug/api.ts › DebugExt).
 - Why: `scripts/shots.mjs` (--cosmetics capture around the skater with the active camera, --hud worst-case preview, --contrast worst frames) and the e2e specs use them; later packages should never need to edit shots.mjs.
 - Local workaround meanwhile: `DebugApiWithExt` in debug/api.ts; specs cast `window.__skate`.
 
-### HUD hooks MU must keep when replacing ui/   (status: open)
+### HUD hooks MU must keep when replacing ui/   (status: accepted @G0: listed under "Hooks … P2 packages can rely on"; not core)
 - File / symbol: ui/hud.ts (not core); documented here because shots --hud and smoke.spec rely on it
 - Change: keep `data-hud="score|dist|combo|trick|coins|pause"` on the HUD pieces and an optional `preview(values | null)` method on the HudApi object (`__skate.ext.hud` freezes the HUD on worst-case values).
 - Why: the 320/360/390 px overlap and 56 px band checks measure `[data-hud]` boxes.
 - Local workaround meanwhile: `ui/hud.ts › HudExt`.
 
-### UiApi.show('settings') with the current values; Settings from Pause   (status: open)
+### UiApi.show('settings') with the current values; Settings from Pause   (status: applied @G0: `params.settings`; Pause has Settings, Back / Esc return to Pause)
 - File / symbol: core/ui.ts › UiApi.show params; game/app.ts › onIntent('open')
 - Change: `show(screen, params?: { …; settings?: Readonly<SaveV1['settings']> })`, App passes `save.data.settings` when opening Settings; allow `{ k: 'open', screen: 'settings' }` from Pause (return to Pause on Back).
 - Why: the stub Settings screen otherwise reads the stored save read-only from localStorage to show current values; DESIGN §17.2 lists Settings on Pause.
 - Local workaround meanwhile: `ui/screens/menus.ts` reads `dusklane.save` read-only; Pause shows Resume / Restart / Home only.
 
-### Wiring for M4 / G1 (no core change)   (status: open)
+### Wiring for M4 / G1 (no core change)   (status: deferred to M4 / G1, as filed)
 - `platform › maybeFullscreen()` exists for the first TAP TO ROLL in the Android browser (TECH §10.2); INT calls it in M4.
 - `debug › registerTunables(name, obj)` feeds the tuning panel; G1 registers `score.config` and `gen.config` (the panel already shows the live recognizer config and the loop).
 - Haptics Key/All gating stays at the call sites (`platform › HAPTIC_RULES` has the 15 ms / 120 ms rules).
@@ -173,13 +189,13 @@ The first block is the frozen behaviour later packages (GP, WG, WA, the bots) ca
 
 ## SK: Skater and cosmetics (W2b)
 
-### Shared crash-desaturation uniform for the skater materials   (status: open)
+### Shared crash-desaturation uniform for the skater materials   (status: deferred to WA (W2a): nothing desaturates the world yet; WA adds `sharedUniforms` with the crash grading, SK then patches the toon materials)
 - File / symbol: gfx/index.ts (INT/WA) › a shared `{ uDesat: IUniform<number> }` (DESIGN §18.8 "40% desaturate through a shared material uniform").
 - Change: `export function sharedUniforms(ctx: GfxContext): { uDesat: IUniform<number> }` (one object per context).
 - Why: the skater's toon materials patch their shaders (skater/materials.ts); with the shared uniform they would desaturate with the world during the crash slow-mo instead of staying fully saturated.
 - Local workaround meanwhile: none (the skater stays saturated during a crash).
 
-### Vfx emitter for the legendary effects   (status: open, M5 stretch)
+### Vfx emitter for the legendary effects   (status: applied @G0 as optional `Vfx.emit?`; no implementation until WA / M5)
 - File / symbol: core/view.ts › Vfx
 - Change: `emit?(kind: 'steam' | 'leaves' | 'petals' | 'glyphs' | 'lightTrail', p: { s: number; x: number; y: number }, n?: number): void`
 - Why: TECH §8.5 routes legendary particles through vfx/ (Kettle's steam puffs on landings, Gus's leaf trail, Sunflower's petal shed, Holo Visor's glyph trail, Golden Hour's light trail). The skater knows when and where; vfx/ owns the particle pool.
@@ -193,7 +209,7 @@ The first block is the frozen behaviour later packages (GP, WG, WA, the bots) ca
 - **Extras on the concrete view** (`skater/index.ts › SkaterViewImpl`): `stats()` (draw calls, triangles incl. outline twins, last switch ms), `snap()`, `setShowcaseTime(t)`, `meshes()`. `content/index.ts` adds `itemById`, `itemsOfSlot`, `loadoutOf`.
 - **Contact sheets:** `PORT=5183 node tests/unit/skater/sheet.mjs` (Vite on $PORT) writes `artifacts/sheets/*.png`; `scripts/shots.mjs --cosmetics` (M0-io) can drive the same items in-game through `__skate.ui('locker', { preview, yaw })`.
 
-### Design question: board identity in the run at 31 px   (status: open, for the design owner at G2)
+### Design question: board identity in the run at 31 px   (status: open, for the design owner at G2; not a contract change)
 - DESIGN §15.2 gives every board the same grip (`#2E2A33`) and a natural ply edge, and the run camera (35° down, from behind) sees only the grip under the shoes. So in a run a board shows its graphic only during flips (bottom up from about 90° to 270° of roll). It also shows in the Locker / Shop board display and on the card art (below).
 - Proposal: a palette-coloured grip cut at the tail kick (the graphic shows through), or a thin palette-coloured grip border. Either would be one tunable in `skater.config.ts`. Not implemented, because DESIGN fixes the grip.
 
@@ -218,25 +234,25 @@ The first block is the frozen behaviour later packages (GP, WG, WA, the bots) ca
 - **Offline.** `renderOffline(area, sec)` = 20 s of the area at plateau speed (FLOW, mid-song, roll bed, wind, ambience, a few tricks) on the live graph code, default sliders, 48 kHz, deterministic per area. `tests/unit/audio/render-check.mjs` (PORT=5184) renders and analyses it (plus stems, scene changes and a skilled line through the debug-only `window.__skateAudio.renderScene`); G3 can run it next to `shots --audio`.
 - **G0 merge note.** ROADMAP M0 / SCHEDULE also list an `audio.spec` for M0-io; pkg/m0-io had none when AU finished. If one appears, keep AU's `tests/e2e/audio.spec.ts` (it covers unlock, mute and the 2-minute run) and fold any extra M0-io assertion into it.
 
-### DebugAPI.audio(): context state and cost   (status: open)
+### DebugAPI.audio(): context state and cost   (status: applied @G0; debug/api.ts passes `stats().contextState` and the AU debug numbers through)
 - File / symbol: core/debug.ts › DebugAPI.audio
 - Change: `audio(): { unlocked: boolean; voices: number; scene: string; intensity: number; contextState?: string; msPerFrame?: number; voicePeak?: number; voicesDropped?: number }` and in debug/api.ts pass through `host.audio.stats().contextState` plus the AU debug numbers (`perf().msPerFrame` is the whole-session average since attach).
 - Why: audio.spec asserts "context state running" and the ≤ 0.3 ms/frame budget through the frozen API.
 - Local workaround meanwhile: debug builds (`?debug=1` / dev) expose `window.__skateAudio` (`AudioDebug` from audio/index.ts: `stats()`, `perf()`, `renderScene()`); audio.spec reads it.
 
-### SfxId: the internal cues   (status: open)
+### SfxId: the internal cues   (status: applied @G0; audio/engine.ts `Cue` is now SfxId)
 - File / symbol: core/audio.ts › SfxId
 - Change: `| 'spin' | 'revert' | 'pickChime' | 'rewind' | 'needle' | 'grindSwitch'`
 - Why: DESIGN §9/§19.3 sounds that exist and are bound to events (spin swish, revert scuff, pick-window chime, lesson rewind, needle lift after the tape stop, grind switch) but cannot be requested through `audio.sfx()` by UI or tests.
 - Local workaround meanwhile: `Cue` in audio/engine.ts (SfxId ∪ those six); bindings use it, `audio.sfx()` accepts only SfxId.
 
-### runStart: start area   (status: open)
+### runStart: start area   (status: applied @G0; the sim emits `startArea` (default 'downtown'); AU may read it when Start District lands)
 - File / symbol: core/events.ts › GameEvent 'runStart'
 - Change: `{ t: 'runStart'; tick: number; seed: number; mode: 'lesson' | 'normal'; startArea?: AreaId }`
 - Why: the run song should start in the start area's key when Start District (M5) lands, without waiting for an `areaEnter`.
 - Local workaround meanwhile: runs start in Downtown; an `areaEnter` at tick 1 (debug `startT`, `startArea`) pivots to the right song at the next bar line.
 
-### smoke.spec: renderAudio is no longer null   (status: open, G0)
+### smoke.spec: renderAudio is no longer null   (status: applied @G0)
 - File / symbol: tests/e2e/smoke.spec.ts › "__skate.ui() goes through the app…" (line 204)
 - Change: the stub-era `expect(await renderAudio('downtown', 1)).toBeNull()` becomes, for example,
   `const r = await page.evaluate(() => window.__skate!.renderAudio!('downtown', 1)); expect(r!.sec).toBeCloseTo(1, 2); expect(r!.peak).toBeGreaterThan(0.01); expect(r!.peak).toBeLessThan(0.9);`

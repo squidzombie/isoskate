@@ -5,7 +5,8 @@ import type { AppEvent, GameEvent } from './events';
 export type SfxId = 'pop' | 'whoosh' | 'catch' | 'land' | 'sketchy' | 'perfect' | 'perfectLock' | 'stair'
   | 'bump' | 'knock' | 'coin' | 'nearMiss' | 'hazardTick' | 'comboBank' | 'comboLost' | 'crash' | 'newBest'
   | 'newArea' | 'grindEntry' | 'grindExit' | 'uiTap' | 'uiBack' | 'uiToggle' | 'uiError' | 'purchase'
-  | 'levelUp' | 'crateShake' | 'crateOpen' | 'revealCommon' | 'revealRare' | 'revealEpic' | 'revealLegendary';
+  | 'levelUp' | 'crateShake' | 'crateOpen' | 'revealCommon' | 'revealRare' | 'revealEpic' | 'revealLegendary'
+  | 'spin' | 'revert' | 'pickChime' | 'rewind' | 'needle' | 'grindSwitch';   // internal cues, added @G0
 export interface AudioEngine {
   unlock(): Promise<boolean>; readonly unlocked: boolean;
   suspend(): void; resume(): void;

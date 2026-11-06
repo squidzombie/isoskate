@@ -10,7 +10,7 @@ import { Box3, Color, type Light, type Mesh, type Object3D, PerspectiveCamera, V
 import { BUILD, type AreaId, type QualityTier, type ScreenId } from '../core/ids';
 import type { AudioEngine } from '../core/audio';
 import type { Bus } from '../core/bus';
-import type { DebugAPI, DebugSnapshot } from '../core/debug';
+import type { CaptureView, DebugAPI, DebugExt, DebugSnapshot, HudPreview } from '../core/debug';
 import type { AppEvent, GameEvent } from '../core/events';
 import { EMPTY_FRAME, type InputFrame, type InputSource, type PointerSample } from '../core/input';
 import type { MetaApi } from '../core/meta';
@@ -24,7 +24,7 @@ import { DT } from '../core/tuning';
 import { CATALOG } from '../content';
 import { InputPipeline, isInjectable, kForWidth } from '../input';
 import { BOTS, type Bot, type BotKind } from './bots';
-import { measureContrast, type ContrastReport } from './contrast';
+import { measureContrast } from './contrast';
 
 export type StartOptions = Parameters<DebugAPI['start']>[0];
 
@@ -91,42 +91,9 @@ const ARRIVAL: Readonly<Record<AreaId, number>> = { downtown: 161, suburbs: 44, 
 export interface DebugTool { set(on: boolean): void; readonly on: boolean }
 export interface DebugTools { overlay?: DebugTool; perf?: DebugTool; tuning?: DebugTool }
 
-/** HUD layout preview values (shots --hud): replaces the live numbers until cleared with null. */
-export interface HudPreview { score?: number; dist?: number; speed?: number; combo?: number; links?: number; coins?: number; trick?: string }
-
-/** Tooling hooks beyond the frozen DebugAPI (`window.__skate.ext`), used by scripts/shots.mjs and the e2e specs. */
-export interface DebugExt {
-  overlay(on?: boolean): boolean;
-  perfHud(on?: boolean): boolean;
-  tuning(on?: boolean): boolean;
-  /** The full contrast report (every measured hazard and edge) of the current frame. */
-  contrastReport(): ContrastReport;
-  /** Renders now and returns a PNG data URL: the whole canvas, or a square crop around the skater (cosmetics sheet).
-   *  `native`: the crop is returned at its rendered pixel size (no resampling: real in-run scale). `view`: instead of
-   *  the live frame, the skater alone on a plain `bg`, framed by its own perspective camera (CaptureView). */
-  capture(o?: { target?: 'canvas' | 'skater'; size?: number; pad?: number; bg?: string; native?: boolean; view?: CaptureView }):
-    { dataUrl: string; rect: { x: number; y: number; w: number; h: number } | null;
-      /** target 'skater' on the live frame: the skater's projected size, CSS px. */ skaterCss?: { w: number; h: number } };
-  /** Puts one catalog item on the skater over the equipped loadout, in any mode (null = the equipped loadout). Lasts
-   *  until the next run start or Locker visit; shots --cosmetics uses it for the in-run insets at real scale. */
-  tryOn(id: string | null): boolean;
-  /** The cosmetic catalog (content/ CATALOG): what shots --cosmetics iterates. */
-  catalog(): { id: string; slot: string; name: string; rarity: string; source: string; theme?: string; look: unknown }[];
-  /** HUD layout preview with fake values (null = live values again). */
-  hud(v: HudPreview | null): void;
-  /** World-view internals when available (chunks, pools, coin slots). */
-  world(): unknown;
-  /** The synthetic clock used by manual stepping (ms; one tick = 1000/60). */
-  readonly clockMs: number;
-}
+/** `window.__skate.ext` (frozen @G0 in core/debug.ts): HudPreview, CaptureView, DebugExt are re-exported here. */
+export type { CaptureView, DebugExt, HudPreview } from '../core/debug';
 export type DebugApiWithExt = DebugAPI & { ext: DebugExt };
-
-/** An isolated turntable view of the skater (shots --cosmetics). Angles are relative to the direction toward the
- *  active camera (the Locker camera: the showcase faces it at yaw 0): `azDeg` orbits about the vertical (+ moves the
- *  camera toward screen-left), `elevDeg` looks down (negative: from below, e.g. a deck's graphic).
- *  `part` frames the whole skater, its board (meshes named board / deck / wheel / truck, else the lowest meshes) or
- *  its head (meshes named helmet / head, else the top 28%). */
-export interface CaptureView { azDeg?: number; elevDeg?: number; part?: 'all' | 'board' | 'head'; fovDeg?: number; pad?: number }
 
 export function installDebugApiImpl(host: DebugHost, tools: DebugTools = {}): DebugApiWithExt {
   const ring: GameEvent[] = [];
@@ -307,7 +274,18 @@ export function installDebugApiImpl(host: DebugHost, tools: DebugTools = {}): De
       reset: () => host.save.reset(),
     },
     ui(screen: ScreenId, params?: object) { host.app.open(screen, params ?? {}); },
-    audio() { const s = host.audio.stats(); return { unlocked: host.audio.unlocked, voices: s.voices, scene: s.scene, intensity: s.intensity }; },
+    audio() {
+      const s = host.audio.stats();
+      // AU's engine carries its debug numbers on `debug` (audio/index.ts › AudioDebug); duck-typed, no audio/ import.
+      const dbg = (host.audio as { debug?: { perf(): { msPerFrame: number }; stats(): { peak: number; dropped: number } } }).debug;
+      const out: ReturnType<DebugAPI['audio']> = { unlocked: host.audio.unlocked, voices: s.voices, scene: s.scene,
+        intensity: s.intensity, contextState: s.contextState };
+      if (dbg) {
+        const d = dbg.stats();
+        out.msPerFrame = dbg.perf().msPerFrame; out.voicePeak = d.peak; out.voicesDropped = d.dropped;
+      }
+      return out;
+    },
     async renderAudio(area, sec) {
       const buf = await host.renderAudio(area, sec);
       return buf ? { ...encodeWav(buf), sampleRate: buf.sampleRate, sec: buf.length / buf.sampleRate } : null;

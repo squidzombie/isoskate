@@ -1,6 +1,6 @@
 // ui/screens/run.ts: the run overlays at stub fidelity (DESIGN §17.2): Crash (BAILED! sticker, one cause line, the
 // lost combo struck through, "Tap to roll again" from 0.6 s; it never takes pointer events, so the retry touch reaches
-// #play and game/app.ts), Pause (Resume, Restart, Home, the key list on desktop, and the "Rotate to portrait" card),
+// #play and game/app.ts), Pause (Resume, Restart, Home, Settings, the key list on desktop, and the "Rotate to portrait" card),
 // and Results (score, NEW BEST, breakdown, coin tally, XP and level, one next goal, a huge ROLL AGAIN in the thumb
 // zone, small Locker / Shop / Home).
 import { areaName, fmtScore } from '../format';
@@ -32,7 +32,8 @@ export function pauseScreen(ctx: ScreenCtx): Screen {
     'A / D steer · Space ollie · arrows flip, spin, pick · S manual · Q grab · Esc pause');
   const el = section('pause', 'dim',
     phone, title, note, btn('Resume', { k: 'resume' }, raise, 'primary'),
-    h('div', { class: 'row' }, btn('Restart', { k: 'restart' }, raise), btn('Home', { k: 'home' }, raise)), keys);
+    h('div', { class: 'row' }, btn('Restart', { k: 'restart' }, raise), btn('Home', { k: 'home' }, raise)),
+    btn('Settings', { k: 'open', screen: 'settings' }, raise, 'small'), keys);
   return {
     id: 'pause', el,
     show(p) {

@@ -78,7 +78,6 @@ export const GEN = {
 
 /** Generator switches, read once per Generator (at createWorldGen). Mutable on purpose: tests force both settings,
  *  and the G0 gate flips a default with one line.
- *  - trench: S_TRENCH in the A3 slots and the free draw. OFF until the grey-box view draws `Obstacle.pits` (a pit the
- *    player can't see is a crash that doesn't feel deserved; docs/core-requests.md, M0-sim section). Off, every A3
- *    slot is an S_BARRIER. */
-export const GEN_FLAGS: { trench: boolean } = { trench: false };
+ *  - trench: S_TRENCH in the A3 slots and the free draw. ON since G0: the grey-box view draws `Obstacle.pits` as dark
+ *    recesses with the plank on top (docs/core-requests.md, M0-sim section). Off, every A3 slot is an S_BARRIER. */
+export const GEN_FLAGS: { trench: boolean } = { trench: true };

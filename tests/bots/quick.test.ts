@@ -67,10 +67,10 @@ describe('bots.quick', () => {
     expect(trenches).toBeGreaterThan(20);
   });
 
-  it('SafeKey follower: 0 crashes on 10 more seeds × 2 min with the M0 default (S_TRENCH off)', () => {
+  it('SafeKey follower: 0 crashes on 10 more seeds × 2 min with S_TRENCH off', () => {
     const crashes: string[] = [];
     for (const seed of SEEDS.slice(0, 10).map((s) => s + 100)) {
-      const r = runBot('safe', seed, 120 * SIM_HZ);
+      const r = runBot('safe', seed, 120 * SIM_HZ, { trench: false });
       if (r.crash) crashes.push(`seed ${seed}: ${describeCrash(r)}`);
       expect(r.sim.gen.segments().some((sg) => sg.templateId === 'S_TRENCH')).toBe(false);
     }
@@ -87,12 +87,12 @@ describe('bots.quick', () => {
   });
 
   // Straight lanes, ollieing every full-width hazard. S_TRENCH off is the worst case (a trench kills every lane off
-  // its plank; a barrier is ollied).
+  // its plank; a barrier is ollied), so these force it off whatever the default.
   it('straight bot: every lane x ∈ {−4 … 4} crashes by t ≤ 20 s (20 seeds)', () => {
     const late: string[] = [];
     let worst = 0;
     for (const seed of SEEDS) for (let lane = -4; lane <= 4; lane++) {
-      const r = runBot('straight', seed, 20 * SIM_HZ, { bot: { lane } });
+      const r = runBot('straight', seed, 20 * SIM_HZ, { bot: { lane }, trench: false });
       if (!r.crash) late.push(`seed ${seed} lane ${lane} alive at ${r.sim.cur.t.toFixed(1)} s`);
       else worst = Math.max(worst, r.sim.cur.t);
     }
@@ -103,7 +103,7 @@ describe('bots.quick', () => {
   it.each([150, 165])('straight bot from a plateau start (startT %d): every lane crashes within 10 s (20 seeds)', (startT) => {
     const late: string[] = [];
     for (const seed of SEEDS) for (let lane = -4; lane <= 4; lane++) {
-      const r = runBot('straight', seed, 10 * SIM_HZ, { startT, bot: { lane } });
+      const r = runBot('straight', seed, 10 * SIM_HZ, { startT, bot: { lane }, trench: false });
       if (!r.crash) late.push(`seed ${seed} lane ${lane}`);
     }
     expect(late).toEqual([]);

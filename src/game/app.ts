@@ -56,6 +56,8 @@ export class App {
   private rotateCard = false;
   private camMode: CameraMode = 'run';
   private turnYaw = 0;
+  /** Settings opened from Pause (DESIGN §17.2): Back / Esc return to the frozen run's Pause instead of Home. */
+  private settingsOverPause = false;
 
   constructor(private readonly d: AppDeps) {
     this.back = createBackGuard((during) => {
@@ -188,6 +190,7 @@ export class App {
     if (!overlay) { d.play.classList.remove('run'); d.ui.hud.show(false); }
     d.audio.setScene(screen === 'results' ? 'results' : overlay ? 'paused' : 'menu');
     const ui: UiParams = {};
+    if (screen === 'settings') ui.settings = d.save.data.settings;   // the screen shows the current values
     if (p.result) ui.result = p.result;
     if (p.rewards) ui.rewards = p.rewards;
     if (p.rotate !== undefined) ui.rotate = p.rotate;
@@ -201,6 +204,7 @@ export class App {
   private setScreen(screen: ScreenId, params?: UiParams): void {
     const from = this.screen;
     this.screen = screen;
+    if (screen !== 'settings') this.settingsOverPause = false;
     this.rotateCard = screen === 'pause' && !!params?.rotate;
     const d = this.d;
     // Locker / Shop: skater turntable and the locker camera; leaving them restores the equipped loadout.
@@ -247,8 +251,11 @@ export class App {
       case 'restart': if (this.screen === 'pause' || this.screen === 'results') this.startRun(); break;
       case 'pause': this.pause(false); break;
       case 'resume': this.resume(); break;
-      case 'home': this.home(); break;
-      case 'open': if (this.screen === 'title' || this.screen === 'results') this.open(i.screen); break;
+      case 'home': if (!this.backToPause()) this.home(); break;
+      case 'open':
+        if (i.screen === 'settings' && this.screen === 'pause') this.settingsFromPause();
+        else if (this.screen === 'title' || this.screen === 'results') this.open(i.screen);
+        break;
       case 'preview': if (SHOWCASE.has(this.screen)) this.showcase({ preview: i.id }); break;
       case 'turntable': if (SHOWCASE.has(this.screen)) { this.turnYaw += i.dYaw; this.d.skater.setTurntable?.(this.turnYaw); } break;
       case 'settings': this.setSetting(i.key, i.value); break;
@@ -260,6 +267,7 @@ export class App {
     if (e.repeat) return;
     const s = this.screen;
     if (e.code === 'Escape') {
+      if (this.backToPause()) return;
       if (s === 'run') this.pause(false);
       else if (s === 'pause') this.resume();
       else if (s !== 'title' && s !== 'crash') this.home();
@@ -271,6 +279,20 @@ export class App {
     else if (retryKey && s === 'results') { e.preventDefault(); this.retry(); }
     else if (retryKey && s === 'crash' && e.timeStamp - this.crashAtMs >= RETRY_MIN_MS) { e.preventDefault(); this.retry(); }
     // Enter/R are ignored during a run (TECH §7.3).
+  }
+
+  /** Pause → Settings over the frozen run: the loop, input, wake lock and back guard stay as Pause left them. */
+  private settingsFromPause(): void {
+    this.setScreen('settings', { settings: this.d.save.data.settings });
+    this.settingsOverPause = true;
+  }
+
+  /** Settings opened from Pause: Back / Esc return to Pause (with the rotate card if still landscape). */
+  private backToPause(): boolean {
+    if (this.screen !== 'settings' || !this.settingsOverPause) return false;
+    const rotate = this.rotateNeeded();
+    this.setScreen('pause', { rotate });
+    return true;
   }
 
   private onCrash(): void {

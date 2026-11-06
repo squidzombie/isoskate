@@ -77,4 +77,8 @@ export interface CameraRig {
   /** Projects a track-space point to CSS px (HUD anchor, popups). */
   project(p: { s: number; x: number; y: number }): { x: number; y: number };
 }
-export interface Vfx { update(f: RenderFrame): void; setQuality(q: QualityTier): void; clear(): void }
+export interface Vfx {
+  update(f: RenderFrame): void; setQuality(q: QualityTier): void; clear(): void;
+  /** Legendary cosmetic particles requested by skater/ (TECH §8.5; added @G0, implemented by WA / M5). */
+  emit?(kind: 'steam' | 'leaves' | 'petals' | 'glyphs' | 'lightTrail', p: { s: number; x: number; y: number }, n?: number): void;
+}

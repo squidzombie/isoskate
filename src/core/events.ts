@@ -6,7 +6,7 @@ import type { RunResult, SkaterMode } from './sim';
 
 /** Sim events: emitted inside Sim.step in order, dispatched by the loop after the tick. Deterministic. */
 export type GameEvent =
-  | { t: 'runStart'; tick: number; seed: number; mode: 'lesson' | 'normal' }
+  | { t: 'runStart'; tick: number; seed: number; mode: 'lesson' | 'normal'; startArea?: AreaId }   // startArea added @G0
   | { t: 'ollie'; tick: number; from: SkaterMode; linked: boolean }
   | { t: 'airborne'; tick: number; reason: 'pop' | 'rollOff' | 'grindEnd' }
   | { t: 'flipStart'; tick: number; id: FlipId; dur: number }

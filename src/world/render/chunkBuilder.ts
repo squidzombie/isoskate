@@ -158,10 +158,10 @@ const clipS = (a: number, b: number, c0: number, c1: number): [number, number] |
   return hi > lo + 1e-6 ? [lo, hi] : null;
 };
 
-function slab(sl: GroundSlab, s0: number, s1: number, z: (s: number) => number, w: GeoWriter, color: number): void {
+function slab(sl: GroundSlab, s0: number, s1: number, z: (s: number) => number, w: GeoWriter, color: number, lift = 0): void {
   const r = clipS(sl.s0, sl.s1, s0, s1);
   if (!r) return;
-  const yAt = (s: number) => lerp(sl.y0, sl.y1, (s - sl.s0) / Math.max(1e-6, sl.s1 - sl.s0));
+  const yAt = (s: number) => lerp(sl.y0, sl.y1, (s - sl.s0) / Math.max(1e-6, sl.s1 - sl.s0)) + lift;
   const bottom = Math.min(sl.y0, sl.y1, 0) - 0.3;
   if (sl.kind === 'stairs' && sl.steps && sl.steps > 1) {
     const n = sl.steps, len = (sl.s1 - sl.s0) / n;
@@ -176,15 +176,20 @@ function slab(sl: GroundSlab, s0: number, s1: number, z: (s: number) => number, 
   w.wedge(sl.x0, sl.x1, z(r[1]), z(r[0]), bottom, yAt(r[1]), yAt(r[0]), color);
 }
 
+/** A pit's dark top face sits this far above its lip (over the street base it recesses visually). */
+const PIT_TOP = 0.004;
+
 /** Obstacles are listed in every chunk they overlap; geometry is clipped to this chunk's s-range. */
 function obstacle(ob: Obstacle, s0: number, s1: number, z: (s: number) => number, w: GeoWriter, opts: Readonly<BuildOptions>): void {
-  for (const sl of ob.slabs) {
-    if (ob.solids.length && sl.kind === 'flat') continue;      // a solid body already draws this landable top
-    slab(sl, s0, s1, z, w, SURFACE_COLOR[sl.surface] ?? COLORS.asphalt);
-  }
   for (const p of ob.pits) {
     const r = clipS(p.s0, p.s1, s0, s1);
-    if (r) w.box(p.x0, p.lipY - Math.max(0.05, p.depth), z(r[1]), p.x1, p.lipY + 0.004, z(r[0]), p.cause === 'splash' ? COLORS.water : COLORS.pit);
+    if (r) w.box(p.x0, p.lipY - Math.max(0.05, p.depth), z(r[1]), p.x1, p.lipY + PIT_TOP, z(r[0]), p.cause === 'splash' ? COLORS.water : COLORS.pit);
+  }
+  for (const sl of ob.slabs) {
+    if (ob.solids.length && sl.kind === 'flat') continue;      // a solid body already draws this landable top
+    // A slab across a pit (a trench plank) is drawn just above the pit's top face, so the way across stays visible.
+    const overPit = ob.pits.some((p) => sl.s0 < p.s1 && sl.s1 > p.s0 && sl.x0 < p.x1 && sl.x1 > p.x0 && Math.max(sl.y0, sl.y1) <= p.lipY + PIT_TOP);
+    slab(sl, s0, s1, z, w, SURFACE_COLOR[sl.surface] ?? COLORS.asphalt, overPit ? 2 * PIT_TOP : 0);
   }
   const fullWidth = (ob.tags & ObTag.FullWidth) !== 0;
   for (const so of ob.solids) {

@@ -26,7 +26,8 @@ import { PRI, type Voice } from './voices';
 
 export type Scene = 'menu' | 'run' | 'paused' | 'results';
 /** Every sound the bindings can ask for: the frozen SfxIds plus the internal cues (docs/core-requests.md § AU). */
-export type Cue = import('../core/audio').SfxId | 'spin' | 'revert' | 'pickChime' | 'rewind' | 'needle' | 'grindSwitch';
+/** Every cue the engine can play: SfxId (the six internal cues spin … grindSwitch joined SfxId @G0). */
+export type Cue = import('../core/audio').SfxId;
 const UI_CUES = new Set<string>(['uiTap', 'uiBack', 'uiToggle', 'uiError', 'purchase', 'levelUp', 'crateShake', 'crateOpen',
   'revealCommon', 'revealRare', 'revealEpic', 'revealLegendary']);
 

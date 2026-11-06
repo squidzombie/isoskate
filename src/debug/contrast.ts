@@ -27,12 +27,8 @@ export const EDGE_SEARCH_M = 0.1;
 /** Patch length along the edge at each sample point, device px (odd). */
 const ALONG_PX = 5;
 
-export interface ContrastItem {
-  cls: 'hazard' | 'edge'; kind: string; id: number; ratio: number; fg: number; bg: number; px: number;
-  /** Where it was measured: screen box in CSS px (hazard hull bbox, or the span of the edge samples). */
-  at: { x0: number; y0: number; x1: number; y1: number };
-}
-export interface ContrastReport { hazard: number; edge: number; worst: { kind: string; ratio: number } | null; items: ContrastItem[] }
+import type { ContrastItem, ContrastReport } from '../core/debug';
+export type { ContrastItem, ContrastReport };
 
 const lin = (c: number) => { const v = c / 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
 export const relLum = (r: number, g: number, b: number) => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);

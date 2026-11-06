@@ -49,9 +49,9 @@ function keysOf(gen: WorldGen, s1: number): SafeKey[] {
 const SEEDS = Array.from({ length: 20 }, (_, i) => i + 1);
 
 describe('world/gen determinism', () => {
-  it('golden chunk hashes (100 chunks ≈ 3.2 km) for 3 seeds, S_TRENCH off (the M0 default) and on', () => {
+  it('golden chunk hashes (100 chunks ≈ 3.2 km) for 3 seeds, S_TRENCH off and on (the default since G0)', () => {
     // Update deliberately when the generator changes (TECH §5.4).
-    expect(GEN_FLAGS.trench).toBe(false);
+    expect(GEN_FLAGS.trench).toBe(true);
     expect([1, 2, 3].map((s) => worldHash(s, 100, { trench: false }))).toEqual(GOLDEN);
     expect([1, 2, 3].map((s) => worldHash(s, 100, { trench: true }))).toEqual(GOLDEN_TRENCH);
   });

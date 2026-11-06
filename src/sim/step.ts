@@ -95,7 +95,7 @@ export class SimImpl implements Sim, Ctx {
     copySkater(st.prev, c);
     // 1. Time.
     advanceTime(this);
-    if (c.tick === 1) ev.push({ t: 'runStart', tick: c.tick, seed: st.cfg.seed, mode: st.cfg.mode });
+    if (c.tick === 1) ev.push({ t: 'runStart', tick: c.tick, seed: st.cfg.seed, mode: st.cfg.mode, startArea: st.cfg.startArea ?? 'downtown' });
     timers(this);
     this.obs = this.fast ? this.fast.obstaclesInto(c.p.s - 2, c.p.s + 20, this.obsBuf) : this._world.obstacles(c.p.s - 2, c.p.s + 20);
     // 2. Steering target.

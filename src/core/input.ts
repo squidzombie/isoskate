@@ -41,6 +41,9 @@ export interface RecognizerConfig {
   simpleTricks: boolean;                                            // Settings: diagonals snap to cardinals
   deadZoneBottomPx: number;                                         // safeBottom + 12
   k: number;                                                        // clamp(screenW/390, 0.85, 1.3)
+  // CSS px (added @G0): arc compensation uses the outer arcOuterFrac of screenW; touch-starts below
+  // screenH − deadZoneBottomPx are ignored. 0 / absent = 390·k / no dead zone.
+  screenW?: number; screenH?: number;
 }
 export interface GestureRecognizer {                       // pure; unit-tested with synthetic traces
   feed(s: PointerSample): Gesture[];                       // 'cancel' → no tap/swipe, ends hold, frees steering
@@ -56,5 +59,8 @@ export interface InputSource {
   setPreset(p: 'A' | 'B'): void;
   onAnyInput(f: () => void): () => void;                   // fires on pointerup/touchend/click/keydown (user activation): audio unlock
   setSimpleTricks?(on: boolean): void;                     // Settings "Simple tricks" → RecognizerConfig.simpleTricks (added @m0-core)
+  /** Schedules a synthetic trace through the real recognizer and frame binning: the first sample lands at `atMs`
+   *  (default now), later samples keep their relative times (debug `__skate.pointer` in rAF mode; added @G0). */
+  inject?(samples: readonly PointerSample[], atMs?: number): void;
   dispose(): void;
 }

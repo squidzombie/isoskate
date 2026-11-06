@@ -1,8 +1,8 @@
 // ui/screens/menus.ts: menu screens at stub fidelity (MU replaces them in W3a):
 //   - Locker / Shop: see-through over the turntable (top half), drag to rotate (UiIntent 'turntable'), slot tabs and
 //     item chips from the catalog (tap = try on, UiIntent 'preview'; Equip on the Locker through MetaApi)
-//   - Settings: working controls for the most useful settings (UiIntent 'settings'); values come from the app when it
-//     passes them, else from the stored save (read-only), else the v1 defaults
+//   - Settings: working controls for the most useful settings (UiIntent 'settings'); values come from the app
+//     (UiApi.show params.settings, core since G0), else from the stored save (read-only), else the v1 defaults
 //   - Stats (level, session best), Crates, Rewards, Boot: short placeholders
 import { GAME_ID, type ItemId, type ScreenId, type Slot } from '../../core/ids';
 import type { SaveV1 } from '../../core/save';

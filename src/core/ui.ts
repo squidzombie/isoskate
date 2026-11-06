@@ -3,6 +3,7 @@ import type { AreaId, ItemId, ScreenId } from './ids';
 import type { RunRewards, MetaApi } from './meta';
 import type { RunResult, ScoreState, SkaterState } from './sim';
 import type { Bus } from './bus';
+import type { SaveV1 } from './save';
 import type { AppEvent, GameEvent } from './events';
 export interface HudApi {
   show(on: boolean): void;
@@ -12,7 +13,8 @@ export interface HudApi {
 }
 export interface UiApi {
   readonly hud: HudApi;
-  show(screen: ScreenId, params?: { result?: RunResult; rewards?: RunRewards; rotate?: boolean }): void;   // rotate: landscape card on Pause
+  show(screen: ScreenId, params?: { result?: RunResult; rewards?: RunRewards; rotate?: boolean;   // rotate: landscape card on Pause
+    settings?: Readonly<SaveV1['settings']> }): void;                                             // Settings: current values (added @G0)
   readonly current: ScreenId;
   toast(text: string, ms?: number): void;
   attach(game: Bus<GameEvent>, app: Bus<AppEvent>, meta: MetaApi): () => void;

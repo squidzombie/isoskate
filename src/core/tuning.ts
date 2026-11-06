@@ -79,3 +79,8 @@ export const CHUNK_LEN = 32, GEN_AHEAD_SEC = 12, ORIGIN_REBASE = 512;
 export const CHUNK_WINDOW = { behind: 1, ahead: 3 } as const;
 export const ROLLOUT_SEC = 9, LESSON_SEC = 40;
 export const REWIND = { sec: 1.5, max: 3, snapEveryTicks: 15, ring: 8 } as const;
+// Sim tunables moved from sim/consts.ts (applied @G0, docs/core-requests.md M0-sim section).
+export const ROLL_OFF_DROP = 0.05, STICKY_DROP = 0.3;                 // TECH §6.3 step 5 (roll-off, sticky slabs)
+export const BUMP_WOBBLE = 0.3, MANUAL_END_WOBBLE = 0.3;              // s (side bump TECH §6.4, manual budget end)
+export const COIN_VOLUME = { lat: 0.3, fwd: 0.4, vert: 0.7, centreUp: 0.75 } as const;   // DESIGN §10.8
+export const COIN_CHAIN_TICKS = 30, PICK_MISS_TICKS = 3;

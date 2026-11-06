@@ -12,9 +12,8 @@ import { InputPipeline } from './pipeline';
 import { bindPointer } from './pointer';
 import { createRecognizerImpl, type RecognizerConfigExt } from './recognizer';
 
-/** The DOM input source also accepts synthetic pointer traces (debug `__skate.pointer`, e2e). */
+/** The DOM input source: `inject` (core InputSource.inject?, added @G0) is always present, plus the live pipeline. */
 export interface InjectableInput extends InputSource {
-  /** Schedules a trace whose first sample lands at `atMs` (default: now); later samples keep their relative times. */
   inject(samples: readonly PointerSample[], atMs?: number): void;
   /** The live pipeline (debug tooling: tuning panel, overlays). */
   readonly pipeline: InputPipeline;
@@ -88,8 +87,7 @@ export function createInput(el: HTMLElement, opts: { screenW: () => number; safe
   return source;
 }
 
-/** Pure recognizer (no DOM): also used by the thumb bot on synthetic traces. Extra RecognizerConfigExt fields
- *  (screenW, screenH) may be passed through `cfg`. */
+/** Pure recognizer (no DOM): also used by the thumb bot on synthetic traces (`cfg.screenW` / `screenH` included). */
 export function createRecognizer(cfg?: Partial<RecognizerConfig>): GestureRecognizer {
   return createRecognizerImpl(cfg as Partial<RecognizerConfigExt> | undefined);
 }

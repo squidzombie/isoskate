@@ -201,7 +201,44 @@ test('__skate.ui() goes through the app: Locker shows the turntable, Home restor
   await page.getByRole('button', { name: /roll again/i }).click();
   await expect(screenOn(page, 'results')).not.toHaveClass(/\bon\b/);
   await expect.poll(() => page.evaluate(() => window.__skate!.snapshot().tick)).toBeGreaterThan(3);
-  expect(await page.evaluate(async () => (window.__skate!.renderAudio ? await window.__skate!.renderAudio('downtown', 1) : 'missing'))).toBeNull();
+  // AU ships renderOffline (G0): one second of Downtown, rendered offline (only the summary crosses the bridge).
+  const r = await page.evaluate(async () => {
+    const a = await window.__skate!.renderAudio!('downtown', 1);
+    return a ? { sec: a.sec, peak: a.peak, rate: a.sampleRate, bytes: a.wavBase64.length } : null;
+  });
+  expect(r).not.toBeNull();
+  expect(r!.sec).toBeCloseTo(1, 2);
+  expect(r!.peak).toBeGreaterThan(0.01);
+  expect(r!.peak).toBeLessThan(0.9);
+  expect(r!.bytes).toBeGreaterThan(1000);
+  expect(errors).toEqual([]);
+});
+
+test('Settings opens from Pause with the current values, and Back returns to the frozen run', async ({ page }) => {
+  const errors: string[] = [];
+  await boot(page, errors, '&quality=low');
+  await page.evaluate(() => {
+    const s = window.__skate!;
+    const save = s.save.get();
+    save.settings.simpleTricks = true;
+    s.save.set(save);
+    s.start({ seed: 1 });
+  });
+  await expect.poll(() => page.evaluate(() => window.__skate!.snapshot().tick)).toBeGreaterThan(10);
+  await page.keyboard.press('Escape');
+  await expect(screenOn(page, 'pause')).toHaveClass(/\bon\b/);
+  const frozen = await page.evaluate(() => window.__skate!.snapshot().tick);
+  await screenOn(page, 'pause').getByRole('button', { name: /settings/i }).click();
+  const settings = screenOn(page, 'settings');
+  await expect(settings).toHaveClass(/\bon\b/);
+  // The app passed save.settings: Simple tricks shows On.
+  const simple = settings.locator('.setting', { hasText: 'Simple tricks' });
+  await expect(simple.getByRole('button', { name: 'On' })).toHaveClass(/\bon\b/);
+  await settings.getByRole('button', { name: /back/i }).click();
+  await expect(screenOn(page, 'pause')).toHaveClass(/\bon\b/);
+  expect(await page.evaluate(() => window.__skate!.snapshot().tick)).toBe(frozen);
+  await screenOn(page, 'pause').getByRole('button', { name: /resume/i }).click();
+  await expect.poll(() => page.evaluate(() => window.__skate!.snapshot().tick)).toBeGreaterThan(frozen);
   expect(errors).toEqual([]);
 });
 
