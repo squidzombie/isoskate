@@ -1,70 +1,93 @@
-// save/: versioned save store (MU; M0 ships a minimal version). Public surface (TECH §4.13).
-// M0: load → JSON.parse → shallow-merge with defaults → minimal sanitize; backup before each overwrite;
-// debounced (500 ms) writes after mutate; flush() writes immediately.
-// TODO(MU): migrations, full sanitize (clamps, unknown ids), corrupt-main → backup path tests, persist().
+// save/: the versioned save store (MU; TECH §4.9, §10.5). Public surface (TECH §4.13).
+//   Load:  JSON.parse → migrate (save/migrate.ts) → deep-merge with defaults + sanitize (save/sanitize.ts).
+//          A main save that fails any step falls back to the backup, then to defaults (`loadedFrom` says which).
+//   Write: debounced 500 ms after mutate(); flush() writes at once (run end, crate roll, purchase, visibility hidden).
+//          Before each overwrite the last good main save is copied to `dusklane.save.bak`, so a corrupt write can
+//          always be recovered; a write that throws switches to memory (persistent = false) and play goes on.
+//   Back up / Restore: export() is the save as JSON; import(json) runs the same load pipeline and rejects anything
+//          that is not a save, leaving the current data untouched.
 import { GAME_ID } from '../core/ids';
 import type { SaveStore, SaveV1 } from '../core/save';
 import { makeDefaults } from './defaults';
+import { migrate } from './migrate';
+import { sanitize } from './sanitize';
 import { createStorage, type StorageAdapter } from './storage';
 
 export const SAVE_KEY = `${GAME_ID}.save`, BACKUP_KEY = `${GAME_ID}.save.bak`;
-const DEBOUNCE_MS = 500;
+export const SAVE_DEBOUNCE_MS = 500;
 
-function merge(defaults: SaveV1, raw: unknown): SaveV1 | null {
-  if (!raw || typeof raw !== 'object' || (raw as { v?: unknown }).v !== 1) return null;
-  const r = raw as Record<string, unknown>;
-  const out = { ...defaults } as Record<string, unknown>;
-  for (const k of Object.keys(defaults)) {
-    const dv = (defaults as unknown as Record<string, unknown>)[k], rv = r[k];
-    if (rv === undefined) continue;
-    if (dv && typeof dv === 'object' && !Array.isArray(dv)) out[k] = { ...(dv as object), ...(rv as object) };
-    else out[k] = rv;
-  }
-  const s = out as unknown as SaveV1;
-  for (const id of defaults.owned) if (!s.owned.includes(id)) s.owned.push(id);
-  for (const slot of ['skater', 'board', 'helmet'] as const) if (!s.owned.includes(s.equipped[slot])) s.equipped[slot] = defaults.equipped[slot];
-  if (!Number.isFinite(s.wallet.coins) || s.wallet.coins < 0) s.wallet.coins = 0;
-  return s;
-}
-
-function parse(text: string | null): unknown {
+/** Parse + migrate + sanitize one stored text; null if it is not a usable save. */
+export function parseSave(text: string | null, defaults: SaveV1): SaveV1 | null {
   if (!text) return null;
-  try { return JSON.parse(text); } catch { return null; }
+  let raw: unknown;
+  try { raw = JSON.parse(text); } catch { return null; }
+  const m = migrate(raw);
+  return m ? sanitize(m, defaults) : null;
 }
 
-class Store implements SaveStore {
+export interface SaveStoreExt extends SaveStore {
+  /** Where the data came from at boot: the main key, the backup (main was corrupt) or fresh defaults. */
+  readonly loadedFrom: 'main' | 'backup' | 'defaults';
+  /** Pending debounced write? (tests, the flush-on-hide check) */
+  readonly dirty: boolean;
+}
+
+export interface SaveStoreOptions { now?: () => number; seed?: number }
+
+export class Store implements SaveStoreExt {
   private d: SaveV1;
   private timer: ReturnType<typeof setTimeout> | null = null;
-  constructor(private readonly io: StorageAdapter) {
-    const defaults = makeDefaults();
-    this.d = merge(defaults, parse(io.get(SAVE_KEY))) ?? merge(defaults, parse(io.get(BACKUP_KEY))) ?? defaults;
+  private lastGood: string | null = null;
+  readonly loadedFrom: 'main' | 'backup' | 'defaults';
+  constructor(private readonly io: StorageAdapter, private readonly opts: SaveStoreOptions = {}) {
+    const defaults = this.fresh();
+    const mainText = io.get(SAVE_KEY);
+    const main = parseSave(mainText, defaults);
+    if (main) { this.d = main; this.loadedFrom = 'main'; this.lastGood = mainText; return; }
+    const bakText = io.get(BACKUP_KEY);
+    const bak = parseSave(bakText, defaults);
+    if (bak) { this.d = bak; this.loadedFrom = 'backup'; this.lastGood = bakText; return; }
+    this.d = defaults; this.loadedFrom = 'defaults';
   }
   get data(): Readonly<SaveV1> { return this.d; }
   get persistent(): boolean { return this.io.persistent; }
+  get dirty(): boolean { return this.timer !== null; }
   mutate(f: (s: SaveV1) => void): void {
     f(this.d);
     if (this.timer) clearTimeout(this.timer);
-    this.timer = setTimeout(() => this.flush(), DEBOUNCE_MS);
+    this.timer = setTimeout(() => { this.timer = null; this.flush(); }, SAVE_DEBOUNCE_MS);
   }
   flush(): void {
     if (this.timer) { clearTimeout(this.timer); this.timer = null; }
-    const prev = this.io.get(SAVE_KEY);
-    if (prev) this.io.set(BACKUP_KEY, prev);
-    this.io.set(SAVE_KEY, JSON.stringify(this.d));
+    const json = JSON.stringify(this.d);
+    if (json === this.lastGood) return;
+    if (this.lastGood) this.io.set(BACKUP_KEY, this.lastGood);
+    this.io.set(SAVE_KEY, json);
+    this.lastGood = json;
   }
-  reset(): void { this.d = makeDefaults(); this.flush(); }
+  /** Reset progress (Settings, double confirm): a fresh profile that keeps the install id and the settings. */
+  reset(): void {
+    const keep = { installId: this.d.installId, settings: { ...this.d.settings } };
+    this.d = { ...this.fresh(), ...keep };
+    this.flush();
+  }
   export(): string { return JSON.stringify(this.d); }
   import(json: string): boolean {
-    const m = merge(makeDefaults(), parse(json));
+    const m = parseSave(json, this.fresh());
     if (!m) return false;
     this.d = m;
     this.flush();
     return true;
   }
+  private fresh(): SaveV1 { return makeDefaults(this.opts.now?.() ?? Date.now(), this.opts.seed); }
 }
 
 export function createSaveStore(): SaveStore {
   return new Store(createStorage());
 }
 
-export { makeDefaults, localDay } from './defaults';
+export { makeDefaults, localDay, DEFAULT_SETTINGS } from './defaults';
+export { createStorage, requestPersist, type StorageAdapter, type StorageLike } from './storage';
+export { migrate, MIGRATIONS } from './migrate';
+export { sanitize, SANE_MAX } from './sanitize';
+export { TRICK_BOOK, HINT_IDS, KNOWN, RARITIES, CRATE_TIERS, type SaveDailyExt } from './schema';
