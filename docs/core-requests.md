@@ -201,16 +201,22 @@ Everything below is implemented inside sim/, tricks/ and input/ with local exten
 any of these core changes. Requests 1–4 are additive (optional fields); request 2 changes frozen magnet/capture
 behaviour and is behind a flag.
 
-### 1. InputFrame.longTap: a 350–600 ms still press reads as a tap   (status: open)
-- File / symbol: core/input.ts › InputFrame, Gesture
-- Change: `longTap?: boolean;   // edge: a still touch released 350–600 ms after down (a HOLD that never moved)` on
-  InputFrame, and `{ k: 'holdEnd'; tMs: number; release?: true }` on Gesture.
+### 1. InputFrame.longTap: a 350–600 ms still press reads as a tap   (status: open; ships with longTapMaxMs 400, see the e2e note)
+- File / symbol: core/input.ts › InputFrame, Gesture; tests/e2e/touch.spec.ts › liveRun (INT)
+- Change: `longTap?: boolean;   // edge: a still touch released after tapMaxMs, ≤ longTapMaxMs after down (a HOLD that never moved)`
+  on InputFrame, and `{ k: 'holdEnd'; tMs: number; release?: true }` on Gesture.
 - Why: the G0 open item "a 350–600 ms press outside a combo or pad does nothing". The recognizer marks the holdEnd of a
-  still release in (tapMaxMs, longTapMaxMs = 600] with `release: true` (no `tap`: the 349 / 351 ms boundary of TECH
-  §7.4 stays), the frame builder turns it into `longTap`, and the sim reads it as a TAP wherever the hold started
-  nothing: an ollie on the ground, a linked ollie out of a manual that this still touch started, the jump buffer in
-  the air (not after a grab), a pop-out in a grind. A 700 ms press still does nothing (traces in
+  still release in (tapMaxMs, longTapMaxMs] with `release: true` (no `tap`: the 349 / 351 ms boundary of TECH §7.4
+  stays), the frame builder turns it into `longTap`, and the sim reads it as a TAP wherever the hold started nothing:
+  an ollie on the ground, a linked ollie out of a manual that this still touch started, the jump buffer in the air
+  (not after a grab), a pop-out in a grind. A 700 ms press still does nothing (traces in
   tests/unit/input/recognizer.test.ts, frames.test.ts and integration/labels.test.ts).
+- **e2e note (INT, G1):** touch.spec.ts `liveRun(page, seed, prime)` primes Chromium's touch pipeline with a still
+  press held "400 ms" after its first move arrives (measured 490–1,410 ms here) and expects it to do nothing. With the
+  600 ms design value that prime pops an ollie in some runs, and "a tap during a run ollies", "a drag steers" and "a
+  swipe left in the air kickflips" then fail. So `RecognizerConfigExt.longTapMaxMs` ships at **400** (the prime always
+  holds longer). At G1: hold the prime for ≥ 700 ms (`waitForTimeout(700)`), then set `longTapMaxMs` to 600 in
+  input/recognizer.ts DEFAULT_RECOGNIZER (one number; the unit tests read the default).
 - Local workaround meanwhile: `tricks › InputFrameExt`, `input › HoldEndExt`, `RecognizerConfigExt.longTapMaxMs`.
   Bots and tools that build InputFrames from gestures themselves (WG's thumb bot) should use input's `InputPipeline` /
   `FrameBuilder`, or set `longTap` the same way.
@@ -251,8 +257,8 @@ behaviour and is behind a flag.
 ### 5. New trick-rule tunables live in tricks/score.config.ts › RULES   (status: info; move to core/tuning.ts at G1 if preferred)
 - `manualHoldSec` 0.30 (a resting thumb manuals only after 0.30 s of stillness: the G0 "manual 200 ms into the link
   window" fix), `switchDoubleSec` 0.25 (grind switch doubles), `dropGapMinH` 0.5 (drop gaps), `popOutSkipsOwnEdge`
-  (request 2), and two pose constants. The recognizer's `longTapMaxMs` 600 sits with the other recognizer numbers in
-  input/recognizer.ts DEFAULT_RECOGNIZER. Every trick point moved from tricks/defs.ts into score.config.ts › POINTS
+  (request 2), and two pose constants. The recognizer's `longTapMaxMs` sits with the other recognizer numbers in
+  input/recognizer.ts DEFAULT_RECOGNIZER (400 for now, see request 1). Every trick point moved from tricks/defs.ts into score.config.ts › POINTS
   (DESIGN §22: score.config holds every scoring number); TRICKS is unchanged in content.
 
 ### Behaviour other packages can rely on (no contract change)

@@ -158,9 +158,9 @@ describe('recognizer labels → sim (DESIGN §4.3 steering-stroke rule)', () => 
   });
 
   // ── W1a (GP) traces: the open G0 items, through the real recognizer and frames ──
-  it('a 450 ms still press outside a combo pops an ollie on release (it felt like nothing at G0); 700 ms does nothing', () => {
+  it('a 390 ms still press outside a combo pops an ollie on release (it felt like nothing at G0); 700 ms does nothing', () => {
     const mid = rig();
-    mid.play(new Trace(3, 0, 200, 500).rest(450).up());
+    mid.play(new Trace(3, 0, 200, 500).rest(390).up());
     mid.until(700);
     expect(ollies(mid.events)).toHaveLength(1);
     expect(mid.events.some((e) => e.t === 'manualStart')).toBe(false);

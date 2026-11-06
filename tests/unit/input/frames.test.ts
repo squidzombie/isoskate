@@ -183,7 +183,7 @@ describe('determinism', () => {
 });
 
 describe('long tap through the pipeline (W1a)', () => {
-  it('a still 450 ms press gives one frame with longTap (and no tap); 700 ms gives none', () => {
+  it('a still 390 ms press gives one frame with longTap (and no tap); 700 ms gives none', () => {
     const frames = (ms: number) => {
       const p = new InputPipeline(() => 390);
       p.schedule(new Trace(1, 0, 195, 500).rest(ms).up().samples);
@@ -191,7 +191,7 @@ describe('long tap through the pipeline (W1a)', () => {
       for (let t = 0; t <= ms + 50; t += 1000 / 60) out.push(p.frame(t));
       return out;
     };
-    const a = frames(450);
+    const a = frames(390);
     expect(a.filter((f) => f.longTap)).toHaveLength(1);
     expect(a.some((f) => f.tap)).toBe(false);
     expect(frames(700).some((f) => f.longTap)).toBe(false);

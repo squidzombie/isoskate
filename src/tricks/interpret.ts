@@ -23,8 +23,9 @@ import {
 } from '../core/tuning';
 import { RULES } from './score.config';
 
-/** InputFrame plus the GP extension filed in docs/core-requests.md (GP): `longTap`, a still touch released
- *  350–600 ms after it went down (a HOLD that never moved). It reads as a TAP wherever the hold started nothing. */
+/** InputFrame plus the GP extension filed in docs/core-requests.md (GP): `longTap`, a still touch released after the
+ *  350 ms tap limit but ≤ RecognizerConfigExt.longTapMaxMs after it went down (a HOLD that never moved). It reads as
+ *  a TAP wherever the hold started nothing. */
 export interface InputFrameExt extends InputFrame { longTap?: boolean }
 
 export type Intent =
@@ -146,7 +147,7 @@ function manual(v: Readonly<InterpretView>, f: Readonly<InputFrameExt>, out: Int
     if (pops(f.swipe, out)) return out;
     if (f.swipe === 'd' && v.manual && !v.manual.switched) { out.push({ k: 'noseManual', air: false }); return out; }
   }
-  // A TAP is a linked ollie (a HOLD released by 350 ms also taps). A long tap (350–600 ms) is one too when this still
+  // A TAP is a linked ollie (a HOLD released by 350 ms also taps). A long tap (up to 400–600 ms) is one too when this still
   // touch is what started the manual: a nervous long tap never feels like "nothing happened".
   if (f.tap || (f.longTap && v.manual?.fromHold)) out.push({ k: 'ollie', air: false });
   return out;
