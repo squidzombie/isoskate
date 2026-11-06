@@ -12,7 +12,7 @@ import type { QualityTier } from '../../core/ids';
 import { lerp } from '../../core/math';
 import { CAMERA, CHUNK_LEN, CHUNK_WINDOW, V_MAX, speedAt } from '../../core/tuning';
 import type { GfxContext, RenderFrame, Viewport, WorldView } from '../../core/view';
-import type { Coin, WorldGen } from '../../core/world';
+import type { Chunk, Coin, Obstacle, WorldGen } from '../../core/world';
 import { getSun, originOf, setGfxQuality } from '../../gfx';
 import { solveFraming, yawForAspect } from './camera';
 import { buildChunk, COLORS, DEFAULT_BUILD, GeoWriter, type BuildOptions } from './chunkBuilder';
@@ -127,11 +127,11 @@ class GreyboxWorldView implements WorldView {
       for (const c of this.chunks.values()) if (c.parts.near) c.parts.near.mesh.material = hide ? this.shadowOnly : this.mat;
     }
     // At most one chunk build per frame (TECH §8.6): missing chunks nearest-first ahead, then behind, then stale ones.
-    let target = -1;
-    for (let i = ci; i <= hi && target < 0; i++) if (i >= 0 && !this.chunks.has(i)) target = i;
-    if (target < 0 && lo >= 0 && !this.chunks.has(lo)) target = lo;
-    if (target < 0) for (let i = ci; i <= hi && target < 0; i++) { const c = this.chunks.get(i); if (c && c.key !== this.optsKey) target = i; }
-    if (target >= 0) {
+    let target: number | null = null;                    // chunk indices can be negative (behind the start)
+    for (let i = ci; i <= hi && target === null; i++) if (!this.chunks.has(i)) target = i;
+    if (target === null && !this.chunks.has(lo)) target = lo;
+    if (target === null) for (let i = ci; i <= hi && target === null; i++) { const c = this.chunks.get(i); if (c && c.key !== this.optsKey) target = i; }
+    if (target !== null) {
       const t0 = performance.now();
       const old = this.chunks.get(target);
       if (old) this.release(old);
@@ -167,7 +167,8 @@ class GreyboxWorldView implements WorldView {
 
   // ── internals ─────────────────────────────────────────────────────────────────────────────────────────────────
   private build(index: number): void {
-    const ch = this.gen!.chunk(index);
+    // Behind the run start there is no generated content: an empty street chunk keeps the frame filled.
+    const ch: Chunk = index >= 0 ? this.gen!.chunk(index) : emptyChunk(index);
     const w = this.writers;
     w.main.begin(this.pool.acquire()); w.near.begin(this.pool.acquire()); w.casters.begin(this.pool.acquire());
     buildChunk(ch, w.main, w.near, this.opts);
@@ -264,6 +265,16 @@ class GreyboxWorldView implements WorldView {
     if (this.buildMs.length > 120) this.buildMs.shift();
     if (ms > VIEW.buildBudgetMs * 4) console.debug(`[world] chunk build ${ms.toFixed(1)} ms`);
   }
+}
+
+/** Street behind the run start (no generated content): road plus the sidewalks at +0.15 on both sides. */
+function emptyChunk(index: number): Chunk {
+  const s0 = index * CHUNK_LEN, s1 = s0 + CHUNK_LEN;
+  const walk = (x0: number, x1: number): Obstacle => ({ id: -1 - index * 2 - (x0 > 0 ? 1 : 0), kind: 'curb', area: 'downtown', segment: -1,
+    s: s0, x: (x0 + x1) / 2, len: CHUNK_LEN, wid: x1 - x0, hgt: 0.15, rotY: 0, mirror: false, variant: 0, solids: [], pits: [], edges: [], tags: 0,
+    slabs: [{ s0, s1, x0, x1, y0: 0.15, y1: 0.15, layer: 0, surface: 'concrete', kind: 'flat' }] });
+  return { index, s0, len: CHUNK_LEN, area: 'downtown', blend: null, obstacles: [walk(-4.5, -3), walk(3, 4.5)], coins: [], decor: [],
+    safe: [], segments: [] };
 }
 
 export type GreyboxView = WorldView & { debugInfo(): ReturnType<GreyboxWorldView['debugInfo']> };

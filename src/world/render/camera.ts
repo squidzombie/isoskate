@@ -69,9 +69,16 @@ export function solveFraming(speed: number, vp: Viewport): Framing {
  *  only when ψ > 0; H eases with τ = 2 s toward the framing for the speed 2 s ahead and never shrinks within a run.
  *  The follow easings run on game time (sim ticks elapsed, or the frame dt if larger), so manual stepping
  *  (`__skate.step(3600)`) frames exactly like real-time play. Shake and punch run on the frame dt. */
+/** The M0 Locker / Shop camera (DESIGN §8 "non-run cameras"): a low perspective camera (FOV 35°, 1.4 m high) behind
+ *  the skater looking down the street, with the skater's mid-body at 33% from the top (the turntable sits in the top
+ *  half, above the item panel). TODO(WA): the Title diorama, sky dome and skyline strips. */
+export const LOCKER_CAM = { fovDeg: 35, height: 1.4, dist: 11, targetY: 0.9, anchorFromTop: 0.33 } as const;
+
 export class RunCameraRig implements CameraRig {
-  readonly camera = new OrthographicCamera(-1, 1, 1, -1, 1, 200);
-  readonly menuCamera = new PerspectiveCamera(35, 1, 0.1, 400);
+  readonly runCamera = new OrthographicCamera(-1, 1, 1, -1, 1, 200);
+  readonly menuCamera = new PerspectiveCamera(LOCKER_CAM.fovDeg, 1, 0.1, 400);
+  /** The camera to render with: the ortho run camera, or the perspective camera in 'locker' mode. */
+  get camera(): OrthographicCamera | PerspectiveCamera { return this.mode === 'locker' ? this.menuCamera : this.runCamera; }
   private mode: CameraMode = 'run';
   private H = 0;
   private yawDeg = 0;
@@ -102,6 +109,7 @@ export class RunCameraRig implements CameraRig {
   update(f: RenderFrame): void {
     const vp = f.viewport;
     this.vp = vp;
+    if (this.mode === 'locker') { this.placeLocker(f); return; }
     const dt = Math.max(0, f.dt);
     const key = `${vp.wCss}x${vp.hCss}:${vp.safeTop}`;
     const lead = Math.max(f.speed, speedAt(f.cur.t + CAMERA.zoomTau));
@@ -146,7 +154,7 @@ export class RunCameraRig implements CameraRig {
     // View direction: pitched down by θ, yawed by ψ so that +s leans toward screen right.
     this.dir.set(-Math.sin(yaw) * Math.cos(pitch), -Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
     this.target.set(latX, groundY, -(playerS - this.originS));
-    const cam = this.camera;
+    const cam = this.runCamera;
     cam.position.copy(this.target).addScaledVector(this.dir, -CAM_DIST);
     cam.up.set(0, 1, 0);
     cam.lookAt(this.target);
@@ -155,6 +163,24 @@ export class RunCameraRig implements CameraRig {
     cam.left = xc - halfW + shx; cam.right = xc + halfW + shx;
     cam.top = CAMERA.anchorFromTop * H + shy; cam.bottom = -(1 - CAMERA.anchorFromTop) * H + shy;
     cam.near = 1; cam.far = 200;
+    cam.updateProjectionMatrix();
+    cam.updateMatrixWorld();
+  }
+
+  /** Locker / Shop: behind the skater at 1.4 m, looking at its mid-body, which lands 33% from the top. */
+  private placeLocker(f: RenderFrame): void {
+    const vp = this.vp, cam = this.menuCamera;
+    const s = f.playerS, x = lerp(f.prev.p.x, f.cur.p.x, f.alpha), gy = lerp(f.prev.groundY, f.cur.groundY, f.alpha);
+    this.originS = originOf(s);
+    this.target.set(x, gy + LOCKER_CAM.targetY, -(s - this.originS));
+    cam.position.set(x, gy + LOCKER_CAM.height, this.target.z + LOCKER_CAM.dist);
+    cam.up.set(0, 1, 0);
+    cam.lookAt(this.target);
+    // A taller virtual frame (1.4 h, FOV over the full frame) whose centre is the target, cropped so the target sits
+    // at anchorFromTop.
+    const w = vp.wCss, h = vp.hCss, full = 1.4 * h;
+    cam.aspect = w / full;
+    cam.setViewOffset(w, full, 0, full / 2 - LOCKER_CAM.anchorFromTop * h, w, h);
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld();
   }

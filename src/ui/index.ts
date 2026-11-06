@@ -1,27 +1,21 @@
-// ui/: DOM HUD, screens, popups and toasts (MU; M0 ships a debug HUD + text screens). Public surface (TECH §4.13).
-// UI raises intents; game/app.ts decides what happens. Hidden screens get visibility:hidden + inert.
+// ui/: DOM HUD, screens, popups and toasts (MU; M0 ships the debug HUD and stub screens). Public surface (TECH §4.13).
+// UI raises intents; game/app.ts decides what happens. Hidden screens get visibility:hidden + inert; during a run
+// every UI element except the pause button is pointer-events:none, so nothing swallows an ollie.
 import './styles/base.css';
+import './styles/hud.css';
+import './styles/screens.css';
 import type { ScreenId } from '../core/ids';
 import type { Bus } from '../core/bus';
 import type { AppEvent, GameEvent } from '../core/events';
 import type { MetaApi } from '../core/meta';
 import type { UiApi, UiIntent } from '../core/ui';
+import { crashCause, trickName } from './format';
 import { h } from './h';
-import { createHud } from './hud';
-import { crashScreen, pauseScreen, placeholderScreen, resultsScreen, titleScreen, type Screen, type ScreenParams } from './screens';
-
-/** One-line crash cause (DESIGN §9): "Clipped a trash can", "Flip 62% done — flick earlier". */
-export function crashCause(e: Extract<GameEvent, { t: 'crash' }>): string {
-  const kind = e.kind ? e.kind.replace(/_/g, ' ') : 'something';
-  if (e.cause === 'badLanding' && (e.flipProgress > 0 || e.spinProgress > 0)) {
-    const p = Math.round(100 * Math.max(e.flipProgress, e.spinProgress));
-    return `${e.flipProgress > 0 ? 'Flip' : 'Spin'} ${p}% done — flick earlier`;
-  }
-  if (e.cause === 'badLanding') return `Landed on a ${kind}`;
-  if (e.cause === 'fall') return 'Fell in the trench';
-  if (e.cause === 'splash') return 'Splashed into the fountain';
-  return `Clipped a ${kind}`;
-}
+import { createHud, type HudExt } from './hud';
+import {
+  bootScreen, crashScreen, pauseScreen, placeholderScreen, resultsScreen, settingsScreen, showcaseScreen, statsScreen, titleScreen,
+  type Screen, type ScreenCtx, type ScreenParams,
+} from './screens';
 
 export function createUi(root: HTMLElement): UiApi {
   const hudEl = root.querySelector<HTMLElement>('#hud') ?? root.appendChild(h('div', { id: 'hud' }));
@@ -29,32 +23,34 @@ export function createUi(root: HTMLElement): UiApi {
   const toastsEl = root.querySelector<HTMLElement>('#toasts') ?? root.appendChild(h('div', { id: 'toasts' }));
   const listeners = new Set<(i: UiIntent) => void>();
   const raise = (i: UiIntent) => { for (const f of listeners) f(i); };
-  const hud = createHud(hudEl, raise);
+  const hud: HudExt = createHud(hudEl, raise);
+  let meta: MetaApi | null = null;
+  const ctx: ScreenCtx = { raise, meta: () => meta };
   const screens = new Map<ScreenId, Screen>();
-  for (const s of [titleScreen(raise), crashScreen(), resultsScreen(raise), pauseScreen(raise),
-    placeholderScreen('locker', 'LOCKER', raise), placeholderScreen('shop', 'SHOP', raise),
-    placeholderScreen('crates', 'CRATES', raise), placeholderScreen('stats', 'STATS', raise),
-    placeholderScreen('settings', 'SETTINGS', raise), placeholderScreen('rewards', 'REWARDS', raise),
-    placeholderScreen('boot', 'DUSKLANE', raise)]) {
+  for (const s of [bootScreen(), titleScreen(ctx), crashScreen(), resultsScreen(ctx), pauseScreen(ctx),
+    showcaseScreen(ctx, 'locker', 'LOCKER'), showcaseScreen(ctx, 'shop', 'SHOP'), settingsScreen(ctx), statsScreen(ctx),
+    placeholderScreen('crates', 'CRATES', ctx, 'Mystery crates arrive with Meta/UI.'),
+    placeholderScreen('rewards', 'REWARDS', ctx, 'Rewards arrive with Meta/UI.')]) {
     screens.set(s.id, s);
     s.el.inert = true;
     screensEl.append(s.el);
   }
   let current: ScreenId = 'boot';
-  let lastCause = '';
-  let lastLost = 0;
+  let lastCause = '', lastLost = 0, best = 0;
 
   const ui: UiApi = {
     hud,
     get current() { return current; },
     show(screen, params) {
       current = screen;
+      if (params?.result) best = Math.max(best, params.result.score);
       for (const [id, s] of screens) {
         const on = id === screen;
         s.el.classList.toggle('on', on);
         s.el.inert = !on;
       }
-      const p: ScreenParams = { ...params, cause: lastCause, lost: lastLost };
+      root.dataset.screen = screen;
+      const p: ScreenParams = { ...params, cause: lastCause, lost: lastLost, best };
       screens.get(screen)?.show(p);
     },
     toast(text, ms = 2000) {
@@ -62,12 +58,21 @@ export function createUi(root: HTMLElement): UiApi {
       toastsEl.append(t);
       setTimeout(() => t.remove(), ms);
     },
-    attach(game: Bus<GameEvent>, _app: Bus<AppEvent>, _meta: MetaApi) {
+    attach(game: Bus<GameEvent>, _app: Bus<AppEvent>, m: MetaApi) {
+      meta = m;
       const offs = [
         game.on('runStart', () => { lastCause = ''; lastLost = 0; }),
-        game.on('crash', (e) => { if (!e.god) { lastCause = crashCause(e); } }),
+        game.on('crash', (e) => { if (!e.god) lastCause = crashCause(e); }),
         game.on('comboLost', (e) => { lastLost = e.total; }),
-        game.on('trickScored', (e) => hud.lastTrick(e.id.replace(/([A-Z])/g, ' $1').toUpperCase())),
+        game.on('trickScored', (e) => { if (e.id !== 'ollie') hud.lastTrick(trickName(e.id).toUpperCase()); }),
+        game.on('flipStart', (e) => hud.popup(trickName(e.id), 'flip', true)),
+        game.on('flipUpgrade', (e) => hud.popup(trickName(e.to), 'flip', true)),
+        game.on('spinStart', (e) => hud.popup(trickName(e.id), 'flip', true)),
+        game.on('grindStart', (e) => hud.popup(e.perfect ? `${trickName(e.id)} · PERFECT LOCK` : trickName(e.id), 'grind')),
+        game.on('manualStart', (e) => hud.popup(trickName(e.kind), 'manual')),
+        game.on('land', (e) => { if (e.quality === 'perfect') hud.popup('PERFECT', 'perfect'); else if (e.quality === 'sketchy') hud.popup('SKETCHY', 'sketchy'); }),
+        game.on('nearMiss', () => hud.popup('CLOSE!', 'bonus')),
+        game.on('bonus', (e) => hud.popup(e.name, e.id === 'gap' || e.id === 'transfer' ? 'gap' : 'bonus')),
       ];
       return () => { for (const off of offs) off(); };
     },
@@ -75,3 +80,6 @@ export function createUi(root: HTMLElement): UiApi {
   };
   return ui;
 }
+
+export { crashCause, fmtScore, fmtShort, trickName } from './format';
+export { badLandingPredicted, comboTier } from './hud';
