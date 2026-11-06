@@ -1,7 +1,14 @@
 // tricks/: trick definitions, gesture interpretation, combo and scoring (GP). Public surface (TECH §4.13).
-// M0: only the tables. interpret.ts / combo.ts / scoring.ts / score.config.ts arrive with M0-sim and W1a.
+// The sim imports everything it needs from here (lint: no reaching into tricks/ internals).
 import type { TrickTables } from '../core/tricks';
 import { TRICK_TABLES } from './defs';
 
 export const TRICKS: TrickTables = TRICK_TABLES;
 export { FLIPS, SPINS, GRINDS, MANUALS, GRABS } from './defs';
+export { SCORE } from './score.config';
+export { interpret, swipeCounts, type Intent, type InterpretView } from './interpret';
+export {
+  addBonus, addLink, addTrick, bank, emptyCombo, finishTrick, lose, openWindow, pauseWindow, recompute, refreshHeat,
+  tickCombo, type BankReason, type TrickOpts,
+} from './combo';
+export { comboCoins, comboValue, decayFactor, multiplierOf, trickPoints, uniqueNamesOf, varietyOf } from './scoring';

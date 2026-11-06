@@ -39,6 +39,85 @@ Entry format:
 
 ## M0-sim (sim/, tricks/, world/gen/ minimum, debug/bots/ SafeKey follower)
 
+No change to `src/core/` is needed for M0 to work: everything below is implemented inside sim/, tricks/, world/gen/
+and debug/bots/. One additive request (sim tunables into `core/tuning.ts`) is open for G0.
+The first block is the frozen behaviour later packages (GP, WG, WA, the bots) can rely on; the rest are open notes.
+
+### Frozen M0 contact details the validator mirrors   (status: open, informational)
+- File / symbol: sim/collide.ts, sim/grind.ts, sim/magnet.ts, world/gen/validator/path.ts (TECH §6.4, §6.6)
+- Change: none. Details TECH §6.4 / §6.6 leave implicit, now fixed in code and tests:
+  - The inset is `min(FACE_INSET, extent / 4)` per axis, so a 0.05 m rail keeps a body (`insetOf`, one definition in
+    world/gen/validator/path.ts, used by sim/collide.ts, exported from sim/index.ts and world/gen/index.ts).
+  - Overlap uses the inset box. Skim compares the **true** top (`box.y1`) with the board bottom (`≤ STEP_UP`): a 0.19 m
+    landable body slams, a 0.18 m one skims. A crash top slams whenever the board is below its inset top.
+  - The first-contact axis is the one that started overlapping last (slab method, prev → cur): from above, lateral or
+    frontal. Knock tops are knocked from every side.
+  - In an air tick, capture is tested **before** collisions, so a board coming down onto a ledge or rail locks before
+    it can touch the crash top. **Capture starts when the board's front half reaches the edge start**: centre
+    `s ≥ a.s − HITBOX.l/2` (`CAPTURE_LEAD`, u clamped to 0), in the sim, the prediction and the validator.
+  - After rolling off a top **sideways** (the centre left it), its body pushes the board out to the side and
+    re-anchors targetX; it never re-lands on that top (one drop, one `land`).
+  - Ground align eases targetX toward the grindable's **centreline** (the mean of its non-pickOnly edge axes).
+  - The pick window stays open through up to 3 air ticks without a predicted capture (`PICK_MISS_TICKS`), so the
+    tell never flickers; predictions step time exactly like the sim (`startT + (tick + j)·DT`). A buffered TAP is
+    discarded at capture.
+  - Gravity is integrated exactly (`y += vy·DT − ½G·DT²`), so a flat ollie lasts 36 ticks (0.600 s), pop tick included.
+  - A roll-off drop (a curb, a ledge end) keeps the link window running and does not refresh it on landing.
+- Why: the validator's path check and the sim must agree to the centimetre.
+- Local workaround meanwhile: n/a.
+
+### SafeKey and WorldQuery semantics   (status: open, informational)
+- File / symbol: core/world.ts › SafeKey, WorldQuery.groundAt
+- Change: none (please copy into TECH §5.3 at G0).
+  - SafeKeys are the vertices of the safe line in run time t, sorted by t, with x linear between consecutive keys.
+    An `action: 'ollie'` key is the take-off: tap on the tick whose time is nearest `key.t`. There is a key at every
+    vertex and at least every 0.5 s. Segment boundaries repeat the boundary key, with the same x.
+  - `groundAt` returns the highest slab top `≤ yMax`. If no slab covers the point it returns the pit at lip level, or
+    else the implicit street datum (y = 0, 'asphalt'). M0 emits sidewalk slabs (+0.15) but no road slab.
+  - world/gen also registers an allocation-free `FastQuery` (`fastQueryOf(world)`: obstaclesInto, coinsInto,
+    groundInto, areaGatewayInto) that the sim uses each tick; other worlds (test fixtures) fall back to the contract.
+    WG: keep it when rewriting query.ts.
+- Why: bots, the debug overlay and coins read keys this way, and GP's fixture worlds need the same ground rules.
+- Local workaround meanwhile: n/a.
+
+### Sim tunables into core/tuning.ts   (status: open, for G0)
+- File / symbol: core/tuning.ts (additive), today in sim/consts.ts
+- Change: add verbatim, then make sim/consts.ts re-export them from core:
+  ```ts
+  export const ROLL_OFF_DROP = 0.05, STICKY_DROP = 0.3;                 // TECH §6.3 step 5 (roll-off, sticky slabs)
+  export const BUMP_WOBBLE = 0.3, MANUAL_END_WOBBLE = 0.3;              // s (side bump TECH §6.4, manual budget end)
+  export const COIN_VOLUME = { lat: 0.3, fwd: 0.4, vert: 0.7, centreUp: 0.75 } as const;   // DESIGN §10.8
+  export const COIN_CHAIN_TICKS = 30, PICK_MISS_TICKS = 3;
+  ```
+- Why: DESIGN §22 puts movement and physics numbers in core/tuning.ts; these were implicit in TECH.
+- Local workaround meanwhile: sim/consts.ts is their single home (re-exported by sim/index.ts).
+
+### Pits and trench planks must be drawn; S_TRENCH is off until they are   (status: open, G0 checklist + M0-io / WA)
+- File / symbol: world/render (grey-box chunk builder) › Obstacle.pits; world/gen/gen.config.ts › GEN_FLAGS.trench
+- Change: none to core. S_TRENCH emits `kind: 'trench'` with three `pits` (road lip 0, sidewalk lips 0.15). It also
+  emits one 1.2 m plank slab at y = 0 (surface 'wood') and `params { plankX, plankW, depth }`, and cuts the sidewalk
+  slabs over the trench. S_BARRIER may carry `params { slotX, slotW }` with two solids.
+- Why: the M0-core view draws nothing for pits, so a trench on the road would be invisible (fair in the sim and the
+  validator, but a crash there would not feel deserved). Please draw the pit (dark, with chevrons) and the plank.
+- Local workaround meanwhile: `GEN_FLAGS.trench` defaults to **false**: every A3 slot is an S_BARRIER and S_TRENCH is
+  never drawn. **G0 checklist:** if the merged view draws `Obstacle.pits`, set `GEN_FLAGS.trench = true` in
+  world/gen/gen.config.ts (one line). Tests force both settings, so no golden value changes. To look at one: with the
+  flag on, seed 1 has a trench at t ≈ 22.6 s (s = 158.3, plank at x = −0.51).
+
+### A1/A2 stand-in, GenStats timing, Lesson mode   (status: open, for WG)
+- File / symbol: world/gen/schedule.ts, gen.config.ts › GEN.gate; core/world.ts › GenStats.msPerSegment
+- Change: none.
+  - Instead of A1 column fillers, M0 schedules S_GATE rows by a run-time deadline: consecutive rows ≤ `GEN.gate.gap`
+    apart (9 / 9 / 8 / 7 s, T0 stretches included); a template that would overrun it is replaced by the gate, and when
+    the deadline falls in a gateway the gate comes before it. S_GATE is not drawn freely. An opening is ≥ 3 m from the
+    previous safe x and ≥ 2.4 m from every opening of the previous gate, so no straight lane passes two gates in a
+    row: every lane dies by t ≤ 20 s from t = 0 and within 10 s of startT 150 / 165 (bots.quick, 20 seeds × 9 lanes).
+    A spawn just before a gateway (e.g. startT 155) can take up to ~13 s. WG replaces this with A1 fillers.
+  - `msPerSegment` stays 0, because world/gen may not read clocks. The loop or a bench measures it.
+  - `mode: 'lesson'` plays the Roll-out like a normal run (the Lesson Line is WG's).
+- Why: hand-off for W1b.
+- Local workaround meanwhile: n/a.
+
 ## M0-io (input/, platform/, ui/ debug HUD, world/render/ grey-box, gfx/ additions, debug/ api, shots, e2e)
 
 ## GP: Gameplay (W1a)
