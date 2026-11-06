@@ -12,3 +12,5 @@ export { SkaterViewImpl, duskOf, type SkaterStats } from './view';
 export { resolvePose, POSE_TABLE, GRIND_POSES, MANUAL_POSES } from './poses';
 export { basePose, showcasePose } from './showcase';
 export { BUDGET } from './skater.config';
+/** Card art for the Shop / Locker (MU): the deck graphic in its outline, drawn into any 2D context. */
+export { drawBoardThumb } from './textures';

@@ -185,10 +185,20 @@ const rows: Row[] = [
 
 /** The 40 items, in DESIGN §15 order (skaters, boards, helmets; by rarity within each slot). Non-starters are
  *  'shop' (shop and crates), except Golden Hour ('level30': the Level 30 reward, never in the shop or crates). */
-export const CATALOG: readonly CosmeticItem[] = Object.freeze(rows.map((r) => Object.freeze({ ...r, source: r.source ?? 'shop' })));
+export const CATALOG: readonly CosmeticItem[] = deepFreeze(rows.map((r) => ({ ...r, source: r.source ?? 'shop' })));
 
 export const STARTERS = { skater: 'sk_juno', board: 'bd_plain_maple', helmet: 'hm_classic' } as const;
-export const DEFAULT_LOADOUT: Loadout = { skater: JUNO, board: PLAIN_MAPLE, helmet: CLASSIC };
+/** The starter loadout. Frozen like the catalog: its looks are the catalog's own objects. */
+export const DEFAULT_LOADOUT: Loadout = deepFreeze({ skater: JUNO, board: PLAIN_MAPLE, helmet: CLASSIC });
+
+/** Freezes an object graph (looks hold arrays: palettes, colours, fx), so no caller can edit a shared look. */
+function deepFreeze<T>(o: T): T {
+  if (o && typeof o === 'object' && !Object.isFrozen(o)) {
+    Object.freeze(o);
+    for (const v of Object.values(o as Record<string, unknown>)) deepFreeze(v);
+  }
+  return o;
+}
 
 const BY_ID = new Map<ItemId, CosmeticItem>(CATALOG.map((c) => [c.id, c]));
 /** Catalog lookup by stable id (undefined for unknown ids, e.g. a save written by a newer build). */

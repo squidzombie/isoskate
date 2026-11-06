@@ -29,7 +29,7 @@ import { buildHelmet } from './helmet';
 import { glassMaterial, newUniforms, outlineMaterial, toonMaterial, toonRamp, type SkaterUniforms } from './materials';
 import type { PartBuilder } from './parts';
 import { applyRest, createRig, rigDims, type Rig, type RigDims } from './rig';
-import { BLINK, FX, OUTLINE, SHADE, SHOWCASE, TEX } from './skater.config';
+import { BLINK, FX, OUTLINE, POSE, SHADE, SHOWCASE, TEX } from './skater.config';
 import { showcasePose } from './showcase';
 import {
   BOARD_ATLAS_H, DECAL_H, DECAL_W, DECK_W, drawBoardAtlas, drawFace, drawHelmetDecal, drawSkaterAtlas,
@@ -163,7 +163,7 @@ export class SkaterViewImpl implements SkaterView {
     this.dusk = duskOf(f.area, f.blend);
     let landed = f.pose.landImpulse > 0 ? f.pose.landImpulse : 0, perfect = false;
     for (const e of f.events) {
-      if (e.t === 'land') { landed = Math.max(landed, clamp(0.7 + e.dropH * 0.35, 0.5, 1.5)); perfect ||= e.quality === 'perfect'; }
+      if (e.t === 'land') { landed = Math.max(landed, clamp(LI.base + e.dropH * LI.perDrop, LI.min, LI.max)); perfect ||= e.quality === 'perfect'; }
       this.onEvent(e);
     }
     const inp = this.input;
@@ -329,14 +329,14 @@ export class SkaterViewImpl implements SkaterView {
     U.body.uEmitGain.value = sk.fx.includes('reflectiveStrips') ? lerp(FX.stripMin, FX.stripMax, this.dusk) : 1;
     if (sk.fx.includes('lightSeams')) {
       const u = 0.5 + 0.5 * Math.sin(2 * Math.PI * FX.seamHz * t);
-      U.body.uFxColor.value.setHex(FX.seamA).lerp(tmpColor.setHex(FX.seamB), u).multiplyScalar(1.6);
+      U.body.uFxColor.value.setHex(FX.seamA).lerp(tmpColor.setHex(FX.seamB), u).multiplyScalar(FX.seamGain);
     }
     U.helmet.uEmitGain.value = hm.fx === 'emissiveDusk' ? lerp(FX.lanternMin, FX.lanternMax, this.dusk) : 1;
     if (this.fish.visible) this.fish.rotation.y = t * 2 * Math.PI * FX.fishOrbitHz;
     // Glide Ring's animated canvas: the sun rises and sets on a 6 s loop (showcase only; static in runs).
     if (this.loadout.board.animated && this.mode === 'showcase') {
       this.sunT += dt;
-      if (this.sunT > 0.12) { this.sunT = 0; this.redrawBoard(); }
+      if (this.sunT > FX.sunRedraw) { this.sunT = 0; this.redrawBoard(); }
     }
   }
 
@@ -376,6 +376,7 @@ export class SkaterViewImpl implements SkaterView {
 }
 
 const PARTS = ['body', 'board', 'helmet'] as const;
+const LI = POSE.land.impulse;
 const PRECOMPILE_CAMERA = new PerspectiveCamera();
 const smoothstep = (a: number, b: number, x: number): number => { const u = clamp((x - a) / (b - a), 0, 1); return u * u * (3 - 2 * u); };
 const tmpColor = new Color();

@@ -544,8 +544,41 @@ function glyph(c: Ctx, x: number, y: number, rng: Sfc32, s: number): void {
 
 /** Draws the full board atlas for one look. */
 export function drawBoardAtlas(c: Ctx, look: BoardLook, sunPhase = 0.5): void {
-  const W = DECK_W, H = DECK_H;
+  const W = DECK_W;
   c.clearRect(0, 0, W, BOARD_ATLAS_H);
+  drawDeckGraphic(c, look, sunPhase);
+  drawGripAndPly(c, look);
+}
+
+/**
+ * Shop / Locker card art (MU): the deck graphic inside its rounded outline, ink-edged, with the 8 truck bolts. Nose up
+ * when the box is taller than wide, nose left otherwise; fits the box (x, y, w, h) with a small margin and draws only
+ * inside it (no clear).
+ */
+export function drawBoardThumb(c: Ctx, look: BoardLook, x: number, y: number, w: number, h: number): void {
+  const vertical = h >= w, long = vertical ? h : w, short = vertical ? w : h;
+  const aspect = DECK_W / DECK_H, L = Math.min(long * 0.92, short * 0.92 * aspect), D = L / aspect;
+  c.save();
+  c.translate(x + w / 2, y + h / 2);
+  if (vertical) c.rotate(Math.PI / 2);                    // graphic x (nose at 0) runs down from the top
+  c.translate(-L / 2, -D / 2);
+  c.scale(L / DECK_W, D / DECK_H);
+  c.save();
+  roundRect(c, 0, 0, DECK_W, DECK_H, DECK_H / 2); c.clip();
+  drawDeckGraphic(c, look, 0.5);
+  c.restore();
+  c.fillStyle = css(INK, 0.75);
+  for (const u of [0.5 - 0.235 / 0.8, 0.5 + 0.235 / 0.8]) for (const [dx, dy] of [[-9, -13], [9, -13], [-9, 13], [9, 13]] as const) {
+    c.beginPath(); c.arc(DECK_W * u + dx, DECK_H / 2 + dy, 3.2, 0, Math.PI * 2); c.fill();
+  }
+  c.strokeStyle = css(INK); c.lineWidth = 7;
+  roundRect(c, 0, 0, DECK_W, DECK_H, DECK_H / 2); c.stroke();
+  c.restore();
+}
+
+/** The 512 × 128 deck graphic at the context origin: pattern (scale, rotation), logo and wear. */
+function drawDeckGraphic(c: Ctx, look: BoardLook, sunPhase: number): void {
+  const W = DECK_W, H = DECK_H;
   // Deck graphic with scale and rotation (rotated about the centre; drawn over-size so corners stay covered).
   const rng = new Sfc32(hash32(lookSeed(look.pattern), lookSeed(look.palette)));
   c.save();
@@ -561,6 +594,11 @@ export function drawBoardAtlas(c: Ctx, look: BoardLook, sunPhase = 0.5): void {
   c.restore();
   if (look.logo) drawLogo(c, look.logo, look.palette, W, H);
   if (look.wear > 0) drawWear(c, look, W, H, rng);
+}
+
+/** Grip (rows 128..191) and ply edge (192..223) of the board atlas, plus the white block. */
+function drawGripAndPly(c: Ctx, look: BoardLook): void {
+  const W = DECK_W;
   // Grip: dark noise (the 128² grip tile, tiled along the deck), plus Golden Hour's glowing edge.
   const [gx0, gy0] = [0, 128];
   c.fillStyle = css(look.grip); c.fillRect(gx0, gy0, W, 64);

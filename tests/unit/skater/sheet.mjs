@@ -34,6 +34,7 @@ const SHEETS = [
   { name: 'heads-back', q: 'sheet=heads&yaw=180' },
   { name: 'showcase-back', q: 'sheet=showcase&yaw=180' },
   // Blue hour on the wet neon asphalt (DESIGN §18.1, §18.4): dark outfits must keep an edge.
+  { name: 'thumbs', q: '', page: 'thumbs.html' },
   { name: 'items31-neon', q: 'sheet=items&px=31&zoom=3', area: 'neon' },
   { name: 'poses60-neon', q: 'sheet=poses&px=60&cols=11', area: 'neon' },
 ].filter((s) => !only.length || only.includes(s.name));
@@ -61,7 +62,7 @@ try {
     const errors = [];
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
     page.on('pageerror', (e) => errors.push(String(e)));
-    await page.goto(`${BASE}/tests/unit/skater/sheet.html?${s.q}&area=${s.area ?? area}`);
+    await page.goto(`${BASE}/tests/unit/skater/${s.page ?? 'sheet.html'}?${s.q}&area=${s.area ?? area}`);
     await page.waitForFunction(() => window.__sheet?.done === true, null, { timeout: 120000 });
     const info = await page.evaluate(() => window.__sheet);
     const size = { w: Math.ceil(info.width), h: Math.ceil(info.height) };

@@ -60,7 +60,8 @@ export const POSE = {
   tuck: { knee: 85, footLift: 0.22, armAbd: 45 },
   flip: { shoulderTwist: 15, catchAt: 0.8, catchLift: 0.06 },
   grab: { knee: 95 },
-  land: { dip: 0.15, dipIn: 0.08, dipOut: 0.22, knee: 55, squash: 0.94 },
+  /** impulse: the dip amplitude from a `land` event = clamp(base + perDrop × dropH, min, max). */
+  land: { dip: 0.15, dipIn: 0.08, dipOut: 0.22, knee: 55, squash: 0.94, impulse: { base: 0.7, perDrop: 0.35, min: 0.5, max: 1.5 } },
   manual: { pitch: 12, swayHz: 1.2, swayDeg: 20 },
   grind: { knee: 25, armAbd: 60 },
   /** Arm windmill 2 Hz for 0.3 s from the sketchy landing: arms raised to `abd`, swinging ±flex, elbows ±elbow. */
@@ -114,7 +115,7 @@ export const BLINK = { min: 3, max: 6, dur: 0.12 } as const;
 
 /** Effects with static fallbacks (DESIGN §15; bespoke animation is M5 stretch). */
 export const FX = {
-  seamHz: 0.5, seamA: 0xff3fa4, seamB: 0x3ff2ff,      // Aki's lightSeams
+  seamHz: 0.5, seamA: 0xff3fa4, seamB: 0x3ff2ff, seamGain: 1.6,   // Aki's lightSeams
   stripMin: 0.2, stripMax: 1.2,                        // Vesper's reflectiveStrips, toward dusk
   lanternMin: 0.2, lanternMax: 1.0,                    // Paper Lantern helmet, toward blue hour
   boardGlow: 0.8,                                      // emissive board finishes (Lantern Row's lanterns)
@@ -124,7 +125,7 @@ export const FX = {
   // M5 stretch, not applied yet (static fallbacks, DESIGN §15): Cat Ears' flick and Sunflower's petal bob.
   earFlickDur: 0.35, petalBobDur: 0.4,
   fishOrbitHz: 0.25,
-  sunLoop: 6,                                          // Glide Ring's sun rises and sets on a 6 s loop
+  sunLoop: 6, sunRedraw: 0.12,                         // Glide Ring's sun rises and sets on a 6 s loop (redraw every 0.12 s)
 } as const;
 
 /** Showcase (Locker / Shop turntable): slow idle plus a trick preview loop. */

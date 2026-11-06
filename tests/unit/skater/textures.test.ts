@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { CATALOG } from '../../../src/content';
 import type { BoardLook, BoardPattern, HelmetLook, SkaterLook } from '../../../src/core/cosmetics';
-import { PATTERNS, drawBoardAtlas, drawHelmetDecal, drawSkaterAtlas } from '../../../src/skater/textures';
+import { PATTERNS, drawBoardAtlas, drawBoardThumb, drawHelmetDecal, drawSkaterAtlas } from '../../../src/skater/textures';
 
 /** A fake CanvasRenderingContext2D that records method calls and property writes. */
 function fakeCtx(): { ctx: CanvasRenderingContext2D; log: string[] } {
@@ -72,5 +72,17 @@ describe('canvas generators', () => {
     drawSkaterAtlas(open.ctx, juno, { blink: false, robotFace: 0 });
     drawSkaterAtlas(shut.ctx, juno, { blink: true, robotFace: 0 });
     expect(open.log.join('|')).not.toBe(shut.log.join('|'));
+  });
+  it('board card art (Shop / Locker): every board, deterministic, distinct, never clears the card', () => {
+    const logs = CATALOG.filter((c) => c.slot === 'board').map((it) => {
+      const run = (w: number, h: number) => { const { ctx, log } = fakeCtx(); drawBoardThumb(ctx, it.look as BoardLook, 10, 20, w, h); return log; };
+      const a = run(80, 240);
+      expect(run(80, 240), it.id).toEqual(a);
+      expect(a.some((l) => l.startsWith('clearRect')), it.id).toBe(false);
+      expect(a.filter((l) => l === 'save()').length, it.id).toBe(a.filter((l) => l === 'restore()').length);
+      expect(run(240, 80).join('|')).not.toBe(a.join('|'));          // landscape boxes lay the deck down
+      return a.join('|');
+    });
+    expect(new Set(logs).size).toBe(logs.length);
   });
 });
