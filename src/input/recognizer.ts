@@ -1,12 +1,33 @@
-// input/recognizer.ts: per-pointer gesture recognizer, pure (no DOM, no clocks; time comes from the samples).
-// M0 stub: PENDING → HOLD (200 ms still) or DRAG (≥ SLOP, permanent); TAP on a still release ≤ 350 ms;
-// steering from the first DRAG touch; a basic swipe detector (≥ 32·k px inside 80 ms, one fire per 90 ms, 8 sectors).
-// TODO(M0-io/GP): the full DESIGN §4.2 grammar: fromRest/steer labels, arc compensation, recoil mask, re-fire dip,
-// lift-off swipes and their suppression, swipeDx since touch-down, simpleTricks, dead zone, misfire traces (§7.4).
+// input/recognizer.ts: the per-touch gesture recognizer (DESIGN §4.2, TECH §7.2). Pure: no DOM and no clocks; time
+// comes only from the samples (and from tick()). The thumb bot runs this exact code on synthetic traces.
+//
+// Per pointer: PENDING (travel < SLOP) → HOLD at 200 ms still, or DRAG once travel ≥ SLOP (permanent).
+//   - Release while still and ≤ 350 ms after down → tap (also from HOLD, which then also ends the hold).
+//   - HOLD that moves ≥ SLOP → holdEnd, then DRAG. `cancel` → no tap or swipe, ends the hold, frees steering.
+//   - Steering: only the steering owner (the first touch to become a DRAG) emits `steer`, counted from touch-down.
+//     When the owner lifts or cancels, the next touch that becomes a DRAG takes ownership.
+//   - press: level for every non-DRAG touch; dropped when the touch becomes a DRAG.
+// Swipes (inside a DRAG): ≥ 32·k px within the 80 ms window, or on lift with ≥ 24·k px in the last 80 ms. Labels:
+//   fast (≥ 0.75·k px/ms over the flick), fromRest (parked < 0.15·k px/ms for ≥ 60 ms right before the flick),
+//   steer (the steering owner, older than 150 ms). Direction: arc compensation then 8 sectors (cardinals ±30°,
+//   diagonals ±15°; Simple tricks snaps diagonals to cardinals). After a fire: a 150 ms recoil mask (motion within
+//   ±60° of the opposite direction is invisible to swipe detection; steering stays live), re-fire only after 90 ms,
+//   32·k px from the fire point and a speed dip below 50% of the flick's peak, and no lift-off swipe for 150 ms.
+// `dxPx` of a swipe is the steering that stroke contributed: 0 for a non-owner touch; for the owner, the window's dx,
+// or all dx since touch-down when the stroke is ≤ 150 ms old.
 import type { Dir8 } from '../core/ids';
 import type { Gesture, GestureRecognizer, PointerSample, RecognizerConfig } from '../core/input';
 
-export const DEFAULT_RECOGNIZER: Readonly<RecognizerConfig> = {
+/** Local extension of the frozen RecognizerConfig (requested in docs/core-requests.md, M0-io section). */
+export interface RecognizerConfigExt extends RecognizerConfig {
+  /** Screen width in CSS px: arc compensation applies to strokes starting in the outer `arcOuterFrac` of it.
+   *  0 = unknown → 390·k. The DOM binding keeps it live. */
+  screenW: number;
+  /** Screen height in CSS px: touch-starts below `screenH − deadZoneBottomPx` are ignored. 0 = no dead zone. */
+  screenH: number;
+}
+
+export const DEFAULT_RECOGNIZER: Readonly<RecognizerConfigExt> = {
   slopPx: 10, tapMaxMs: 350, holdMs: 200,
   swipeWindowMs: 80, swipeMinPx: 32, fastMinPx: 60,
   liftSwipeMinPx: 24, liftSuppressMs: 150,
@@ -18,86 +39,257 @@ export const DEFAULT_RECOGNIZER: Readonly<RecognizerConfig> = {
   simpleTricks: false,
   deadZoneBottomPx: 12,
   k: 1,
+  screenW: 0, screenH: 0,
 };
 
+/** Measurement windows (how the grammar's speeds are measured, not grammar tunables): the speed used for the
+ *  re-fire peak and dip; the speed used for rest detection (longer, so ±3 px of thumb tremor still reads as
+ *  parked); how much history each touch keeps. */
+export const RECOGNIZER_INTERNALS = { speedWinMs: 24, restWinMs: 40, trailMs: 400 } as const;
+
+const DEG = 180 / Math.PI;
+const CARDINALS: readonly [Dir8, number][] = [['r', 0], ['u', 90], ['l', 180], ['d', 270]];
+const DIAGONALS: readonly [Dir8, number][] = [['ur', 45], ['ul', 135], ['dl', 225], ['dr', 315]];
+const angDist = (a: number, b: number) => Math.abs(((a - b + 540) % 360) - 180);
+
+/** Screen angle in degrees, 0 = right, 90 = up (screen y grows downward), in [0, 360). */
+export const screenAngle = (dx: number, dy: number) => ((Math.atan2(-dy, dx) * DEG) + 360) % 360;
+
+/** Arc compensation (DESIGN §4.2): a stroke starting in the outer `arcOuterFrac` of the width (either side) and
+ *  within 45° of horizontal is rotated `arcCompDeg` toward horizontal (a sideways thumb swipe arcs upward). */
+export function arcCompensate(angle: number, startX: number,
+  cfg: Pick<RecognizerConfigExt, 'arcCompDeg' | 'arcOuterFrac' | 'screenW' | 'k'>): number {
+  const w = cfg.screenW > 0 ? cfg.screenW : 390 * cfg.k;
+  const outer = startX <= cfg.arcOuterFrac * w || startX >= (1 - cfg.arcOuterFrac) * w;
+  if (!outer) return angle;
+  const h = angle <= 90 ? 0 : angle < 270 ? 180 : 360;          // nearest horizontal axis
+  const off = angle - h;                                          // signed offset from it, |off| ≤ 90
+  if (Math.abs(off) > 45) return angle;
+  const rot = Math.min(cfg.arcCompDeg, Math.abs(off));
+  return (h + off - Math.sign(off) * rot + 360) % 360;
+}
+
+/** 8 screen-space sectors: cardinals ±cardinalHalfDeg (the edge belongs to the cardinal), diagonals ±diagonalHalfDeg.
+ *  `simpleTricks` snaps a diagonal to the nearest cardinal (an exact 45° tie goes to the vertical one). */
+export function sectorOfAngle(angle: number, cfg: Pick<RecognizerConfig, 'cardinalHalfDeg' | 'diagonalHalfDeg' | 'simpleTricks'>): Dir8 {
+  let bestC: Dir8 = 'r', dc = Infinity;
+  for (const [d, c] of CARDINALS) {
+    const x = angDist(angle, c);
+    if (x < dc - 1e-9 || (Math.abs(x - dc) <= 1e-9 && (d === 'u' || d === 'd'))) { dc = x; bestC = d; }
+  }
+  if (dc <= cfg.cardinalHalfDeg + 1e-9 || cfg.simpleTricks) return bestC;
+  let bestD: Dir8 = 'ur', dd = Infinity;
+  for (const [d, c] of DIAGONALS) { const x = angDist(angle, c); if (x < dd) { dd = x; bestD = d; } }
+  if (dd <= cfg.diagonalHalfDeg + 1e-9) return bestD;
+  return dc / cfg.cardinalHalfDeg <= dd / cfg.diagonalHalfDeg ? bestC : bestD;   // only if the sectors leave gaps
+}
+
+/** Direction of a displacement (screen px) without arc compensation. */
+export function sectorOf(dx: number, dy: number, cfg: Pick<RecognizerConfig, 'cardinalHalfDeg' | 'diagonalHalfDeg' | 'simpleTricks'>): Dir8 {
+  return sectorOfAngle(screenAngle(dx, dy), cfg);
+}
+
+/** Direction of a stroke: arc compensation from its start x, then the sectors. */
+export function directionOf(dx: number, dy: number, startX: number, cfg: RecognizerConfigExt): Dir8 {
+  return sectorOfAngle(arcCompensate(screenAngle(dx, dy), startX, cfg), cfg);
+}
+
+interface Sample { t: number; x: number; y: number; fx: number; fy: number }   // raw and recoil-filtered position
+
 interface Touch {
-  id: number; downMs: number; x0: number; y0: number; x: number; y: number;
+  id: number; downMs: number; x0: number; y0: number;
+  t: number; x: number; y: number; fx: number; fy: number;
   state: 'pending' | 'hold' | 'drag';
-  trail: { t: number; x: number; y: number }[];
-  lastFireMs: number; fireX: number; fireY: number;
+  press: boolean;
+  trail: Sample[];
+  steerX: number;
+  // swipe bookkeeping
+  fires: number; lastFireMs: number; fireFx: number; fireFy: number; fireUx: number; fireUy: number;
+  peak: number; dipped: boolean;
+  // rest bookkeeping (fromRest): parked while the filtered speed stays under restSpeed
+  moving: boolean; restStart: number; lastRestLen: number; motionStart: number;
 }
 
-/** 8 screen-space sectors (screen y grows downward): cardinals ±cardinalHalfDeg, the diagonals take the rest. */
-export function sectorOf(dx: number, dy: number, cfg: Pick<RecognizerConfig, 'cardinalHalfDeg' | 'simpleTricks'>): Dir8 {
-  const a = (((Math.atan2(-dy, dx) * 180) / Math.PI) + 360) % 360;   // 0 = right, 90 = up
-  const dist = (b: number) => Math.abs(((a - b + 540) % 360) - 180);
-  const cardinals: [Dir8, number][] = [['r', 0], ['u', 90], ['l', 180], ['d', 270]];
-  for (const [d, c] of cardinals) if (dist(c) <= cfg.cardinalHalfDeg) return d;
-  if (cfg.simpleTricks) return cardinals.reduce((best, c) => (dist(c[1]) < dist(best[1]) ? c : best))[0];
-  return a < 90 ? 'ur' : a < 180 ? 'ul' : a < 270 ? 'dl' : 'dr';
+/** Linear interpolation of the trail at time t (clamped to the first/last sample). */
+function at(tr: readonly Sample[], t: number, filtered: boolean): [number, number] {
+  const pick = (s: Sample): [number, number] => (filtered ? [s.fx, s.fy] : [s.x, s.y]);
+  const first = tr[0]!;
+  if (t <= first.t) return pick(first);
+  for (let i = tr.length - 1; i > 0; i--) {
+    const b = tr[i]!, a = tr[i - 1]!;
+    if (t < a.t) continue;
+    if (t >= b.t) return pick(b);
+    const u = (t - a.t) / Math.max(1e-9, b.t - a.t);
+    const [ax, ay] = pick(a), [bx, by] = pick(b);
+    return [ax + (bx - ax) * u, ay + (by - ay) * u];
+  }
+  return pick(first);
 }
 
-export function createRecognizerImpl(partial?: Partial<RecognizerConfig>): GestureRecognizer {
-  const config: RecognizerConfig = { ...DEFAULT_RECOGNIZER, ...partial };
+export type Recognizer = GestureRecognizer & { readonly config: RecognizerConfigExt };
+
+export function createRecognizerImpl(partial?: Partial<RecognizerConfigExt>): Recognizer {
+  const config: RecognizerConfigExt = { ...DEFAULT_RECOGNIZER, ...partial };
   const touches = new Map<number, Touch>();
+  const ignored = new Set<number>();
   let owner: number | null = null;
 
-  function swipeCheck(t: Touch, out: Gesture[], nowMs: number): void {
+  /** Filtered speed (px/ms) over the trailing `win` ms ending at the touch's latest sample. */
+  const speed = (tc: Touch, win: number) => {
+    const t0 = Math.max(tc.downMs, tc.t - win);
+    const dt = tc.t - t0;
+    if (dt <= 0) return 0;
+    const [x, y] = at(tc.trail, t0, true);
+    return Math.hypot(tc.fx - x, tc.fy - y) / dt;
+  };
+
+  /** Time-based transitions up to `now`: PENDING still for holdMs → HOLD (holdStart stamped at down + holdMs). */
+  function advance(now: number, out: Gesture[]): void {
+    for (const tc of touches.values()) {
+      if (tc.state === 'pending' && now - tc.downMs >= config.holdMs) {
+        tc.state = 'hold';
+        out.push({ k: 'holdStart', tMs: tc.downMs + config.holdMs });
+      }
+    }
+  }
+
+  /** Recoil mask: `(dx, dy)` within ±recoilDeg of the opposite of the last fire, less than recoilMs after it. */
+  const inRecoil = (tc: Touch, t: number, dx: number, dy: number) => {
+    if (tc.fires === 0 || t - tc.lastFireMs >= config.recoilMs) return false;
+    const len = Math.hypot(dx, dy);
+    if (len < 1e-9) return false;
+    return (-dx * tc.fireUx - dy * tc.fireUy) / len >= Math.cos(config.recoilDeg / DEG) - 1e-12;
+  };
+
+  /** Filtered swipe-window displacement ending at t, and the window start. */
+  const windowDisp = (tc: Touch, t: number): [number, number, number] => {
+    const ws = Math.max(t - config.swipeWindowMs, tc.downMs);
+    const [wx, wy] = at(tc.trail, ws, true);
+    return [tc.fx - wx, tc.fy - wy, ws];
+  };
+
+  function fire(tc: Touch, t: number, dx: number, dy: number, ws: number, out: Gesture[]): void {
     const k = config.k;
-    while (t.trail.length > 1 && nowMs - t.trail[0]!.t > config.swipeWindowMs) t.trail.shift();
-    const first = t.trail[0]!;
-    const dx = t.x - first.x, dy = t.y - first.y;
-    const dist = Math.hypot(dx, dy);
-    if (dist < config.swipeMinPx * k) return;
-    if (nowMs - t.lastFireMs < config.refireMs) return;
-    if (Math.hypot(t.x - t.fireX, t.y - t.fireY) < config.swipeMinPx * k) return;
-    t.lastFireMs = nowMs; t.fireX = t.x; t.fireY = t.y;
-    out.push({ k: 'swipe', tMs: nowMs, dir: sectorOf(dx, dy, config), dxPx: dx, fast: dist >= config.fastMinPx * k,
-      fromRest: false, steer: owner === t.id && nowMs - t.downMs > config.steerStrokeMs });
+    const [sx] = at(tc.trail, ws, false);
+    const isOwner = owner === tc.id;
+    let dxPx = 0;
+    if (isOwner) dxPx = t - tc.downMs <= config.steerStrokeMs ? tc.x - tc.x0 : tc.x - at(tc.trail, t - config.swipeWindowMs, false)[0];
+    // Speed of the flick: displacement over the part of the window in which the thumb was actually moving.
+    let flickStart = tc.moving ? Math.max(ws, tc.motionStart) : ws;
+    if (t - flickStart < 1) flickStart = ws;
+    const [qx, qy] = at(tc.trail, flickStart, true);
+    const flickSpeed = Math.hypot(tc.fx - qx, tc.fy - qy) / Math.max(1, t - flickStart);
+    const len = Math.hypot(dx, dy);
+    out.push({
+      k: 'swipe', tMs: t, dir: directionOf(dx, dy, sx, config), dxPx,
+      fast: flickSpeed >= (config.fastMinPx * k) / config.swipeWindowMs,
+      fromRest: (tc.moving ? tc.lastRestLen : tc.t - tc.restStart) >= config.restMs,
+      steer: isOwner && t - tc.downMs > config.steerStrokeMs,
+    });
+    tc.fires++; tc.lastFireMs = t; tc.fireFx = tc.fx; tc.fireFy = tc.fy;
+    tc.fireUx = dx / (len || 1); tc.fireUy = dy / (len || 1);
+    tc.peak = speed(tc, RECOGNIZER_INTERNALS.speedWinMs); tc.dipped = false;
+  }
+
+  /** A position sample for an existing touch: recoil filter, slop, steering, rest and peak bookkeeping, swipes. */
+  function move(tc: Touch, s: PointerSample, out: Gesture[]): void {
+    const k = config.k, t = Math.max(tc.t, s.tMs);
+    const dx = s.x - tc.x, dy = s.y - tc.y;
+    const prevT = tc.t;
+    if (!inRecoil(tc, t, dx, dy)) { tc.fx += dx; tc.fy += dy; }
+    tc.x = s.x; tc.y = s.y; tc.t = t;
+    tc.trail.push({ t, x: tc.x, y: tc.y, fx: tc.fx, fy: tc.fy });
+    while (tc.trail.length > 2 && tc.trail[1]!.t < t - RECOGNIZER_INTERNALS.trailMs) tc.trail.shift();
+
+    // Slop: PENDING/HOLD → DRAG (permanent). The owner's steering counts from the touch-down point.
+    if (tc.state !== 'drag' && Math.hypot(tc.x - tc.x0, tc.y - tc.y0) >= config.slopPx * k) {
+      if (tc.state === 'hold') out.push({ k: 'holdEnd', tMs: t });
+      if (tc.press) { tc.press = false; out.push({ k: 'press', tMs: t, down: false }); }
+      tc.state = 'drag';
+      if (owner === null) { owner = tc.id; tc.steerX = tc.x0; }
+    }
+    if (tc.state === 'drag' && owner === tc.id && tc.x !== tc.steerX) {
+      out.push({ k: 'steer', tMs: t, dxPx: tc.x - tc.steerX });
+      tc.steerX = tc.x;
+    }
+
+    // Rest tracking (fromRest). A parked thumb sends no samples, so a slow segment since the previous sample means
+    // the rest began at that sample.
+    const vr = speed(tc, RECOGNIZER_INTERNALS.restWinMs);
+    if (vr < config.restSpeed * k) {
+      if (tc.moving) {
+        tc.moving = false;
+        const seg = Math.hypot(tc.fx - tc.trail[tc.trail.length - 2]!.fx, tc.fy - tc.trail[tc.trail.length - 2]!.fy);
+        tc.restStart = seg / Math.max(1, t - prevT) < config.restSpeed * k ? prevT : t;
+      }
+    } else if (!tc.moving) {
+      tc.moving = true; tc.lastRestLen = prevT - tc.restStart; tc.motionStart = prevT;
+    }
+    // Peak and dip of the last flick (re-fire rule).
+    if (tc.fires > 0 && !tc.dipped) {
+      const v = speed(tc, RECOGNIZER_INTERNALS.speedWinMs);
+      tc.peak = Math.max(tc.peak, v);
+      if (v < config.refireDip * tc.peak) tc.dipped = true;
+    }
+
+    if (tc.state !== 'drag') return;
+    const [wx, wy, ws] = windowDisp(tc, t);
+    if (Math.hypot(wx, wy) < config.swipeMinPx * k) return;
+    if (tc.fires > 0) {
+      if (t - tc.lastFireMs < config.refireMs) return;
+      if (Math.hypot(tc.fx - tc.fireFx, tc.fy - tc.fireFy) < config.swipeMinPx * k) return;
+      if (!tc.dipped || inRecoil(tc, t, wx, wy)) return;
+    }
+    fire(tc, t, wx, wy, ws, out);
+  }
+
+  function end(tc: Touch, t: number, out: Gesture[]): void {
+    if (tc.state === 'hold') out.push({ k: 'holdEnd', tMs: t });
+    if (tc.press) { tc.press = false; out.push({ k: 'press', tMs: t, down: false }); }
+    if (owner === tc.id) owner = null;
+    touches.delete(tc.id);
   }
 
   return {
     config,
     feed(s: PointerSample): Gesture[] {
       const out: Gesture[] = [];
+      advance(s.tMs, out);
       if (s.phase === 'down') {
-        touches.set(s.id, { id: s.id, downMs: s.tMs, x0: s.x, y0: s.y, x: s.x, y: s.y, state: 'pending',
-          trail: [{ t: s.tMs, x: s.x, y: s.y }], lastFireMs: -Infinity, fireX: s.x, fireY: s.y });
+        const old = touches.get(s.id);
+        if (old) end(old, s.tMs, out);                       // a lost up: treat it as a cancel
+        ignored.delete(s.id);
+        if (config.screenH > 0 && s.y > config.screenH - config.deadZoneBottomPx) { ignored.add(s.id); return out; }
+        touches.set(s.id, {
+          id: s.id, downMs: s.tMs, x0: s.x, y0: s.y, t: s.tMs, x: s.x, y: s.y, fx: s.x, fy: s.y,
+          state: 'pending', press: true, trail: [{ t: s.tMs, x: s.x, y: s.y, fx: s.x, fy: s.y }], steerX: s.x,
+          fires: 0, lastFireMs: -Infinity, fireFx: s.x, fireFy: s.y, fireUx: 0, fireUy: 0, peak: 0, dipped: false,
+          moving: false, restStart: s.tMs, lastRestLen: 0, motionStart: s.tMs,
+        });
         out.push({ k: 'press', tMs: s.tMs, down: true });
         return out;
       }
-      const t = touches.get(s.id);
-      if (!t) return out;
-      if (s.phase === 'move') {
-        const px = t.x;
-        t.x = s.x; t.y = s.y;
-        t.trail.push({ t: s.tMs, x: s.x, y: s.y });
-        if (t.state !== 'drag' && Math.hypot(s.x - t.x0, s.y - t.y0) >= config.slopPx) {
-          if (t.state === 'hold') out.push({ k: 'holdEnd', tMs: s.tMs });
-          t.state = 'drag';
-          out.push({ k: 'press', tMs: s.tMs, down: false });
-          if (owner === null) { owner = t.id; out.push({ k: 'steer', tMs: s.tMs, dxPx: s.x - t.x0 }); }
-        } else if (t.state === 'drag' && owner === t.id) {
-          out.push({ k: 'steer', tMs: s.tMs, dxPx: s.x - px });
-        }
-        if (t.state === 'drag') swipeCheck(t, out, s.tMs);
-        return out;
+      if (ignored.has(s.id)) { if (s.phase !== 'move') ignored.delete(s.id); return out; }
+      const tc = touches.get(s.id);
+      if (!tc) return out;
+      if (s.phase === 'cancel') { end(tc, s.tMs, out); return out; }
+      if (s.phase === 'move' || s.x !== tc.x || s.y !== tc.y) move(tc, s, out);
+      if (s.phase === 'move') return out;
+      // up: tap, lift-off swipe, then the end of hold / press / ownership.
+      const t = Math.max(tc.t, s.tMs);
+      if (tc.state !== 'drag' && t - tc.downMs <= config.tapMaxMs) out.push({ k: 'tap', tMs: t });
+      if (tc.state === 'drag' && (tc.fires === 0 || (t - tc.lastFireMs >= config.liftSuppressMs && tc.dipped))) {
+        const [wx, wy, ws] = windowDisp(tc, t);
+        if (Math.hypot(wx, wy) >= config.liftSwipeMinPx * config.k && !inRecoil(tc, t, wx, wy)) fire(tc, t, wx, wy, ws, out);
       }
-      // up / cancel
-      if (s.phase === 'up' && t.state !== 'drag' && s.tMs - t.downMs <= config.tapMaxMs) out.push({ k: 'tap', tMs: s.tMs });
-      if (t.state === 'hold') out.push({ k: 'holdEnd', tMs: s.tMs });
-      if (t.state !== 'drag') out.push({ k: 'press', tMs: s.tMs, down: false });
-      if (owner === t.id) owner = null;
-      touches.delete(s.id);
+      end(tc, t, out);
       return out;
     },
     tick(nowMs: number): Gesture[] {
       const out: Gesture[] = [];
-      for (const t of touches.values()) {
-        if (t.state === 'pending' && nowMs - t.downMs >= config.holdMs) { t.state = 'hold'; out.push({ k: 'holdStart', tMs: t.downMs + config.holdMs }); }
-      }
+      advance(nowMs, out);
       return out;
     },
-    reset() { touches.clear(); owner = null; },
+    reset() { touches.clear(); ignored.clear(); owner = null; },
   };
 }
