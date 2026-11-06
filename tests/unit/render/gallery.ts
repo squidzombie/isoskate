@@ -125,9 +125,11 @@ function streetScene(): void {
   // Backdrop both sides along the whole stretch: buildings / houses / warehouses / towers, gaps every block.
   for (let s = base; s < S0 + 70; s += 16) {
     for (const side of [-1, 1] as const) {
+      // The sun side (left) gets shorter blocks with cross-street gaps that stripe the street (as WG's M0 decor does).
+      if (side < 0 && Math.floor(s / 16) % 2 === 1) continue;
       const a = A(s);
       const k: DecorKind = a === 'suburbs' ? 'house' : a === 'docks' ? (side > 0 ? 'container_stack' : 'warehouse') : a === 'neon' ? 'tower' : 'building';
-      D(k, s + (side > 0 ? 3 : 0), side, Math.floor(s / 16) + (side > 0 ? 3 : 0), { params: { d: 12, h: 9 + ((s / 16) % 3) * 5 } });
+      D(k, s + (side > 0 ? 3 : 0), side, Math.floor(s / 16) + (side > 0 ? 3 : 0), k === 'house' ? {} : { params: { d: 12, h: 9 + ((s / 16) % 3) * 5 } });
       if (side < 0) D('shadow_caster', s + 8, -1, Math.floor(s) % 4, { x: -11 });
     }
   }
@@ -149,7 +151,7 @@ function streetScene(): void {
   }
   if (A(S0) === 'neon') D('maglev_beam', S0 - 30, 1, 0, { x: -2.4, params: { len: 100 } });
   // Ground: lane dashes, a crosswalk, manholes, cracks, puddles.
-  D('lane_dash', base, 1, 0, { x: 0, params: { len: 120 } });
+  for (let s = base; s < S0 + 64; s += 32) D('lane_dash', s, 1, 0, { x: 0, params: { len: 32 } });
   D('crosswalk', S0 + 26, 1, 0, { x: 0 });
   for (let s = base + 3; s < S0 + 60; s += 7) { D('manhole', s, (s % 2 ? -1 : 1), 0, { x: s % 2 ? -1.4 : 1.6 }); D('crack', s + 3, 1, 1, { x: -0.6 + (s % 3) }); }
   D('puddle', S0 + 6, 1, 0, { x: 1.2 }); D('puddle', S0 + 15, -1, 1, { x: -1.8 }); D('oil_stain', S0 + 11, 1, 0, { x: 0.4 });

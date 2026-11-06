@@ -87,7 +87,7 @@ export function solveFraming(speed: number, vp: Viewport, out?: Framing): Framin
 export const LOCKER_CAM = { fovDeg: 35, height: 1.4, dist: 11, targetY: 0.9, anchorFromTop: 0.33 } as const;
 /** The static Title diorama camera (DESIGN §8): low, behind and to the right of the idling skater, looking down the
  *  street toward the horizon (the skater sits in the lower third, the sunset sky fills the top). */
-export const TITLE_CAM = { fovDeg: 35, height: 1.4, back: 5.4, side: 1.7, lookAhead: 26, lookY: 1.55, lookX: -0.9 } as const;
+export const TITLE_CAM = { fovDeg: 35, height: 1.4, back: 4.6, side: 0.55, lookAhead: 26, lookY: 1.7, lookX: -0.35 } as const;
 
 export class RunCameraRig implements CameraRig {
   readonly runCamera = new OrthographicCamera(-1, 1, 1, -1, 1, 200);

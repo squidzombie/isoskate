@@ -60,14 +60,14 @@ export const planterTree: KitFn = (c, ob) => {
   const palm = c.area === 'downtown';
   const top = trunk.y1;
   if (palm) {
-    K.lit(0, 0.6, FX.matte).col(0x2c4a2c);
+    K.lit(0, 0.6, FX.matte).col(0x1c301e);
     for (let i = 0; i < 7; i++) {
       const a = (i / 7) * Math.PI * 2, dx = Math.cos(a), ds = Math.sin(a);
       K.quad(x, top + 0.1, s, x + dx * 0.25 - ds * 0.12, top + 0.15, s + ds * 0.25 + dx * 0.12, x + dx * 1.3, top - 0.35, s + ds * 1.3, x + dx * 0.25 + ds * 0.12, top + 0.15, s + ds * 0.25 - dx * 0.12);
     }
     K.lit(0).col(0x6b4e3a).sphere(x, top + 0.05, s, 0.16, 5, 3);
   } else {
-    const leaf = c.area === 'neon' ? 0xffb7d0 : 0x3a5a34;
+    const leaf = c.area === 'neon' ? 0xffb7d0 : 0x22381f;
     K.lit(0, 0.5, FX.matte).col(leaf);
     for (let i = 0; i < 4; i++) K.sphere(x + (rnd(ob.id, i) - 0.5) * 0.8, top + 0.4 + rnd(ob.id, i, 3) * 0.4, s + (rnd(ob.id, i, 5) - 0.5) * 0.8, 0.55, 6, 4);
   }

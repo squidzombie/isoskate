@@ -54,6 +54,6 @@ function hazardPools(c: KitCtx, ob: Obstacle): void {
   for (const so of ob.solids) {
     if (so.top !== 'crash') continue;
     const b = so.box;
-    hazardPool(c, b.x0, b.x1, b.s0, b.s1, b.y1 - b.y0, 0.82);
+    hazardPool(c, b.x0, b.x1, b.s0, b.s1, b.y1 - b.y0, so.tall ? 0.95 : 0.82);
   }
 }

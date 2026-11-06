@@ -37,12 +37,14 @@ export const PRESETS: Readonly<Record<AreaId, Readonly<PaletteSample>>> = {
 };
 
 /** Per-preset extras the PaletteSample does not carry. haze: strength of the far-30% haze (≤ 0.35, DESIGN §18.3). */
-export interface AreaLook { haze: number; skyGlow: number; road: number; sunDisc: number }
+/** hemiK / sunK scale the preset light intensities: a lower sky fill and a stronger sun give long, purple-leaning
+ *  shadows (DESIGN §18.2: never black, the darkest near #4A3B6B) and warm lit ground, i.e. readable sun stripes. */
+export interface AreaLook { haze: number; skyGlow: number; road: number; sunDisc: number; hemiK: number; sunK: number }
 export const LOOK: Readonly<Record<AreaId, Readonly<AreaLook>>> = {
-  downtown: { haze: 0.3, skyGlow: 0.25, road: 0x7f7890, sunDisc: 1 },
-  suburbs: { haze: 0.28, skyGlow: 0.25, road: 0x746d84, sunDisc: 1 },
-  docks: { haze: 0.32, skyGlow: 0.25, road: 0x857c92, sunDisc: 1 },
-  neon: { haze: 0.35, skyGlow: 0.25, road: 0x352f55, sunDisc: 0 },
+  downtown: { haze: 0.3, skyGlow: 0.25, road: 0x7f7890, sunDisc: 1, hemiK: 0.82, sunK: 1.12 },
+  suburbs: { haze: 0.28, skyGlow: 0.25, road: 0x746d84, sunDisc: 1, hemiK: 0.85, sunK: 1.08 },
+  docks: { haze: 0.32, skyGlow: 0.25, road: 0x857c92, sunDisc: 1, hemiK: 0.85, sunK: 1.12 },
+  neon: { haze: 0.35, skyGlow: 0.25, road: 0x352f55, sunDisc: 0, hemiK: 1.0, sunK: 1.0 },
 };
 
 /** Readability colours (DESIGN §18.4). Kept for every area. */
@@ -132,5 +134,6 @@ export function sampleLook(area: AreaId, blend: AreaBlend | null, out: AreaLook 
   const a = LOOK[blend.from], b = LOOK[blend.to], u = blendWeight(blend);
   out.haze = a.haze + (b.haze - a.haze) * u; out.skyGlow = a.skyGlow + (b.skyGlow - a.skyGlow) * u;
   out.road = mixHex(a.road, b.road, u); out.sunDisc = a.sunDisc + (b.sunDisc - a.sunDisc) * u;
+  out.hemiK = a.hemiK + (b.hemiK - a.hemiK) * u; out.sunK = a.sunK + (b.sunK - a.sunK) * u;
   return out;
 }

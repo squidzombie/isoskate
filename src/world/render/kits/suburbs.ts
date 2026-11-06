@@ -118,10 +118,10 @@ const yardTable: KitFn = (c, ob) => {
   body(c, c.hz.top); K.box(b.x0, top - 0.04, b.s0, b.x1, top, b.s1);
   for (let i = 0; i < 4; i++) {
     const x0 = b.x0 + 0.08 + i * ((b.x1 - b.x0 - 0.16) / 4);
-    body(c, i === 1 ? accent(c.area, i + ob.id) : 0x2a2238);
+    body(c, 0x2a2238);
     K.box(x0, top, b.s0 + 0.15 + (i % 2) * 0.3, x0 + 0.22, top + 0.15 + rnd(ob.id, i) * (b.y1 - top - 0.2), b.s0 + 0.5 + (i % 2) * 0.3);
   }
-  K.lit(0, 0, HZ).col(0xf4d58d).box(b.x0 + 0.2, top - 0.3, b.s0 - 0.01, b.x0 + 0.55, top - 0.12, b.s0, FACE.front);
+  K.lit(0, 0, HZ).col(accent(c.area, ob.id)).box(b.x0 + 0.2, top - 0.22, b.s0 - 0.01, b.x0 + 0.45, top - 0.14, b.s0, FACE.front);
 };
 
 /** Crate stack 0.6 × 0.4 × 0.30 (low, landable): wooden crates in a warm colour (landable tops are not ink). */
@@ -156,7 +156,7 @@ const hoopPole: KitFn = (c, ob) => {
   body(c); K.box(b.x0, b.y0, b.s0, b.x1, b.y1 - 0.2, b.s1);
   K.lit(0, 0, HZ).col(c.hz.accent).box(b.x0 - 0.01, b.y0 + 0.9, b.s0 - 0.01, b.x1 + 0.01, b.y0 + 1.0, b.s1 + 0.01);
   body(c, 0x2a2238); K.box(x - 0.6, b.y1 - 0.75, s - 0.25, x + 0.6, b.y1, s - 0.2);
-  K.lit(0, 0, HZ).col(0xff8a5b).cyl(x, s - 0.45, b.y1 - 0.6, b.y1 - 0.58, 0.22, 8, false);
+  K.lit(0, 0, HZ).col(0x9a4a32).cyl(x, s - 0.45, b.y1 - 0.6, b.y1 - 0.585, 0.2, 8, false);
   K.capY = null;
 };
 
@@ -176,7 +176,7 @@ const busShelter: KitFn = (c, ob) => {
   const r = signRect(`bb:suburbs:${ob.id % 2}`);
   // Back wall (dark) filling the silhouette, with a modest ad panel facing the camera.
   body(c, 0x1d1628); K.box(b.x0 + 0.06, b.y0 + 0.05, b.s1 - 0.12, b.x1 - 0.06, b.y1 - 0.12, b.s1 - 0.08, FACE.front | FACE.top);
-  K.lit(0, 0, HZ).col(0x8a8090);
+  K.lit(0, 0, HZ).col(0x6a6074);
   const px0 = b.x0 + (b.x1 - b.x0) * 0.3, px1 = b.x1 - (b.x1 - b.x0) * 0.3;
   K.quad(px0, b.y0 + 0.7, b.s0 - 0.01, px1, b.y0 + 0.7, b.s0 - 0.01, px1, b.y0 + 1.4, b.s0 - 0.01, px0, b.y0 + 1.4, b.s0 - 0.01,
     [r.u0, r.v0, r.u1, r.v0, r.u1, r.v1, r.u0, r.v1]);

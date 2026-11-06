@@ -415,11 +415,11 @@ const maglevBeam: DecorFn = (c, d) => {
   const K = c.K, len = num(d, 'len', 32), gap = num(d, 'gap', 1.6), y = Math.max(7, d.y);
   K.reset();
   for (const dx of [-gap / 2, gap / 2]) {
-    K.to('b').lit(0, 0, 0).col(0x2e2852).box(d.x + dx - 0.13, y, d.s, d.x + dx + 0.13, y + 0.35, d.s + len, FACE.all);
+    K.to('b').lit(0, 0, 0).col(0x3a3466).box(d.x + dx - 0.09, y, d.s, d.x + dx + 0.09, y + 0.3, d.s + len, FACE.all);
     // Small signal lights along the outer faces (never a continuous bright line: from the run camera a beam along s
     // projects as a long line, which must not read as a lane marking).
     K.to('e').glowing(1.4, -1, 0);
-    for (let s = d.s + 1; s < d.s + len; s += 4) K.col(s % 8 < 4 ? 0x3ff2ff : 0xff3fa4).box(d.x + dx - 0.135, y + 0.12, s, d.x + dx + 0.135, y + 0.2, s + 0.25, FACE.left | FACE.right | FACE.front);
+    for (let s = d.s + 1; s < d.s + len; s += 4) K.col(s % 8 < 4 ? 0x3ff2ff : 0xff3fa4).box(d.x + dx - 0.095, y + 0.1, s, d.x + dx + 0.095, y + 0.18, s + 0.25, FACE.left | FACE.right | FACE.front | FACE.top);
     K.to('b');
   }
 };

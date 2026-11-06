@@ -465,8 +465,8 @@ class WorldViewImpl implements WorldView {
     const p = samplePalette(f.area, f.blend, this.pal), look = sampleLook(f.area, f.blend);
     const u = this.u, menu = RIG_STATE.menu;
     const hemi = getHemi(this.ctx), sun = getSun(this.ctx);
-    if (hemi) { hemi.color.setHex(p.hemiSky); hemi.groundColor.setHex(p.hemiGround); hemi.intensity = LIGHT_SCALE; }
-    if (sun) { sun.color.setHex(p.sunColor); sun.intensity = p.sunIntensity * LIGHT_SCALE; }
+    if (hemi) { hemi.color.setHex(p.hemiSky); hemi.groundColor.setHex(p.hemiGround); hemi.intensity = LIGHT_SCALE * look.hemiK; }
+    if (sun) { sun.color.setHex(p.sunColor); sun.intensity = p.sunIntensity * LIGHT_SCALE * look.sunK; }
     this.ctx.renderer.toneMappingExposure = p.exposure;
     const bg = this.ctx.scene.background;
     if (bg instanceof Color) bg.setHex(menu ? p.horizon : p.fog);
