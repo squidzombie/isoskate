@@ -30,17 +30,22 @@ function flatten(obs: readonly Obstacle[]): Flat {
   return f;
 }
 
-/** Ground under a point, with the WorldQuery rules (highest slab ≤ yMax, else pit lip, else the street at 0). */
-function groundAt(f: Flat, s: number, x: number, yMax: number): { y: number; pit: boolean } {
+/** Ground under a point, with the WorldQuery rules (highest slab ≤ yMax, else pit lip, else the street at 0).
+ *  GROUND_PIT tells whether the last call found a pit (no allocation per call: this runs per tick). */
+let GROUND_PIT = false;
+function groundAt(f: Flat, s: number, x: number, yMax: number): number {
   let best = -Infinity;
-  for (const sl of f.slabs) {
+  const slabs = f.slabs;
+  for (let k = 0; k < slabs.length; k++) {
+    const sl = slabs[k]!;
     if (s < sl.s0 || s >= sl.s1 || x < sl.x0 || x > sl.x1) continue;
     const y = slabYAt(sl, s);
     if (y <= yMax + 1e-9 && y > best) best = y;
   }
-  if (best > -Infinity) return { y: best, pit: false };
-  for (const p of f.pits) if (s >= p.s0 && s < p.s1 && x >= p.x0 && x <= p.x1) return { y: p.lipY, pit: true };
-  return { y: 0, pit: false };
+  GROUND_PIT = false;
+  if (best > -Infinity) return best;
+  for (const p of f.pits) if (s >= p.s0 && s < p.s1 && x >= p.x0 && x <= p.x1) { GROUND_PIT = true; return p.lipY; }
+  return 0;
 }
 
 /** Contact of a board (centre s, x range [lo, hi], board bottom y) with the window's solids, pits and (airborne) edges:
@@ -83,11 +88,14 @@ function contact(f: Flat, s: number, lo: number, hi: number, y: number, air: boo
   return null;
 }
 
-/** Min / max of the polyline over [a, b] (vertices and ends). */
-function tube(line: SafeLine, a: number, b: number): [number, number] {
-  let lo = Math.min(line.xAt(a), line.xAt(b)), hi = Math.max(line.xAt(a), line.xAt(b));
-  for (const p of line.pts) if (p.t > a && p.t < b) { lo = Math.min(lo, p.x); hi = Math.max(hi, p.x); }
-  return [lo, hi];
+/** Min / max of the polyline over [a, b] (vertices and ends), into TUBE_LO / TUBE_HI. */
+let TUBE_LO = 0, TUBE_HI = 0;
+function tube(line: SafeLine, a: number, b: number): void {
+  const xa = line.xAt(a), xb = line.xAt(b);
+  let lo = Math.min(xa, xb), hi = Math.max(xa, xb);
+  const pts = line.pts;
+  for (let k = 0; k < pts.length; k++) { const p = pts[k]!; if (p.t > a && p.t < b) { if (p.x < lo) lo = p.x; if (p.x > hi) hi = p.x; } }
+  TUBE_LO = lo; TUBE_HI = hi;
 }
 
 /** The line swept at 60 Hz from tFrom to tTo with its ollies (tap ticks; the pop advances one tick in the tap tick),
@@ -96,23 +104,24 @@ export function checkPath(line: SafeLine, obs: readonly Obstacle[], tFrom: numbe
   const f = flatten(obs);
   const ollies = line.ollies.map((o) => o + shift).sort((a, b) => a - b);
   let oi = 0, air = false, tPop = 0, y0 = 0, y = 0, vy = 0;
-  y = groundAt(f, sAt(tFrom), line.xAt(tFrom), STEP_UP).y;
+  y = groundAt(f, sAt(tFrom), line.xAt(tFrom), STEP_UP);
   for (let t = tFrom; t <= tTo + 1e-9; t += DT) {
     const s = sAt(t), xc = line.xAt(t);
     if (!air && oi < ollies.length && t >= ollies[oi]! - 1e-9) {
       air = true; tPop = ollies[oi]! - DT; oi++;
-      y0 = groundAt(f, sAt(t), line.xAt(t), y + STEP_UP).y;
+      y0 = groundAt(f, sAt(t), line.xAt(t), y + STEP_UP);
     }
     if (air) {
       const tau = t - tPop;
       const ya = y0 + V_POP * tau - 0.5 * G * tau * tau;
       vy = V_POP - G * tau;
-      const g = groundAt(f, s, xc, Math.max(y, ya) + 1e-6);
-      if (vy < 0 && ya <= g.y) { air = false; y = g.y; } else y = ya;
+      const gy = groundAt(f, s, xc, Math.max(y, ya) + 1e-6);
+      if (vy < 0 && ya <= gy) { air = false; y = gy; } else y = ya;
     } else {
-      y = groundAt(f, s, xc, y + STEP_UP).y;
+      y = groundAt(f, s, xc, y + STEP_UP);
     }
-    const [lo, hi] = tube(line, t - TUBE_LAG, t + TUBE_LEAD);
+    tube(line, t - TUBE_LAG, t + TUBE_LEAD);
+    const lo = TUBE_LO, hi = TUBE_HI;
     const r = contact(f, s, lo, hi, y, air, vy, VALIDATOR.safeMargin);
     if (r) { PATH_FAIL.text = `t=${t.toFixed(3)} x=${xc.toFixed(2)} tube=[${lo.toFixed(2)},${hi.toFixed(2)}] y=${y.toFixed(2)} air=${air}`; return r; }
   }
@@ -126,27 +135,27 @@ export function ollieWindow(obs: readonly Obstacle[], x: number, tKey: number, p
   const near = obs.filter((o) => o.s <= sAt(tKey + 1.4) && o.s + o.len >= sAt(tKey - 0.7));
   const f = flatten(near);
   const ok = (T: number): boolean => {
-    let y = groundAt(f, sAt(T - 0.2), x, STEP_UP + 10).y;
+    let y = groundAt(f, sAt(T - 0.2), x, STEP_UP + 10);
     for (let t = T - 0.2; t < T - 1e-9; t += DT) {
-      y = groundAt(f, sAt(t), x, y + STEP_UP).y;
+      y = groundAt(f, sAt(t), x, y + STEP_UP);
       if (contact(f, sAt(t), x - tube, x + tube, y, false, 0, VALIDATOR.safeMargin)) return false;
     }
-    const y0 = groundAt(f, sAt(T), x, y + STEP_UP).y;
+    const y0 = groundAt(f, sAt(T), x, y + STEP_UP);
     let landed = -1;
     for (let k = 0; k < 90; k++) {
       const t = T + k * DT, tau = (k + 1) * DT, s = sAt(t);
       const ya = y0 + V_POP * tau - 0.5 * G * tau * tau, vy = V_POP - G * tau;
-      const g = groundAt(f, s, x, Math.max(ya, y0) + 1e-6);
-      if (vy < 0 && ya <= g.y) {
-        if (g.pit) return false;
-        y = g.y; landed = k; break;
+      const gy = groundAt(f, s, x, Math.max(ya, y0) + 1e-6);
+      if (vy < 0 && ya <= gy) {
+        if (GROUND_PIT) return false;
+        y = gy; landed = k; break;
       }
       if (contact(f, s, x - tube, x + tube, ya, true, vy, VALIDATOR.safeMargin)) return false;
     }
     if (landed < 0) return false;
     for (let k = landed; k < landed + 12; k++) {
       const t = T + k * DT;
-      y = groundAt(f, sAt(t), x, y + STEP_UP).y;
+      y = groundAt(f, sAt(t), x, y + STEP_UP);
       if (contact(f, sAt(t), x - tube, x + tube, y, false, 0, VALIDATOR.safeMargin)) return false;
     }
     return true;

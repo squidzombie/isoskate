@@ -378,7 +378,7 @@ export class Generator implements WorldGen {
     };
     if (wantRow && !slots.length && rowLate()) return fail('gate');
     const tryRows = (xAt: (t: number) => number, from: number, maxTries: number): boolean => {
-      for (let k = from; k < Math.min(slots.length, from + maxTries); k++) {
+      for (let k = Math.max(0, from); k < Math.min(slots.length, Math.max(0, from) + maxTries); k++) {
         const { tr, keepOut } = slots[k]!;
         const sr = sAt(tr);
         const gt = Math.max(2, plan.tier) as Tier;
@@ -391,18 +391,20 @@ export class Generator implements WorldGen {
         const r2 = run([...obstacles, ...row], guide);
         if (!r2.ok) { noEdges.length = nb; GEN_DEBUG.onReject?.({ index, t0, tpl: tpl.id, tier: plan.tier, attempt, why: `  detail overlay@${tr.toFixed(2)} ${r2.why} ${r2.detail ?? ''}` }); continue; }
         obstacles.push(...row); got = r2; gateX = centres; gateT = tr;
+        GEN_DEBUG.onReject?.({ index, t0, tpl: tpl.id, tier: plan.tier, attempt, why: `  detail overlay-ok ${from}/${k}` });
         return true;
       }
       return false;
     };
     // First try: openings chosen from the entry line x, validated with the template in one pass.
-    let placed = wantRow && tryRows(() => c.safeX, 0, 1);
+    let placed = wantRow && tryRows(() => c.safeX, -1, 1);
+    // A failed row with no later chance: the gate segment replaces this template (rows inside the template's own
+    // line rarely fit where the entry-x row did not, so that retry is not worth its validations).
+    if (wantRow && !placed && rowLate()) return fail('gate');
     if (!got) {
       const r0 = run(obstacles);
       if (!r0.ok) { if (GEN_DEBUG.onReject && r0.detail) GEN_DEBUG.onReject({ index, t0, tpl: tpl.id, tier: plan.tier, attempt, why: `  detail ${r0.detail}` }); return fail(r0.why); }
       got = r0;
-      // Then from the template's own line.
-      if (wantRow) placed = tryRows((t) => r0.line.xAt(t), 0, 2);
     }
     if (wantRow && !placed) {
       GEN_DEBUG.onReject?.({ index, t0, tpl: tpl.id, tier: plan.tier, attempt, why: '  detail overlay none' });

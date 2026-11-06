@@ -33,7 +33,10 @@ const ALL_LO = -1, ALL_HI = HI_MASK;
 export interface PlaneBits { h: number | null; k: number; lo: number; hi: number }   // h null = ground
 
 export function precomputePlanes(r: Raster): void {
+  const blk = NH_MAX * (KMAX + 2) * 2;
   for (let i = 0; i < r.n; i++) {
+    // Most slices repeat the previous one (same thresholds and ground levels, no pits): copy its planes.
+    if (i > 0 && r.sameAsPrev(i)) { AB.copyWithin(i * blk, (i - 1) * blk, i * blk); AL.copyWithin(i * blk, (i - 1) * blk, i * blk); continue; }
     for (let h = 0; h < r.nh; h++) {
       for (let k = 1; k <= KMAX + 1; k++) {
         const o = abo(i, h, k);
@@ -191,27 +194,44 @@ const popcnt = (x: number) => { let n = 0; x |= 0; while (x) { x &= x - 1; n++; 
 
 // ── Rule (h): dead ends ──────────────────────────────────────────────────────────────────────────────────────────
 const M0 = new Uint8Array(NPLANES * NC), M1 = new Uint8Array(NPLANES * NC);
+const RUN = new Int32Array(MAX_SLICES), LONG = new Uint8Array(MAX_SLICES);
 
 /** Longest survival (slices) of any state in F \ B at local slices [iFrom, iTo]; survival counts the state's own
  *  slice. Successors of a doomed state are doomed (or dead), so only F \ B is visited. */
 export function worstDeadEnd(r: Raster, iFrom: number, iTo: number, limit = Infinity): { slices: number; i: number; c: number } {
-  // Shortcut: successors of doomed states are doomed or dead, so no doomed state outlives its run of slices with a
-  // non-empty F \ B. When every run is within the limit, that bounds the survival.
-  let run = 0, longest = 0;
+  // Successors of doomed states are doomed or dead, so no doomed state outlives its run of slices with a non-empty
+  // F \ B, and runs are independent: only runs longer than the limit need the per-state pass. Short runs report
+  // their length (an upper bound).
+  let run = 0, shortMax = 0;
   for (let i = 0; i < r.n; i++) {
-    let any = false;
-    for (let p = 0; p < NPLANES && !any; p++) {
-      if (p > 0) { const h = ((p - 1) / KMAX) | 0, k = ((p - 1) % KMAX) + 1; if (h >= r.nh || k > r.kMax[h]!) continue; }
-      const o = fo(i, p);
-      if ((F[o]! & ~B[o]!) | (F[o + 1]! & ~B[o + 1]! & HI_MASK)) any = true;
+    const g = fo(i, 0);
+    let any = ((F[g]! & ~B[g]!) | (F[g + 1]! & ~B[g + 1]! & HI_MASK)) !== 0;
+    for (let h = 0; h < r.nh && !any; h++) {
+      const km = r.kMax[h]!;
+      for (let k = 1; k <= km; k++) {
+        const o = fo(i, 1 + h * KMAX + (k - 1));
+        if ((F[o]! & ~B[o]!) | (F[o + 1]! & ~B[o + 1]! & HI_MASK)) { any = true; break; }
+      }
     }
     run = any ? run + 1 : 0;
-    if (i <= iTo + limit) longest = Math.max(longest, run);
+    RUN[i] = run;
   }
-  if (longest <= limit) return { slices: longest, i: -1, c: -1 };
-  let worst = 0, wi = -1, wc = -1;
+  // Mark the slices of long runs (walking back from each run's end).
+  let anyLong = false;
+  for (let i = r.n - 1; i >= 0; i--) {
+    if (!RUN[i]) { LONG[i] = 0; continue; }
+    const len = RUN[i]!, i0 = i - len + 1;
+    const long = len > limit ? 1 : 0;
+    if (long) anyLong = true;
+    else if (i0 <= iTo && i >= iFrom) shortMax = Math.max(shortMax, len);
+    for (let k = i; k >= i0; k--) LONG[k] = long;
+    i = i0;
+  }
+  if (!anyLong) return { slices: shortMax, i: -1, c: -1 };
+  let worst = shortMax, wi = -1, wc = -1;
   let cur = M0, nxt = M1;
   for (let i = r.n - 1; i >= 0; i--) {
+    if (!LONG[i]) continue;
     const j = r.j0 + i, ng = nG(j), na = nA(j);
     const hasNext = i < r.n - 1;
     // Ground.
@@ -291,30 +311,52 @@ export interface DpResult {
 }
 
 /** Viable ground cells (F ∩ B) per local slice: filled by fillViable() after the passes. */
-const VGL = new Int32Array(MAX_SLICES), VGH = new Int32Array(MAX_SLICES);
+const VG = new Int32Array(MAX_SLICES * 2);
 export function fillViable(r: Raster): void {
-  for (let i = 0; i < r.n; i++) { const g = fo(i, 0); VGL[i] = F[g]! & B[g]!; VGH[i] = F[g + 1]! & B[g + 1]! & HI_MASK; }
+  for (let i = 0; i < r.n; i++) { const g = fo(i, 0); VG[i * 2] = F[g]! & B[g]!; VG[i * 2 + 1] = F[g + 1]! & B[g + 1]! & HI_MASK; }
 }
-const vgOK = (i: number, c: number): boolean => bitTest(VGL[i]!, VGH[i]!, c);
+const vgOK = (i: number, c: number): boolean => (c < 32 ? (VG[i * 2]! >>> c) & 1 : (VG[i * 2 + 1]! >>> (c - 32)) & 1) === 1;
+
+/** Per (slice, cell): the first later slice with an ollie-able block (low solid or pit) in that cell, and per slice
+ *  whether any capture edge is near (ollieMacro's capture test is skipped elsewhere). Filled by prepareMacros(). */
+const NEXT_SOFT = new Int32Array(MAX_SLICES * NC);
+const CAP_NEAR = new Uint8Array(MAX_SLICES);
+function prepareMacros(r: Raster): void {
+  const n = r.n;
+  for (let c = 0; c < NC; c++) NEXT_SOFT[(n - 1) * NC + c] = 1 << 30;
+  for (let i = n - 2; i >= 0; i--) {
+    const sl = r.soft[(i + 1) * 2]!, sh = r.soft[(i + 1) * 2 + 1]!;
+    const row = i * NC, nrow = (i + 1) * NC;
+    for (let c = 0; c < NC; c++) NEXT_SOFT[row + c] = (c < 32 ? (sl >>> c) & 1 : (sh >>> (c - 32)) & 1) ? i + 1 : NEXT_SOFT[nrow + c]!;
+  }
+  for (let i = 0; i < n; i++) {
+    const s = r.s[i]!;
+    let near = 0;
+    for (const e of r.caps) if (s >= e.s0 - HITBOX.l / 2 - 0.2 && s <= e.s1 + 0.2) { near = 1; break; }
+    CAP_NEAR[i] = near;
+  }
+}
 
 /** Straight ollie macro from ground (i, c): the touch-down slice (local), or −1 if an air state on the way is not
  *  viable or inside a capture zone (the safe line never ollies where the magnet could take it). */
 export function ollieMacro(r: Raster, i: number, c: number): number {
   // Useful only with an ollie-able block (low solid or pit) ahead in this cell.
-  let soft = false;
-  for (let k = i + 1; k < Math.min(r.n, i + 26) && !soft; k++) soft = bitTest(r.soft[k * 2]!, r.soft[k * 2 + 1]!, c);
-  if (!soft) return -1;
+  if (NEXT_SOFT[i * NC + c]! - i > 25) return -1;
   const h = classOfCell(r, i, c);
   if (h < 0) return -1;
+  const km = r.kMax[h]!;
+  const w = c < 32 ? 0 : 1, sh = c < 32 ? c : c - 32;
   for (let k = 1; k <= KMAX + 1 && i + k < r.n; k++) {
     const ii = i + k;
-    const o = abo(ii, h, Math.min(k, KMAX + 1));
-    if (bitTest(AL[o]!, AL[o + 1]!, c)) return vgOK(ii, c) ? ii : -1;
-    if (k > r.kMax[h]!) return -1;
-    const p = fo(ii, planeOf(h, k));
-    if (!bitTest(F[p]! & B[p]!, F[p + 1]! & B[p + 1]!, c)) return -1;
-    const q = h * (KMAX + 1) + k;
-    if (r.pvy[q]! <= CAPTURE.vyMax && r.captureAt(ii, c, r.py[q]!, CAPTURE_ZONE)) return -1;
+    const o = abo(ii, h, k <= KMAX ? k : KMAX + 1);
+    if ((AL[o + w]! >>> sh) & 1) return ((VG[ii * 2 + w]! >>> sh) & 1) ? ii : -1;
+    if (k > km) return -1;
+    const p = fo(ii, 1 + h * KMAX + (k - 1));
+    if (!(((F[p + w]! & B[p + w]!) >>> sh) & 1)) return -1;
+    if (CAP_NEAR[ii]) {
+      const q = h * (KMAX + 1) + k;
+      if (r.pvy[q]! <= CAPTURE.vyMax && r.captureAt(ii, c, r.py[q]!, CAPTURE_ZONE)) return -1;
+    }
   }
   return -1;
 }
@@ -323,60 +365,68 @@ export function ollieMacro(r: Raster, i: number, c: number): number {
  *  `noMoveFrom`: local slices ≥ this may not start moves (gateways: none needed). */
 export function minActionPath(r: Raster, iS: number, cS: number, d0: -1 | 0 | 1): DpResult | null {
   const n = r.n, last = n - 1;
+  prepareMacros(r);
   // Hold runs and comfort penalties.
   for (let c = 0; c < NC; c++) HOLD[last * NC + c] = 0;
   for (let i = last; i >= iS; i--) {
+    const vl = VG[i * 2]!, vh = VG[i * 2 + 1]!, row = i * NC;
     for (let c = 0; c < NC; c++) {
-      const ok = vgOK(i, c);
-      HOLD[i * NC + c] = ok ? 1 + (i < last ? HOLD[(i + 1) * NC + c]! : 0) : 0;
+      const ok = c < 32 ? (vl >>> c) & 1 : (vh >>> (c - 32)) & 1;
+      HOLD[row + c] = ok ? 1 + (i < last ? HOLD[row + NC + c]! : 0) : 0;
     }
   }
+  const nGuides = GUIDES.length;
   for (let i = iS; i <= last; i++) {
+    const vl = VG[i * 2]!, vh = VG[i * 2 + 1]!, row = i * NC;
     for (let c = 0; c < NC; c++) {
-      if (!vgOK(i, c)) { PEN[i * NC + c] = 0; continue; }
+      const ok = c < 32 ? (vl >>> c) & 1 : (vh >>> (c - 32)) & 1;
+      if (!ok) { PEN[row + c] = 0; continue; }
       let pen = 0;
       if (c === 0 || c === NC - 1 || !vgOK(i, c - 1) || !vgOK(i, c + 1)) pen += DP_COST.edge;
-      const hold = HOLD[i * NC + c]!;
+      const hold = HOLD[row + c]!;
       if (hold < DP_COST.lateSlices && i + hold < last) pen += DP_COST.late * (DP_COST.lateSlices - hold);
-      for (const g of GUIDES) if (i >= g.i0 && i <= g.i1) pen += DP_COST.guide * (c < g.c0 ? g.c0 - c : c > g.c1 ? c - g.c1 : 0);
-      PEN[i * NC + c] = pen;
+      for (let gI = 0; gI < nGuides; gI++) {
+        const g = GUIDES[gI]!;
+        if (i >= g.i0 && i <= g.i1) pen += DP_COST.guide * (c < g.c0 ? g.c0 - c : c > g.c1 ? c - g.c1 : 0);
+      }
+      PEN[row + c] = pen;
     }
   }
   // Cost-to-go.
   COST.fill(INF, iS * NC * 3, n * NC * 3);
   for (let c = 0; c < NC; c++) if (vgOK(last, c)) for (let d = 0; d < 3; d++) COST[(last * NC + c) * 3 + d] = 0;
+  const A = DP_COST.action, PC = DP_COST.perCell;
   for (let i = last - 1; i >= iS; i--) {
     const j = r.j0 + i, ng = nG(j);
     const sl = r.slope[i * 2]!, sh = r.slope[i * 2 + 1]!;
     const qi = quiet(i);
+    const vl = VG[i * 2]!, vh = VG[i * 2 + 1]!, nl = VG[(i + 1) * 2]!, nh = VG[(i + 1) * 2 + 1]!;
+    const row = i * NC, nrow = (i + 1) * NC;
     for (let c = 0; c < NC; c++) {
-      if (!vgOK(i, c)) continue;
-      const pen = PEN[i * NC + c]!;
-      const onSlope = bitTest(sl, sh, c);
-      let macro = -2;
+      if (!(c < 32 ? (vl >>> c) & 1 : (vh >>> (c - 32)) & 1)) continue;
+      const pen = PEN[row + c]!;
+      const onSlope = (c < 32 ? (sl >>> c) & 1 : (sh >>> (c - 32)) & 1) === 1;
+      const okS = (c < 32 ? (nl >>> c) & 1 : (nh >>> (c - 32)) & 1) === 1;
+      const okL = c > 0 && (c - 1 < 32 ? (nl >>> (c - 1)) & 1 : (nh >>> (c - 33)) & 1) === 1;
+      const okR = c + 1 < NC && (c + 1 < 32 ? (nl >>> (c + 1)) & 1 : (nh >>> (c - 31)) & 1) === 1;
+      const canMove = ng === 1 && !onSlope;
+      // Successor costs (independent of the current direction except for the action charge).
+      const cS0 = okS ? COST[(nrow + c) * 3 + 1]! : INF;          // straight, direction reset (ng = 1)
+      const cL = canMove && okL ? COST[(nrow + c - 1) * 3]! : INF; // moving left (dir −1 → index 0)
+      const cR = canMove && okR ? COST[(nrow + c + 1) * 3 + 2]! : INF;
+      let macroCost = INF;
+      if (!onSlope && HOLD[row + c]! < 26) {
+        const m = ollieMacro(r, i, c);
+        if (m >= 0) macroCost = A + qi + COST[(m * NC + c) * 3 + 1]!;
+      }
       for (let di = 0; di < 3; di++) {
         const d = di - 1;
         let best = INF;
-        if (vgOK(i + 1, c)) {
-          const ds = ng ? 0 : d;
-          best = COST[((i + 1) * NC + c) * 3 + ds + 1]!;
-        }
-        if (ng && !onSlope) {
-          for (const dir of [-1, 1] as const) {
-            const c2 = c + dir;
-            if (c2 < 0 || c2 >= NC || !vgOK(i + 1, c2)) continue;
-            const v = DP_COST.perCell + (dir !== d ? DP_COST.action + qi : 0) + COST[((i + 1) * NC + c2) * 3 + dir + 1]!;
-            if (v < best) best = v;
-          }
-        }
-        if (!onSlope && HOLD[i * NC + c]! < 26) {
-          if (macro === -2) macro = ollieMacro(r, i, c);
-          if (macro >= 0) {
-            const v = DP_COST.action + qi + COST[(macro * NC + c) * 3 + 1]!;
-            if (v < best) best = v;
-          }
-        }
-        COST[(i * NC + c) * 3 + di] = best >= INF ? INF : best + pen;
+        if (okS) best = ng ? cS0 : COST[(nrow + c) * 3 + di]!;
+        if (cL < INF) { const v = PC + (d !== -1 ? A + qi : 0) + cL; if (v < best) best = v; }
+        if (cR < INF) { const v = PC + (d !== 1 ? A + qi : 0) + cR; if (v < best) best = v; }
+        if (macroCost < best) best = macroCost;
+        COST[(row + c) * 3 + di] = best >= INF ? INF : best + pen;
       }
     }
   }
@@ -396,8 +446,8 @@ export function minActionPath(r: Raster, iS: number, cS: number, d0: -1 | 0 | 1)
       if (COST[((i + 1) * NC + c) * 3 + ds + 1]! === here) { i++; d = ds; steps.push({ i, c, air: false, h: -1, k: 0 }); took = true; }
     }
     if (!took && ng && !onSlope) {
-      const order = d === 0 ? [-1, 1] : [d, -d];
-      for (const dir of order) {
+      for (let oi = 0; oi < 2; oi++) {
+        const dir = d === 0 ? (oi === 0 ? -1 : 1) : (oi === 0 ? d : -d);
         const c2 = c + dir;
         if (c2 < 0 || c2 >= NC || !vgOK(i + 1, c2)) continue;
         if (DP_COST.perCell + (dir !== d ? DP_COST.action + qi : 0) + COST[((i + 1) * NC + c2) * 3 + dir + 1]! === here) {

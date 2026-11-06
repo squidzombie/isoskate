@@ -278,6 +278,24 @@ export class Raster {
     this.exitLo = elo | 0; this.exitHi = ehi | 0;
   }
 
+  /** Does local slice i have exactly the thresholds and ground levels of slice i − 1, and no pits (its pop planes'
+   *  pruned / touched-down cells are then the same)? */
+  sameAsPrev(i: number): boolean {
+    const n = this.entN[i]!, nl = this.lvN[i]!;
+    if (n !== this.entN[i - 1]! || nl !== this.lvN[i - 1]! || nl >= LV_CAP) return false;
+    if (this.pit[i * 2]! | this.pit[i * 2 + 1]! | this.pit[i * 2 - 2]! | this.pit[i * 2 - 1]!) return false;
+    const e0 = i * ENT_CAP, e1 = (i - 1) * ENT_CAP;
+    for (let e = 0; e < n; e++) {
+      if (this.entThr[e0 + e] !== this.entThr[e1 + e] || this.entBot[e0 + e] !== this.entBot[e1 + e]
+        || this.entM[(e0 + e) * 2] !== this.entM[(e1 + e) * 2] || this.entM[(e0 + e) * 2 + 1] !== this.entM[(e1 + e) * 2 + 1]) return false;
+    }
+    const l0 = i * LV_CAP, l1 = (i - 1) * LV_CAP;
+    for (let l = 0; l < nl; l++) {
+      if (this.lvY[l0 + l] !== this.lvY[l1 + l] || this.lvM[(l0 + l) * 2] !== this.lvM[(l1 + l) * 2] || this.lvM[(l0 + l) * 2 + 1] !== this.lvM[(l1 + l) * 2 + 1]) return false;
+    }
+    return true;
+  }
+
   /** Board at height y (centre range [lo, hi]) pruned by a solid in cell c at local slice i? */
   blockedAt(i: number, c: number, y: number, yhi = y): boolean {
     const e0 = i * ENT_CAP, n = this.entN[i]!;
