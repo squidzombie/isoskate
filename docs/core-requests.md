@@ -52,3 +52,27 @@ Entry format:
 ## MU: Meta and UI (W3a)
 
 ## AU: Audio (W3b)
+
+### How AU uses the frozen hooks   (status: info)
+- **Per-frame layers.** `audio.roll(speed01, surface, airborne, manual)` drives the rolling loop (band-pass 300 + 900·speed01 Hz, surface variants, joint ticks by distance, 40 ms fade + 0.4 s wheel whir when `airborne`, 2-wheel tone when `manual`) and the wind bed (from 8.0 m/s, i.e. `speed01 · V_MAX`). It is also the frame clock: it ticks the music scheduler and closes the per-frame perf sample. `audio.grind(active, material, slide)` builds the material loop on the first active frame and releases it (60 ms) on the first inactive one; `slide` adds the deck scrape. Both are silent unless `setScene('run')`.
+- **Nothing else is needed from game/.** `attach()` plus `setScene()` drive the music: `runStart` resets the run (start area, speed level, combo filter, coin climb; needle drop after a tape stop), `speedTier` sets the base level (FLOW → 2), `trickScored` plays `note(seq)` and sets the combo filter from `max(1, links)`, `comboBanked`/`comboLost` close it, `gatewayEnter` / `areaEnter` pivot and crossfade, a non-god `crash` tape-stops; Results and Menu bring the music back at level 0. `music.start / setArea / setIntensity / setComboFilter / duck / stop` stay available (G3 may call them; they are idempotent with the bindings). `setIntensity(level)` is the speed-derived *base* level; the engine plays `max(base, combo level)` in the run scene and 0 elsewhere.
+- **Unlock.** Every `input.onAnyInput` while `!audio.unlocked` calls `unlock()` (creates the context on the first gesture, `audioSession.type = 'ambient'`, 1-sample buffer, `resume()`). The engine itself suspends on `visibilitychange` hidden and resumes on visible; `unlock()` from any later gesture resumes too.
+- **Offline.** `renderOffline(area, sec)` = 20 s of the area at plateau speed (FLOW, mid-song, roll bed, wind, ambience, a few tricks) on the live graph code, default sliders, deterministic per area. `tests/unit/audio/render-check.mjs` (PORT=5184) renders and analyses it; G3 can run it next to `shots --audio`.
+
+### DebugAPI.audio(): context state and cost   (status: open)
+- File / symbol: core/debug.ts › DebugAPI.audio
+- Change: `audio(): { unlocked: boolean; voices: number; scene: string; intensity: number; contextState?: string; msPerFrame?: number; voicePeak?: number }` and in debug/api.ts pass through `host.audio.stats().contextState` plus the AU debug numbers.
+- Why: audio.spec asserts "context state running" and the ≤ 0.3 ms/frame budget through the frozen API.
+- Local workaround meanwhile: debug builds (`?debug=1` / dev) expose `window.__skateAudio` (`AudioDebug` from audio/index.ts: `stats()`, `perf()`, `renderScene()`); audio.spec reads it.
+
+### SfxId: the internal cues   (status: open)
+- File / symbol: core/audio.ts › SfxId
+- Change: `| 'spin' | 'revert' | 'pickChime' | 'rewind' | 'needle' | 'grindSwitch'`
+- Why: DESIGN §9/§19.3 sounds that exist and are bound to events (spin swish, revert scuff, pick-window chime, lesson rewind, needle lift after the tape stop, grind switch) but cannot be requested through `audio.sfx()` by UI or tests.
+- Local workaround meanwhile: `Cue` in audio/engine.ts (SfxId ∪ those six); bindings use it, `audio.sfx()` accepts only SfxId.
+
+### runStart: start area   (status: open)
+- File / symbol: core/events.ts › GameEvent 'runStart'
+- Change: `{ t: 'runStart'; tick: number; seed: number; mode: 'lesson' | 'normal'; startArea?: AreaId }`
+- Why: the run song should start in the start area's key when Start District (M5) lands, without waiting for an `areaEnter`.
+- Local workaround meanwhile: runs start in Downtown; an `areaEnter` at tick 1 (debug `startT`, `startArea`) pivots to the right song at the next bar line.

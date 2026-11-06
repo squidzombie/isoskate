@@ -37,12 +37,11 @@ export function createAudio(): AudioEngine {
   const core = new AudioCore({ seed: LIVE_SEED, nowMs: () => performance.now() });
   let ctx: AudioContext | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
-  let held = false;                                  // suspend() was asked for (hidden page); a gesture clears it
 
   const onVisibility = () => {
     if (!ctx) return;
-    if (document.visibilityState === 'hidden') { held = true; void ctx.suspend().catch(() => undefined); }
-    else { held = false; void ctx.resume().catch(() => undefined); }
+    if (document.visibilityState === 'hidden') void ctx.suspend().catch(() => undefined);
+    else void ctx.resume().catch(() => undefined);
   };
   const create = (): AudioContext | null => {
     const w = window as unknown as { AudioContext?: AudioCtor; webkitAudioContext?: AudioCtor };
@@ -68,15 +67,14 @@ export function createAudio(): AudioEngine {
         const buf = ctx.createBuffer(1, 1, ctx.sampleRate);
         const src = ctx.createBufferSource();
         src.buffer = buf; src.connect(ctx.destination); src.start(0);
-        held = false;
         if (ctx.state !== 'running') await ctx.resume();
         return ctx.state === 'running';
       } catch {
         return false;
       }
     },
-    suspend() { held = true; void ctx?.suspend().catch(() => undefined); },
-    resume() { held = false; void ctx?.resume().catch(() => undefined); },
+    suspend() { void ctx?.suspend().catch(() => undefined); },
+    resume() { void ctx?.resume().catch(() => undefined); },
     setVolumes(v) { core.setVolumes(v); },
     setScene(s: Scene) { core.setScene(s); },
     music: {
@@ -104,7 +102,6 @@ export function createAudio(): AudioEngine {
       renderScene: (o) => renderScene(o),
     },
   };
-  void held;
   if (typeof window !== 'undefined' && readFlags().debug) window.__skateAudio = engine.debug;
   return engine;
 }
