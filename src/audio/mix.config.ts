@@ -138,6 +138,11 @@ export interface AreaMusic {
   ambience: 'traffic' | 'suburb' | 'harbor' | 'city' | 'none';
   /** Road surface used by renderOffline's plateau-speed roll bed. */
   demoSurface: Surface;
+  /** Music-bus mud dip (dB at MUD_CUT.hz) when it differs from MUD_CUT.db: deeper for the close, low voicings
+   *  (Neon's F♯3–D4 Gmaj9, Docks) and the bass-less menu. */
+  mudDb?: number;
+  /** Level-0 drum gain when it differs from INTENSITY.drumGain[0] (the menu song's soft kit is meant to be heard). */
+  level0Drums?: number;
 }
 export type PatternId = 'A' | 'B' | 'C';
 const c = (name: string, bass: number, voicing: readonly number[], beats = 4): ChordSpec => ({ name, bass, voicing, beats });
@@ -163,14 +168,14 @@ export const AREA_MUSIC: Readonly<Record<MusicArea, AreaMusic>> = {
     bars: [[c('Cm9', 36, [51, 55, 58, 62])], [c('Abmaj9', 44, [60, 63, 67, 70])], [c('Fm9', 41, [56, 60, 63, 67])], [c('G7alt', 43, [53, 59, 63, 70])]],
     patterns: { main: 'A', alt: 'C' }, kick: { f0: 140, decay: 0.35 }, snare: 'metal', ghost: 'snare',
     hats: { hpHz: 7000, closed: 0.04 }, clap: false, epLp: 2800, mallet: 'mallet', chorus: false, clanks: true, arpLevel: 3,
-    ambience: 'harbor', demoSurface: 'concrete',
+    ambience: 'harbor', demoSurface: 'concrete', mudDb: -5.5,
   },
   neon: {
     tonic: 2, mode: 'major', bpm: 88,
     bars: [[c('Gmaj9', 43, [54, 57, 59, 62])], [c('A13', 45, [55, 59, 61, 66])], [c('F#m7', 42, [52, 57, 61, 64])], [c('Bm9', 47, [57, 61, 62, 66])]],
     patterns: { main: 'A', alt: 'B' }, kick: { f0: 120, decay: 0.3 }, snare: 'classic', ghost: 'snare',
     hats: { hpHz: 8500, closed: 0.03 }, clap: true, epLp: 4000, mallet: 'mallet', chorus: true, clanks: false, arpLevel: 2,
-    ambience: 'city', demoSurface: 'wetAsphalt',
+    ambience: 'city', demoSurface: 'wetAsphalt', mudDb: -6.5,
   },
   menu: {
     tonic: 3, mode: 'major', bpm: 76,
@@ -179,7 +184,7 @@ export const AREA_MUSIC: Readonly<Record<MusicArea, AreaMusic>> = {
     bars: [[c('Ebmaj9', 39, [55, 58, 62, 65])], [c('Cm9', 36, [55, 58, 62, 63])], [c('Fm9', 41, [55, 56, 60, 63])], [c('Bb13', 46, [55, 56, 60, 62])]],
     patterns: { main: 'B', alt: 'C' }, kick: { f0: 110, decay: 0.3 }, snare: 'brush', ghost: 'snare',
     hats: { hpHz: 7000, closed: 0.04 }, clap: false, epLp: 2800, mallet: 'mallet', chorus: false, clanks: false, arpLevel: 3,
-    ambience: 'none', demoSurface: 'asphalt',
+    ambience: 'none', demoSurface: 'asphalt', mudDb: -6.5, level0Drums: 0.5,
   },
 };
 /** EP voicing range for the alternate (voice-led) set used by every 2nd song. */
@@ -230,7 +235,7 @@ export const SFX_LEVEL = {
   spin: 1.6, revert: 1.5, pickChime: 0.22, rewind: 0.55, needle: 0.45, newBest: 0.22, newArea: 0.18,
   ui: 1.8, purchase: 1.1, crate: 0.5, crateOpen: 0.9, reveal: 0.26, levelUp: 0.3,
 } as const;
-export const LEVEL_UP = { noteMs: 70, holdSec: 1.2, shimmerHz: 6000, shimmerSec: 0.6, duckDb: 3, duckSec: 1.6, epGain: 1.0 } as const;
+export const LEVEL_UP = { noteMs: 70, holdSec: 1.2, shimmerHz: 6000, shimmerSec: 0.6, duckDb: 3, duckSec: 1.6, epGain: 0.5 } as const;
 export const COMBO_BANK = { noteMs: 50, gain: 0.26 } as const;
 
 // ── Ambience (§19.1 per-area signatures) ──────────────────────────────────────────────────────────────────────────

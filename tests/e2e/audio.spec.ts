@@ -33,6 +33,26 @@ test('a tap on the Title unlocks audio: unlocked and the context is running', as
   expect(errors).toEqual([]);
 });
 
+test('both sliders at 0: a tap still unlocks, and the context stays suspended (no audio work for muted players)', async ({ page }, info) => {
+  const errors: string[] = [];
+  await boot(page, errors);
+  await page.evaluate(() => {
+    const s = window.__skate!.save.get();
+    s.settings.music = 0; s.settings.sfx = 0;
+    window.__skate!.save.set(s);
+  });
+  await page.reload();
+  await page.waitForFunction(() => !!window.__skate && !!window.__skateAudio);
+  const vp = page.viewportSize()!;
+  if (info.project.use.hasTouch) await page.touchscreen.tap(vp.width / 2, vp.height * 0.45);
+  else await page.mouse.click(vp.width / 2, vp.height * 0.45);
+  await expect.poll(() => page.evaluate(() => window.__skate!.audio().unlocked), { timeout: 5000 }).toBe(true);
+  await expect.poll(() => page.evaluate(() => window.__skateAudio!.stats().contextState), { timeout: 3000 }).toBe('suspended');
+  await page.waitForTimeout(1500);
+  expect(await page.evaluate(() => window.__skateAudio!.stats().contextState)).toBe('suspended');
+  expect(errors).toEqual([]);
+});
+
 test('2-minute god-mode run with gestures: voices ≤ 32, audio main-thread cost ≤ 0.3 ms per frame', async ({ page }, info) => {
   test.skip(!info.project.use.hasTouch, 'runs once, on the mobile project');
   const SEC = Number(process.env.AUDIO_RUN_SEC ?? 120);

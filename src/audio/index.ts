@@ -1,10 +1,12 @@
 // audio/: procedural lo-fi music and SFX, 100% WebAudio synthesis (DESIGN §19, AU). Public surface (TECH §4.13):
 // createAudio() and renderOffline(). Everything else is internal.
 //
-// Live: the AudioContext is created and resumed on the first user-activation gesture (pointerup / touchend / click /
-// keydown, wired by game/wiring.ts through input.onAnyInput), retried on every gesture until it runs (TECH §10.3);
-// navigator.audioSession.type = 'ambient' where it exists; suspended on visibilitychange hidden / pagehide and resumed
-// when visible. The scheduler ticks every 25 ms and on every rendered frame (audio.roll), 120 ms ahead.
+// Live: createAudio() (boot) starts building the sample buffers in idle time; the AudioContext is created and resumed
+// on the first user-activation gesture (pointerup / touchend / click / keydown, wired by game/wiring.ts through
+// input.onAnyInput), retried on every gesture until it runs (TECH §10.3), and the graph is built from the buffers;
+// navigator.audioSession.type = 'ambient' where it exists; suspended on visibilitychange hidden / pagehide and while
+// both sliders are 0, resumed when visible. The scheduler ticks every 25 ms and on every rendered frame (audio.roll),
+// 120 ms ahead.
 // Offline: renderOffline builds the SAME AudioCore on an OfflineAudioContext and drives it with a scripted run, the
 // scheduler ticking at the same 25 ms through OfflineAudioContext.suspend(), so a seed always renders the same audio.
 //
@@ -15,6 +17,7 @@
 //   music/progressions pure theory: pentatonic, avoid notes, voice leading, pivots   → theory.test.ts
 //   engine.ts          AudioCore: director + scheduler + layers + cues (live and offline) → engine.test.ts (fake ctx)
 //   graph.ts, synth.ts, voices.ts   the mix graph, node helpers, the 32-voice pool    → voices.test.ts
+//   bank.ts            pre-rendered buffers (noise, vinyl, kits, joints) built in idle time from boot → bank.test.ts
 //   music/{instruments,drums,tape,vinyl}.ts, sfx/{roll,grind,oneshots,ui,ambience,noise}.ts   the sounds
 //   bindings.ts        GameEvent / AppEvent → sound, exhaustive tables                → bindings.test.ts
 // Listening without ears: PORT=5184 node tests/unit/audio/render-check.mjs (WAVs, spectrogram PNGs, report.json).

@@ -21,7 +21,7 @@ import { VoicePool } from './voices';
 export interface Graph extends Synth {
   master: GainNode; out: GainNode; comp: DynamicsCompressorNode; limiter: DynamicsCompressorNode;
   music: {
-    sum: GainNode; formLp: BiquadFilterNode; tape: Tape; stop: GainNode; duck: GainNode; vol: GainNode;
+    sum: GainNode; mud: BiquadFilterNode; formLp: BiquadFilterNode; tape: Tape; stop: GainNode; duck: GainNode; vol: GainNode;
     drumBus: GainNode; drumLp: BiquadFilterNode;
     harmonic: GainNode; comboLp: BiquadFilterNode; side: GainNode; bassIn: GainNode;
     ep: GainNode; epLp: BiquadFilterNode; pad: GainNode; padLp: BiquadFilterNode; padLfo: GainNode; chorusWet: GainNode;
@@ -121,7 +121,7 @@ export function buildGraph(ctx: BaseAudioContext, seed: number): Graph {
 
   const g: Graph = {
     ctx, noise, voices, rng, live: !('startRendering' in ctx), master, out, comp, limiter,
-    music: { sum, formLp, tape, stop, duck, vol, drumBus, drumLp, harmonic, comboLp, side, bassIn, ep, epLp, pad, padLp,
+    music: { sum, mud, formLp, tape, stop, duck, vol, drumBus, drumLp, harmonic, comboLp, side, bassIn, ep, epLp, pad, padLp,
       padLfo, chorusWet, mallet, echo, arp, arpL, arpR, vinyl },
     fb, fbEcho, fbVol, sfx, sfxVol, amb, ambVol,
   };

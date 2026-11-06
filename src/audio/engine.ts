@@ -7,7 +7,7 @@ import { hash32 } from '../core/rng';
 import { barAt, barSec, barStart, beatSec, nextSixteenth, quantize, sixteenthSec, type SongClock } from './clock';
 import { buildGraph, type Graph } from './graph';
 import {
-  AREA_MUSIC, BUS, COIN, COMBO_FILTER, DRUM_LEVEL, DUCK_TAU, FEEDBACK, FORM_BARS, INTENSITY, MALLET, NEEDLE_DROP_SEC, PAD,
+  AREA_MUSIC, BUS, COIN, COMBO_FILTER, DRUM_LEVEL, DUCK_TAU, FEEDBACK, FORM_BARS, INTENSITY, MALLET, MUD_CUT, NEEDLE_DROP_SEC, PAD,
   SCHED, SLIDER_CURVE, TAPE, TAPE_STOP, BREAK_SWEEP, type ChordSpec, type MusicArea,
 } from './mix.config';
 import { prioritize } from './bank';
@@ -174,7 +174,7 @@ export class AudioCore {
       // bright drums), more slowly than the layers leave, so leaving a run never makes the music louder.
       if (prev === 'run') this.dropToLevel0(now);
       m.drumLp.frequency.setTargetAtTime(INTENSITY.drumLp[0], now, INTENSITY.sceneFade / 3);
-      m.drumBus.gain.setTargetAtTime(DRUM_LEVEL * INTENSITY.drumGain[0], now, INTENSITY.sceneFade / 3);
+      m.drumBus.gain.setTargetAtTime(DRUM_LEVEL * drumGain(0, this.song?.area ?? 'menu'), now, INTENSITY.sceneFade / 3);
       m.duck.gain.setTargetAtTime(sceneGain(s), now, INTENSITY.sceneLift / 3);
     } else m.duck.gain.setTargetAtTime(sceneGain(s), now, 0.1);
     this.setComboFilter(this.mult);
@@ -304,7 +304,7 @@ export class AudioCore {
     this.applied = target;
     const tau = (beat * INTENSITY.fadeBeats) / 3;
     m.drumLp.frequency.setTargetAtTime(drumLpFor(target, section), t, tau);
-    m.drumBus.gain.setTargetAtTime(DRUM_LEVEL * INTENSITY.drumGain[target], t, tau);
+    m.drumBus.gain.setTargetAtTime(DRUM_LEVEL * drumGain(target, s.area), t, tau);
     m.padLp.frequency.setTargetAtTime(PAD.lpHz + (target >= 3 ? INTENSITY.padLpBoost : 0), t, tau);
     if (section === 'break' && inSection === 0) {
       const f = m.formLp.frequency;
@@ -340,6 +340,7 @@ export class AudioCore {
   private applyArea(area: MusicArea, t: number): void {
     const g = this.g!, m = g.music, a = AREA_MUSIC[area];
     m.epLp.frequency.setTargetAtTime(a.epLp, t, 0.2);
+    m.mud.gain.setTargetAtTime(a.mudDb ?? MUD_CUT.db, t, 0.2);
     prioritize(`kit:${area}:`);                           // if the idle build is still going, this kit next
     m.chorusWet.gain.setTargetAtTime(a.chorus ? PAD_CHORUS_MIX : 0, t, 0.5);
     const echo = MALLET.echo.sixteenths * sixteenthSec(a.bpm);
@@ -561,6 +562,7 @@ export class AudioCore {
 }
 
 const PAD_CHORUS_MIX = PAD.chorus.mix;
+const drumGain = (level: Level, area: MusicArea) => (level === 0 ? AREA_MUSIC[area].level0Drums ?? INTENSITY.drumGain[0] : INTENSITY.drumGain[level]);
 /** Music level per scene: level 0 (no bass, muffled drums) is lifted on menus and results, a little less on pause. */
 const sceneGain = (s: Scene) => dbGain(s === 'run' ? 0 : s === 'paused' ? INTENSITY.pauseDb : INTENSITY.menuDb);
 function clamp01(x: number): number { return Number.isFinite(x) ? Math.min(1, Math.max(0, x)) : 1; }
