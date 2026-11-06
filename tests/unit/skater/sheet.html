@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Skater contact sheet</title>
+  <style>
+    html, body { margin: 0; padding: 0; background: #6b6478; overflow: hidden; }
+    canvas { display: block; image-rendering: pixelated; }
+    #wrap { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+    #labels { position: absolute; left: 0; top: 0; pointer-events: none; font: 700 10px/1.1 system-ui, sans-serif; color: #fff4e3; }
+    #labels div { position: absolute; text-align: center; text-shadow: 0 1px 0 #2b2140, 0 0 2px #2b2140; white-space: nowrap; overflow: hidden; }
+    #title { position: absolute; left: 6px; top: 4px; font: 800 12px system-ui, sans-serif; color: #fff4e3; text-shadow: 0 1px 0 #2b2140; }
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <canvas id="gl"></canvas>
+    <div id="labels"></div>
+    <div id="title"></div>
+  </div>
+  <script type="module" src="./sheet.ts"></script>
+</body>
+</html>
