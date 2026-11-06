@@ -353,7 +353,7 @@ export class SimImpl implements Sim, Ctx {
     };
   }
 
-  snapshot(): SimSnapshot { return takeSnapshot(this.st); }
+  snapshot(): SimSnapshot { return takeSnapshot(this.ring.length ? { ...this.st, ring: this.ring } : this.st); }
 
   restore(s: SimSnapshot): void {
     const st = readSnapshot(s);
@@ -363,8 +363,9 @@ export class SimImpl implements Sim, Ctx {
       this._gen = w.gen; this._world = w.world; this._worldKey = key;
       this.fast = fastQueryOf(w.world);
     }
+    this.ring = st.ring ?? [];
+    delete st.ring;
     this.st = st;
-    this.ring = [];
     this.rewindFrom = null;
   }
 

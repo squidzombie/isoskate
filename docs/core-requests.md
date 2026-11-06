@@ -197,6 +197,96 @@ The first block is the frozen behaviour later packages (GP, WG, WA, the bots) ca
 
 ## GP: Gameplay (W1a)
 
+Everything below is implemented inside sim/, tricks/ and input/ with local extension types; the sim works without
+any of these core changes. Requests 1–4 are additive (optional fields); request 2 changes frozen magnet/capture
+behaviour and is behind a flag.
+
+### 1. InputFrame.longTap: a 350–600 ms still press reads as a tap   (status: open)
+- File / symbol: core/input.ts › InputFrame, Gesture
+- Change: `longTap?: boolean;   // edge: a still touch released 350–600 ms after down (a HOLD that never moved)` on
+  InputFrame, and `{ k: 'holdEnd'; tMs: number; release?: true }` on Gesture.
+- Why: the G0 open item "a 350–600 ms press outside a combo or pad does nothing". The recognizer marks the holdEnd of a
+  still release in (tapMaxMs, longTapMaxMs = 600] with `release: true` (no `tap`: the 349 / 351 ms boundary of TECH
+  §7.4 stays), the frame builder turns it into `longTap`, and the sim reads it as a TAP wherever the hold started
+  nothing: an ollie on the ground, a linked ollie out of a manual that this still touch started, the jump buffer in
+  the air (not after a grab), a pop-out in a grind. A 700 ms press still does nothing (traces in
+  tests/unit/input/recognizer.test.ts, frames.test.ts and integration/labels.test.ts).
+- Local workaround meanwhile: `tricks › InputFrameExt`, `input › HoldEndExt`, `RecognizerConfigExt.longTapMaxMs`.
+  Bots and tools that build InputFrames from gestures themselves (WG's thumb bot) should use input's `InputPipeline` /
+  `FrameBuilder`, or set `longTap` the same way.
+
+### 2. Magnet and capture: no re-capture of the edge a pop-out left   (status: open; implemented behind `RULES.popOutSkipsOwnEdge`, default true)
+- File / symbol: sim/magnet.ts, sim/predict.ts, sim/grind.ts (TECH §6.6, frozen at M0); tricks/score.config.ts › RULES
+- Change: after a pop-out (TAP / ↑ / 180 Out) the air magnet skips the edge the board left; capture (and the capture
+  prediction behind airLeft and the pick window) skips every edge of that obstacle when its top is landable (a ledge,
+  a bench), unless the player steered toward that edge by ≥ MAGNET.cancelDragM this jump. Rails and beams keep
+  re-capture under the board: their tops are crash tops, so dropping onto one would bail. The end hop at an edge's
+  end is unchanged.
+- Why: G0 review: the magnet re-locked the same ledge after a pop-out (pop out, come down, locked again), so you could
+  not get off a ledge. Now a pop-out lands on the ledge top (or beside it), and the magnet is free for a different
+  edge (transfers to the next rail work without having to fight the magnet of the one you left).
+- Validator impact (WG): a pop-out is never a required action on the safe line, and landing on a ledge top is a
+  landing the validator already models; set the flag false to restore M0 exactly.
+- Local workaround meanwhile: the flag. Tests: tests/unit/sim/tricks.test.ts (transfer and the re-capture rule).
+
+### 3. GameEvent 'rewind' carries the crash it undid   (status: open)
+- File / symbol: core/events.ts › GameEvent 'rewind'
+- Change: `{ t: 'rewind'; tick: number; toTick: number; cause?: CrashCause; obstacleId?: number | null; kind?: PropKind | null; left?: number }`
+- Why: the Lesson rewind (RunConfig.rewinds, TECH §6.7) is implemented: a ring of REWIND.ring snapshots every
+  REWIND.snapEveryTicks; a crash with rewinds left restores the newest snapshot ≥ REWIND.sec old and emits only
+  `rewind` (no `crash`, `comboLost` or `runEnd`: the run goes on, so app.ts needs no change). M4's hint replay needs
+  to know what was hit. The count is `min(cfg.rewinds, REWIND.max)`; the 4th crash is a real one.
+- Local workaround meanwhile: the sim already pushes `sim › RewindEventExt` (those fields, all set).
+
+### 4. DebugSnapshot: the debug overlay data   (status: open)
+- File / symbol: core/debug.ts › DebugSnapshot; debug/api.ts › snapshot()
+- Change: `sim?: { airLeft: number; heat: number; window: number; bankIn: number; magnetEdge: number | null; transferArmed: boolean;
+  pick: { open: boolean; edgeId: number; tCapture: number; inSec: number; dirs: Dir8[]; grind: GrindId | null } | null;
+  manual: { kind: ManualId; t: number; budget: number } | null; rewindsLeft: number }`, filled from `simDebug(sim)`.
+- Why: ROADMAP W1a "debug overlay data: the pick-window state, heat and airLeft exposed in the snapshot"; G1 wires the
+  pick-window and heat overlays. The frozen SkaterState already carries `pickWindow`, `airLeft` and
+  `ScoreState.combo.heat / bankIn`; the extra fields (picks so far, the grind they select, budget) come from the sim.
+- Local workaround meanwhile: `sim/index.ts › simDebug(sim): SimDebugInfo | null`.
+
+### 5. New trick-rule tunables live in tricks/score.config.ts › RULES   (status: info; move to core/tuning.ts at G1 if preferred)
+- `manualHoldSec` 0.30 (a resting thumb manuals only after 0.30 s of stillness: the G0 "manual 200 ms into the link
+  window" fix), `switchDoubleSec` 0.25 (grind switch doubles), `dropGapMinH` 0.5 (drop gaps), `popOutSkipsOwnEdge`
+  (request 2), and two pose constants. The recognizer's `longTapMaxMs` 600 sits with the other recognizer numbers in
+  input/recognizer.ts DEFAULT_RECOGNIZER. Every trick point moved from tricks/defs.ts into score.config.ts › POINTS
+  (DESIGN §22: score.config holds every scoring number); TRICKS is unchanged in content.
+
+### Behaviour other packages can rely on (no contract change)
+- **Event timing** (VFX / audio / popups): `flipStart`, `flipUpgrade`, `spinStart`, `grabStart`, `grindStart`,
+  `grindSwitch`, `manualStart` on the tick the trick starts; `trickScored` for flips, spins and the grab on the
+  touchdown or capture tick (landing modifiers known), for a grind at each switch and at its end, for a manual at the
+  Nose Manual switch and at its end. A Nose Manual is a second `manualStart` (kind 'noseManual') without a
+  `manualEnd` in between. `land` precedes its `trickScored`s; `nearMiss` precedes its `bonus`.
+- **New emitters:** `grabStart` / `grabEnd`, `nearMiss`, `landmark`, `rewind`, `grindSwitch` for switches, and `bump`
+  with kind 'wall' when the board touches a soft wall (once per contact, with the 0.3 s wobble).
+- **pose():** every sim PoseId (roll, carve, pop, tuck, flip, grab, land, manual, noseManual, grind, sketchy, crash);
+  `board` continuous across upgrades and keyboard amends, plus the Hardflip's 70° pitch arc; `spinYaw` continuous
+  across the 180 → 360 upgrade and 0 once the spin has finished (a finished 180 hands over to `fakie` on the same
+  tick); `fakie` stays true for RULES.revertPoseTicks (3) after a revert, so SK's view sees the 180 land fakie and
+  pivots; `bodyYaw` for all 13 grinds (sim › GRIND_BODY_YAW, slides ±90); `height` above the ground under the board.
+- **Landing:** the DESIGN §7 edge nudge leaves the board centre ≥ LAND.edgeNudge (0.15 m) inside a raised top's side
+  edge (M0 left it 0.02 m inside); same surface, same classification (WG: the validator's landing x may differ by
+  ≤ 0.13 m toward the top's centre).
+- **Gaps (WG, `Obstacle.gap`):** with `fromObstacle`, paid when an air that started on that obstacle (rolling on its
+  top or grinding its edge) ends on this one (landing on its top or locking onto its edge); without it, paid when an
+  air spans the obstacle's s-range over its lateral extent (trench, stairs, hops), or, when the air started on the
+  gap obstacle itself, when it lands ≥ 0.5 m lower (Dock / Skywalk / Bridge Drop). Once per obstacle per run.
+- **Landmarks (`Obstacle.landmark`):** the first grind on it, manual on it, or air trick taken off from / landed on it
+  pays +300 once per area visit (`landmark` event + `bonus`).
+- **Near miss:** crash-top solids only (not the obstacle being ground or the one the air left); lateral gap ≤ 0.35 m
+  to the inset face, or ≤ 0.20 m over its inset top; paid when the board has passed the obstacle's far end, never
+  after a side bump on it.
+- **Combo heat:** refreshed when a link-adding trick starts (flip, spin, grab, grind, switch, the linked manual,
+  Transfer, a linked Revert); not by upgrades, and not by a trick decayed below SCORE.decay.noLinkBelow (repeating one
+  trick cannot hold a combo).
+- **Manual start on a top:** a HOLD manuals outside a combo on any raised landable top (it has a landable body), not
+  only the TOP_KINDS list. The slow-device HOLD note from G0 is mitigated by `manualHoldSec` (a late first touchmove
+  ends the hold before the 0.30 s).
+
 ## WG: World-gen (W1b)
 
 ## WA: World art (W2a)

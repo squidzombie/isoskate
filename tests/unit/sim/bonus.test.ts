@@ -6,7 +6,7 @@ import type { SkaterPose } from '../../../src/core/view';
 import { DT, LAND, NEAR_MISS, REWIND, sAt } from '../../../src/core/tuning';
 import type { Obstacle } from '../../../src/core/world';
 import { SCORE, TRICKS } from '../../../src/tricks';
-import { box, pit, rail } from './fixtures';
+import { box, frame, pit, rail } from './fixtures';
 import { all, first, make, place, run } from './drive';
 
 const bin = (x: number, s = 12) => box({ s, x, len: 0.6, wid: 0.6, hgt: 1.15, top: 'crash' });
@@ -128,6 +128,20 @@ describe('Lesson rewind (RunConfig.rewinds, TECH §6.7)', () => {
     expect(sim.cur.mode).toBe('crashed');
     expect(first(ev, 'runEnd')).toBeDefined();
   });
+  it('snapshot → restore replays a rewind exactly (the ring travels with the snapshot), also into a fresh sim', () => {
+    const a = make([bin(0, 30)], { rewinds: 2 });
+    run(a, 200);                                                       // the bin is hit at ≈ tick 257
+    const snap = a.snapshot();
+    const play = (sim: typeof a) => { const h: number[] = [], k: string[] = []; for (let i = 0; i < 200; i++) { for (const e of sim.step(frame())) k.push(e.t); h.push(sim.hash()); } return { h, k }; };
+    const one = play(a);
+    expect(one.k).toContain('rewind');
+    a.restore(snap);
+    expect(play(a)).toEqual(one);
+    const b = make([bin(0, 30)], { rewinds: 2 });
+    b.restore(structuredClone(snap));
+    expect(play(b)).toEqual(one);
+  });
+
   it('a rewound run steers around the hazard and goes on; without rewinds the same crash ends the run', () => {
     const sim = make([bin(0, 30)], { rewinds: 1 });
     let rewound = false;

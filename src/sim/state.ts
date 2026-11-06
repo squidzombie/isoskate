@@ -71,6 +71,9 @@ export interface SimState {
   revertTick: number;                   // last revert (pose keeps fakie visible a few ticks)
   shadowY: number;                      // ground under the board (pose height in the air)
   wallSide: -1 | 0 | 1;                 // soft wall currently touched (bump on entry)
+  /** Only inside a snapshot: the Lesson rewind ring at that moment (the live ring is kept by the Sim, not the state),
+   *  so snapshot → restore replays rewinds exactly too. */
+  ring?: SimState[];
   landTick: number; landDrop: number;   // last touchdown tick and its drop (pose landImpulse)
   slabKind: GroundSlab['kind']; stairStep: number; groundOb: number;   // ground under the board (stickiness, stairs, pads)
   tier: 0 | 1 | 2 | 3; area: AreaId; gateway: GatewayId | null; bestPassed: boolean;
