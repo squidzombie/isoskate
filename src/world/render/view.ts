@@ -132,11 +132,9 @@ class GreyboxWorldView implements WorldView {
     if (target === null && !this.chunks.has(lo)) target = lo;
     if (target === null) for (let i = ci; i <= hi && target === null; i++) { const c = this.chunks.get(i); if (c && c.key !== this.optsKey) target = i; }
     if (target !== null) {
-      const t0 = performance.now();
       const old = this.chunks.get(target);
       if (old) this.release(old);
-      this.build(target);
-      this.recordBuild(performance.now() - t0);
+      this.recordBuild(this.build(target));
     }
     this.updateCoinScale(f);
     this.updateShadow(f, origin);
@@ -166,9 +164,11 @@ class GreyboxWorldView implements WorldView {
   }
 
   // ── internals ─────────────────────────────────────────────────────────────────────────────────────────────────
-  private build(index: number): void {
+  /** Builds one chunk; returns the render-side build time in ms (generation inside gen.chunk() is WG's budget). */
+  private build(index: number): number {
     // Behind the run start there is no generated content: an empty street chunk keeps the frame filled.
     const ch: Chunk = index >= 0 ? this.gen!.chunk(index) : emptyChunk(index);
+    const t0 = performance.now();
     const w = this.writers;
     w.main.begin(this.pool.acquire()); w.near.begin(this.pool.acquire()); w.casters.begin(this.pool.acquire());
     buildChunk(ch, w.main, w.near, this.opts);
@@ -199,6 +199,7 @@ class GreyboxWorldView implements WorldView {
     this.root.add(group);
     this.chunks.set(index, { index, s0: ch.s0, group, parts, slots, key: this.optsKey });
     this.built++;
+    return performance.now() - t0;
   }
 
   private release(c: LiveChunk): void {

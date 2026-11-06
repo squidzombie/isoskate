@@ -161,3 +161,23 @@ describe('pipeline (recognizer + keyboard + frames, no DOM)', () => {
     expect(f[2]).toMatchObject({ swipe: 'ur', swipeAmend: true, steerAxis: 1 });
   });
 });
+
+describe('determinism', () => {
+  it('the same pointer + key trace gives identical InputFrames on every replay (thumb bot, replays)', () => {
+    const trace = () => [
+      ...new Trace(1, 3, 120, 520).flick(0.25, 0, 300).rest(90, 2).flick(1.3, 180, 60).up().samples,
+      ...new Trace(2, 200, 300, 400).rest(260).up().samples,
+      ...new Trace(3, 700, 200, 500).rest(40).flick(1.1, 45, 60).rest(70).flick(1.1, 45, 60).up().samples,
+    ];
+    const runOnce = () => {
+      const p = new InputPipeline(() => 390);
+      p.schedule(trace());
+      p.keyDown('ArrowUp', 900); p.keyDown('ArrowRight', 950);
+      return Array.from({ length: 80 }, (_, k) => p.frame(((k + 1) * 1000) / 60));
+    };
+    const a = runOnce(), b = runOnce();
+    expect(b).toEqual(a);
+    expect(a.filter((f) => f.swipe).map((f) => f.swipe)).toEqual(expect.arrayContaining(['l', 'ur']));
+    expect(a.some((f) => f.tap)).toBe(true);
+  });
+});
