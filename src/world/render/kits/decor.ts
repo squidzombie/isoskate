@@ -413,9 +413,9 @@ const overheadWire: DecorFn = (c, d) => {
 /** Sora Line guideway at y = 7: two thin edge beams (≤ 0.3 m wide), never a deck over the corridor. */
 const maglevBeam: DecorFn = (c, d) => {
   const K = c.K, len = num(d, 'len', 32), gap = num(d, 'gap', 1.6), y = Math.max(7, d.y);
-  K.reset().to('b').lit(0, 0, 0).col(0x2e2852);
+  K.reset();
   for (const dx of [-gap / 2, gap / 2]) {
-    K.box(d.x + dx - 0.13, y, d.s, d.x + dx + 0.13, y + 0.35, d.s + len, FACE.all);
+    K.to('b').lit(0, 0, 0).col(0x2e2852).box(d.x + dx - 0.13, y, d.s, d.x + dx + 0.13, y + 0.35, d.s + len, FACE.all);
     // Small signal lights along the outer faces (never a continuous bright line: from the run camera a beam along s
     // projects as a long line, which must not read as a lane marking).
     K.to('e').glowing(1.4, -1, 0);

@@ -5,7 +5,7 @@
 // anchored in this chunk), so the view rebases with group.position.z.
 import type { AreaId } from '../../core/ids';
 import { hash32 } from '../../core/rng';
-import type { AreaBlend, Chunk } from '../../core/world';
+import type { AreaBlend, Chunk, GroundSlab } from '../../core/world';
 import { HEIGHT } from '../../core/tuning';
 import { ambientOf, drawDecor, type AmbientRec } from './kits/decor';
 import { DEFAULT_BUILD, setArea, type BuildOptions, type DecalRec, type KitCtx, type LanternRec } from './kits/common';
@@ -37,14 +37,9 @@ export function buildChunk(ch: Chunk, w: KitTargets, areas: AreaSource, opts: Re
   const c: KitCtx = {
     K, area: ch.area, hz: HAZARD[ch.area], s0: ch.s0, s1: ch.s0 + ch.len, opts, glowLeft: glowCards,
     areaAt: (s) => areas.areaAt(s).area,
-    groundAt: (s, x) => {
-      let y = 0;
-      for (const ob of ch.obstacles) {
-        if (ob.solids.length) continue;
-        for (const sl of ob.slabs) if (sl.kind === 'flat' && sl.s0 <= s && sl.s1 > s && sl.x0 <= x && sl.x1 >= x && sl.y0 > y && sl.y0 < 0.5) y = sl.y0;
-      }
-      return y;
-    },
+    lookAt: (s) => lookAreaAt(areas, s),
+    groundAt: (s, x) => groundSlab(ch, s, x)?.y0 ?? 0,
+    surfaceAt: (s, x) => groundSlab(ch, s, x)?.surface ?? null,
     decal: (d) => { out.decals.push(d); },
     lantern: (l) => { out.lanterns.push(l); },
   };
@@ -60,11 +55,29 @@ export function buildChunk(ch: Chunk, w: KitTargets, areas: AreaSource, opts: Re
   return out;
 }
 
-/** Road colour at s: the area's road, blended across the 8 s gateway window (so the ground fades, not snaps). */
+/** The highest flat ground slab (solid-free obstacles: sidewalks, plazas, aprons, below 0.5 m) at (s, x). */
+function groundSlab(ch: Chunk, s: number, x: number): GroundSlab | null {
+  let best: GroundSlab | null = null;
+  for (const ob of ch.obstacles) {
+    if (ob.solids.length) continue;
+    for (const sl of ob.slabs) if (sl.kind === 'flat' && sl.s0 <= s && sl.s1 > s && sl.x0 <= x && sl.x1 >= x && sl.y0 < 0.5 && (!best || sl.y0 > best.y0)) best = sl;
+  }
+  return best;
+}
+
+/** The preset that dominates at s: the blend's `to` past its middle (DESIGN §18.1 8 s window), else the area. */
+export function lookAreaAt(areas: AreaSource, s: number): AreaId {
+  const a = areas.areaAt(s);
+  if (!a.blend) return a.area;
+  return blendWeight(a.blend) >= 0.5 ? a.blend.to : a.blend.from;
+}
+/** Road colour at s: the dominant preset's road, switched over a short ramp in the middle of the gateway window
+ *  (inside the gateway piece), so the hazards on it always match their look (ink on asphalt, inverted on wet). */
 export function roadAt(areas: AreaSource, s: number): number {
   const a = areas.areaAt(s);
   if (!a.blend) return LOOK[a.area].road;
-  return mixHex(LOOK[a.blend.from].road, LOOK[a.blend.to].road, blendWeight(a.blend));
+  const k = Math.min(1, Math.max(0, (blendWeight(a.blend) - 0.5) * 8 + 0.5));
+  return mixHex(LOOK[a.blend.from].road, LOOK[a.blend.to].road, k);
 }
 
 /** A content hash of a chunk (what the build reads), for the Roll-out cache: identical chunks reuse their meshes. */

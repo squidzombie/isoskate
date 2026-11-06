@@ -4,7 +4,8 @@
 import type { PropKind } from '../../../core/ids';
 import type { Obstacle } from '../../../core/world';
 import { CHUNK_LEN } from '../../../core/tuning';
-import { edgesOf, groundOfObstacle, setArea, solidsFallback, type KitCtx } from './common';
+import { edgesOf, groundOfObstacle, hazardPool, setArea, solidsFallback, type KitCtx } from './common';
+import { HAZARD } from '../palette';
 import { DOCKS_KITS } from './docks';
 import { DOWNTOWN_KITS } from './downtown';
 import { NEON_KITS } from './neon';
@@ -23,6 +24,7 @@ export const anchorChunk = (ob: Obstacle) => Math.floor(ob.s / CHUNK_LEN);
  *  obstacles anchored before the run's first built chunk are drawn there). Returns the far s of what was drawn. */
 export function drawObstacle(c: KitCtx, ob: Obstacle, chunkIndex: number, first = false): number {
   setArea(c, ob.area);
+  c.hz = HAZARD[c.lookAt(ob.s + Math.min(ob.len, 2) / 2)];
   const K = c.K;
   K.reset();
   groundOfObstacle(c, ob);
@@ -38,6 +40,20 @@ export function drawObstacle(c: KitCtx, ob: Obstacle, chunkIndex: number, first 
     far = ob.s + ob.len + 1;
   }
   K.reset();
+  if (anchored && !c.hz.inverted) hazardPools(c, ob);
   edgesOf(c, ob);
   return far;
+}
+
+/** Every crash-top solid sits in its own pool of shadow (DESIGN §18.4: contact shadows under every obstacle): a soft
+ *  dark decal over the ground its screen hull covers (its footprint and h·cot 35° behind it, where the sun-from-
+ *  behind shadow falls), so see-through parts (legs, gaps, the x-ray cap) still read as one dark silhouette. The
+ *  inverted Neon hazards glow instead. Full-width barriers draw their own pool. */
+function hazardPools(c: KitCtx, ob: Obstacle): void {
+  if (ob.kind === 'barrier_low' || ob.kind === 'holo_gate') return;
+  for (const so of ob.solids) {
+    if (so.top !== 'crash') continue;
+    const b = so.box;
+    hazardPool(c, b.x0, b.x1, b.s0, b.s1, b.y1 - b.y0, 0.82);
+  }
 }

@@ -60,15 +60,15 @@ export const planterTree: KitFn = (c, ob) => {
   const palm = c.area === 'downtown';
   const top = trunk.y1;
   if (palm) {
-    K.lit(0, 0.6).col(0x4f7a46);
+    K.lit(0, 0.6, FX.matte).col(0x2c4a2c);
     for (let i = 0; i < 7; i++) {
       const a = (i / 7) * Math.PI * 2, dx = Math.cos(a), ds = Math.sin(a);
       K.quad(x, top + 0.1, s, x + dx * 0.25 - ds * 0.12, top + 0.15, s + ds * 0.25 + dx * 0.12, x + dx * 1.3, top - 0.35, s + ds * 1.3, x + dx * 0.25 + ds * 0.12, top + 0.15, s + ds * 0.25 - dx * 0.12);
     }
     K.lit(0).col(0x6b4e3a).sphere(x, top + 0.05, s, 0.16, 5, 3);
   } else {
-    const leaf = c.area === 'neon' ? 0xffb7d0 : 0x6f8f4e;
-    K.lit(0, 0.5).col(leaf);
+    const leaf = c.area === 'neon' ? 0xffb7d0 : 0x3a5a34;
+    K.lit(0, 0.5, FX.matte).col(leaf);
     for (let i = 0; i < 4; i++) K.sphere(x + (rnd(ob.id, i) - 0.5) * 0.8, top + 0.4 + rnd(ob.id, i, 3) * 0.4, s + (rnd(ob.id, i, 5) - 0.5) * 0.8, 0.55, 6, 4);
   }
   K.capY = null;
@@ -98,7 +98,7 @@ export const bollards: KitFn = (c, ob) => {
     const b = so.box, x = (b.x0 + b.x1) / 2, s = (b.s0 + b.s1) / 2, r = Math.min(b.x1 - b.x0, b.s1 - b.s0) / 2;
     contact(c, b.x0, b.x1, b.s0, b.s1, b.y0 + 0.01, 0.6, 0.2);
     body(c); K.cyl(x, s, b.y0, b.y1 - 0.08, r, 8, false);
-    K.lit(0, 0, HZ).col(c.hz.inverted ? c.hz.accent : 0xc9a15a).cyl(x, s, b.y1 - 0.3, b.y1 - 0.24, r + 0.01, 8, false);
+    K.lit(0, 0, HZ, c.hz.glow).col(c.hz.inverted ? c.hz.accent : 0xc9a15a).cyl(x, s, b.y1 - 0.28, b.y1 - 0.25, r + 0.01, 8, false);
     body(c, c.hz.top); K.frustum(x, s, b.y1 - 0.08, b.y1, r, r * 0.6, 8, true);
     rim(c, x - r, x + r, b.y1 - 0.08, b.s0);
   }
@@ -137,7 +137,7 @@ export const parkedCar: KitFn = (c, ob) => {
   c.K.capY = b.y0 + 1.6;
   drawCar(c.K, { x0: b.x0, x1: b.x1, s0: b.s0, s1: b.s1, y: b.y0, h: b.y1 - b.y0, hazard: true,
     body: c.hz.inverted ? c.hz.body : CAR_BODIES[(ob.variant + ob.id) % CAR_BODIES.length]!, accent: c.hz.accent,
-    van: ob.kind === 'parked_van' || b.y1 - b.y0 > 1.7, inverted: c.hz.inverted, rim: c.hz.rim });
+    van: ob.kind === 'parked_van' || b.y1 - b.y0 > 1.7, inverted: c.hz.inverted, rim: c.hz.rim, glow: c.hz.glow });
   c.K.capY = null;
 };
 
@@ -199,10 +199,10 @@ export const newsBox: KitFn = (c, ob) => {
   body(c);
   K.box(b.x0 + 0.04, g, b.s0 + 0.04, b.x0 + 0.08, g + 0.25, b.s1 - 0.04); K.box(b.x1 - 0.08, g, b.s0 + 0.04, b.x1 - 0.04, g + 0.25, b.s1 - 0.04);
   K.box(b.x0, g + 0.25, b.s0, b.x1, top - 0.14, b.s1);
-  K.lit(0, 0, HZ).col(c.hz.accent).box(b.x0 - 0.005, top - 0.14, b.s0 - 0.005, b.x1 + 0.005, top - 0.04, b.s1 + 0.005);
+  K.lit(0, 0, HZ, c.hz.glow).col(c.hz.accent).box(b.x0 - 0.005, top - 0.11, b.s0 - 0.005, b.x1 + 0.005, top - 0.07, b.s1 + 0.005, FACE.front | FACE.left | FACE.right);
   body(c, c.hz.top); K.box(b.x0 - 0.01, top - 0.04, b.s0 - 0.01, b.x1 + 0.01, top, b.s1 + 0.01);
-  K.lit(0, 0, HZ).col(0x3c3a62).box(b.x0 + 0.06, g + 0.5, b.s0 - 0.006, b.x1 - 0.06, top - 0.22, b.s0, FACE.front);
-  K.lit(0, 0, HZ).col(0x8f857c).box(b.x0 + 0.1, g + 0.55, b.s0 - 0.008, b.x1 - 0.1, g + 0.72, b.s0 - 0.006, FACE.front);
+  body(c, 0x2a2850); K.box(b.x0 + 0.06, g + 0.5, b.s0 - 0.006, b.x1 - 0.06, top - 0.22, b.s0, FACE.front);
+  K.lit(0, 0, HZ).col(0x6a6260).box(b.x0 + 0.12, g + 0.56, b.s0 - 0.008, b.x1 - 0.12, g + 0.64, b.s0 - 0.006, FACE.front);
   rim(c, b.x0, b.x1, top, b.s0);
 };
 

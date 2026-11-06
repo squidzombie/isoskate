@@ -4,7 +4,7 @@
 // shadows under every obstacle. Long kinds are drawn per chunk (clipped); compact kinds once, in their anchor chunk.
 import type { AreaId } from '../../../core/ids';
 import type { Chunk, Obstacle, Pit } from '../../../core/world';
-import { ACCENTS, COLORS, LOOK, shade } from '../palette';
+import { ACCENTS, COLORS, LOOK, mixHex, shade } from '../palette';
 import { PAT } from '../textures/ground';
 import { FACE, FX } from '../writer';
 import { WARN, chevrons, contact, groundOf, hazardPool, isFull, rnd, setArea, solidsFallback, type KitCtx } from './common';
@@ -13,8 +13,13 @@ export type KitFn = (c: KitCtx, ob: Obstacle) => void;
 export interface KitDef { draw: KitFn; long?: boolean }
 
 const HZ = FX.noFog | FX.matte;
-/** Brush for a hazard body (ink, or the inverted Neon body). */
-export function body(c: KitCtx, hex = c.hz.body): void { c.K.lit(0, 0, HZ).col(hex); }
+/** Brush for a hazard body: ink-dark in Downtown, Suburbs and Docks (any colour passed is pulled down toward the
+ *  ink body, so a kit's tinted parts never lift the silhouette past the gate), or the inverted, softly glowing Neon
+ *  body. */
+export function body(c: KitCtx, hex = c.hz.body): void {
+  if (c.hz.inverted) { c.K.lit(0, 0, HZ, c.hz.glow).col(hex); return; }
+  c.K.lit(0, 0, HZ).col(hex === c.hz.body || hex === c.hz.top ? hex : mixHex(hex, c.hz.body, 0.55));
+}
 /** Neon emissive rim along a top-front edge (0.03 m, DESIGN §18.4): emissive target, noFog. */
 export function rim(c: KitCtx, x0: number, x1: number, y: number, s: number, s1?: number): void {
   if (!c.hz.inverted) return;
@@ -29,7 +34,7 @@ export const inChunk = (c: KitCtx, s: number) => s >= c.s0 && s < c.s1;
 // ── street base (per chunk) ─────────────────────────────────────────────────────────────────────────────────────
 const VERGE: Readonly<Record<AreaId, { color: number; pat: number }>> = {
   downtown: { color: 0xcdb8a3, pat: PAT.slabs }, suburbs: { color: 0x9db36b, pat: PAT.grass },
-  docks: { color: 0xc9b9a6, pat: PAT.apron }, neon: { color: 0x605878, pat: PAT.tile },
+  docks: { color: 0xc9b9a6, pat: PAT.apron }, neon: { color: 0x48426a, pat: PAT.tile },
 };
 /** Road under the corridor in 4 m strips (colour by area along s, so a gateway blends the ground), cut around pits,
  *  and the verges beyond ±4.5 at sidewalk height. */
@@ -39,10 +44,10 @@ export function streetBase(c: KitCtx, ch: Chunk, roadAt: (s: number) => number =
   for (const ob of ch.obstacles) for (const p of ob.pits) if (p.s1 > ch.s0 && p.s0 < ch.s0 + ch.len) pits.push(p);
   const hasWater = ch.decor.some((d) => d.kind === 'water');
   for (let a = ch.s0; a < ch.s0 + ch.len - 1e-6; a += 4) {
-    const b = a + 4, area = c.areaAt(a + 2);
+    const b = a + 4, area = c.lookAt(a + 2);
     const road = roadAt(a + 2);
     K.reset();
-    K.lit(road === LOOK.neon.road || area === 'neon' ? PAT.wet : PAT.asphalt).col(road);
+    K.lit(area === 'neon' ? PAT.wet : PAT.asphalt).col(road);
     rectsMinusPits(-4.5, 4.5, a, b, pits, (x0, x1, s0, s1) => K.box(x0, -0.3, s0, x1, -0.005, s1, FACE.top | FACE.front));
     const v = VERGE[area];
     K.lit(v.pat).col(v.color);
@@ -152,13 +157,14 @@ const trashCan: KitFn = (c, ob) => {
   body(c); K.cyl(x, s, g, top - 0.12, r, 10, false);
   if (c.area === 'docks') {
     K.lit(0, 0, HZ).col(c.hz.accent2);
-    for (const y of [g + 0.35, g + 0.72]) K.cyl(x, s, y, y + 0.035, r + 0.012, 10, false);
+    for (const y of [g + 0.35, g + 0.72]) K.cyl(x, s, y, y + 0.02, r + 0.012, 10, false);
   } else {
-    K.lit(0, 0, HZ).col(c.hz.accent).cyl(x, s, top - 0.34, top - 0.27, r + 0.008, 10, false);
+    K.lit(0, 0, HZ, c.hz.glow).col(c.hz.accent).cyl(x, s, top - 0.33, top - 0.29, r + 0.008, 10, false);
   }
-  // Lid: a short collar and a dome, lighter so the top reads as a volume.
-  body(c, c.hz.top); K.cyl(x, s, top - 0.12, top - 0.06, r + 0.02, 10, true);
-  K.frustum(x, s, top - 0.06, top, r + 0.02, r * 0.55, 10, true);
+  // Lid: a short collar and a dome, a step lighter so the top reads as a volume, with a thin light rim on the collar.
+  body(c); K.cyl(x, s, top - 0.12, top - 0.06, r + 0.02, 10, false);
+  body(c, c.hz.top); K.frustum(x, s, top - 0.06, top, r + 0.02, r * 0.55, 10, true);
+  if (!c.hz.inverted) K.lit(0, 0, HZ).col(0x6a5a86).cyl(x, s, top - 0.065, top - 0.055, r + 0.024, 10, false);
   // Slot on the camera-facing side.
   K.lit(0, 0, HZ).col(c.hz.inverted ? 0x2b2140 : 0x120c1e).box(x - r * 0.5, top - 0.24, b.s0 - 0.005, x + r * 0.5, top - 0.16, b.s0 + 0.04, FACE.front);
   rim(c, x - r, x + r, top - 0.06, b.s0 + 0.02);

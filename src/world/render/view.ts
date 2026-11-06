@@ -338,7 +338,8 @@ class WorldViewImpl implements WorldView {
     const ch = this.chunkFor(index);
     const t0 = nowMs();
     const glowCards = QUALITY[this.ctx.quality].glowCards;
-    const hash = chunkHash(ch, this.areaSrc, this.optsKey * 97 + glowCards + (index === this.firstIndex ? 7 : 0));
+    // Only Roll-out chunks (−1..1) can be cached: the content hash is computed for those alone.
+    const hash = index <= 1 ? chunkHash(ch, this.areaSrc, this.optsKey * 97 + glowCards + (index === this.firstIndex ? 7 : 0)) : 0;
     const cached = this.cache.get(index);
     if (cached && cached.hash === hash) {
       this.cache.delete(index);

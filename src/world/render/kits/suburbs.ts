@@ -46,12 +46,15 @@ const picketFence: KitFn = (c, ob) => {
     const b = so.box, xm = (b.x0 + b.x1) / 2;
     K.capY = b.y0 + 1.6;
     const a = Math.max(b.s0, c.s0), z = Math.min(b.s1, c.s1);
+    body(c, 0x1d1628);
+    K.box(xm - 0.015, b.y0, a, xm + 0.015, b.y1 - 0.15, z, FACE.sides5);
     body(c, 0x2a2238);
     K.box(xm - 0.04, b.y0 + 0.25, a, xm + 0.04, b.y0 + 0.33, z, FACE.sides5);
     K.box(xm - 0.04, b.y1 - 0.4, a, xm + 0.04, b.y1 - 0.32, z, FACE.sides5);
+    K.lit(0, 0, HZ).col(0xf7efe3).box(xm - 0.041, b.y1 - 0.39, a, xm + 0.041, b.y1 - 0.375, z, FACE.top);
     for (let s = Math.ceil(a / 0.16) * 0.16; s < z - 0.06; s += 0.16) {
       body(c, 0x2a2238); K.box(xm - 0.02, b.y0, s, xm + 0.02, b.y1 - 0.1, s + 0.09);
-      K.lit(0, 0, HZ).col(0xf7efe3).box(xm - 0.021, b.y1 - 0.1, s, xm + 0.021, b.y1, s + 0.09);
+      body(c, c.hz.top); K.box(xm - 0.021, b.y1 - 0.1, s, xm + 0.021, b.y1, s + 0.09);
     }
     K.capY = null;
     contact(c, b.x0 - 0.05, b.x1 + 0.05, a, z, b.y0 + 0.01, 0.45, 0.15);
@@ -64,7 +67,9 @@ const mailbox: KitFn = (c, ob) => {
   if (!b) return;
   const x = (b.x0 + b.x1) / 2, s = (b.s0 + b.s1) / 2, g = b.y0, top = b.y1;
   contact(c, b.x0, b.x1, b.s0, b.s1, g + 0.01, 0.6, 0.25);
-  body(c); K.box(x - 0.05, g, s - 0.05, x + 0.05, top - 0.35, s + 0.05);
+  // A dark brick pillar (fills the silhouette) carrying the mailbox.
+  K.lit(PAT.brickWall, 0, HZ).col(c.hz.inverted ? c.hz.body : 0x2a1820).box(b.x0, g, b.s0, b.x1, top - 0.38, b.s1);
+  body(c, c.hz.top); K.box(b.x0 - 0.02, top - 0.4, b.s0 - 0.02, b.x1 + 0.02, top - 0.35, b.s1 + 0.02);
   body(c); K.box(b.x0 + 0.03, top - 0.35, b.s0, b.x1 - 0.03, top - 0.12, b.s1);
   body(c, c.hz.inverted ? c.hz.top : 0x2c2342); K.hcyl('s', x, top - 0.12, 0, b.s0, b.s1, (b.x1 - b.x0) / 2 - 0.03, 6, true);
   K.lit(0, 0, HZ).col(0xc4473d).box(b.x1 - 0.03, top - 0.3, s, b.x1, top - 0.02, s + 0.03);
@@ -113,10 +118,10 @@ const yardTable: KitFn = (c, ob) => {
   body(c, c.hz.top); K.box(b.x0, top - 0.04, b.s0, b.x1, top, b.s1);
   for (let i = 0; i < 4; i++) {
     const x0 = b.x0 + 0.08 + i * ((b.x1 - b.x0 - 0.16) / 4);
-    K.lit(0, 0, HZ).col(i % 2 ? 0x3a2f50 : accent(c.area, i + ob.id));
+    body(c, i === 1 ? accent(c.area, i + ob.id) : 0x2a2238);
     K.box(x0, top, b.s0 + 0.15 + (i % 2) * 0.3, x0 + 0.22, top + 0.15 + rnd(ob.id, i) * (b.y1 - top - 0.2), b.s0 + 0.5 + (i % 2) * 0.3);
   }
-  K.lit(0, 0, HZ).col(0xf4d58d).box(b.x0 + 0.2, top - 0.35, b.s0 - 0.01, b.x0 + 0.7, top - 0.06, b.s0, FACE.front);
+  K.lit(0, 0, HZ).col(0xf4d58d).box(b.x0 + 0.2, top - 0.3, b.s0 - 0.01, b.x0 + 0.55, top - 0.12, b.s0, FACE.front);
 };
 
 /** Crate stack 0.6 × 0.4 × 0.30 (low, landable): wooden crates in a warm colour (landable tops are not ink). */
@@ -150,9 +155,8 @@ const hoopPole: KitFn = (c, ob) => {
   K.capY = b.y0 + 1.6;
   body(c); K.box(b.x0, b.y0, b.s0, b.x1, b.y1 - 0.2, b.s1);
   K.lit(0, 0, HZ).col(c.hz.accent).box(b.x0 - 0.01, b.y0 + 0.9, b.s0 - 0.01, b.x1 + 0.01, b.y0 + 1.0, b.s1 + 0.01);
-  K.lit(0).col(0xf7efe3).box(x - 0.6, b.y1 - 0.75, s - 0.25, x + 0.6, b.y1, s - 0.2);
-  K.col(0xc4473d).box(x - 0.2, b.y1 - 0.55, s - 0.255, x + 0.2, b.y1 - 0.3, s - 0.25, FACE.front);
-  K.col(0xff8a5b).cyl(x, s - 0.45, b.y1 - 0.6, b.y1 - 0.57, 0.22, 8, false);
+  body(c, 0x2a2238); K.box(x - 0.6, b.y1 - 0.75, s - 0.25, x + 0.6, b.y1, s - 0.2);
+  K.lit(0, 0, HZ).col(0xff8a5b).cyl(x, s - 0.45, b.y1 - 0.6, b.y1 - 0.58, 0.22, 8, false);
   K.capY = null;
 };
 
@@ -170,8 +174,11 @@ const busShelter: KitFn = (c, ob) => {
   body(c, c.hz.top); K.chamfer(b.x0 - 0.1, b.y1 - 0.1, b.s0 - 0.15, b.x1 + 0.1, b.y1, b.s1 + 0.1, 0.03);
   // Ad panel on the camera face (billboard art from the sign atlas).
   const r = signRect(`bb:suburbs:${ob.id % 2}`);
-  K.lit(0, 0, HZ).col(0xffffff);
-  K.quad(b.x0 + 0.15, b.y0 + 0.4, b.s0 - 0.01, b.x1 - 0.15, b.y0 + 0.4, b.s0 - 0.01, b.x1 - 0.15, b.y1 - 0.4, b.s0 - 0.01, b.x0 + 0.15, b.y1 - 0.4, b.s0 - 0.01,
+  // Back wall (dark) filling the silhouette, with a modest ad panel facing the camera.
+  body(c, 0x1d1628); K.box(b.x0 + 0.06, b.y0 + 0.05, b.s1 - 0.12, b.x1 - 0.06, b.y1 - 0.12, b.s1 - 0.08, FACE.front | FACE.top);
+  K.lit(0, 0, HZ).col(0x8a8090);
+  const px0 = b.x0 + (b.x1 - b.x0) * 0.3, px1 = b.x1 - (b.x1 - b.x0) * 0.3;
+  K.quad(px0, b.y0 + 0.7, b.s0 - 0.01, px1, b.y0 + 0.7, b.s0 - 0.01, px1, b.y0 + 1.4, b.s0 - 0.01, px0, b.y0 + 1.4, b.s0 - 0.01,
     [r.u0, r.v0, r.u1, r.v0, r.u1, r.v1, r.u0, r.v1]);
   K.capY = null;
 };

@@ -35,6 +35,7 @@ for (const a of AREAS) {
   for (const u of [0.25, 0.5, 0.75]) jobs.push({ group: 'blend', name: `blend-${a}-${NEXT[a]}-${u * 100}`, q: `scene=street&area=${a}&to=${NEXT[a]}&u=${u}`, vps: ['390x844'] });
   jobs.push({ group: 'street', name: `street-${a}-top`, q: `scene=street&area=${a}&speed=10.5`, vps: ['390x844'] });
   for (let p = 0; p < PROP_PAGES[a]; p++) jobs.push({ group: 'props', name: `props-${a}-${p}`, q: `scene=props&area=${a}&page=${p}`, vps: ['390x844', '1280x800'] });
+  for (let p = 0; p < PROP_PAGES[a]; p++) jobs.push({ group: 'shade', name: `props-${a}-${p}-shade`, q: `scene=props&area=${a}&page=${p}&shade=1&labels=0`, vps: ['390x844'] });
   for (let p = 0; p < DECOR_PAGES; p++) jobs.push({ group: 'decor', name: `decor-${a}-${p}`, q: `scene=decor&area=${a}&page=${p}&speed=10.5`, vps: ['390x844', '1280x800'] });
   for (const p of [0, 1]) jobs.push({ group: 'decor', name: `decor-${a}-${p}-title`, q: `scene=decor&area=${a}&page=${p}&cam=title`, vps: ['390x844', '1280x800'] });
   jobs.push({ group: 'title', name: `title-${a}`, q: `scene=street&area=${a}&cam=title` });

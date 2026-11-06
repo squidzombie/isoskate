@@ -32,8 +32,13 @@ export interface KitCtx {
   glowLeft: number;
   /** Area at a track s (gateway blends switch kits along the street). */
   areaAt(s: number): AreaId;
+  /** The area whose palette dominates at s (the `to` preset past the middle of a gateway blend): hazards take their
+   *  look from it, so an ink hazard never meets the blue-hour light and an inverted one never meets the golden. */
+  lookAt(s: number): AreaId;
   /** Top of the flat ground slabs (sidewalks, plazas) at (s, x) in this chunk, else the street datum 0. */
   groundAt(s: number, x: number): number;
+  /** Surface of the highest flat slab at (s, x) (null: the implicit road). */
+  surfaceAt(s: number, x: number): Surface | null;
   decal(d: DecalRec): void;
   lantern(l: LanternRec): void;
 }
@@ -42,6 +47,11 @@ export interface KitCtx {
 export const rnd = (...k: number[]) => (hash32(...k.map((v) => Math.round(v * 100))) >>> 0) / 4294967296;
 
 export const isFull = (ob: Obstacle) => (ob.tags & ObTag.FullWidth) !== 0;
+/** Is the ground at (s, x) a light surface (sidewalk, apron, plaza) rather than the dark road? */
+export const lightGroundAt = (c: KitCtx, s: number, x: number) => {
+  const sf = c.surfaceAt(s, x);
+  return sf !== null && sf !== 'asphalt' && sf !== 'wetAsphalt' && sf !== 'grass' && c.lookAt(s) !== 'neon';
+};
 export function setArea(c: KitCtx, area: AreaId): void { c.area = area; c.hz = HAZARD[area]; }
 
 /** Surface colour and ground pattern for a slab surface in an area. */
@@ -106,7 +116,7 @@ export function hazardPool(c: KitCtx, x0: number, x1: number, s0: number, s1: nu
   for (const b of [-4.5, -3, -2.6, 2.6, 3, 4.5]) if (b > x0 + 0.05 && b < x1 - 0.05) cuts.push(b);
   cuts.push(x1);
   for (let i = 0; i + 1 < cuts.length; i++) {
-    const a = cuts[i]!, b = cuts[i + 1]!, y = c.groundAt(sm, (a + b) / 2) + 0.012;
+    const a = cuts[i]!, b = cuts[i + 1]!, y = c.groundAt(Math.min(sm, s0 + 0.1), (a + b) / 2) + 0.012;
     c.decal({ id: DECAL.pool, x: (a + b) / 2, y, s: (s0 - 0.04 + back) / 2, w: b - a + 0.01, len: back - s0 + 0.04, rot: 0, color: 0x1a1428, alpha, kind: 0 });
   }
 }
@@ -124,7 +134,7 @@ export function groundOf(ob: Obstacle): number {
 export function slab(c: KitCtx, sl: GroundSlab, lift = 0, colorOverride?: number): void {
   const K = c.K;
   if (sl.s1 <= c.s0 || sl.s0 >= c.s1) return;
-  const look = surfaceLook(sl.surface, c.areaAt((sl.s0 + sl.s1) / 2));
+  const look = surfaceLook(sl.surface, c.lookAt((sl.s0 + sl.s1) / 2));
   const col = colorOverride ?? look.color;
   K.reset(); K.clip0 = c.s0; K.clip1 = c.s1;
   K.lit(look.pat).col(col);

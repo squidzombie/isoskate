@@ -5,11 +5,11 @@
 import { shade } from '../palette';
 import { FACE, FX, type Kit } from '../writer';
 
-export const CAR_BODIES = [0x2e2042, 0x1f2a44, 0x2a1f30, 0x1d3330, 0x33263c, 0x232035] as const;
+export const CAR_BODIES = [0x1c1430, 0x141a2e, 0x1d1420, 0x122220, 0x221830, 0x17142a] as const;
 
 export interface CarSpec {
   x0: number; x1: number; s0: number; s1: number; y: number; h: number;
-  body: number; accent: number; van?: boolean; hazard?: boolean; inverted?: boolean; rim?: number;
+  body: number; accent: number; van?: boolean; hazard?: boolean; inverted?: boolean; rim?: number; glow?: number;
 }
 
 export function drawCar(K: Kit, c: CarSpec): void {
@@ -24,7 +24,8 @@ export function drawCar(K: Kit, c: CarSpec): void {
     K.hcyl('x', 0, y + wheelR, ws, x1 - 0.24, x1 - 0.02, wheelR, 7, true);
   }
   // Lower body with bumpers.
-  K.lit(0, 0, flags).col(c.body);
+  const glow = c.glow ?? 0;
+  K.lit(0, 0, flags, glow).col(c.body);
   K.chamfer(x0 + 0.03, deck - 0.12, s0 + 0.05, x1 - 0.03, belt, s1 - 0.05, 0.08, shade(c.body, 0.12));
   K.col(shade(c.body, -0.3)).box(x0 + 0.06, deck - 0.2, s0, x1 - 0.06, deck + 0.05, s0 + 0.06, FACE.top | FACE.front | FACE.left | FACE.right);
   K.box(x0 + 0.06, deck - 0.2, s1 - 0.06, x1 - 0.06, deck + 0.05, s1, FACE.top | FACE.back | FACE.left | FACE.right);
@@ -37,20 +38,20 @@ export function drawCar(K: Kit, c: CarSpec): void {
   const top = y + h, ri = c.van ? 0.08 : 0.16;
   const ca = c.van ? s0 + L * 0.05 : s0 + L * 0.24, cb = c.van ? s1 - L * 0.12 : s1 - L * 0.22;
   const ra = c.van ? ca + 0.05 : ca + L * 0.12, rb = c.van ? cb - 0.25 : cb - L * 0.1;
-  const glass = 0x3c3a62, roof = c.inverted ? shade(c.body, 0.15) : shade(c.body, 0.16);
-  K.lit(0, 0, flags).col(glass);
+  const glass = c.hazard && !c.inverted ? 0x18142c : 0x3c3a62, roof = c.inverted ? shade(c.body, 0.15) : shade(c.body, 0.12);
+  K.lit(0, 0, flags, glow * 0.5).col(glass);
   K.quad(x0 + 0.08, belt, ca, x1 - 0.08, belt, ca, x1 - 0.08 - ri, top - 0.04, ra, x0 + 0.08 + ri, top - 0.04, ra);    // rear window (camera)
   K.quad(x1 - 0.08, belt, cb, x0 + 0.08, belt, cb, x0 + 0.08 + ri, top - 0.04, rb, x1 - 0.08 - ri, top - 0.04, rb);    // windscreen
   K.quad(x1 - 0.08, belt, ca, x1 - 0.08, belt, cb, x1 - 0.08 - ri, top - 0.04, rb, x1 - 0.08 - ri, top - 0.04, ra);    // right side
   K.quad(x0 + 0.08, belt, cb, x0 + 0.08, belt, ca, x0 + 0.08 + ri, top - 0.04, ra, x0 + 0.08 + ri, top - 0.04, rb);    // left side
-  K.col(roof).box(x0 + 0.06 + ri, top - 0.06, ra - 0.03, x1 - 0.06 - ri, top, rb + 0.03, FACE.top | FACE.front | FACE.back | FACE.left | FACE.right);
+  K.lit(0, 0, flags, glow).col(roof).box(x0 + 0.06 + ri, top - 0.06, ra - 0.03, x1 - 0.06 - ri, top, rb + 0.03, FACE.top | FACE.front | FACE.back | FACE.left | FACE.right);
   // Pillars between the windows (body colour) so the cabin reads as a car, not a box.
   K.col(c.body);
   K.quad(xm - 0.05, belt, ca - 0.002, xm + 0.05, belt, ca - 0.002, xm + 0.05, top - 0.05, ra - 0.002, xm - 0.05, top - 0.05, ra - 0.002);
   // Taillights (emissive red) on the camera-facing rear; headlights at the far end.
   K.to('e').glowing(1.3, -1, FX.noFog).col(0xff5a3c);
-  K.box(x0 + 0.08, belt - 0.22, s0 + 0.03, x0 + 0.32, belt - 0.12, s0 + 0.05, FACE.front);
-  K.box(x1 - 0.32, belt - 0.22, s0 + 0.03, x1 - 0.08, belt - 0.12, s0 + 0.05, FACE.front);
+  K.box(x0 + 0.08, belt - 0.2, s0 + 0.03, x0 + 0.26, belt - 0.14, s0 + 0.05, FACE.front);
+  K.box(x1 - 0.26, belt - 0.2, s0 + 0.03, x1 - 0.08, belt - 0.14, s0 + 0.05, FACE.front);
   K.col(0xfff1c9).glowing(0.9, -1, FX.noFog);
   K.box(x0 + 0.1, belt - 0.24, s1 - 0.05, x0 + 0.34, belt - 0.14, s1 - 0.03, FACE.back);
   K.box(x1 - 0.34, belt - 0.24, s1 - 0.05, x1 - 0.1, belt - 0.14, s1 - 0.03, FACE.back);

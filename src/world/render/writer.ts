@@ -58,16 +58,7 @@ export type KitTargets = Readonly<Record<Target, GeoWriter>>;
 /** Optional per-corner atlas uv of a quad (u0,v0 at corner a … u3,v3 at corner d). */
 export type QuadUv = readonly [number, number, number, number, number, number, number, number];
 
-/** Box face corner sets in prop space: (dx, dy, ds) ∈ {0,1}³ for each corner, CCW seen from outside. */
-const BOX_FACES: readonly { n: readonly [number, number, number]; c: readonly (readonly [number, number, number])[] }[] = [
-  { n: [0, 1, 0], c: [[0, 1, 0], [1, 1, 0], [1, 1, 1], [0, 1, 1]] },      // top
-  { n: [0, 0, -1], c: [[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]] },     // front (toward the camera, −s)
-  { n: [0, 0, 1], c: [[1, 0, 1], [0, 0, 1], [0, 1, 1], [1, 1, 1]] },      // back
-  { n: [1, 0, 0], c: [[1, 0, 0], [1, 0, 1], [1, 1, 1], [1, 1, 0]] },      // right (+x)
-  { n: [-1, 0, 0], c: [[0, 0, 1], [0, 0, 0], [0, 1, 0], [0, 1, 1]] },     // left (−x)
-  { n: [0, -1, 0], c: [[0, 0, 1], [1, 0, 1], [1, 0, 0], [0, 0, 0]] },     // bottom (optional)
-];
-/** Faces to draw: bit per BOX_FACES entry. */
+/** Faces to draw (bit set): top, front (toward the camera, −s), back, right (+x), left, bottom. */
 export const FACE = { top: 1, front: 2, back: 4, right: 8, left: 16, bottom: 32, sides5: 31, all: 63 } as const;
 
 export class Kit {
@@ -202,14 +193,13 @@ export class Kit {
   }
 
   private boxRaw(x0: number, y0: number, s0: number, x1: number, y1: number, s1: number, faces: number, t: Target): void {
-    const X = [x0, x1], Y = [y0, y1], S = [s0, s1];
-    for (let f = 0; f < 6; f++) {
-      if (!(faces & (1 << f))) continue;
-      const c = BOX_FACES[f]!.c;
-      const a = c[0]!, b = c[1]!, cc = c[2]!, d = c[3]!;
-      this.quad(X[a[0]]!, Y[a[1]]!, S[a[2]]!, X[b[0]]!, Y[b[1]]!, S[b[2]]!, X[cc[0]]!, Y[cc[1]]!, S[cc[2]]!,
-        X[d[0]]!, Y[d[1]]!, S[d[2]]!, undefined, t);
-    }
+    // Unrolled (no per-box arrays: this is the hot path of every chunk build).
+    if (faces & 1) this.quad(x0, y1, s0, x1, y1, s0, x1, y1, s1, x0, y1, s1, undefined, t);     // top
+    if (faces & 2) this.quad(x0, y0, s0, x1, y0, s0, x1, y1, s0, x0, y1, s0, undefined, t);     // front (−s)
+    if (faces & 4) this.quad(x1, y0, s1, x0, y0, s1, x0, y1, s1, x1, y1, s1, undefined, t);     // back
+    if (faces & 8) this.quad(x1, y0, s0, x1, y0, s1, x1, y1, s1, x1, y1, s0, undefined, t);     // right (+x)
+    if (faces & 16) this.quad(x0, y0, s1, x0, y0, s0, x0, y1, s0, x0, y1, s1, undefined, t);    // left
+    if (faces & 32) this.quad(x0, y0, s1, x1, y0, s1, x1, y0, s0, x0, y0, s0, undefined, t);    // bottom
   }
 
   /** Box whose top has a bevel ring (DESIGN §18.5: chamfered top edges catch the light). `c` = bevel size. */
@@ -281,22 +271,21 @@ export class Kit {
   /** Low-poly ellipsoid: `n` segments around, `m` rings (default 6 × 4). sy squashes vertically. */
   sphere(x: number, y: number, s: number, r: number, n = 6, m = 4, sy = 1, rs = r): void {
     const t = this.capY !== null && this.t === 'o' && y > this.capY ? 'x' as const : this.t;
-    const P = (i: number, j: number, o: 0 | 1 | 2) => {
-      const th = (j / m) * Math.PI, ph = ((i + (j % 2) * 0.5) / n) * Math.PI * 2;
-      const sr = Math.sin(th);
-      return o === 0 ? x + Math.cos(ph) * sr * r : o === 1 ? y + Math.cos(th) * r * sy : s + Math.sin(ph) * sr * rs;
-    };
+    const P = this.sp;
     for (let j = 0; j < m; j++) {
       for (let i = 0; i < n; i++) {
-        const ax = P(i, j, 0), ay = P(i, j, 1), as = P(i, j, 2);
-        const bx = P(i + 1, j, 0), by = P(i + 1, j, 1), bs = P(i + 1, j, 2);
-        const cx = P(i + 1, j + 1, 0), cy = P(i + 1, j + 1, 1), cs = P(i + 1, j + 1, 2);
-        const dx = P(i, j + 1, 0), dy = P(i, j + 1, 1), ds = P(i, j + 1, 2);
-        if (j === 0) this.tri(ax, ay, as, dx, dy, ds, cx, cy, cs, t);
-        else if (j === m - 1) this.tri(ax, ay, as, dx, dy, ds, bx, by, bs, t);
-        else { this.tri(ax, ay, as, cx, cy, cs, bx, by, bs, t); this.tri(ax, ay, as, dx, dy, ds, cx, cy, cs, t); }
+        this.spherePt(x, y, s, r, sy, rs, n, m, i, j, 0); this.spherePt(x, y, s, r, sy, rs, n, m, i + 1, j, 3);
+        this.spherePt(x, y, s, r, sy, rs, n, m, i + 1, j + 1, 6); this.spherePt(x, y, s, r, sy, rs, n, m, i, j + 1, 9);
+        if (j === 0) this.tri(P[0]!, P[1]!, P[2]!, P[9]!, P[10]!, P[11]!, P[6]!, P[7]!, P[8]!, t);
+        else if (j === m - 1) this.tri(P[0]!, P[1]!, P[2]!, P[9]!, P[10]!, P[11]!, P[3]!, P[4]!, P[5]!, t);
+        else { this.tri(P[0]!, P[1]!, P[2]!, P[6]!, P[7]!, P[8]!, P[3]!, P[4]!, P[5]!, t); this.tri(P[0]!, P[1]!, P[2]!, P[9]!, P[10]!, P[11]!, P[6]!, P[7]!, P[8]!, t); }
       }
     }
+  }
+  private readonly sp = new Float64Array(12);
+  private spherePt(x: number, y: number, s: number, r: number, sy: number, rs: number, n: number, m: number, i: number, j: number, o: number): void {
+    const th = (j / m) * Math.PI, ph = ((i + (j % 2) * 0.5) / n) * Math.PI * 2, sr = Math.sin(th);
+    this.sp[o] = x + Math.cos(ph) * sr * r; this.sp[o + 1] = y + Math.cos(th) * r * sy; this.sp[o + 2] = s + Math.sin(ph) * sr * rs;
   }
 
   /** Slab or wedge in prop space: x0..x1, s0..s1, top at yNear (s0) and yFar (s1), down to yBot. Clipped. */

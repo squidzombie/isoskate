@@ -32,6 +32,7 @@ const cam = (q.get('cam') as CameraMode | null) ?? 'run';
 const speed = Number(q.get('speed') ?? 7);
 const quality = (q.get('quality') as 'low' | 'med' | 'high' | null) ?? 'high';
 const labels = q.get('labels') !== '0';
+const skip = new Set((q.get('no') ?? '').split(',').filter(Boolean));
 const S0 = 64;                       // the player's s (chunk 2), content ahead of it
 
 const canvas = document.getElementById('gl') as HTMLCanvasElement;
@@ -90,7 +91,11 @@ function propsScene(): void {
     tags.push({ s: s - 0.6, x, y: 0, text: k });
     if (full) { row++; col = 0; } else if (++col === 3) { row++; col = 0; }
   }
-  place(chunks, areaFn, obs);
+  // shade=1: the whole street in a building's shadow (the gate's worst case: ink hazards vs shadowed asphalt).
+  const decor: Decor[] = q.get('shade') === '1'
+    ? [0, 1, 2, 3, 4].map((k) => ({ kind: 'shadow_caster', s: S0 - 40 + k * 24, x: -6, y: 0, rotY: 0, scale: 1, variant: 0, castShadow: true, params: { w: 10, d: 24, h: 40 } }))
+    : [];
+  place(chunks, areaFn, obs, decor);
 }
 
 function decorScene(): void {
@@ -112,7 +117,7 @@ function streetScene(): void {
   const A = (s: number) => areaFn(s);
   const O = (k: PropKind, s: number, x: number, v = 0) => obs.push(...obstacleOf(k, A(s), s, x, v));
   const D = (k: DecorKind, s: number, side: -1 | 1, v = 0, over: Partial<Decor> = {}) => {
-    if (!(DECOR_KINDS[k].areas as readonly string[]).includes(A(s))) return;
+    if (skip.has(k) || !(DECOR_KINDS[k].areas as readonly string[]).includes(A(s))) return;
     const d = decorOf(k, A(s), s, side, v);
     decor.push({ ...d, ...over, params: { ...d.params, ...(over.params ?? {}) } });
   };
@@ -216,4 +221,16 @@ void v;
   stats: () => ({ calls: gfx.renderer.info.render.calls, tris: gfx.renderer.info.render.triangles, ...w.debugInfo() }),
   contrast: () => measureContrast(host as never),
   kinds: { props: ALL_PROP_KINDS.length, areas: AREAS.length, chunk: CHUNK_LEN },
+  /** Debug: visible meshes with their world bounds. */
+  objects: () => {
+    const out: { name: string; min: number[]; max: number[] }[] = [];
+    gfx.scene.traverseVisible((o) => {
+      const m = o as import('three').Mesh;
+      if (!m.isMesh) return;
+      m.geometry.computeBoundingBox();
+      const b = m.geometry.boundingBox!.clone().applyMatrix4(m.matrixWorld);
+      out.push({ name: m.name || m.type, min: b.min.toArray().map((x) => +x.toFixed(1)), max: b.max.toArray().map((x) => +x.toFixed(1)) });
+    });
+    return out;
+  },
 };

@@ -5,12 +5,12 @@ import type { Obstacle } from '../../../core/world';
 import { COLORS, shade } from '../palette';
 import { PAT } from '../textures/ground';
 import { FACE, FX } from '../writer';
-import { contact, rnd } from './common';
+import { contact, lightGroundAt, rnd } from './common';
 import { body, inChunk, rim, type KitDef, type KitFn } from './shared';
 
 const HZ = FX.noFog | FX.matte;
 const boxOf = (ob: Obstacle) => ob.solids[0]?.box;
-const CONTAINER = [0x4a1f1a, 0x142a3c, 0x1c3328, 0x3a1c2a, 0x3a2c14] as const;
+const CONTAINER = [0x2a100c, 0x0b1622, 0x0f1d16, 0x200e16, 0x20180a] as const;
 
 /** Shipping container 6.1 × 2.4 × 2.6 (tall, x-ray above 1.6): a ribbed box with corner posts and doors (locking
  *  bars) on the camera-facing end. */
@@ -61,6 +61,13 @@ const ibeam: KitFn = (c, ob) => {
   const K = c.K, b = boxOf(ob);
   if (!b) return;
   const xm = (b.x0 + b.x1) / 2, w = b.x1 - b.x0;
+  // A narrow grindable hazard is mostly its cream edge on screen: on dark ground the steel is bright (the whole beam
+  // reads light), on light ground dark (the beam reads as one dark bar).
+  const lightGround = lightGroundAt(c, b.s0 + 0.5, xm);
+  if (!lightGround) {
+    K.lit(PAT.plate, 0, FX.noFog, 0.9).col(0xe8ecf4).box(b.x0, b.y0, b.s0, b.x1, b.y1, b.s1);
+    return;
+  }
   K.lit(PAT.plate, 0, HZ).col(0x241e30);
   K.box(b.x0, b.y0, b.s0, b.x1, b.y0 + 0.04, b.s1);
   K.box(xm - w * 0.12, b.y0 + 0.04, b.s0, xm + w * 0.12, b.y1 - 0.04, b.s1);
@@ -96,10 +103,10 @@ const drumCluster: KitFn = (c, ob) => {
   const r = 0.29, nx = Math.max(1, Math.floor((b.x1 - b.x0) / (2 * r + 0.02))), ns = Math.max(1, Math.floor((b.s1 - b.s0) / (2 * r + 0.02)));
   for (let i = 0; i < nx; i++) for (let j = 0; j < ns; j++) {
     const x = b.x0 + (i + 0.5) * ((b.x1 - b.x0) / nx), s = b.s0 + (j + 0.5) * ((b.s1 - b.s0) / ns);
-    const col = c.hz.inverted ? c.hz.body : (i + j + ob.id) % 3 === 0 ? 0x4a1f1c : (i + j) % 2 ? 0x1f2e44 : 0x2b2140;
-    K.lit(0, 0, HZ).col(col).cyl(x, s, b.y0 + 0.1, b.y1 - 0.02, r, 9, false);
-    K.lit(0, 0, HZ).col(c.hz.accent).cyl(x, s, b.y0 + 0.5, b.y0 + 0.54, r + 0.01, 9, false);
-    K.lit(0, 0, HZ).col(shade(col, 0.2)).cyl(x, s, b.y1 - 0.02, b.y1, r - 0.02, 9, true);
+    const col = c.hz.inverted ? c.hz.body : (i + j + ob.id) % 3 === 0 ? 0x2e1212 : (i + j) % 2 ? 0x121a2c : 0x170f24;
+    body(c, col); K.cyl(x, s, b.y0 + 0.1, b.y1 - 0.02, r, 9, false);
+    K.lit(0, 0, HZ, c.hz.glow).col(c.hz.accent).cyl(x, s, b.y0 + 0.5, b.y0 + 0.525, r + 0.01, 9, false);
+    body(c, c.hz.top); K.cyl(x, s, b.y1 - 0.02, b.y1, r - 0.02, 9, true);
   }
   rim(c, b.x0, b.x1, b.y1, b.s0);
 };
@@ -121,7 +128,7 @@ const spool: KitFn = (c, ob) => {
     const r = (b.y1 - b.y0) / 2;
     body(c, wood); K.hcyl('x', 0, b.y0 + r, s, b.x0, b.x0 + 0.08, r, 10, true); K.hcyl('x', 0, b.y0 + r, s, b.x1 - 0.08, b.x1, r, 10, true);
     body(c, 0x1d1726); K.hcyl('x', 0, b.y0 + r, s, b.x0 + 0.08, b.x1 - 0.08, r * 0.75, 10, false);
-    chevronsLite(c, b.x0 + 0.1, b.x1 - 0.1, b.y0 + r * 0.7, b.y0 + r * 1.2, b.s0 + r * 0.32);
+    K.lit(0, 0, HZ).col(c.hz.accent).hcyl('x', 0, b.y0 + r, s, b.x0 + 0.08, b.x0 + 0.11, r * 1.01, 10, false);
   }
   rim(c, b.x0, b.x1, b.y1, b.s0);
 };
@@ -139,9 +146,9 @@ const mooring: KitFn = (c, ob) => {
   contact(c, b.x0, b.x1, b.s0, b.s1, b.y0 + 0.01, 0.6, 0.2);
   body(c); K.frustum(x, s, b.y0, b.y0 + 0.15, r, r * 0.8, 9, false);
   K.cyl(x, s, b.y0 + 0.15, b.y1 - 0.25, r * 0.72, 9, false);
-  body(c, c.hz.top); K.frustum(x, s, b.y1 - 0.25, b.y1 - 0.1, r * 0.72, r * 1.0, 9, false);
-  K.cyl(x, s, b.y1 - 0.1, b.y1, r * 1.0, 9, true);
-  K.lit(0, 0, HZ).col(c.hz.accent).cyl(x, s, b.y0 + 0.55, b.y0 + 0.62, r * 0.74, 9, false);
+  body(c); K.frustum(x, s, b.y1 - 0.25, b.y1 - 0.1, r * 0.72, r * 1.0, 9, false);
+  body(c, c.hz.top); K.cyl(x, s, b.y1 - 0.1, b.y1, r * 1.0, 9, true);
+  K.lit(0, 0, HZ, c.hz.glow).col(c.hz.accent).cyl(x, s, b.y0 + 0.55, b.y0 + 0.58, r * 0.74, 9, false);
 };
 
 /** Dock lip (long, 0.30, grindable inner edge): a concrete lip with a safety-yellow stripe on its top outer half. */
@@ -149,8 +156,10 @@ const dockLip: KitFn = (c, ob) => {
   const K = c.K;
   for (const so of ob.solids) {
     const b = so.box;
-    K.lit(PAT.apron).col(0xb9ab98).chamfer(b.x0, b.y0, b.s0, b.x1, b.y1, b.s1, 0.03);
-    K.lit(0).col(0xf2d064).box((b.x0 + b.x1) / 2 + 0.03, b.y1 - 0.004, b.s0, b.x1 - 0.03, b.y1 + 0.004, b.s1, FACE.top);
+    // The signature long grind: a pale concrete lip (bright against the harbour water beyond it) with a safety stripe
+    // along its outer top and dark mooring cleats.
+    K.lit(PAT.apron, 0, FX.noFog, 0.15).col(0xe6dccc).chamfer(b.x0, b.y0, b.s0, b.x1, b.y1, b.s1, 0.03);
+    K.lit(0, 0, FX.noFog, 0.1).col(0xf2d064).box((b.x0 + b.x1) / 2 + 0.05, b.y1 - 0.004, b.s0, b.x1 - 0.02, b.y1 + 0.004, b.s1, FACE.top);
     for (let s = Math.ceil(Math.max(b.s0, c.s0) / 6) * 6; s < Math.min(b.s1, c.s1); s += 6) {
       K.lit(0).col(0x1d1726).cyl(b.x1 - 0.08, s, b.y1, b.y1 + 0.08, 0.06, 6, true);
     }

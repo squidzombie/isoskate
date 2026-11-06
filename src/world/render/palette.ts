@@ -39,15 +39,15 @@ export const PRESETS: Readonly<Record<AreaId, Readonly<PaletteSample>>> = {
 /** Per-preset extras the PaletteSample does not carry. haze: strength of the far-30% haze (≤ 0.35, DESIGN §18.3). */
 export interface AreaLook { haze: number; skyGlow: number; road: number; sunDisc: number }
 export const LOOK: Readonly<Record<AreaId, Readonly<AreaLook>>> = {
-  downtown: { haze: 0.3, skyGlow: 0.25, road: 0x79728a, sunDisc: 1 },
-  suburbs: { haze: 0.28, skyGlow: 0.25, road: 0x79728a, sunDisc: 1 },
-  docks: { haze: 0.32, skyGlow: 0.25, road: 0x79728a, sunDisc: 1 },
+  downtown: { haze: 0.3, skyGlow: 0.25, road: 0x7f7890, sunDisc: 1 },
+  suburbs: { haze: 0.28, skyGlow: 0.25, road: 0x746d84, sunDisc: 1 },
+  docks: { haze: 0.32, skyGlow: 0.25, road: 0x857c92, sunDisc: 1 },
   neon: { haze: 0.35, skyGlow: 0.25, road: 0x352f55, sunDisc: 0 },
 };
 
 /** Readability colours (DESIGN §18.4). Kept for every area. */
 export const COLORS = {
-  asphalt: 0x79728a, verge: 0xcdb8a3, pit: 0x2f2742, water: 0x4f6a8f,
+  asphalt: 0x7f7890, verge: 0xcdb8a3, pit: 0x2f2742, water: 0x4f6a8f,
   /** Pit read (G0 review): the far wall catching the light, the floor shadow under the near lip, the lit lip. */
   pitWall: 0x6a5a8c, pitShadow: 0x1c1530, pitFloor: 0x251d38, pitLip: 0xb7a6c9,
   bump: 0xcfc3b8, lowLandable: 0xa99cc0, lowCrash: 0x2b2140, chevron: 0xf2b630, knock: 0xff8a5b,
@@ -65,12 +65,16 @@ export const COLORS = {
 /** Hazard looks per area (DESIGN §18.4): `body` the crash-hazard body, `top` its slightly lighter top (tall props read
  *  as volumes), `accent` the one saturated accent. Neon inverts: a mid-value body with an emissive rim. Tuned against
  *  the measured gate (shots --contrast and the gallery), which is the source of truth. */
-export interface HazardLook { body: number; top: number; accent: number; accent2: number; rim: number; rimEmissive: number; inverted: boolean }
+export interface HazardLook { body: number; top: number; accent: number; accent2: number; rim: number; rimEmissive: number; inverted: boolean;
+  /** Emissive add on the body (Neon: the inverted body glows softly so it stays mid-value under the moon fill). */
+  glow: number }
+// Ink bodies sit at ~#160F22 (a sun-lit or shadowed ink face must stay ≤ 2.5× darker than asphalt in a building's
+// shadow), tops one step lighter, accents thin: the gate leaves ~8–12% of a silhouette for anything lighter.
 export const HAZARD: Readonly<Record<AreaId, Readonly<HazardLook>>> = {
-  downtown: { body: 0x231a36, top: 0x3d3156, accent: 0xd9765a, accent2: 0x3e8e8a, rim: 0, rimEmissive: 0, inverted: false },
-  suburbs: { body: 0x231a36, top: 0x3d3156, accent: 0x8fb8de, accent2: 0xb5645a, rim: 0, rimEmissive: 0, inverted: false },
-  docks: { body: 0x231a36, top: 0x3d3156, accent: 0xf2b630, accent2: 0xb5552f, rim: 0, rimEmissive: 0, inverted: false },
-  neon: { body: 0x7a6fb0, top: 0x9489c8, accent: 0xff3fa4, accent2: 0xff5a3c, rim: 0xff3fa4, rimEmissive: 1.2, inverted: true },
+  downtown: { body: 0x170f24, top: 0x2c2240, accent: 0xd9765a, accent2: 0x3e8e8a, rim: 0, rimEmissive: 0, inverted: false, glow: 0 },
+  suburbs: { body: 0x170f24, top: 0x2c2240, accent: 0x8fb8de, accent2: 0xb5645a, rim: 0, rimEmissive: 0, inverted: false, glow: 0 },
+  docks: { body: 0x170f24, top: 0x2c2240, accent: 0xf2b630, accent2: 0xb5552f, rim: 0, rimEmissive: 0, inverted: false, glow: 0 },
+  neon: { body: 0x7a6fb0, top: 0x9489c8, accent: 0xff3fa4, accent2: 0xff5a3c, rim: 0xff3fa4, rimEmissive: 1.2, inverted: true, glow: 1.05 },
 };
 
 /** Area accents (DESIGN §18.1). Index order is the one DECOR_KINDS `color` params use. */
@@ -83,11 +87,11 @@ export const ACCENTS: Readonly<Record<AreaId, readonly number[]>> = {
 
 /** Ground colours by surface (DESIGN §18.1). */
 export const SURFACE_COLOR: Readonly<Record<Surface, number>> = {
-  asphalt: 0x79728a, wetAsphalt: 0x352f55, concrete: 0xd9c3ae, tile: 0xd7c4b5, granite: 0xb9a9a0, wood: 0xa9744f,
+  asphalt: 0x7f7890, wetAsphalt: 0x352f55, concrete: 0xd9c3ae, tile: 0xd7c4b5, granite: 0xb9a9a0, wood: 0xa9744f,
   metal: 0x9ba3b5, grass: 0x9db36b,
 };
 /** Neon surfaces: the tiled sidewalk reads darker and cooler at blue hour (it is lit by the moon fill only). */
-export const NEON_SURFACE: Readonly<Partial<Record<Surface, number>>> = { tile: 0x6c6488, concrete: 0x6a6286, granite: 0x6e6688, asphalt: 0x352f55 };
+export const NEON_SURFACE: Readonly<Partial<Record<Surface, number>>> = { tile: 0x4f4972, concrete: 0x504a72, granite: 0x56507a, asphalt: 0x352f55 };
 
 /** Contact shadow colour (dark blob on light ground) and the cyan contact glow on dark ground (DESIGN §8). */
 export const CONTACT = { shadowRgb: '43,33,64', glow: 0x3ff2ff } as const;
