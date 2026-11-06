@@ -293,6 +293,7 @@ The first block is the frozen behaviour later packages (GP, WG, WA, the bots) ca
 ### After the review (appended; no core change)
 - **Fixed:** run 1's goal line said "Level 3 in 1 XP" (a level the held XP already guarantees is no longer a goal); the HUD bank ring no longer imports `tricks` `SCORE` (normalised by the longest `bankIn` since the last link); meta no longer imports `world/gen`; the Shop fits 320 × 568 (compact picks, one-line lock chip, a full card row above the detail bar); the goal line sits under the Results score; the crash clears the bank float / speed stamp / area card; the hint chip rises with a transform and hides under Pause; the reward toast never splits a chunk; `combo_banked` is sent once per run however it ends; Pause lists the active key preset; the `daily_gift_bonus` slot exists on Crates (eligible() && isAdReady(), so never with the NullProvider); menu backdrops are opaque.
 - **Mirrors pinned by tests** (save/ may not import meta/): `save/defaults.ts` crate meter `nextAt` 4000 = `CRATE_METER.first`, `save/sanitize.ts` Cardboard max 2 = `CRATE_HELD_MAX.cardboard`.
+- **For M4 (first-3-runs pacing, game/app.ts):** a fresh tap ≥ 0.6 s after run 1's crash still instant-retries, so that player meets the Level 2 crate on the Title (or the next Results row), not before run 2. If M4 wants "run 2 rides as the new skater" for everyone, skip the instant-retry window on the run whose rewards carry `RunRewardsExt.pending` (one `isRewardsExt(r) && r.pending` check in `onCrash`); the UI handles both paths already.
 
 ## AU: Audio (W3b)
 

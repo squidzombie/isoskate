@@ -403,7 +403,8 @@ test('offers: hidden with the NullProvider; with ?fakeads=1 only after run 3 and
     await expect(screenOn(page, 'results')).toHaveClass(/\bon\b/, { timeout: 30_000 });
   };
   const slot = page.locator('#screens .offer-slot');
-  await editSave(page, "s.stats.runs = 9; s.installDay = '2020-01-01'; s.created = 0;");
+  // Level 5: no run here earns the Level 2 crate, whose reveal would open over Results (in play it is always run 1).
+  await editSave(page, "s.stats.runs = 9; s.installDay = '2020-01-01'; s.created = 0; s.xp.level = 5;");
   await crashToResults();
   await expect(slot).toBeHidden();                                   // NullProvider: never ready
   await page.goto('/?debug=1&quality=low&fakeads=1');
