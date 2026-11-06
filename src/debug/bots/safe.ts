@@ -1,7 +1,7 @@
 // debug/bots/safe.ts: the safe bot ("human", DESIGN §10.11, TECH §11.2). It plans with the validator's planner
 // (world/gen planLine: the same grid, F / B passes and minimum-action DP) on what was inside the guaranteed 2.5 s
 // view 0.25 s ago (observation delay), re-planning every 6 ticks when the view changed (something new in view, the
-// board off the plan, a landing) and at least every 0.5 s. Its inputs reach the sim 0.15 s late (a delay line
+// board off the plan, a landing) and at least every 0.3 s. Its inputs reach the sim 0.15 s late (a delay line
 // of decided frames), taps carry ±0.05 s of seeded jitter and the steering target moves at most 85 % of V_LAT_MAX.
 // Steering puts targetX on the plan's x a little ahead of the tick the input lands on (the controller lags it).
 // A re-plan starts where the board will be when its first input lands: on the ground, after any tap already sent.
@@ -106,11 +106,11 @@ export class SafeBot {
   }
 
   /** Re-plan (at most every `every` ticks) when something new came into view, the board left the plan, a tap has
-   *  touched down since the last plan, or 0.5 s passed; an unchanged view gives the same plan (and costs a raster). */
+   *  touched down since the last plan, or 0.3 s passed; an unchanged view gives the same plan (and costs a raster). */
   private stale(sim: Sim, tNow: number): boolean {
     const c = sim.cur;
-    if (tNow - this.planT >= 0.5) return true;
-    if (Math.abs(c.p.x - polyAt(this.pts, c.t)) > 0.3) return true;
+    if (tNow - this.planT >= 0.3) return true;
+    if (Math.abs(c.p.x - polyAt(this.pts, c.t)) > 0.15) return true;
     if (this.sent.some((p) => p.land > this.planT && p.land <= tNow)) return true;
     const sEnd = sAt(tNow - this.reaction + LOOKAHEAD_MIN);
     for (const o of sim.world.obstacles(this.seenTo, sEnd)) if (o.s > this.seenTo && o.s <= sEnd) return true;
@@ -136,7 +136,7 @@ export class SafeBot {
     this.seenTo = sEnd; this.planT = tNow;
     const obs = sim.world.obstacles(sAt(t0) - 4, sEnd).filter((o) => o.s < sEnd);
     const w0 = performance.now();
-    const p = planLine({ t: t0, x: Math.max(-4.25, Math.min(4.25, x0)), horizon, obstacles: obs, phase, dir: this.dir, refine: true });
+    const p = planLine({ t: t0, x: Math.max(-4.25, Math.min(4.25, x0)), horizon, obstacles: obs, phase, dir: this.dir, refine: tNow + lat + 0.6 });
     this.planMs += performance.now() - w0;
     this.plans++;
     if (!p) { this.failures++; this.commit(tNow); return; }

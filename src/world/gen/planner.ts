@@ -19,8 +19,9 @@ export interface PlanInput {
   phase: number;
   /** Last lateral direction (−1, 0, 1). */
   dir?: -1 | 0 | 1;
-  /** Refine ollie keys to the middle of their exact window (costs ~0.1 ms per ollie). */
-  refine?: boolean;
+  /** Refine ollie keys to the middle of their exact window (costs ~0.1 ms per ollie), for take-offs up to this time
+   *  (true = all). */
+  refine?: boolean | number;
 }
 /** pts: the line (run time, x); ollies: tap ticks; lands: the planned touch-down time of each ollie. */
 export interface PlanOutput { pts: { t: number; x: number }[]; ollies: number[]; lands: number[] }
@@ -49,7 +50,7 @@ export function plan(inp: PlanInput): PlanOutput | null {
     const tk = r.t[o]! + DT;
     const x = cellX(dp.steps[o]!.c);
     let tap = inp.phase + Math.round((tk - inp.phase) / DT) * DT;
-    if (inp.refine) {
+    if (inp.refine === true || (typeof inp.refine === 'number' && tk <= inp.refine)) {
       const w = ollieWindow(inp.obstacles, x, tk, inp.phase);
       if (w) tap = inp.phase + Math.round(((w.ta + w.tb) / 2 - inp.phase) / DT) * DT;
     }
