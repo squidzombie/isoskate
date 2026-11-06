@@ -1,56 +1,74 @@
-// input/frames.ts: timestamped gesture queue → one InputFrame per sim tick (TECH §6.1 input binning, §7.1).
-// steer px → metres via S = 9 / (0.55·screenWidthPx) × sensitivity.
+// input/frames.ts: timestamped gesture and key-edge queues → one InputFrame per sim tick (TECH §6.1 input binning,
+// §7.1). Everything with tMs ≤ tickEndMs lands in that tick. At most one swipe per tick: a second swipe (and everything
+// queued after it) waits for the next tick, so a fast double flick still reaches the sim as two swipes.
+// Steering px → metres via S = 9 / (0.55·screenWidthPx) × sensitivity (DESIGN §4.2).
 import type { Dir8 } from '../core/ids';
 import type { Gesture, InputFrame } from '../core/input';
 import { EMPTY_FRAME } from '../core/input';
 
+/** Metres of steering per CSS px of drag (sensitivity applied). */
+export const steerMetresPerPx = (screenW: number, sensitivity = 1) => (9 / (0.55 * Math.max(1, screenW))) * sensitivity;
+export const SENSITIVITY_MIN = 0.6, SENSITIVITY_MAX = 1.6;
+
+/** Keyboard (or gamepad) level state, sampled once per tick. */
 export interface KeyLevels { steerAxis: number; manualKey: boolean; grab: boolean }
+export const NO_KEYS: Readonly<KeyLevels> = { steerAxis: 0, manualKey: false, grab: false };
+/** A keyboard edge: Space/W tap, or an arrow swipe (`amend`: the 80 ms diagonal amend of preset A). */
 export interface KeyEdge { tMs: number; tap?: boolean; swipe?: Dir8; amend?: boolean }
 
 export class FrameBuilder {
-  private queue: Gesture[] = [];
-  private keyEdges: KeyEdge[] = [];
-  private hold = false;
-  private pressCount = 0;
+  private readonly queue: Gesture[] = [];
+  private readonly keyEdges: KeyEdge[] = [];
+  private holds = 0;
+  private presses = 0;
   sensitivity = 1;
   constructor(private readonly screenW: () => number) {}
 
-  push(g: Gesture): void { this.queue.push(g); }
+  /** Queues a gesture, keeping the queue sorted by time (stable): a HOLD stamped by tick() can be older than live
+   *  gestures already queued for a later tick. */
+  push(g: Gesture): void {
+    let i = this.queue.length;
+    while (i > 0 && this.queue[i - 1]!.tMs > g.tMs) i--;
+    this.queue.splice(i, 0, g);
+  }
+  pushAll(gs: readonly Gesture[]): void { for (const g of gs) this.push(g); }
   pushKey(e: KeyEdge): void { this.keyEdges.push(e); }
-  clear(): void { this.queue.length = 0; this.keyEdges.length = 0; this.hold = false; this.pressCount = 0; }
+  /** Drops everything queued and every level (run start, pause, setEnabled). */
+  clear(): void { this.queue.length = 0; this.keyEdges.length = 0; this.holds = 0; this.presses = 0; }
+  get pending(): number { return this.queue.length + this.keyEdges.length; }
 
-  /** Collect everything with tMs ≤ tickEndMs. Only one swipe per tick; later swipes wait for the next tick. */
-  frame(tickEndMs: number, keys: KeyLevels): InputFrame {
+  /** Collects everything with tMs ≤ tickEndMs into one frame (called once per sim tick). */
+  frame(tickEndMs: number, keys: Readonly<KeyLevels> = NO_KEYS): InputFrame {
     const f: InputFrame = { ...EMPTY_FRAME };
-    const mPerPx = (9 / (0.55 * Math.max(1, this.screenW()))) * this.sensitivity;
+    const m = steerMetresPerPx(this.screenW(), this.sensitivity);
     let i = 0;
     for (; i < this.queue.length; i++) {
       const g = this.queue[i]!;
-      if (g.tMs > tickEndMs) break;
-      if (g.k === 'swipe' && f.swipe) break;
+      if (g.tMs > tickEndMs || (g.k === 'swipe' && f.swipe)) break;
       switch (g.k) {
-        case 'steer': f.steerDx += g.dxPx * mPerPx; break;
+        case 'steer': f.steerDx += g.dxPx * m; break;
         case 'tap': f.tap = true; break;
-        case 'swipe': f.swipe = g.dir; f.swipeDx = g.dxPx * mPerPx; f.swipeFast = g.fast; f.swipeFromRest = g.fromRest; f.swipeSteer = g.steer; break;
-        case 'holdStart': this.hold = true; break;
-        case 'holdEnd': this.hold = false; break;
-        case 'press': this.pressCount = Math.max(0, this.pressCount + (g.down ? 1 : -1)); break;
+        case 'swipe':
+          f.swipe = g.dir; f.swipeDx = g.dxPx * m; f.swipeFast = g.fast; f.swipeFromRest = g.fromRest; f.swipeSteer = g.steer;
+          break;
+        case 'holdStart': this.holds++; break;
+        case 'holdEnd': this.holds = Math.max(0, this.holds - 1); break;
+        case 'press': this.presses = Math.max(0, this.presses + (g.down ? 1 : -1)); break;
       }
     }
     this.queue.splice(0, i);
     let j = 0;
     for (; j < this.keyEdges.length; j++) {
       const e = this.keyEdges[j]!;
-      if (e.tMs > tickEndMs) break;
-      if (e.swipe && f.swipe) break;
+      if (e.tMs > tickEndMs || (e.swipe && f.swipe)) break;
       if (e.tap) f.tap = true;
       if (e.swipe) { f.swipe = e.swipe; f.swipeFast = true; f.swipeAmend = !!e.amend; }
     }
     this.keyEdges.splice(0, j);
     f.steerAxis = keys.steerAxis;
-    f.hold = this.hold;
+    f.hold = this.holds > 0;
     f.manualKey = keys.manualKey;
-    f.press = this.pressCount > 0 || keys.manualKey;
+    f.press = this.presses > 0 || keys.manualKey;
     f.grab = keys.grab;
     return f;
   }

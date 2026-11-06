@@ -1,19 +1,30 @@
-// debug/api.ts: window.__skate (TECH §4.11), installed in dev builds or with ?debug=1.
-// Every DebugAPI method exists. Methods not yet backed by their package return sane defaults and are marked
-// TODO(M0-sim) / TODO(M0-io).
+// debug/api.ts: window.__skate (TECH §4.11), installed in dev builds or with ?debug=1. Every DebugAPI method is backed
+// by the live modules through the DebugHost that game/wiring.ts builds (frozen at m0-core, docs/core-requests.md).
+//   - Manual stepping (`manual(true)` + `step(n)`) runs exact ticks on a synthetic 60 Hz clock, so `pointer()` traces
+//     go through the real recognizer, keyboard and frame binning (input/pipeline.ts) exactly as a thumb would.
+//   - In rAF mode `pointer()` schedules the trace on the live input source (first sample = now).
+//   - `contrast()` is the DESIGN §18.4 pixel gate on the rendered frame (debug/contrast.ts).
+//   - `ext` (DebugExt) holds the tooling hooks shots.mjs and the e2e specs use: overlays, perf HUD, tuning panel,
+//     canvas capture around the skater, the cosmetic catalog, a HUD layout preview and world-view stats.
+import { Box3, Color, type Light, type Mesh, type Object3D, PerspectiveCamera, Vector3 } from 'three';
 import { BUILD, type AreaId, type QualityTier, type ScreenId } from '../core/ids';
 import type { AudioEngine } from '../core/audio';
 import type { Bus } from '../core/bus';
 import type { DebugAPI, DebugSnapshot } from '../core/debug';
 import type { AppEvent, GameEvent } from '../core/events';
-import { EMPTY_FRAME, type InputFrame, type InputSource } from '../core/input';
+import { EMPTY_FRAME, type InputFrame, type InputSource, type PointerSample } from '../core/input';
 import type { MetaApi } from '../core/meta';
 import type { SaveStore, SaveV1 } from '../core/save';
 import type { Sim } from '../core/sim';
 import type { UiApi } from '../core/ui';
 import type { CameraRig, GfxContext, SkaterView, Vfx, WorldView } from '../core/view';
 import type { Dir8 } from '../core/ids';
+import type { ScoreState, SkaterState } from '../core/sim';
+import { DT } from '../core/tuning';
+import { CATALOG } from '../content';
+import { InputPipeline, isInjectable, kForWidth } from '../input';
 import { BOTS, type Bot, type BotKind } from './bots';
+import { measureContrast, type ContrastReport } from './contrast';
 
 export type StartOptions = Parameters<DebugAPI['start']>[0];
 
@@ -76,7 +87,48 @@ export function encodeWav(buf: { numberOfChannels: number; length: number; sampl
 /** Run time at which each area is first reached (DESIGN §12.1), for previewArea. */
 const ARRIVAL: Readonly<Record<AreaId, number>> = { downtown: 161, suburbs: 44, docks: 83, neon: 122 };
 
-export function installDebugApiImpl(host: DebugHost): DebugAPI {
+/** A toggleable debug tool (overlay, perf HUD, tuning panel): debug/index.ts installs them. */
+export interface DebugTool { set(on: boolean): void; readonly on: boolean }
+export interface DebugTools { overlay?: DebugTool; perf?: DebugTool; tuning?: DebugTool }
+
+/** HUD layout preview values (shots --hud): replaces the live numbers until cleared with null. */
+export interface HudPreview { score?: number; dist?: number; speed?: number; combo?: number; links?: number; coins?: number; trick?: string }
+
+/** Tooling hooks beyond the frozen DebugAPI (`window.__skate.ext`), used by scripts/shots.mjs and the e2e specs. */
+export interface DebugExt {
+  overlay(on?: boolean): boolean;
+  perfHud(on?: boolean): boolean;
+  tuning(on?: boolean): boolean;
+  /** The full contrast report (every measured hazard and edge) of the current frame. */
+  contrastReport(): ContrastReport;
+  /** Renders now and returns a PNG data URL: the whole canvas, or a square crop around the skater (cosmetics sheet).
+   *  `native`: the crop is returned at its rendered pixel size (no resampling: real in-run scale). `view`: instead of
+   *  the live frame, the skater alone on a plain `bg`, framed by its own perspective camera (CaptureView). */
+  capture(o?: { target?: 'canvas' | 'skater'; size?: number; pad?: number; bg?: string; native?: boolean; view?: CaptureView }):
+    { dataUrl: string; rect: { x: number; y: number; w: number; h: number } | null;
+      /** target 'skater' on the live frame: the skater's projected size, CSS px. */ skaterCss?: { w: number; h: number } };
+  /** Puts one catalog item on the skater over the equipped loadout, in any mode (null = the equipped loadout). Lasts
+   *  until the next run start or Locker visit; shots --cosmetics uses it for the in-run insets at real scale. */
+  tryOn(id: string | null): boolean;
+  /** The cosmetic catalog (content/ CATALOG): what shots --cosmetics iterates. */
+  catalog(): { id: string; slot: string; name: string; rarity: string; source: string; theme?: string; look: unknown }[];
+  /** HUD layout preview with fake values (null = live values again). */
+  hud(v: HudPreview | null): void;
+  /** World-view internals when available (chunks, pools, coin slots). */
+  world(): unknown;
+  /** The synthetic clock used by manual stepping (ms; one tick = 1000/60). */
+  readonly clockMs: number;
+}
+export type DebugApiWithExt = DebugAPI & { ext: DebugExt };
+
+/** An isolated turntable view of the skater (shots --cosmetics). Angles are relative to the direction toward the
+ *  active camera (the Locker camera: the showcase faces it at yaw 0): `azDeg` orbits about the vertical (+ moves the
+ *  camera toward screen-left), `elevDeg` looks down (negative: from below, e.g. a deck's graphic).
+ *  `part` frames the whole skater, its board (meshes named board / deck / wheel / truck, else the lowest meshes) or
+ *  its head (meshes named helmet / head, else the top 28%). */
+export interface CaptureView { azDeg?: number; elevDeg?: number; part?: 'all' | 'board' | 'head'; fovDeg?: number; pad?: number }
+
+export function installDebugApiImpl(host: DebugHost, tools: DebugTools = {}): DebugApiWithExt {
   const ring: GameEvent[] = [];
   host.gameBus.onAny((e) => {
     if (e.t === 'runStart') ring.length = 0;
@@ -85,17 +137,29 @@ export function installDebugApiImpl(host: DebugHost): DebugAPI {
   });
   const held: Partial<InputFrame> = {};
   let bot: Bot | null = null;
-  let warnedPointer = false;
   host.loop.setExtraInput((sim) => {
     const b = bot ? bot.frame(sim) : null;
     return b || Object.keys(held).length ? { ...held, ...b } : null;
   });
 
+  // Manual stepping runs on a synthetic clock: tick k is due at clock + k·DT. Pointer traces given in manual mode go
+  // through this pipeline (the real recognizer + frames), with the screen metrics of the live viewport.
+  let clock = 0;
+  const screenW = () => Math.max(1, window.innerWidth);
+  const synth = new InputPipeline(screenW);
+  const syncSynth = () => {
+    const c = synth.rec.config, live = isInjectable(host.input) ? host.input.pipeline : null;
+    c.k = kForWidth(screenW()); c.screenW = screenW(); c.screenH = window.innerHeight;
+    c.deadZoneBottomPx = live?.rec.config.deadZoneBottomPx ?? 12;
+    c.simpleTricks = live?.rec.config.simpleTricks ?? false;
+    synth.frames.sensitivity = live?.frames.sensitivity ?? 1;
+  };
+
   const snapshot = (): DebugSnapshot => {
     const sim = host.sim(), c = sim.cur, sc = sim.score;
     const s = c.p.s;
     const safe = [];
-    for (let i = Math.floor(s / 32); i <= Math.floor((s + 40) / 32); i++) {
+    for (let i = Math.max(0, Math.floor(s / 32)); i <= Math.floor((s + 40) / 32); i++) {
       for (const k of sim.gen.chunk(i).safe) if (k.s >= s && k.s <= s + 40) safe.push(k);
     }
     return {
@@ -109,15 +173,80 @@ export function installDebugApiImpl(host: DebugHost): DebugAPI {
     };
   };
 
-  const api: DebugAPI = {
+  const toggle = (t: DebugTool | undefined, on?: boolean) => { if (!t) return false; t.set(on ?? !t.on); return t.on; };
+
+  const ext: DebugExt = {
+    overlay: (on) => toggle(tools.overlay, on),
+    perfHud: (on) => toggle(tools.perf, on),
+    tuning: (on) => toggle(tools.tuning, on),
+    contrastReport: () => measureContrast(host),
+    capture(o = {}) {
+      if (o.view) return isolatedCapture(host, o.view, o.size ?? 256, o.bg ?? '#3a3058');
+      host.loop.renderNow();
+      const gl = host.gfx.renderer.domElement;
+      const W = gl.width, H = gl.height, size = o.size ?? 256;
+      let rect: { x: number; y: number; w: number; h: number } | null = null;
+      let skaterCss: { w: number; h: number } | undefined;
+      if (o.target === 'skater') {
+        const box = new Box3().setFromObject(host.skater.object3d);
+        if (!box.isEmpty()) {
+          const cam = host.cameraRig.camera, v = new Vector3();
+          let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+          for (let i = 0; i < 8; i++) {
+            v.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).project(cam);
+            const px = ((v.x + 1) / 2) * W, py = ((1 - v.y) / 2) * H;
+            x0 = Math.min(x0, px); y0 = Math.min(y0, py); x1 = Math.max(x1, px); y1 = Math.max(y1, py);
+          }
+          const pr = host.gfx.renderer.getPixelRatio() || 1;
+          skaterCss = { w: (x1 - x0) / pr, h: (y1 - y0) / pr };
+          const side = Math.max(x1 - x0, y1 - y0) * (1 + (o.pad ?? 0.35));
+          rect = { x: (x0 + x1) / 2 - side / 2, y: (y0 + y1) / 2 - side / 2, w: side, h: side };
+        }
+      }
+      const r = rect ?? { x: 0, y: 0, w: W, h: H };
+      if (rect && o.native) { r.x = Math.round(r.x); r.y = Math.round(r.y); r.w = r.h = Math.round(r.w); }
+      const out = document.createElement('canvas');
+      const scale = Math.min(size / r.w, size / r.h);
+      out.width = rect ? (o.native ? r.w : size) : Math.round(W * Math.min(1, scale * 4));
+      out.height = rect ? (o.native ? r.h : size) : Math.round(H * Math.min(1, scale * 4));
+      const c = out.getContext('2d')!;
+      c.fillStyle = o.bg ?? '#2b2140';
+      c.fillRect(0, 0, out.width, out.height);
+      c.drawImage(gl, r.x, r.y, r.w, r.h, 0, 0, out.width, out.height);   // same task as the render
+      return { dataUrl: out.toDataURL('image/png'), rect, ...(skaterCss ? { skaterCss } : {}) };
+    },
+    tryOn(id) {
+      const item = id ? CATALOG.find((c) => c.id === id) : undefined;
+      if (id && !item) return false;
+      host.skater.setLoadout(item ? { ...host.meta.loadout(), [item.slot]: item.look } as ReturnType<MetaApi['loadout']> : host.meta.loadout());
+      host.loop.renderNow();
+      return true;
+    },
+    catalog: () => CATALOG.map((c) => ({ id: c.id, slot: c.slot, name: c.name, rarity: c.rarity, source: c.source,
+      ...(c.theme ? { theme: c.theme } : {}), look: c.look })),
+    hud(v) {
+      const hud = host.ui.hud as typeof host.ui.hud & { preview?(p: HudPreview | null): void };
+      hud.preview?.(v);
+      if (v) {
+        const sim = host.sim();
+        hud.update(previewScore(sim.score, v), previewCur(sim.cur, v), 1, { x: 0, y: 0 });
+      }
+    },
+    world: () => (host.worldView as { debugInfo?(): unknown }).debugInfo?.() ?? null,
+    get clockMs() { return clock; },
+  };
+
+  const api: DebugApiWithExt = {
     version: `${BUILD.version}+${BUILD.hash} (${BUILD.mode})`,
-    start(o) { host.startRun(o ?? {}); },
-    manual(on) { host.loop.manual = on; },
+    ext,
+    start(o) { synth.reset(); host.startRun(o ?? {}); },
+    manual(on) { host.loop.manual = on; if (!on) synth.reset(); },
     step(n, input) {
       const count = Math.max(0, Math.floor(n));
       for (let i = 0; i < count; i++) {
         const per = Array.isArray(input) ? input[i] : input;
-        host.loop.step({ ...EMPTY_FRAME, ...per });
+        clock += DT * 1000;
+        host.loop.step({ ...synth.frame(clock), ...per });   // EMPTY_FRAME unless a pointer trace is under way
       }
       host.loop.renderNow();
       return snapshot();
@@ -135,23 +264,30 @@ export function installDebugApiImpl(host: DebugHost): DebugAPI {
     bot(kind, opts) {
       if (kind === 'off') { bot = null; return; }
       const make = BOTS[kind as BotKind];
-      if (!make) { console.warn(`[__skate] bot '${kind}' is not implemented yet (TODO(M0-sim))`); bot = null; return; }
+      if (!make) { console.warn(`[__skate] bot '${kind}' is not implemented yet`); bot = null; return; }
       bot = make({ ...opts, seed: host.sim().gen.seed });
     },
-    pointer(_samples) {
-      // TODO(M0-io): feed synthetic traces through the real recognizer + frames pipeline (thumb-bot style).
-      if (!warnedPointer) { console.warn('[__skate] pointer() is not implemented yet (TODO(M0-io))'); warnedPointer = true; }
+    pointer(samples) {
+      if (!samples.length) return;
+      const list = samples.map((p): PointerSample => ({ id: p.id, tMs: p.tMs, x: p.x, y: p.y, phase: p.phase }));
+      if (host.loop.manual) {
+        // Manual mode: the trace starts at the next tick's start on the synthetic clock.
+        syncSynth();
+        synth.schedule(list, clock - list[0]!.tMs);
+      } else if (isInjectable(host.input)) host.input.inject(list);
+      else console.warn('[__skate] pointer(): the input source does not accept synthetic traces');
     },
     gen() { return host.sim().gen.stats(); },
     previewArea(area, blend) {
-      // M0: start a god-mode run at that area (mid-visit, or inside the gateway into it for a blend in 0..1).
+      // Start a god-mode run at that area (mid-visit, or across the 8 s gateway blend into it for blend in 0..1).
       const t = blend === undefined ? ARRIVAL[area] + 10 : ARRIVAL[area] - 6 + 8 * Math.min(1, Math.max(0, blend));
-      host.startRun({ startT: area === 'downtown' && blend === undefined ? 10 : t, god: true });
+      api.start({ startT: area === 'downtown' && blend === undefined ? 10 : t, god: true });
       host.loop.manual = true;
       api.step(1);
     },
     contrast() {
-      return { hazard: 0, edge: 0, worst: null };    // TODO(M0-io/WA): DESIGN §18.4 pixel gate (shots --contrast)
+      const r = measureContrast(host);
+      return { hazard: r.hazard, edge: r.edge, worst: r.worst };
     },
     timeScale(x) { host.loop.timeScale = Math.max(0, x); },
     renderNow() { host.loop.renderNow(); },
@@ -178,4 +314,118 @@ export function installDebugApiImpl(host: DebugHost): DebugAPI {
     },
   };
   return api;
+}
+
+/** The meshes of a part of the skater (CaptureView.part) and their world bounds; `all` = every visible mesh. */
+function partMeshes(root: Object3D, part: CaptureView['part']): { meshes: Mesh[]; box: Box3 } {
+  const every: { m: Mesh; b: Box3 }[] = [];
+  root.traverseVisible((o) => { if ((o as Mesh).isMesh) every.push({ m: o as Mesh, b: new Box3().setFromObject(o) }); });
+  const all = new Box3();
+  for (const e of every) all.union(e.b);
+  if ((part !== 'board' && part !== 'head') || all.isEmpty()) return { meshes: every.map((e) => e.m), box: all };
+  const named = (re: RegExp) => every.filter(({ m }) => { for (let p: Object3D | null = m; p && p !== root.parent; p = p.parent) if (re.test(p.name)) return true; return false; });
+  const h = all.max.y - all.min.y;
+  let pick = named(part === 'board' ? /board|deck|wheel|truck/i : /helmet|head/i);
+  if (!pick.length && part === 'board') pick = every.filter(({ b }) => b.max.y <= all.min.y + 0.3 * h);
+  const box = new Box3();
+  for (const { b } of pick) box.union(b);
+  if (!box.isEmpty()) return { meshes: pick.map((e) => e.m), box };
+  if (part === 'head') { all.min.y = all.max.y - 0.28 * h; return { meshes: every.map((e) => e.m), box: all }; }
+  all.max.y = all.min.y + 0.2 * h;
+  return { meshes: every.map((e) => e.m), box: all };
+}
+
+/** Horizontal long axis of some meshes (principal axis of their vertices on the ground plane), unit (x, z). */
+function longAxis(meshes: readonly Mesh[]): [number, number] {
+  let n = 0, mx = 0, mz = 0, sxx = 0, szz = 0, sxz = 0;
+  const v = new Vector3();
+  for (const m of meshes) {
+    const pos = m.geometry.getAttribute('position');
+    if (!pos) continue;
+    const step = Math.max(1, Math.floor(pos.count / 400));
+    for (let i = 0; i < pos.count; i += step) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld);
+      n++; const dx = v.x - mx, dz = v.z - mz; mx += dx / n; mz += dz / n;
+      sxx += dx * (v.x - mx); szz += dz * (v.z - mz); sxz += dx * (v.z - mz);
+    }
+  }
+  if (n < 2) return [0, 1];
+  const ang = 0.5 * Math.atan2(2 * sxz, sxx - szz);
+  return [Math.cos(ang), Math.sin(ang)];
+}
+
+/** The skater alone on a plain background, framed by its own camera (CaptureView), rendered into the bottom-left of
+ *  the canvas and read back in the same task; the live frame is redrawn afterwards. */
+function isolatedCapture(host: DebugHost, v: CaptureView, size: number, bg: string):
+  { dataUrl: string; rect: { x: number; y: number; w: number; h: number } | null } {
+  host.loop.renderNow();                                   // pose and matrices for this frame
+  const r = host.gfx.renderer, scene = host.gfx.scene, gl = r.domElement, pr = r.getPixelRatio() || 1;
+  const root = host.skater.object3d;
+  root.updateWorldMatrix(true, true);
+  const part = v.part ?? 'all';
+  const { meshes, box } = partMeshes(root, part);
+  if (box.isEmpty()) return { dataUrl: '', rect: null };
+  const centre = box.getCenter(new Vector3()), radius = Math.max(0.05, box.getSize(new Vector3()).length() / 2);
+  // Reference direction: toward the active camera, flattened. A board is seen from its side instead (perpendicular to
+  // its long axis, on the camera's side), so the deck never shows end-on.
+  const ref = host.cameraRig.camera.getWorldPosition(new Vector3()).sub(centre).setY(0);
+  if (ref.lengthSq() < 1e-6) ref.set(0, 0, 1);
+  ref.normalize();
+  if (part === 'board') {
+    const [ax, az0] = longAxis(meshes);
+    const side = new Vector3(-az0, 0, ax);
+    ref.copy(side.dot(ref) >= 0 ? side : side.negate());
+  }
+  const az = ((v.azDeg ?? 20) * Math.PI) / 180, el = ((v.elevDeg ?? 8) * Math.PI) / 180, fov = v.fovDeg ?? 28;
+  const dir = new Vector3(ref.x * Math.cos(az) - ref.z * Math.sin(az), 0, ref.x * Math.sin(az) + ref.z * Math.cos(az));
+  dir.multiplyScalar(Math.cos(el)).setY(Math.sin(el));
+  const dist = (radius * (1 + (v.pad ?? 0.08))) / Math.sin(((fov / 2) * Math.PI) / 180);
+  const cam = new PerspectiveCamera(fov, 1, Math.max(0.01, dist - radius * 3), dist + radius * 3);
+  cam.position.copy(centre).addScaledVector(dir, dist);
+  cam.lookAt(centre);
+  cam.updateMatrixWorld();
+  // Only the skater (and the lights) on a plain background, no fog.
+  const hidden: Object3D[] = [];
+  if (part === 'board') {
+    // The board alone: the rider's meshes would stand in front of it.
+    const keep = new Set<Object3D>(meshes);
+    root.traverseVisible((o) => { if ((o as Mesh).isMesh && !keep.has(o)) hidden.push(o); });
+    for (const o of hidden) o.visible = false;
+  }
+  for (const c of scene.children) {
+    let holds = false;
+    for (let p: Object3D | null = root; p; p = p.parent) if (p === c) holds = true;
+    if (!holds && c.visible && !(c as Light).isLight) { c.visible = false; hidden.push(c); }
+  }
+  const bgWas = scene.background, fogWas = scene.fog;
+  scene.background = new Color(bg); scene.fog = null;
+  const cssW = gl.width / pr, cssH = gl.height / pr;
+  const side = Math.max(16, Math.min(size / pr, cssW, cssH));
+  const px = Math.round(side * pr);
+  let dataUrl = '';
+  try {
+    r.setScissorTest(true);
+    r.setViewport(0, 0, side, side); r.setScissor(0, 0, side, side);
+    r.render(scene, cam);
+    const out = document.createElement('canvas');
+    out.width = out.height = size;
+    out.getContext('2d')!.drawImage(gl, 0, gl.height - px, px, px, 0, 0, size, size);   // same task as the render
+    dataUrl = out.toDataURL('image/png');
+  } finally {
+    r.setScissorTest(false);
+    r.setViewport(0, 0, cssW, cssH);
+    scene.background = bgWas; scene.fog = fogWas;
+    for (const c of hidden) c.visible = true;
+    host.loop.renderNow();
+  }
+  return { dataUrl, rect: { x: 0, y: 0, w: px, h: px } };
+}
+
+/** Fake score / skater state for the HUD preview (only the fields the HUD reads are meaningful). */
+function previewScore(live: Readonly<ScoreState>, v: HudPreview): ScoreState {
+  return { ...live, total: v.score ?? live.total, distancePts: v.dist ?? live.distancePts, coins: v.coins ?? live.coins,
+    combo: { ...live.combo, active: (v.combo ?? 0) > 0, pending: v.combo ?? 0, links: v.links ?? 0 } };
+}
+function previewCur(live: Readonly<SkaterState>, v: HudPreview): SkaterState {
+  return { ...live, vel: { ...live.vel, s: v.speed ?? live.vel.s } } as SkaterState;
 }

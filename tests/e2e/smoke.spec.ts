@@ -204,3 +204,66 @@ test('__skate.ui() goes through the app: Locker shows the turntable, Home restor
   expect(await page.evaluate(async () => (window.__skate!.renderAudio ? await window.__skate!.renderAudio('downtown', 1) : 'missing'))).toBeNull();
   expect(errors).toEqual([]);
 });
+
+// ── M0-io additions: debug tooling, the contrast gate, live pointer traces and the HUD band ───────────────────────
+type Ext = { overlay(on?: boolean): boolean; perfHud(on?: boolean): boolean; tuning(on?: boolean): boolean };
+
+test('debug tooling: overlays, perf HUD, tuning panel and the contrast gate on a live frame', async ({ page }) => {
+  const errors: string[] = [];
+  await boot(page, errors, '&quality=low');
+  const r = await page.evaluate(() => {
+    const x = (window.__skate as unknown as { ext: Ext }).ext;
+    window.__skate!.start({ seed: 1, god: true }); window.__skate!.manual(true); window.__skate!.step(150);
+    const on = [x.overlay(true), x.perfHud(true), x.tuning(true)];
+    window.__skate!.renderNow();
+    const c = window.__skate!.contrast();
+    const perf = window.__skate!.perf();
+    const off = [x.overlay(false), x.perfHud(false), x.tuning(false)];
+    return { on, off, c, perf, panel: !!document.getElementById('tuning-panel'), hud: !!document.getElementById('perf-hud') };
+  });
+  expect(r.on).toEqual([true, true, true]);
+  expect(r.off).toEqual([false, false, false]);
+  expect(r.panel && r.hud).toBe(true);
+  expect(r.perf.calls).toBeGreaterThan(0);
+  expect(r.perf.calls).toBeLessThanOrEqual(120);
+  expect(r.perf.tris).toBeLessThanOrEqual(120_000);
+  // The Roll-out's 3.5 s barrier is in view at t = 2.5 s: hazards ≥ 2.5:1, grind edges ≥ 1.8:1 (DESIGN §18.4).
+  expect(r.c.hazard).toBeGreaterThanOrEqual(2.5);
+  if (!Number.isNaN(r.c.edge)) expect(r.c.edge).toBeGreaterThanOrEqual(1.8);
+  expect(errors).toEqual([]);
+});
+
+test('__skate.pointer() in real time goes through the live recognizer: a synthetic tap ollies', async ({ page }) => {
+  const errors: string[] = [];
+  await boot(page, errors, '&quality=low');
+  await page.evaluate(() => { window.__skate!.manual(false); window.__skate!.start({ seed: 4, god: true }); });
+  await expect.poll(() => page.evaluate(() => window.__skate!.snapshot().tick)).toBeGreaterThan(10);
+  const t0 = await page.evaluate(() => window.__skate!.snapshot().tick);
+  await page.evaluate(() => window.__skate!.pointer([{ id: 5, tMs: 0, x: 195, y: 500, phase: 'down' }, { id: 5, tMs: 90, x: 195, y: 500, phase: 'up' }]));
+  await expect.poll(() => page.evaluate((s) => window.__skate!.events(s).map((e) => e.t), t0), { timeout: 3000 }).toContain('ollie');
+  expect(errors).toEqual([]);
+});
+
+test('the HUD sits inside its 56 px band (+ safe area) and only the pause button takes touches', async ({ page }) => {
+  const errors: string[] = [];
+  await boot(page, errors, '&quality=low');
+  await page.evaluate(() => { window.__skate!.start({ seed: 1, god: true }); window.__skate!.manual(true); window.__skate!.step(60); });
+  await page.waitForTimeout(150);
+  const m = await page.evaluate(() => {
+    const probe = document.getElementById('safe-probe');
+    const safeTop = probe ? parseFloat(getComputedStyle(probe).paddingTop) || 0 : 0;
+    const rects = [...document.querySelectorAll<HTMLElement>('#hud [data-hud]')].map((e) => {
+      const r = e.getBoundingClientRect();
+      return { id: e.dataset.hud!, top: r.top, bottom: r.bottom, w: r.width, h: r.height, pe: getComputedStyle(e).pointerEvents };
+    });
+    return { safeTop, rects, hudPe: getComputedStyle(document.getElementById('hud')!).pointerEvents };
+  });
+  expect(m.hudPe).toBe('none');
+  expect(m.rects.map((r) => r.id)).toEqual(expect.arrayContaining(['score', 'dist', 'combo', 'trick', 'coins', 'pause']));
+  for (const r of m.rects) expect(r.bottom, r.id).toBeLessThanOrEqual(m.safeTop + 56 + 0.5);
+  const pause = m.rects.find((r) => r.id === 'pause')!;
+  expect(pause.w).toBeGreaterThanOrEqual(56);
+  expect(pause.h).toBeGreaterThanOrEqual(56);
+  expect(pause.pe).toBe('auto');
+  expect(errors).toEqual([]);
+});

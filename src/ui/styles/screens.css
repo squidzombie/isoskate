@@ -1,0 +1,86 @@
+/* ui/styles/screens.css: the stub screens (DESIGN §17.2). Hidden sections are visibility:hidden + inert. */
+#screens .screen { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 12px; padding: calc(20px + var(--safe-top)) 18px calc(20px + var(--safe-bottom)); box-sizing: border-box; text-align: center;
+  visibility: hidden; opacity: 0; transition: opacity 0.2s, visibility 0s linear 0.2s; color: var(--ink); font-family: var(--font-ui); }
+#screens .screen.on { visibility: visible; opacity: 1; transition: opacity 0.2s; }
+#screens .screen:not(.on) { pointer-events: none !important; }   /* fading out: never swallow the next touch (inert is 15.5+) */
+#screens .screen.dim { background: rgba(255, 244, 227, 0.86); }
+#screens .screen.paper { background: var(--paper); }
+#screens .screen.clear { pointer-events: none; }
+#screens h1, #screens h2 { font-family: var(--font-display); margin: 0; letter-spacing: 0.02em; font-weight: 400; }
+#screens h2 { font-size: 30px; }
+#screens h2.best { color: var(--primary); -webkit-text-stroke: 1.5px var(--ink); paint-order: stroke fill; }
+#screens .logo { font-size: calc(50px * var(--k, 1)); line-height: 1; color: transparent; -webkit-text-stroke: 2px var(--ink);
+  background: linear-gradient(180deg, #ffe2ae 0%, #ffb07a 45%, #ff8a5b 62%, #c4473d 100%); -webkit-background-clip: text; background-clip: text;
+  filter: drop-shadow(0 4px 0 var(--ink)); }
+#screens .tagline { font-weight: 800; font-size: 14px; color: var(--paper); text-shadow: 0 2px 0 var(--ink); max-width: 300px; }
+#screens .tap { font-family: var(--font-display); font-size: 22px; color: var(--paper); -webkit-text-stroke: 1px var(--ink);
+  paint-order: stroke fill; text-shadow: 0 3px 0 var(--ink); animation: dl-pulse 1.2s ease-in-out infinite; }
+#screens .keys { font-weight: 800; font-size: 13px; opacity: 0.85; }
+#screens .line { font-weight: 800; font-size: 17px; }
+#screens .line.small { font-size: 14px; font-weight: 700; opacity: 0.85; }
+#screens .big { font-weight: 900; font-size: 44px; font-variant-numeric: tabular-nums; line-height: 1; }
+#screens .row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+#screens .spacer { flex: 1; min-height: 8px; }
+
+/* Title */
+#screens [data-screen='title'] { justify-content: flex-start; padding-top: calc(14vh + var(--safe-top)); cursor: pointer; }
+#screens [data-screen='title'] .keys, #screens [data-screen='title'] .best { color: var(--paper); text-shadow: 0 2px 0 var(--ink); }
+#screens [data-screen='title'] .best { font-weight: 900; font-size: 16px; min-height: 20px; }
+#screens .tabs { display: flex; gap: 6px; width: 100%; max-width: 460px; cursor: default; }
+#screens .tabs .tab { flex: 1 1 0; min-width: 0; padding: 0 2px; font-size: clamp(9px, 2.8vw, 12px); letter-spacing: -0.02em; border-radius: 14px; }
+#screens .tabs .tab.primary { min-height: 56px; min-width: 0; font-size: clamp(10px, 3vw, 13px); }
+#screens .tabs .gear { flex: 0 0 56px; font-size: 20px; }
+
+/* Crash overlay */
+#screens [data-screen='crash'] .sticker { font-family: var(--font-display); font-size: 48px; color: var(--coral); -webkit-text-stroke: 2px var(--ink);
+  paint-order: stroke fill; transform: rotate(-6deg); text-shadow: 0 4px 0 var(--ink); }
+#screens [data-screen='crash'] .line, #screens [data-screen='crash'] .lost { color: var(--paper); text-shadow: 0 2px 0 var(--ink); }
+#screens [data-screen='crash'] .lost { font-weight: 900; font-size: 20px; text-decoration-color: var(--coral); text-decoration-thickness: 3px; }
+#screens [data-screen='crash'] .tap { opacity: 0; animation: dl-show 0.01s linear 0.6s forwards, dl-pulse 1.2s ease-in-out 0.6s infinite; }
+#screens [data-screen='crash'] .tap.alt { animation-name: dl-show2, dl-pulse; }
+@keyframes dl-show2 { to { opacity: 1; } }
+
+/* Pause / rotate card */
+#screens .phone { width: 46px; height: 80px; border: 4px solid var(--ink); border-radius: 10px; box-sizing: border-box;
+  animation: dl-rotate 1.6s ease-in-out infinite; }
+@keyframes dl-rotate { 0%, 30% { transform: rotate(-90deg); } 60%, 100% { transform: rotate(0deg); } }
+
+/* Results */
+#screens [data-screen='results'] { justify-content: flex-start; padding-top: calc(28px + var(--safe-top)); gap: 10px; }
+#screens .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; width: min(340px, 90vw); }
+#screens .cell { display: flex; justify-content: space-between; font-weight: 800; font-size: 15px; border-bottom: 2px solid rgba(43, 33, 64, 0.15); }
+#screens .cell span { opacity: 0.75; }
+#screens .xp { width: min(300px, 80vw); height: 10px; border-radius: 6px; background: rgba(43, 33, 64, 0.15); overflow: hidden; }
+#screens .xp i { display: block; height: 100%; background: var(--lilac); transform-origin: left; transform: scaleX(0); transition: transform 0.6s; }
+#screens .goal { color: #6b4e8c; }
+
+/* Locker / Shop: see-through over the turntable */
+#screens .screen.showcase { justify-content: flex-start; padding-top: calc(16px + var(--safe-top)); }
+#screens .showcase h2 { color: var(--paper); -webkit-text-stroke: 1.5px var(--ink); paint-order: stroke fill; text-shadow: 0 3px 0 var(--ink); }
+#screens .turn-area { flex: 1; width: 100%; touch-action: none; cursor: grab; }
+#screens .panel { width: 100%; max-width: 460px; background: rgba(255, 244, 227, 0.94); border: 3px solid var(--ink); border-radius: 18px;
+  padding: 10px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; }
+#screens .tabs-slot button.on { background: var(--primary); }
+#screens .chips { display: flex; gap: 8px; overflow-x: auto; touch-action: pan-x; padding: 4px 2px 8px; }
+#screens .chips .chip { flex: 0 0 auto; min-width: 0; font-size: 13px; border-top-width: 8px; }
+#screens .chip.r-common { border-top-color: var(--r-common); } #screens .chip.r-rare { border-top-color: var(--r-rare); }
+#screens .chip.r-epic { border-top-color: var(--r-epic); } #screens .chip.r-legendary { border-top-color: var(--r-legendary); }
+
+/* Settings */
+#screens .scroll { width: 100%; max-width: 460px; overflow-y: auto; touch-action: pan-y; display: flex; flex-direction: column; gap: 8px; }
+#screens .setting { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-weight: 800; font-size: 14px; text-align: left; }
+#screens .segs { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+#screens .segs .seg { min-width: 0; min-height: 44px; padding: 0 8px; font-size: 12px; border-radius: 12px; box-shadow: 0 3px 0 var(--ink); }
+#screens .segs .seg.on { background: var(--primary); }
+
+/* Boot */
+#screens .bar { width: 160px; height: 8px; border-radius: 4px; background: rgba(43, 33, 64, 0.15); overflow: hidden; }
+#screens .bar i { display: block; height: 100%; width: 40%; background: var(--primary); animation: dl-bar 1s ease-in-out infinite alternate; }
+@keyframes dl-bar { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+
+@media (prefers-reduced-motion: reduce) {
+  #screens .tap { animation: dl-show 0.01s linear 0.6s forwards; }
+  #screens [data-screen='title'] .tap { animation: none; }
+  #screens .phone, #screens .bar i { animation: none; }
+}

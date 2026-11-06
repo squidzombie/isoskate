@@ -1,53 +1,20 @@
-/* ui/styles/base.css: M0 debug HUD and text screens. MU replaces these in W3a (DESIGN §13.8, §17.4). */
-#hud { height: calc(56px + var(--safe-top)); padding: var(--safe-top) 10px 0; box-sizing: border-box;
-  display: none; align-items: center; justify-content: space-between; gap: 8px; color: var(--paper);
-  font-family: Nunito, ui-rounded, system-ui, sans-serif; font-variant-numeric: tabular-nums;
-  text-shadow: 0 2px 0 rgba(43, 33, 64, 0.65); }
-#hud.on { display: flex; }
-#hud .hud-left { display: flex; flex-direction: column; min-width: 0; }
-#hud .hud-score { font-weight: 900; font-size: calc(26px * var(--k, 1)); line-height: 1; }
-#hud .hud-dist { font-weight: 800; font-size: calc(12px * var(--k, 1)); opacity: 0.9; }
-#hud .hud-mid { display: flex; flex-direction: column; align-items: center; min-width: 0; flex: 1; }
-#hud .hud-combo { font-weight: 900; font-size: 16px; padding: 2px 10px; border-radius: 999px; background: rgba(43, 33, 64, 0.55);
-  visibility: hidden; }
-#hud .hud-combo.on { visibility: visible; }
-#hud .hud-trick { font-family: Bungee, 'Arial Black', Impact, system-ui; font-size: 12px; height: 14px; white-space: nowrap; }
-#hud .hud-right { display: flex; align-items: center; gap: 6px; }
-#hud .hud-coins { font-weight: 900; font-size: 18px; color: #ffc94a; }
-#hud .hud-pause { pointer-events: auto; width: 56px; height: 56px; margin-right: -4px; padding: 4px; background: none; border: 0;
-  display: flex; align-items: center; justify-content: center; cursor: pointer; }
-#hud .hud-pause span { width: 48px; height: 48px; border-radius: 14px; background: rgba(255, 244, 227, 0.92); color: var(--ink);
-  font: 900 18px Nunito, system-ui; display: flex; align-items: center; justify-content: center; border: 3px solid var(--ink);
-  box-sizing: border-box; }
-
-#screens .screen { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 14px; padding: calc(24px + var(--safe-top)) 20px calc(24px + var(--safe-bottom)); box-sizing: border-box; text-align: center;
-  visibility: hidden; opacity: 0; transition: opacity 0.2s; color: var(--ink); font-family: Nunito, ui-rounded, system-ui, sans-serif; }
-#screens .screen.on { visibility: visible; opacity: 1; }
-#screens .screen.dim { background: rgba(255, 244, 227, 0.82); }
-#screens .screen.clear { pointer-events: none; }
-#screens h1, #screens h2 { font-family: Bungee, 'Arial Black', Impact, system-ui; margin: 0; letter-spacing: 0.02em; }
-#screens h1 { font-size: 44px; color: var(--paper); -webkit-text-stroke: 2px var(--ink); paint-order: stroke fill; }
-#screens h2 { font-size: 30px; }
-#screens .tap { font-family: Bungee, 'Arial Black', system-ui; font-size: 20px; color: var(--paper); -webkit-text-stroke: 1px var(--ink);
-  animation: dl-pulse 1.2s ease-in-out infinite; }
-#screens .line { font-weight: 800; font-size: 17px; }
-#screens .big { font-weight: 900; font-size: 40px; font-variant-numeric: tabular-nums; }
-#screens .row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
-#screens .spacer { flex: 1; }
-#screens button { font-family: Bungee, 'Arial Black', system-ui; font-size: 18px; text-transform: uppercase; min-height: 56px;
-  min-width: 120px; padding: 0 18px; border-radius: 18px; border: 3px solid var(--ink); background: var(--paper); color: var(--ink);
-  box-shadow: 0 4px 0 var(--ink); cursor: pointer; }
+/* ui/styles/base.css: shared UI tokens and buttons (DESIGN §17.4). M0 stub styles; MU replaces them in W3a. */
+:root {
+  --primary: #ff8a5b; --lilac: #a88beb; --coin: #ffc94a; --mint: #7ee0b5; --coral: #ff5e6c;
+  --r-common: #c9c2b8; --r-rare: #5eb8ff; --r-epic: #b47cff; --r-legendary: #ffb13b;
+  --font-ui: Nunito, ui-rounded, system-ui, sans-serif;
+  --font-display: Bungee, 'Arial Black', Impact, system-ui;
+}
+#screens button, #hud button { font-family: var(--font-display); -webkit-tap-highlight-color: transparent; }
+#screens button {
+  font-size: 18px; text-transform: uppercase; min-height: 56px; min-width: 120px; padding: 0 18px; border-radius: 18px;
+  border: 3px solid var(--ink); background: var(--paper); color: var(--ink); box-shadow: 0 4px 0 var(--ink); cursor: pointer;
+  transition: transform 60ms, box-shadow 60ms;
+}
 #screens button:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--ink); }
-#screens button.primary { background: #ff8a5b; min-height: 72px; min-width: 240px; font-size: 24px; }
-#screens [data-screen='title'] { justify-content: flex-start; padding-top: calc(18vh + var(--safe-top)); }
-#screens [data-screen='title'] .best { font-weight: 900; color: var(--paper); text-shadow: 0 2px 0 var(--ink); }
-#screens [data-screen='crash'] .sticker { font-family: Bungee, system-ui; font-size: 46px; color: #ff5e6c; -webkit-text-stroke: 2px var(--ink);
-  paint-order: stroke fill; transform: rotate(-6deg); }
-#screens [data-screen='crash'] .line { color: var(--paper); text-shadow: 0 2px 0 var(--ink); }
-#screens [data-screen='crash'] .tap { opacity: 0; animation: dl-show 0.01s linear 0.6s forwards, dl-pulse 1.2s ease-in-out 0.6s infinite; }
-#toasts .toast { position: absolute; left: 50%; top: calc(64px + var(--safe-top)); transform: translateX(-50%); padding: 6px 14px;
-  border-radius: 12px; background: rgba(43, 33, 64, 0.85); color: var(--paper); font: 800 14px Nunito, system-ui; white-space: nowrap; }
+#screens button:focus-visible { outline: 3px solid var(--lilac); outline-offset: 3px; }
+#screens button.primary { background: var(--primary); min-height: 64px; min-width: 220px; font-size: 22px; }
+#screens button.huge { min-height: 84px; width: min(320px, 86vw); font-size: 28px; }
+#screens button.small { min-width: 96px; font-size: 15px; padding: 0 12px; }
 @keyframes dl-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
 @keyframes dl-show { to { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { #screens .tap { animation: dl-show 0.01s linear 0.6s forwards; } }

@@ -12,11 +12,12 @@ export function createHaptics(): Haptics {
 }
 
 export { readFlags, isTouchDevice, type Flags } from './env';
-export { installTouchHygiene, blurActive } from './ios';
+export { installTouchHygiene, blurActive, maybeFullscreen } from './ios';
 export { onHide, onShow, type HideReason } from './visibility';
 export { createBackGuard, type BackGuard } from './history';
 export { checkCompat, supportsInert } from './compat';
 export { createWakeLock } from './wake';
+export { HAPTIC_RULES } from './haptics';
 export { registerServiceWorker } from './pwa';
 export { drawIcon } from './icon';
 export { NullProvider } from './monetization';

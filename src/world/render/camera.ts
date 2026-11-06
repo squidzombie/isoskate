@@ -23,9 +23,8 @@ export const hudTopOf = (vp: Viewport) => (vp.safeTop + CAMERA.hudPx) / vp.hCss;
 export const rotateFor = (vp: Viewport) => vp.coarse && Math.min(vp.wCss, vp.hCss) < 500 && vp.aspect > 1;
 
 /** Screen coordinates (m) of a ground point relative to the skater's ground point. */
-function screenXY(s: number, x: number, cosP: number, sinP: number): [number, number] {
-  return [x * cosP + s * sinP, s * SIN_T * cosP - x * sinP * SIN_T];
-}
+const screenX = (s: number, x: number, cosP: number, sinP: number) => x * cosP + s * sinP;
+const screenY = (s: number, x: number, cosP: number, sinP: number) => s * SIN_T * cosP - x * sinP * SIN_T;
 
 /** Full-corridor-width look-ahead (s) achieved with ortho height H, measured below the HUD band. */
 export function lookAheadFor(H: number, speed: number, vp: Viewport, yawDeg: number, xCentre: number): number {
@@ -42,18 +41,19 @@ export function lookAheadFor(H: number, speed: number, vp: Viewport, yawDeg: num
   return Math.max(0, sMax) / speed;
 }
 
-/** Pure framing solver (TECH §8.3). */
-export function solveFraming(speed: number, vp: Viewport): Framing {
+/** Pure framing solver (TECH §8.3). `out` (optional) is filled and returned instead of a new object (the rig's
+ *  per-frame call). */
+export function solveFraming(speed: number, vp: Viewport, out?: Framing): Framing {
   const yawDeg = yawForAspect(vp.aspect);
   const cosP = Math.cos(yawDeg * DEG), sinP = Math.sin(yawDeg * DEG);
   const hudTop = hudTopOf(vp);
   const L = LOOKAHEAD_TARGET * speed;
   let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
-  for (const s of [-CAMERA.behind, L]) {
-    for (const x of [-HALF_W, HALF_W]) {
-      const [X, Y] = screenXY(s, x, cosP, sinP);
-      xMin = Math.min(xMin, X); xMax = Math.max(xMax, X); yMin = Math.min(yMin, Y); yMax = Math.max(yMax, Y);
-    }
+  // The four corners of the required region (s ∈ {−behind, L} × x ∈ {±HALF_W}); scalar code, no per-frame arrays.
+  for (let i = 0; i < 4; i++) {
+    const s = i < 2 ? -CAMERA.behind : L, x = i & 1 ? HALF_W : -HALF_W;
+    const X = screenX(s, x, cosP, sinP), Y = screenY(s, x, cosP, sinP);
+    xMin = Math.min(xMin, X); xMax = Math.max(xMax, X); yMin = Math.min(yMin, Y); yMax = Math.max(yMax, Y);
   }
   const H = Math.max(
     (xMax - xMin) / vp.aspect,
@@ -61,24 +61,34 @@ export function solveFraming(speed: number, vp: Viewport): Framing {
     -yMin / (1 - CAMERA.anchorFromTop),
   );
   const xCentre = (xMin + xMax) / 2;
-  return { H, yawDeg, lookAheadSec: lookAheadFor(H, speed, vp, yawDeg, xCentre), anchorY: CAMERA.anchorFromTop, hudTop,
-    rotate: rotateFor(vp), xCentre };
+  const lookAheadSec = lookAheadFor(H, speed, vp, yawDeg, xCentre), rotate = rotateFor(vp);
+  if (!out) return { H, yawDeg, lookAheadSec, anchorY: CAMERA.anchorFromTop, hudTop, rotate, xCentre };
+  out.H = H; out.yawDeg = yawDeg; out.lookAheadSec = lookAheadSec; out.anchorY = CAMERA.anchorFromTop; out.hudTop = hudTop;
+  out.rotate = rotate; out.xCentre = xCentre;
+  return out;
 }
 
 /** The run camera rig. Forward follow is rigid; vertical follows the ground height (τ 0.3 s); lateral follows 15%
  *  only when ψ > 0; H eases with τ = 2 s toward the framing for the speed 2 s ahead and never shrinks within a run.
  *  The follow easings run on game time (sim ticks elapsed, or the frame dt if larger), so manual stepping
  *  (`__skate.step(3600)`) frames exactly like real-time play. Shake and punch run on the frame dt. */
+/** The M0 Locker / Shop camera (DESIGN §8 "non-run cameras"): a low perspective camera (FOV 35°, 1.4 m high) behind
+ *  the skater looking down the street, with the skater's mid-body at 33% from the top (the turntable sits in the top
+ *  half, above the item panel). TODO(WA): the Title diorama, sky dome and skyline strips. */
+export const LOCKER_CAM = { fovDeg: 35, height: 1.4, dist: 11, targetY: 0.9, anchorFromTop: 0.33 } as const;
+
 export class RunCameraRig implements CameraRig {
-  readonly camera = new OrthographicCamera(-1, 1, 1, -1, 1, 200);
-  readonly menuCamera = new PerspectiveCamera(35, 1, 0.1, 400);
+  readonly runCamera = new OrthographicCamera(-1, 1, 1, -1, 1, 200);
+  readonly menuCamera = new PerspectiveCamera(LOCKER_CAM.fovDeg, 1, 0.1, 400);
+  /** The camera to render with: the ortho run camera, or the perspective camera in 'locker' mode. */
+  get camera(): OrthographicCamera | PerspectiveCamera { return this.mode === 'locker' ? this.menuCamera : this.runCamera; }
   private mode: CameraMode = 'run';
   private H = 0;
   private yawDeg = 0;
   private xCentre = 0;
   private groundY = 0;
   private lat = 0;
-  private vpKey = '';
+  private vpW = -1; private vpH = -1; private vpSafe = -1;
   private lastTick = -1;
   private reduced = false;
   private shakeAmp = 0; private shakeDur = 0; private shakeT = 0;
@@ -89,6 +99,7 @@ export class RunCameraRig implements CameraRig {
   private readonly tmp = new Vector3();
   private originS = 0;
   last: Framing = solveFraming(7, this.vp);
+  private readonly want: Framing = solveFraming(7, this.vp);
 
   setMode(m: CameraMode): void { this.mode = m; this.lastTick = -1; }
   setReducedMotion(on: boolean): void { this.reduced = on; }
@@ -102,14 +113,15 @@ export class RunCameraRig implements CameraRig {
   update(f: RenderFrame): void {
     const vp = f.viewport;
     this.vp = vp;
+    if (this.mode === 'locker') { this.placeLocker(f); return; }
     const dt = Math.max(0, f.dt);
-    const key = `${vp.wCss}x${vp.hCss}:${vp.safeTop}`;
+    const vpChanged = vp.wCss !== this.vpW || vp.hCss !== this.vpH || vp.safeTop !== this.vpSafe;
     const lead = Math.max(f.speed, speedAt(f.cur.t + CAMERA.zoomTau));
-    const want = solveFraming(lead, vp);
-    const reset = key !== this.vpKey || f.cur.tick < this.lastTick || this.lastTick < 0;
+    const want = solveFraming(lead, vp, this.want);
+    const reset = vpChanged || f.cur.tick < this.lastTick || this.lastTick < 0;
     // Game time since the last update: debug steps can advance thousands of ticks between two renders.
     const dtE = reset ? 0 : Math.max(dt, (f.cur.tick - this.lastTick) * DT);
-    this.vpKey = key;
+    this.vpW = vp.wCss; this.vpH = vp.hCss; this.vpSafe = vp.safeTop;
     this.lastTick = f.cur.tick;
     const gy = lerp(f.prev.groundY, f.cur.groundY, f.alpha);
     const px = lerp(f.prev.p.x, f.cur.p.x, f.alpha);
@@ -125,7 +137,10 @@ export class RunCameraRig implements CameraRig {
     }
     this.yawDeg = want.yawDeg;
     this.xCentre = want.xCentre;
-    this.last = { ...want, H: this.H, lookAheadSec: lookAheadFor(this.H, f.speed, vp, want.yawDeg, want.xCentre) };
+    // `last` is updated in place (read it, don't keep it): one framing object per rig, not per frame.
+    Object.assign(this.last, want);
+    this.last.H = this.H;
+    this.last.lookAheadSec = lookAheadFor(this.H, f.speed, vp, want.yawDeg, want.xCentre);
 
     // Effects (additive, off with reduced motion).
     let zoom = 1, shx = 0, shy = 0;
@@ -146,7 +161,7 @@ export class RunCameraRig implements CameraRig {
     // View direction: pitched down by θ, yawed by ψ so that +s leans toward screen right.
     this.dir.set(-Math.sin(yaw) * Math.cos(pitch), -Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
     this.target.set(latX, groundY, -(playerS - this.originS));
-    const cam = this.camera;
+    const cam = this.runCamera;
     cam.position.copy(this.target).addScaledVector(this.dir, -CAM_DIST);
     cam.up.set(0, 1, 0);
     cam.lookAt(this.target);
@@ -155,6 +170,24 @@ export class RunCameraRig implements CameraRig {
     cam.left = xc - halfW + shx; cam.right = xc + halfW + shx;
     cam.top = CAMERA.anchorFromTop * H + shy; cam.bottom = -(1 - CAMERA.anchorFromTop) * H + shy;
     cam.near = 1; cam.far = 200;
+    cam.updateProjectionMatrix();
+    cam.updateMatrixWorld();
+  }
+
+  /** Locker / Shop: behind the skater at 1.4 m, looking at its mid-body, which lands 33% from the top. */
+  private placeLocker(f: RenderFrame): void {
+    const vp = this.vp, cam = this.menuCamera;
+    const s = f.playerS, x = lerp(f.prev.p.x, f.cur.p.x, f.alpha), gy = lerp(f.prev.groundY, f.cur.groundY, f.alpha);
+    this.originS = originOf(s);
+    this.target.set(x, gy + LOCKER_CAM.targetY, -(s - this.originS));
+    cam.position.set(x, gy + LOCKER_CAM.height, this.target.z + LOCKER_CAM.dist);
+    cam.up.set(0, 1, 0);
+    cam.lookAt(this.target);
+    // A taller virtual frame (1.4 h, FOV over the full frame) whose centre is the target, cropped so the target sits
+    // at anchorFromTop.
+    const w = vp.wCss, h = vp.hCss, full = 1.4 * h;
+    cam.aspect = w / full;
+    cam.setViewOffset(w, full, 0, full / 2 - LOCKER_CAM.anchorFromTop * h, w, h);
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld();
   }
