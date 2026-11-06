@@ -40,7 +40,8 @@ export const S_OPEN: Template = {
         return { t1, t0Stretch: true };
       }
     }
-    c.coins.wave(c.t0 + 0.3, t1 - 0.3, x, GEN.coins.breatherAmp, c.coinRng.range(0, 6.28), c.datum + GEN.coins.groundY);
+    // Short fillers stay empty (A5: ≤ 10 % of coins on the safe line outside breathers).
+    if (t1 - c.t0 >= 1.6) c.coins.wave(c.t0 + 0.3, t1 - 0.3, x, GEN.coins.breatherAmp, c.coinRng.range(0, 6.28), c.datum + GEN.coins.groundY);
     return { t1, t0Stretch: true };
   },
 };
@@ -131,8 +132,11 @@ export function gateOpenings(rng: TemplateCtx['rng'], x0: number, lastGateX: rea
   const far = (x: number) => !lastGateX.some((o) => Math.abs(x - o) < GEN.gate.apart) && clear(x);
   const cand: number[] = [];
   const scan = (ok: (x: number) => boolean) => { if (!cand.length) for (let i = 0; i <= 66; i++) { const x = round1cm(-GEN.gate.maxC + i * 0.1); if (ok(x)) cand.push(x); } };
+  // Prefer a real move (A2) the myopic player can still make, then no move at all (the line already left the last
+  // openings), then anything apart from the last openings (the straight-bot guarantee needs only that).
   scan((x) => { const d = Math.abs(x - x0); return d >= GEN.gate.shift[0] && d <= GEN.gate.shift[1] && far(x); });
-  scan((x) => far(x) && Math.abs(x - x0) >= 2.0);
+  scan((x) => far(x) && Math.abs(x - x0) <= 1.0);
+  scan((x) => far(x) && Math.abs(x - x0) <= GEN.gate.shift[1]);
   scan((x) => far(x));
   scan((x) => Math.abs(x - x0) >= GEN.gate.shift[0] && clear(x));
   if (!cand.length) return null;
@@ -184,6 +188,19 @@ export const S_GATE: Template = {
     const pick = centres[0]!;
     const tRow = Math.max(actFrom(c) + T_SHIFT(Math.abs(pick - c.safeX)) + 0.3, c.t0 + 1.7) + c.rng.range(0, 0.15);
     const sRow = sOf(tRow);
+    // The approach carries a trick line beyond the opening (away from the entry, off the move path): a bench or a
+    // flat bar ending ≥ 1 s before the row (its exit zone stays clear of the blockers), coins along it.
+    const fA = contentFrom(c) + 0.2, fB = tRow - GEN.gate.featureGap;
+    if (fB - fA >= 0.45 && c.rng.chance(GEN.gate.feature)) {
+      const dir = Math.sign(pick - c.safeX) || 1;
+      const fx = round1cm(clamp(pick + dir * c.rng.range(1.3, 1.7), -3.3, 3.3));
+      if (Math.abs(fx - c.safeX) >= 1.2) {
+        const len = clamp(sAt(fB) - sAt(fA), 2.0, 5.0);
+        const f = c.rng.chance(0.5) || len < 3 ? buildBench(sOf(fB) - 2.0, fx, c.props) : buildFlatbar(round1cm(sAt(fB) - len), fx, round1cm(len), 0.35, c.props);
+        put(c, f);
+        c.coins.string(f.s + 0.2, f.s + f.len - 0.2, fx, f.solids[0]!.box.y1 + GEN.coins.edgeUp, c.v);
+      }
+    }
     for (const ob of gateRow(sRow, centres, w, c.props, c.rng)) put(c, ob);
     const tr = tAt(sRow);
     return { t1: tAt(sRow + 1.2) + 0.5, gateX: centres, gateT: tr, guides: [{ t0: tr - 0.45, t1: tr + 0.15, x0: pick - 0.25, x1: pick + 0.25 }] };
@@ -249,9 +266,9 @@ export const S_INCLINE_UP: Template = {
     put(c, buildIncline(s, len, rise, c.props));
     c.cuts.push([s, s + len]);
     c.datumAt.push({ s: s + len, datum: 0 });
-    // Wave up the slope (free coins).
-    for (let k = 0; k < 6; k++) {
-      const u = (k + 0.5) / 6;
+    // Wave up the slope (free coins, few: A5 keeps ≥ 75 % on trick lines).
+    for (let k = 0; k < 3; k++) {
+      const u = (k + 0.5) / 3;
       c.coins.add(s + u * len, round1cm(c.safeX + 1.2 * Math.sin(k * 0.9)), c.datum + rise * u + GEN.coins.groundY, 'breather');
     }
     return { t1: Math.min(c.maxT1, tAt(s + len) + 0.5), t0Stretch: true };

@@ -354,9 +354,16 @@ export class Generator implements WorldGen {
     // Row slots: times in the deadline window where the row can stand (beside the template's obstacles, never across
     // pits, slopes, or a grind edge's end: exit zone, rail-end rule).
     const slots: { tr: number; keepOut: [number, number][] }[] = [];
+    // A row whose opening is at the line needs no move (the line already left the last row's openings); otherwise
+    // the line needs a ≥ 3 m move before the row, after the head window and the last action's spacing.
+    const lastP = c.lastGateX;
+    const atLine = (x: number) => Math.abs(x) <= GEN.gate.maxC && lastP.every((p) => Math.abs(x - p) >= GEN.gate.apart + 0.2);
+    const tLoAt = Math.max(t0 + GEN.noActionHead, earliest) + 0.5;
+    const tLoMove = Math.max(t0 + GEN.noActionHead, earliest) + T_SHIFT(GEN.gate.shift[0]) + 0.35;
+    const tHiRow = Math.min(c.gateDueT, t1 - 0.45);
     if (wantRow) {
-      const tLo = Math.max(t0 + GEN.gate.lead, earliest + T_SHIFT(3.0) + 0.3), tHi = Math.min(c.gateDueT, t1 - 0.6);
-      for (let tr = tHi; tr >= tLo && slots.length < 3; tr -= 0.25) {
+      const tLo = atLine(c.safeX) ? tLoAt : tLoMove;
+      for (let tr = tHiRow; tr >= tLo && slots.length < 3; tr -= 0.25) {
         const sr = sAt(tr), vr = speedAt(tr);
         const keepOut: [number, number][] = [];
         let bad = false;
@@ -376,13 +383,19 @@ export class Generator implements WorldGen {
       const nextRow = (gw.start - t1 < GEN.gate.fit && t1 < gw.end) ? gw.end + GEN.gate.lead : t1 + GEN.gate.lead;
       return nextRow > c.gateDueT + 0.3;
     };
+    if (wantRow && !slots.length && GEN_DEBUG.onReject) {
+      GEN_DEBUG.onReject({ index, t0, tpl: tpl.id, tier: plan.tier, attempt, why: `  detail noslot t0=${t0.toFixed(2)} t1=${t1.toFixed(2)} hi=${tHiRow.toFixed(2)} due=${c.gateDueT.toFixed(2)} late=${rowLate()}` });
+    }
     if (wantRow && !slots.length && rowLate()) return fail('gate');
     const tryRows = (xAt: (t: number) => number, from: number, maxTries: number): boolean => {
       for (let k = Math.max(0, from); k < Math.min(slots.length, Math.max(0, from) + maxTries); k++) {
         const { tr, keepOut } = slots[k]!;
         const sr = sAt(tr);
         const gt = Math.max(2, plan.tier) as Tier;
-        const centres = gateOpeningsFor(rng, xAt(tr - 0.7), c.lastGateX, gt, keepOut);
+        const x0 = xAt(tr - 0.7);
+        const w = GEN.gate.width[gt];
+        const clear = (x: number) => !keepOut.some(([a, b]) => x + w / 2 > a && x - w / 2 < b);
+        const centres = atLine(x0) && clear(round1cm(x0)) ? [round1cm(x0)] : tr >= tLoMove ? gateOpeningsFor(rng, x0, c.lastGateX, gt, keepOut) : null;
         if (!centres) continue;
         const row = gateRow(round1cm(sr), centres, GEN.gate.width[gt], props, rng, keepOut);
         const guide = [{ t0: tr - 0.45, t1: tr + 0.15, x0: centres[0]! - 0.25, x1: centres[0]! + 0.25 }];

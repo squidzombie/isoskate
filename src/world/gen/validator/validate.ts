@@ -141,7 +141,7 @@ export function validate(st: ValState, inp: ValInput): ValResult {
   // (i) the greedy player.
   if (inp.greedy && !inp.relax) {
     const g = greedyCheck(r, iP, cellX(cP), iT);
-    if (g >= 0) return { ok: false, why: 'i:greedy', detail: `fail t=${r.t[g]!.toFixed(2)} start x=${cellX(cP)} t0=${inp.t0.toFixed(2)}` };
+    if (g >= 0) return { ok: false, why: 'i:greedy', detail: `fail t=${r.t[g]!.toFixed(2)} start x=${cellX(cP)} t0=${inp.t0.toFixed(2)}` + (VAL_DEBUG.dump ? '\n' + dumpGround(r, iP, Math.min(r.n - 1, g + 3)) : '') };
   }
   // (e), (d), (g).
   const band = checkBands(inp.seg, inp.groundHi);
