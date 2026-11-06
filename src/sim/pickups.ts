@@ -15,7 +15,8 @@ export function pickups(k: Ctx): void {
   const cy = c.p.y + COIN_VOLUME.centreUp;
   for (const coin of k.world.coins(c.p.s - COIN_VOLUME.fwd, c.p.s + COIN_VOLUME.fwd)) {
     if (st.collected.has(coin.id)) continue;
-    if (Math.abs(coin.p.x - c.p.x) > COIN_VOLUME.lat || Math.abs(coin.p.y - cy) > COIN_VOLUME.vert) continue;
+    // Inclusive bounds (+1 µm): a coin string on a 0.6 m ledge's centre is exactly 0.3 m from either grind edge.
+    if (Math.abs(coin.p.x - c.p.x) > COIN_VOLUME.lat + 1e-6 || Math.abs(coin.p.y - cy) > COIN_VOLUME.vert + 1e-6) continue;
     st.collected.add(coin.id);
     st.coinChain = c.tick - st.lastCoinTick <= CHAIN_TICKS ? st.coinChain + 1 : 0;
     st.lastCoinTick = c.tick;
@@ -56,8 +57,9 @@ export function markers(k: Ctx): void {
   }
   if (a.area !== st.area) {
     st.area = a.area;
+    // Arrivals through a gateway count; the starting area never counts as "reached" (DESIGN §12.1).
     const first = !sc.areasReached.includes(a.area) && a.area !== (st.cfg.startArea ?? 'downtown');
-    if (!sc.areasReached.includes(a.area)) sc.areasReached.push(a.area);
+    if (first) sc.areasReached.push(a.area);
     sc.furthestArea = a.area;
     k.ev.push({ t: 'areaEnter', tick: c.tick, area: a.area, firstThisRun: first });
     addBonus(sc, k.ev, c.tick, c.mode, 'newGround', 'New Ground', SCORE.bonus.newGround, false);

@@ -39,7 +39,7 @@ export class SimImpl implements Sim, Ctx {
   private _worldKey: string;
   private readonly intents: Intent[] = [];
   private readonly view: InterpretView = { mode: 'roll', airLeft: 0, popBleed: 0, coyote: 0, flip: null, spin: null,
-    pickOpen: false, comboWindow: -1, onTop: false, manual: false };
+    pickOpen: false, comboWindow: -1, onTop: false, manual: false, manualLatched: false };
   private readonly makeWorld: MakeWorld;
 
   constructor(readonly tables: TrickTables, deps?: SimDeps) {
@@ -84,6 +84,8 @@ export class SimImpl implements Sim, Ctx {
     v.mode = c.mode; v.airLeft = c.airLeft; v.popBleed = c.popBleed; v.coyote = c.coyote; v.flip = c.flip; v.spin = c.spin;
     v.pickOpen = st.pick.open; v.comboWindow = sc.combo.active ? sc.combo.window : -1; v.manual = c.mode === 'manual';
     v.onTop = (f.hold || f.manualKey) && c.mode === 'roll' ? onTop(this) : false;
+    if (!f.hold && !f.manualKey) st.manualLatch = false;
+    v.manualLatched = st.manualLatch;
     for (const it of interpret(v, f, this.tables, this.intents)) {
       if (this.apply(it) && 'swipe' in it && it.swipe && f.swipeDx) { nudgeTarget(this, -f.swipeDx); applied -= f.swipeDx; }
       if (st.cur.mode === 'crashed') return ev;
@@ -151,7 +153,7 @@ export class SimImpl implements Sim, Ctx {
       case 'pick': addPick(this, it.dir); if (c.mode === 'grind') latePick(this); return true;
       case 'popOut': endGrind(this, 'pop', null); return true;
       case 'spinOut': endGrind(this, 'pop', it.dir); return true;
-      case 'manualStart': startManual(this); return false;
+      case 'manualStart': startManual(this); this.st.manualLatch = true; return false;
       case 'bufferOllie': bufferOllie(this); return false;
     }
   }

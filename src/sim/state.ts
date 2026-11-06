@@ -38,6 +38,7 @@ export interface SimState {
   flipFrom: { roll: number; yaw: number; pitch: number };  // board angle (deg) the rotating flip eases from (upgrades)
   grindSnap: { dx: number; dy: number; entry: number };   // lock offsets (eased out over CAPTURE.snapT), combo entry idx
   manualEntry: number;                  // combo entry index of the running manual (−1)
+  manualLatch: boolean;                 // the hold / key that started a manual is still down: no restart until released
   landTick: number; landDrop: number;   // last touchdown tick and its drop (pose landImpulse)
   slabKind: GroundSlab['kind']; stairStep: number; groundOb: number;   // ground under the board (stickiness, stairs, pads)
   tier: 0 | 1 | 2 | 3; area: AreaId; gateway: GatewayId | null; bestPassed: boolean;
@@ -90,7 +91,7 @@ export function initState(cfg: RunConfig): SimState {
     cfg, startT, s0: cur.p.s, cur, prev: initSkater(startT), score: initScore(startArea),
     air: freshAir(), pick: { open: false, edgeId: -1, dirs: [], tick: -1 },
     pred: { tLand: 0, landY: 0, captureEdge: -1, tCapture: Infinity, magnetEdge: -1, magnetX: 0 },
-    flipFrom: { roll: 0, yaw: 0, pitch: 0 }, grindSnap: { dx: 0, dy: 0, entry: -1 }, manualEntry: -1,
+    flipFrom: { roll: 0, yaw: 0, pitch: 0 }, grindSnap: { dx: 0, dy: 0, entry: -1 }, manualEntry: -1, manualLatch: false,
     landTick: -1, landDrop: 0, slabKind: 'flat', stairStep: -1, groundOb: -1,
     tier: 0, area: startArea, gateway: null, bestPassed: false,
     collected: new Set(), knocked: new Set(), ghosted: new Set(), warned: new Set(),

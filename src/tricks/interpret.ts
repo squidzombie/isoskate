@@ -36,6 +36,7 @@ export interface InterpretView {
   comboWindow: number;             // link window seconds left (−1 paused / no combo)
   onTop: boolean;                  // rolling on a manual pad or ledge top
   manual: boolean;                 // a manual is active
+  manualLatched: boolean;          // the hold / key that started the last manual is still down (no auto-restart)
 }
 
 const POP_DIRS: readonly Dir8[] = ['u', 'ur', 'ul'];
@@ -72,7 +73,7 @@ export function interpret(v: InterpretView, f: Readonly<InputFrame>, tables: Tri
         if (sw === 'ur' || sw === 'ul') { out.push({ k: 'spinOllie', dir: sw, swipe: true }); return out; }
       }
       if (f.tap) { out.push({ k: 'ollie', swipe: false }); return out; }
-      if (v.mode === 'roll' && !v.manual && (f.manualKey || (f.hold && (v.comboWindow > 0 || v.onTop)))) {
+      if (v.mode === 'roll' && !v.manual && !v.manualLatched && (f.manualKey || (f.hold && (v.comboWindow > 0 || v.onTop)))) {
         out.push({ k: 'manualStart' });
       }
       return out;

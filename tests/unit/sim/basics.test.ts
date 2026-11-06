@@ -238,3 +238,19 @@ describe('coyote and jump buffer', () => {
     expect(V_POP).toBe(6.6);
   });
 });
+
+describe('manual (M0 minimum, DESIGN §6.4)', () => {
+  it('a resting thumb outside a combo starts nothing; HOLD inside the link window manuals for the 3.0 s budget, once', () => {
+    const rest = make([]);
+    expect(kinds(run(rest, 200, () => ({ hold: true, press: true })))).not.toContain('manualStart');
+
+    const sim = make([]);
+    const ev = run(sim, 600, (i) => (i === 10 ? { tap: true } : i >= 47 ? { hold: true, press: true } : {}));
+    const starts = ev.filter((e) => e.t === 'manualStart');
+    expect(starts.length).toBe(1);
+    const end = ev.find((e): e is Extract<GameEvent, { t: 'manualEnd' }> => e.t === 'manualEnd')!;
+    expect(end.reason).toBe('budget');
+    expect(end.dur).toBeCloseTo(3.0, 1);
+    expect(ev.some((e) => e.t === 'trickScored' && e.id === 'manual')).toBe(true);
+  });
+});
