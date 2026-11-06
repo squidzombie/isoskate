@@ -117,7 +117,9 @@ export function steppedBody(ob: Obstacle, s0: number, s1: number, x0: number, x1
     const a = s0 + ((s1 - s0) * k) / pieces, b = s0 + ((s1 - s0) * (k + 1)) / pieces;
     const ya = yAt(a), yb = yAt(b);
     const y1 = round1cm(top === 'landable' ? Math.min(ya, yb) : Math.max(ya, yb));
-    const y0 = round1cm(Math.min(base(a), base(b)));
+    // Crash tops (rails) stand on the piece's higher ground: the box is never taller than the rail is (no box height
+    // in the forbidden band); a board beside the low end still meets it (the gap under it is < the hitbox height).
+    const y0 = round1cm(top === 'landable' ? Math.min(base(a), base(b)) : Math.max(base(a), base(b)));
     if (top === 'landable' && y1 - Math.max(base(a), base(b)) <= STEP_UP) continue;
     const so: Solid = { box: { s0: round1cm(a), s1: round1cm(b), x0: round1cm(x0), x1: round1cm(x1), y0, y1 }, top,
       tall: y1 - y0 >= HEIGHT.tallMin };

@@ -460,7 +460,9 @@ export class Generator implements WorldGen {
     const gw = gatewayWindow(t, this.startArea);
     const startBy = c.gateDueT - GEN.gate.lead;
     if (startBy >= gw.end || startBy <= gw.start - GEN.gate.fit) return startBy;
-    return gw.start - GEN.gate.fit;
+    // The deadline falls in (or just before) a gateway: the gate comes right after it (one gateway of slack, the
+    // straight-bot guarantee is met by the rows before), rather than a second gate squeezed in front of it.
+    return gw.end;
   }
 
   /** The latest time ≤ tLatest a wander wall can stand (head window, spacing from the line's previous action). */

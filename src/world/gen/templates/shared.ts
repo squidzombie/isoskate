@@ -184,7 +184,11 @@ export const S_GATE: Template = {
   id: 'S_GATE', area: 'shared', tiers: [2, 3, 4], durMax: 2.9, mirror: true, wander: true,
   build(c: TemplateCtx): TemplateOut | null {
     const w = GEN.gate.width[c.tier];
-    const centres = gateOpenings(c.rng, c.safeX, c.lastGateX, c.tier);
+    // The first row of a run (or one where the line already left the last openings) opens at the line: no move, so
+    // it may stand early (inside a spawn grace); the next row then forces the shift.
+    const atLine = !c.a3 && Math.abs(c.safeX) <= GEN.gate.maxC && c.lastGateX.every((p) => Math.abs(c.safeX - p) >= GEN.gate.apart + 0.2)
+      && (c.lastGateX.length === 0 || c.rng.chance(0.35));
+    const centres = atLine ? [round1cm(c.safeX)] : gateOpenings(c.rng, c.safeX, c.lastGateX, c.tier);
     if (!centres) return null;
     const pick = centres[0]!;
     // With the A3 hazard: a full-width barrier first (ollie), the move to the opening after the landing and R_MIN.
@@ -195,7 +199,8 @@ export const S_GATE: Template = {
       put(c, buildBarrier(round1cm(sAt(tTake + 0.3) - 0.3), hgt, speedAt(tTake), c.props));
       moveFrom = tTake + Math.max(rMinAt(tTake), 0.9) + 0.05;
     }
-    const tRow = Math.max(moveFrom + T_SHIFT(Math.abs(pick - c.safeX)) + 0.3, c.t0 + 1.7) + c.rng.range(0, 0.15);
+    const tRow = atLine ? contentFrom(c) + 0.9 + c.rng.range(0, 0.15)
+      : Math.max(moveFrom + T_SHIFT(Math.abs(pick - c.safeX)) + 0.3, c.t0 + 1.7) + c.rng.range(0, 0.15);
     const sRow = sOf(tRow);
     // The approach carries a trick line beyond the opening (away from the entry, off the move path): a bench or a
     // flat bar ending ≥ 1 s before the row (its exit zone stays clear of the blockers), coins along it.
@@ -236,7 +241,9 @@ export const S_STAIRS: Template = {
   id: 'S_STAIRS', area: 'shared', tiers: [1, 2, 3], durMax: 3.0, mirror: true,
   build(c: TemplateCtx): TemplateOut | null {
     const v = c.v;
-    if (c.tier <= 1) {
+    // A terrace drops the datum: only with room to pay it back before the visit ends (DESIGN §10.5), else a side set.
+    const canDrop = c.maxT1 - c.t0 >= GEN.datum.dropRoomSec && c.datum - stairDrop(5) >= GEN.datum.min - 1e-6 && c.area !== 'docks';
+    if (c.tier <= 1 || !canDrop) {
       // A 3-stair side set: a 0.51 m platform (pop up onto it) on one side, its stairs back down to the street.
       const sd = side(c);
       const x0 = sd > 0 ? 1.8 : -4.5, x1 = sd > 0 ? 4.5 : -1.8;
@@ -247,7 +254,6 @@ export const S_STAIRS: Template = {
       c.coins.string(set.s + 0.6, set.s + plat - 0.4, (x0 + x1) / 2, c.datum + stairDrop(3) + GEN.coins.padUp, v);
       return { t1: endAfter(c, 0.7) };
     }
-    if (c.datum - stairDrop(7) < GEN.datum.min - 1e-6 || c.area === 'docks') return null;
     const n = c.tier >= 3 && c.datum - stairDrop(7) >= GEN.datum.min ? 7 : 5;
     const tA = contentFrom(c) + 0.5 + c.rng.range(0, 0.3);
     const s = sOf(tA);

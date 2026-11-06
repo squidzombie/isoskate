@@ -78,7 +78,7 @@ export function planSegment(c: GenCursor, env: PlanEnv, rng: Sfc32): Plan {
   // template) lands by the A3 maximum.
   // Before a gateway (T0: the A-clock pauses) the last slot that fits a hazard takes it when the A3 maximum would
   // otherwise fall soon after the gateway.
-  const preGw = left < 9.0 && a3MaxLeft < left + GEN.a3Lead;
+  const preGw = left < 9.0 && a3MaxLeft - left < GEN.a3Lead - 2.0;
   const a3Due = clocks && (env.force === 'a3' || c.aClock + 0.5 >= c.fwDueA || a3MaxLeft < GEN.a3Lead || preGw) && left >= 2.4;
   if (a3Due && env.gateRoom >= 2.4) return a3Plan(rng, tier, env.trench);
   if (clocks && (gateNow || a3Due) && left >= gate.durMax) {
