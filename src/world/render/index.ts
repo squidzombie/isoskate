@@ -13,5 +13,6 @@ export function createCameraRig(): CameraRig {
 }
 
 export { solveFraming, lookAheadFor, yawForAspect, hudTopOf, type Framing } from './camera';
-export { heightClass, solidColor, COLORS, SURFACE_COLOR } from './chunkBuilder';
+export { heightClass, solidColor } from './chunkBuilder';
+export { COLORS, SURFACE_COLOR, CONTACT } from './palette';
 export { buildOptionsFor, VIEW, type GreyboxView } from './view';

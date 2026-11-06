@@ -4,18 +4,26 @@
 //     measured once it is whole). Its silhouette (convex hull of the projected box, minus nearer solids and the
 //     skater) vs the ground ring around it (the hull dilated by RING_PX, minus every solid): mean relative luminance,
 //     contrast ratio (L1 + 0.05) / (L2 + 0.05). Gate ≥ 2.5:1.
-//   - edge: every visible grind edge. Luminance profiles across the projected edge at 5 points: the cream stripe
-//     (brightest pixels on the line), the ink underline (darkest pixels next to it) and the surface beside them.
-//     The better of the two stripes counts (DESIGN: "at least one of its two stripes"). Gate ≥ 1.8:1.
+//   - edge: every visible grind edge. At 5 points along it, a patch across the projected edge (5 px along it): the
+//     cream stripe is the run of offsets around the brightest one that stays above halfway to the surface, the ink
+//     underline the same around the darkest; each stripe's value is the median of all its pixels (not one extreme
+//     pixel), the surface the median of the pixels beside them. The better of the two stripes counts (DESIGN: "at
+//     least one of its two stripes"). The search width comes from CAMERA.minEdgePx and EDGE_SEARCH_M, not from any
+//     renderer, so the gate measures whatever world/render draws. Gate ≥ 1.8:1.
 // NaN means nothing of that class was in view.
 import { Box3, Vector3 } from 'three';
 import type { V3 } from '../core/math';
-import { buildOptionsFor } from '../world/render';
+import { CAMERA } from '../core/tuning';
 import type { DebugHost } from './api';
 
 export const CONTRAST_GATE = { hazard: 2.5, edge: 1.8 } as const;
 /** Width of the "ground around it" ring, CSS px. */
 export const RING_PX = 8;
+/** Half-width across a grind edge within which its stripes are looked for, m (at least 1.5 × minEdgePx on screen);
+ *  the surface is read in the 6 px beyond it. */
+export const EDGE_SEARCH_M = 0.08;
+/** Patch length along the edge at each sample point, device px (odd). */
+const ALONG_PX = 5;
 
 export interface ContrastItem {
   cls: 'hazard' | 'edge'; kind: string; id: number; ratio: number; fg: number; bg: number; px: number;
@@ -70,8 +78,6 @@ export function measureContrast(host: DebugHost): ContrastReport {
 
   const vp = readCss(host);
   const sx = W / vp.w, sy = H / vp.h;
-  const bo = buildOptionsFor({ wCss: vp.w, hCss: vp.h, dpr: sx, aspect: vp.w / vp.h, safeTop: vp.safeTop, safeBottom: 0, coarse: false });
-  const stripeM = bo.edgeHalfW + bo.inkPad;
   const proj = (p: V3): P => { const q = host.cameraRig.project(p); return [q.x * sx, q.y * sy]; };
   const hudBottom = Math.ceil((vp.safeTop + 56) * sy);
   const sim = host.sim(), cur = sim.cur;
@@ -135,35 +141,64 @@ export function measureContrast(host: DebugHost): ContrastReport {
       at: { x0: bx0 / sx, y0: by0 / sy, x1: bx1 / sx, y1: by1 / sy } });
   }
 
-  // Edges: luminance profiles across the projected edge.
+  // Edges: luminance patches across the projected edge.
   const pick = (x: number, y: number) => {
     const xi = Math.round(x), yi = Math.round(y);
     return usable(xi, yi) ? L[yi * W + xi]! : NaN;
   };
+  const halfAlong = (ALONG_PX - 1) / 2;
   for (const o of obs) {
     for (const e of o.edges) {
       const rs: number[] = [], fgs: number[] = [], bgs: number[] = [];
       let ax0 = Infinity, ay0 = Infinity, ax1 = -Infinity, ay1 = -Infinity;
+      const span = Math.max(1e-6, e.b.s - e.a.s);
+      const at = (u: number): V3 => ({ s: e.a.s + (e.b.s - e.a.s) * u, x: e.a.x + (e.b.x - e.a.x) * u, y: e.a.y + (e.b.y - e.a.y) * u });
       for (const u of [0.15, 0.32, 0.5, 0.68, 0.85]) {
-        const p: V3 = { s: e.a.s + (e.b.s - e.a.s) * u, x: e.a.x + (e.b.x - e.a.x) * u, y: e.a.y + (e.b.y - e.a.y) * u };
+        const p = at(u);
         if (p.s < s + 1 || p.s > s + ahead) continue;
-        const c = proj(p), q = proj({ ...p, x: p.x + 1 });
+        const c = proj(p), q = proj({ ...p, x: p.x + 1 }), t2 = proj(at(Math.min(1, u + 0.5 / span)));
         // Hidden behind a nearer, taller solid of another obstacle (a parked car in front of a curb): not visible.
         if (shapes.some((o) => o.id !== e.obstacleId && o.s0 < p.s - 0.01 && o.y1 > p.y + 0.02 && inside(o.poly, c[0], c[1]))) continue;
         let nx = q[0] - c[0], ny = q[1] - c[1];
         const pxPerM = Math.hypot(nx, ny);
-        if (pxPerM < 1e-6) continue;
-        nx /= pxPerM; ny /= pxPerM;
-        const reach = Math.max(2, Math.ceil(stripeM * pxPerM) + 1);          // the stripes: ±(half cream + ink)
-        const prof: number[] = [];
-        for (let d = -reach - 6; d <= reach + 6; d++) prof.push(pick(c[0] + nx * d, c[1] + ny * d));
-        const mid = reach + 6;
-        const near = prof.slice(mid - reach, mid + reach + 1).filter(Number.isFinite);
-        const side = [...prof.slice(0, 4), ...prof.slice(prof.length - 4)].filter(Number.isFinite);
-        if (near.length < 2 || side.length < 3) continue;
-        const cream = Math.max(...near), ink = Math.min(...near), surf = side.reduce((a, b) => a + b, 0) / side.length;
-        const r = Math.max(ratioOf(cream, surf), ratioOf(ink, surf));
-        rs.push(r); fgs.push(ratioOf(cream, surf) >= ratioOf(ink, surf) ? cream : ink); bgs.push(surf);
+        let tx = t2[0] - c[0], ty = t2[1] - c[1];
+        const tl = Math.hypot(tx, ty);
+        if (pxPerM < 1e-6 || tl < 1e-6) continue;
+        nx /= pxPerM; ny /= pxPerM; tx /= tl; ty /= tl;
+        const reach = Math.max(2, Math.ceil(Math.max(EDGE_SEARCH_M * pxPerM, 1.5 * CAMERA.minEdgePx * sx)) + 1);
+        // patch[d][a]: offset d across (−reach−6 … reach+6), a along; col[d] = the along-median at that offset.
+        const n = 2 * (reach + 6) + 1, mid = reach + 6;
+        const patch: number[][] = [], col: number[] = [];
+        for (let i = 0; i < n; i++) {
+          const d = i - mid, row: number[] = [];
+          for (let a = -halfAlong; a <= halfAlong; a++) {
+            const l = pick(c[0] + nx * d + tx * a, c[1] + ny * d + ty * a);
+            if (Number.isFinite(l)) row.push(l);
+          }
+          patch.push(row);
+          col.push(row.length > halfAlong ? median(row) : NaN);
+        }
+        const side = [...patch.slice(0, 4), ...patch.slice(n - 4)].flat();
+        if (side.length < 3 * ALONG_PX) continue;
+        const surf = median(side);
+        let hi = -1, lo = -1;
+        for (let i = mid - reach; i <= mid + reach; i++) {
+          if (!Number.isFinite(col[i]!)) continue;
+          if (hi < 0 || col[i]! > col[hi]!) hi = i;
+          if (lo < 0 || col[i]! < col[lo]!) lo = i;
+        }
+        if (hi < 0) continue;
+        // The stripe: the contiguous offsets around the extreme that stay past halfway to the surface.
+        const stripe = (k: number, brighter: boolean) => {
+          const half = (col[k]! + surf) / 2, keep = (v: number) => Number.isFinite(v) && (brighter ? v >= half : v <= half);
+          let a = k, b = k;
+          while (a - 1 >= mid - reach && keep(col[a - 1]!)) a--;
+          while (b + 1 <= mid + reach && keep(col[b + 1]!)) b++;
+          return median(patch.slice(a, b + 1).flat());
+        };
+        const cream = stripe(hi, true), ink = stripe(lo, false);
+        const rc = ratioOf(cream, surf), ri = ratioOf(ink, surf);
+        rs.push(Math.max(rc, ri)); fgs.push(rc >= ri ? cream : ink); bgs.push(surf);
         ax0 = Math.min(ax0, c[0]); ay0 = Math.min(ay0, c[1]); ax1 = Math.max(ax1, c[0]); ay1 = Math.max(ay1, c[1]);
       }
       if (rs.length < 2) continue;

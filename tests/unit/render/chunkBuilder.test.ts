@@ -187,6 +187,48 @@ describe('streaming WorldView', () => {
     expect(view.debugInfo().coinSlotsUsed).toBe(0);
   });
 
+  it('behind the start, the start street (sidewalk, curb edge, buildings) is continued backward with no seam', () => {
+    // Generated content begins at s = 74 (chunk 2) and the run starts at 75: chunk 1 and the first 10 m of chunk 2
+    // are filled from that cross-section; nothing is generated before it.
+    const curbAt = (s0: number, s1: number) => ob({ id: 900, kind: 'curb', s: s0, len: s1 - s0,
+      slabs: [{ s0, s1, x0: 3, x1: 4.5, y0: 0.15, y1: 0.15, layer: 0, surface: 'concrete', kind: 'flat' }],
+      edges: [{ id: 901, obstacleId: 900, a: { s: s0, x: 3, y: 0.15 }, b: { s: s1, x: 3, y: 0.15 }, kind: 'curb', material: 'concrete', layer: 0, pickOnly: true }] });
+    const gen: WorldGen = { ...fakeGen(), chunk: (i: number): Chunk => {
+      const s0 = i * CHUNK_LEN;
+      const has = i >= 2;
+      return { index: i, s0, len: CHUNK_LEN, area: 'downtown', blend: null, coins: [], safe: [], segments: [],
+        obstacles: has ? [curbAt(Math.max(74, s0), s0 + CHUNK_LEN)] : [],
+        decor: has ? [{ kind: 'building', s: Math.max(74, s0) + 1, x: 5.2, y: 0.15, rotY: 0, scale: 1, variant: 1, castShadow: true, params: { w: 8, d: 12, h: 10 } }] : [] };
+    } };
+    const ctx = fakeCtx(), view = createWorldView(ctx) as GreyboxView;
+    view.attach(gen);
+    for (let k = 0; k < 6; k++) view.update(frame(75));
+    expect(view.debugInfo().chunks).toEqual([1, 2, 3, 4, 5]);
+    const world = ctx.scene.getObjectByName('world')!;
+    type M = { geometry: { attributes: { position: { array: Float32Array }; color: { array: Float32Array } }; drawRange: { count: number } } };
+    const verts = (name: string, hex: number) => {
+      const out: number[][] = [];
+      for (const m of world.getObjectByName(name)!.children as unknown as M[]) {
+        const a = m.geometry.attributes;
+        const n = Math.min(m.geometry.drawRange.count, a.position.array.length / 3);
+        out.push(...verticesOfColor({ pos: a.position.array, col: a.color.array, count: n }, hex));
+      }
+      return out;
+    };
+    const walk = (name: string) => verts(name, 0xd9c3ae).filter((p) => p[0]! >= 3 - 1e-6 && p[0]! <= 4.5 + 1e-6).map((p) => p[2]!);
+    // Chunk 1 (all filler): the sidewalk spans the whole chunk, its curb edge and a building are there.
+    expect(Math.min(...walk('chunk1'))).toBeCloseTo(-CHUNK_LEN, 6);
+    expect(Math.max(...walk('chunk1'))).toBeCloseTo(0, 6);
+    expect(verts('chunk1', COLORS.edgeCream).length).toBeGreaterThan(0);
+    expect(verts('chunk1', COLORS.building[1]).length).toBeGreaterThan(0);
+    // Chunk 2: filler over 64..74 meets the generated sidewalk at 74 (z = −10); no filler backdrop crosses it.
+    expect(Math.min(...walk('chunk2'))).toBeCloseTo(-CHUNK_LEN, 6);
+    expect(Math.max(...walk('chunk2'))).toBeCloseTo(0, 6);
+    const fillerBld = verts('chunk2', COLORS.building[1]).filter((p) => p[2]! > -10 + 1e-6);
+    expect(fillerBld.length).toBeGreaterThan(0);
+    expect(Math.min(...fillerBld.map((p) => p[2]!))).toBeGreaterThanOrEqual(-10 - 1e-6);
+  });
+
   it('collected coins are hidden (and stay hidden when their chunk is rebuilt)', () => {
     const ctx = fakeCtx(), view = createWorldView(ctx) as GreyboxView;
     view.attach(fakeGen());

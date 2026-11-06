@@ -18,7 +18,7 @@ const POPUP_COLOR: Readonly<Record<PopupKind, string>> = {
   flip: '#FFE3A3', grind: '#8FE3FF', manual: '#C3A8FF', gap: '#FF9E7A', perfect: '#FFC94A', sketchy: '#C9C2B8', bonus: '#7EE0B5',
 };
 const CORAL = '#FF5E6C';
-export const HUD_TIMING = { textHz: 15, popupSec: 0.5, trickHoldSec: 1.6 } as const;
+export const HUD_TIMING = { textHz: 15, popupSec: 0.5, trickHoldSec: 1.6, trickMinPx: 8 } as const;
 
 /** HUD layout preview values (debug `__skate.ext.hud`). */
 export interface HudPreviewValues { score?: number; dist?: number; speed?: number; combo?: number; links?: number; coins?: number; trick?: string }
@@ -61,6 +61,19 @@ export function createHud(root: HTMLElement, raise: (i: UiIntent) => void): HudE
       h('div', { class: 'hud-right' }, coins, pause)),
     pop,
   );
+  /** The trick name shrinks to fit the middle column (down to HUD_TIMING.trickMinPx; past that it ellipsizes),
+   *  measured only when the text changes. */
+  const setTrick = (text: string) => {
+    if (trick.textContent === text) return;
+    trick.textContent = text;
+    trick.style.fontSize = '';
+    if (!text || typeof getComputedStyle === 'undefined') return;
+    const w = trick.clientWidth, sw = trick.scrollWidth;
+    if (w > 0 && sw > w) {
+      const base = parseFloat(getComputedStyle(trick).fontSize) || 11;
+      trick.style.fontSize = `${Math.max(HUD_TIMING.trickMinPx, Math.floor(((base * w) / sw) * 10) / 10)}px`;
+    }
+  };
   let acc = 1;
   let trickTtl = 0;
   let lastLinks = -1, bumpFlip = false, lastTier = '';
@@ -105,11 +118,11 @@ export function createHud(root: HTMLElement, raise: (i: UiIntent) => void): HudE
         if (links !== lastLinks && lastLinks >= 0) { bumpFlip = !bumpFlip; combo.style.animationName = bumpFlip ? 'hud-bump-a' : 'hud-bump-b'; }
         lastLinks = links;
       } else lastLinks = -1;
-      if (v?.trick !== undefined) setText(trick, v.trick);
-      else if (trickTtl <= 0 && !active) setText(trick, '');
+      if (v?.trick !== undefined) setTrick(v.trick);
+      else if (trickTtl <= 0 && !active) setTrick('');
     },
     hint(_id: string | null) { /* TODO(MU): the hint component (DESIGN §12.5) */ },
-    lastTrick(name: string) { setText(trick, name); trickTtl = HUD_TIMING.trickHoldSec; },
+    lastTrick(name: string) { setTrick(name); trickTtl = HUD_TIMING.trickHoldSec; },
     popup(text: string, kind: PopupKind, predicted = false) {
       setText(pop, text);
       popColor = POPUP_COLOR[kind];

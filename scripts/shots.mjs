@@ -12,7 +12,7 @@
 //     --hud        HUD layouts at 320 / 360 / 390 px (live and a worst-case preview), overlap and 56 px band
 //                  checks; exits 1 on a failure                                          → artifacts/shots/hud/
 //     --audio      20 s renderAudio per area as 16-bit WAV with the peak in dBFS; a null render (the M0 audio stub)
-//                  prints a note and exits 0; clipping (peak > −1 dBFS) or silence exits 1 → artifacts/audio/
+//                  prints a note and exits 0; a peak ≥ 1.0 or silence exits 1 (above −1 dBFS warns) → artifacts/audio/
 // Several modes may be combined. Uses the preview server on $PORT (default 5173) if one is up; otherwise builds
 // (unless --no-build) and starts `vite preview`. Chromium comes from /opt/pw-browsers (never `playwright install`).
 import { execSync, spawn } from 'node:child_process';
@@ -360,7 +360,9 @@ async function audioMode() {
     results.push({ area, rendered: true, peak: r.peak, dbfs, sampleRate: r.sampleRate, sec: r.sec });
     console.log(`audio ${area}: ${file}  ${r.sec.toFixed(1)} s @ ${r.sampleRate} Hz  peak ${dbfs.toFixed(2)} dBFS  (${(r.ms / 1000).toFixed(1)} s to render)`);
     if (r.peak < 1e-4) fail(`audio ${area}: silent render (peak ${dbfs.toFixed(1)} dBFS)`);
-    else if (dbfs > -1) fail(`audio ${area}: peak ${dbfs.toFixed(2)} dBFS is above −1 dBFS (clipping risk)`);
+    // TECH §11.4: fail at a peak ≥ 1.0 (full scale); above −1 dBFS is only a warning (headroom for lossy encoders).
+    else if (r.peak >= 1) fail(`audio ${area}: peak ${r.peak.toFixed(4)} (${dbfs.toFixed(2)} dBFS) reaches full scale (clipping)`);
+    else if (dbfs > -1) console.warn(`audio ${area}: warning: peak ${dbfs.toFixed(2)} dBFS is above −1 dBFS (little headroom)`);
   }
   if (results.every((r) => !r.rendered)) console.log('audio: nothing rendered (stub). This is expected until AU ships renderOffline; exit 0.');
   await close();

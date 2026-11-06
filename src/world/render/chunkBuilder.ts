@@ -10,27 +10,14 @@
 // Faces: every box writes 5 faces (no bottom); the camera never sees a bottom face and the light is above.
 import { Vector3 } from 'three';
 import { DECOR_KINDS, isDecorKind } from '../../core/decor';
-import type { Surface } from '../../core/ids';
 import { lerp } from '../../core/math';
 import { CORRIDOR_HALF, HEIGHT } from '../../core/tuning';
 import type { Chunk, Decor, GrindEdge, GroundSlab, Obstacle } from '../../core/world';
 import { ObTag } from '../../core/world';
+import { COLORS, SURFACE_COLOR } from './palette';
 import type { PooledGeo } from './pools';
 
-export const COLORS = {
-  asphalt: 0x6b6478, verge: 0xcdb8a3, pit: 0x2f2742, water: 0x4f6a8f,
-  bump: 0xcfc3b8, lowLandable: 0xa99cc0, lowCrash: 0x2b2140, chevron: 0xf2b630, knock: 0xff8a5b,
-  forbidden: 0xff00ff, tall: 0x2b2140, tallTop: 0x4a3b6b, tallAccent: 0xd9765a,
-  edgeCream: 0xfff1d6, ink: 0x2b2140, coin: 0xffc94a, lampHead: 0xffd39a, pole: 0x4a3b6b, foliage: 0x7f9a5a,
-  building: [0xd9765a, 0xc9a15a, 0xf3e3c3, 0x3e8e8a, 0xb5645a, 0xe8b38f, 0x9c7bb0, 0xc4473d],
-  side: [0xb5645a, 0x3e8e8a, 0xc9a15a, 0x9c7bb0],
-} as const;
-
-/** Ground colours by surface (DESIGN §18.1). */
-export const SURFACE_COLOR: Readonly<Record<Surface, number>> = {
-  asphalt: 0x6b6478, wetAsphalt: 0x352f55, concrete: 0xd9c3ae, tile: 0xd7c4b5, granite: 0xb9a9a0, wood: 0xa9744f,
-  metal: 0x9ba3b5, grass: 0x9db36b,
-};
+export { COLORS, SURFACE_COLOR } from './palette';
 
 /** Height class of a solid relative to its local ground (DESIGN §5.5). */
 export function heightClass(top: number, ground: number): 'bump' | 'low' | 'forbidden' | 'tall' {
@@ -151,8 +138,9 @@ export interface BuildOptions {
 }
 export const DEFAULT_BUILD: Readonly<BuildOptions> = { edgeHalfW: 0.035, inkPad: 0.02 };
 
-/** Builds one chunk: `main` gets everything; `near` gets the tall decor on the camera side (+x), which the view
- *  draws shadow-only when ψ > 0 (DESIGN §8: no opaque structure over the corridor). */
+/** Builds one chunk: `main` gets everything; `near` gets the bulky tall decor on the camera side (+x: backdrops and
+ *  tree crowns), which the view draws shadow-only when ψ > 0, where it would cover the corridor on screen (DESIGN §8:
+ *  no opaque structure over the corridor). Thin lamps stay in `main` on both sides. */
 export function buildChunk(ch: Chunk, main: GeoWriter, near: GeoWriter, opts: Readonly<BuildOptions> = DEFAULT_BUILD): void {
   const s0 = ch.s0, s1 = ch.s0 + ch.len;
   const z = (s: number) => -(s - s0);
@@ -235,7 +223,7 @@ function grindEdge(e: GrindEdge, s0: number, s1: number, z: (s: number) => numbe
 const num = (d: Decor, k: string, def: number) => d.params?.[k] ?? def;
 
 /** Decor as tinted boxes by zone. Backdrop kinds extend away from the corridor from their street face at x.
- *  `w` takes the tall pieces (backdrops, lamps, trees), `main` the low furniture and overhead spans. */
+ *  `w` takes the bulky tall pieces (backdrops, trees), `main` the thin lamps, low furniture and overhead spans. */
 function decor(d: Decor, z: (s: number) => number, w: GeoWriter, main: GeoWriter): void {
   const kind = d.kind;
   const zone = isDecorKind(kind) ? DECOR_KINDS[kind].zone : kind === 'building' ? 'backdrop' : null;
@@ -259,8 +247,8 @@ function decor(d: Decor, z: (s: number) => number, w: GeoWriter, main: GeoWriter
   // Side band: lamps, trees and street furniture.
   if (kind === 'street_lamp') {
     const h = num(d, 'h', 5) * sc;
-    w.box(d.x - 0.06, d.y, z(d.s) - 0.06, d.x + 0.06, d.y + h, z(d.s) + 0.06, COLORS.pole);
-    w.box(d.x - 0.18, d.y + h - 0.2, z(d.s) - 0.18, d.x + 0.18, d.y + h + 0.05, z(d.s) + 0.18, COLORS.lampHead);
+    main.box(d.x - 0.06, d.y, z(d.s) - 0.06, d.x + 0.06, d.y + h, z(d.s) + 0.06, COLORS.pole);
+    main.box(d.x - 0.18, d.y + h - 0.2, z(d.s) - 0.18, d.x + 0.18, d.y + h + 0.05, z(d.s) + 0.18, COLORS.lampHead);
   } else if (kind === 'tree' || kind === 'cherry_tree') {
     const tr = num(d, 'trunkH', 2.6) * sc, cr = num(d, 'crown', 1.6) * sc;
     w.box(d.x - 0.1, d.y, z(d.s) - 0.1, d.x + 0.1, d.y + tr, z(d.s) + 0.1, COLORS.pole);

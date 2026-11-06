@@ -8,10 +8,15 @@
 // One LineSegments with preallocated buffers, rebuilt in scene.onBeforeRender, so it is current in rAF frames and in
 // renderNow() alike. Drawn on top (no depth test). Track space → world with the shared origin rebasing.
 import { BufferAttribute, BufferGeometry, LineBasicMaterial, LineSegments, type Scene } from 'three';
-import { CHUNK_LEN, CORRIDOR_HALF, HITBOX, LOOKAHEAD_MIN } from '../core/tuning';
+import { CHUNK_LEN, CORRIDOR_HALF, HEIGHT, HITBOX, LOOKAHEAD_MIN } from '../core/tuning';
 import { originOf } from '../gfx';
-import { heightClass } from '../world/render';
 import type { DebugHost } from './api';
+
+/** Height class of a solid above its local ground (DESIGN §5.5), from the frozen bands only (no renderer import). */
+export function bandOf(top: number, ground: number): 'bump' | 'low' | 'forbidden' | 'tall' {
+  const h = top - ground;
+  return h <= HEIGHT.bumpMax ? 'bump' : h <= HEIGHT.lowMax ? 'low' : h < HEIGHT.tallMin ? 'forbidden' : 'tall';
+}
 
 const MAX_SEGMENTS = 12000;
 const COL = {
@@ -64,7 +69,7 @@ export function installOverlay(host: DebugHost): Overlay {
     seg(s, cur.targetX, 0.03, s + 2, cur.targetX, 0.03, COL.skater);
     for (const o of sim.world.obstacles(s - 4, s + ahead)) {
       for (const so of o.solids) {
-        const b = so.box, cls = heightClass(b.y1, b.y0);
+        const b = so.box, cls = bandOf(b.y1, b.y0);
         const c = so.top === 'knock' ? COL.knock : cls === 'tall' ? COL.tall : cls === 'forbidden' ? COL.forbidden
           : cls === 'bump' ? COL.bump : so.top === 'landable' ? COL.landable : COL.low;
         box(b.s0, b.s1, b.x0, b.x1, b.y0, b.y1, c);
