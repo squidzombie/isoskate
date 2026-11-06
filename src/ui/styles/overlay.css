@@ -1,0 +1,113 @@
+/* ui/styles/overlay.css: the lo-fi overlay (DESIGN §18.9), toasts, the modal layer and the crate reveal. */
+#lofi { display: none; overflow: hidden; }
+#lofi.on { display: block; }
+#lofi .lofi-grain { position: absolute; left: 0; top: 0; right: -128px; bottom: -128px; opacity: 0.05; background-repeat: repeat;
+  background-size: 128px 128px; will-change: transform; image-rendering: pixelated; }
+#lofi .lofi-vignette { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 45%, transparent 55%, rgba(43, 33, 64, 0.35)); }
+#lofi .lofi-scan { position: absolute; inset: 0; opacity: 0.04;
+  background: repeating-linear-gradient(0deg, #000 0, #000 1px, transparent 1px, transparent 2px); }
+
+/* Toasts: never touch targets, below the HUD band. */
+#toasts { pointer-events: none !important; }
+#toasts .toast { position: absolute; left: 50%; top: calc(66px + var(--safe-top)); transform: translateX(-50%); padding: 8px 14px; border-radius: 14px;
+  background: var(--paper); color: var(--ink); border: 3px solid var(--ink); box-shadow: 0 3px 0 var(--ink); font: 900 14px var(--font-ui);
+  white-space: nowrap; animation: toast-in 180ms ease-out; transition: opacity 200ms, transform 200ms; max-width: calc(100vw - 32px); overflow: hidden; text-overflow: ellipsis; }
+#toasts .toast + .toast { top: calc(112px + var(--safe-top)); }
+#toasts .toast.out { opacity: 0; transform: translate(-50%, -8px); }
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, -10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+/* Modal layer: one at a time, takes the touches it covers. */
+#screens .modal-layer { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: calc(16px + var(--safe-top)) 14px calc(16px + var(--safe-bottom));
+  box-sizing: border-box; background: rgba(43, 33, 64, 0.6); visibility: hidden; opacity: 0; transition: opacity 0.18s, visibility 0s linear 0.18s; pointer-events: none; z-index: 5; }
+#screens .modal-layer.on { visibility: visible; opacity: 1; transition: opacity 0.18s; pointer-events: auto; }
+#screens .modal-card { width: min(360px, 100%); max-height: 100%; overflow-y: auto; background: var(--paper); border: 3px solid var(--ink); border-radius: 22px;
+  box-shadow: 0 6px 0 var(--ink); padding: 18px 16px 16px; box-sizing: border-box; text-align: center; transform: scale(0.96); transition: transform 0.18s; }
+#screens .modal-layer.on .modal-card { transform: none; }
+#screens .modal-card.wide { width: min(420px, 100%); }
+#screens .modal-card h3 { font-size: 20px; margin-bottom: 8px; }
+#screens .modal-card p { font-weight: 700; font-size: 13.5px; line-height: 1.35; margin: 0 0 12px; color: var(--plum); }
+#screens .modal-card .row { margin-top: 10px; }
+#screens .modal-card textarea.code { width: 100%; box-sizing: border-box; font: 700 11px ui-monospace, monospace; border: 2px solid var(--ink); border-radius: 12px;
+  padding: 8px; background: #fff; color: var(--ink); resize: none; user-select: text; -webkit-user-select: text; touch-action: auto; }
+#screens .modal-card .file-label { display: block; font-weight: 800; font-size: 12px; margin-top: 8px; color: var(--plum); }
+#screens .modal-card .file { font-size: 12px; max-width: 70%; }
+#screens .modal-card .msg { color: #8a1f2b; margin: 6px 0 0; min-height: 1em; }
+
+#screens .modal-layer.reveal-modal-layer { background: radial-gradient(ellipse at 50% 42%, rgba(107, 78, 140, 0.97), #2b2140 72%); }
+/* Crate reveal: a dark stage, the crate, the beam, the rising card. */
+#screens .modal-card.reveal-modal { width: 100%; max-width: 440px; height: 100%; max-height: 720px; background: transparent; border: 0; box-shadow: none; padding: 0; overflow: visible; }
+#screens .reveal { position: relative; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: var(--paper); }
+#screens .rv-tier { font-family: var(--font-display); font-size: 22px; -webkit-text-stroke: 1.5px var(--ink); paint-order: stroke fill; text-shadow: 0 3px 0 var(--ink); }
+#screens .rv-stage { position: relative; width: 280px; height: 300px; display: flex; align-items: center; justify-content: center; }
+#screens .rv-crate { position: relative; width: 168px; height: 150px; min-height: 0; padding: 0; border: 0; background: none; box-shadow: none; display: block; z-index: 2; }
+#screens .rv-crate:active { transform: none !important; }
+#screens .rv-crate .rv-body { position: absolute; left: 0; right: 0; bottom: 0; height: 112px; border: 4px solid var(--ink); border-radius: 10px; box-sizing: border-box;
+  background: repeating-linear-gradient(90deg, rgba(0,0,0,0.06) 0 2px, transparent 2px 22px), #d9a86a; box-shadow: inset 0 12px 0 rgba(255,255,255,0.22), 0 6px 0 var(--ink); }
+#screens .rv-crate .rv-lid { position: absolute; left: -8px; right: -8px; top: 8px; height: 38px; border: 4px solid var(--ink); border-radius: 10px; box-sizing: border-box;
+  background: #e8bd85; box-shadow: 0 4px 0 var(--ink); z-index: 1; transform-origin: 20% 100%; transition: transform 0.45s cubic-bezier(.3, 1.6, .5, 1), opacity 0.45s; }
+#screens .rv-crate .rv-tape { position: absolute; left: 50%; top: -4px; bottom: -4px; width: 30px; margin-left: -15px; background: #ffe3a3; border-left: 3px solid var(--ink); border-right: 3px solid var(--ink); }
+#screens .rv-crate .rv-mark { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--font-display); font-size: 40px;
+  color: var(--paper); -webkit-text-stroke: 2px var(--ink); paint-order: stroke fill; }
+#screens .reveal[data-tier='street'] .rv-body { background-color: #ff8a5b; } #screens .reveal[data-tier='street'] .rv-lid { background: #ffa47c; }
+#screens .reveal[data-tier='pro'] .rv-body { background-color: #7a6fb0; } #screens .reveal[data-tier='pro'] .rv-lid { background: #9a8fd0; }
+#screens .reveal[data-tier='pro'] .rv-tape { background: var(--sun); }
+#screens .rv-crate.sh1 { animation: rv-shake 0.28s ease-in-out; }
+#screens .rv-crate.sh2 { animation: rv-shake2 0.32s ease-in-out; }
+#screens .rv-crate.sh3 { animation: rv-shake3 0.36s ease-in-out; }
+@keyframes rv-shake { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-4deg); } 75% { transform: rotate(4deg); } }
+@keyframes rv-shake2 { 0%, 100% { transform: rotate(0) scale(1); } 20% { transform: rotate(-8deg) scale(1.04); } 60% { transform: rotate(8deg) scale(1.04); } }
+@keyframes rv-shake3 { 0%, 100% { transform: rotate(0) scale(1); } 15% { transform: rotate(-12deg) scale(1.08); } 45% { transform: rotate(12deg) scale(1.1); } 75% { transform: rotate(-6deg) scale(1.05); } }
+#screens .rv-dots { display: flex; gap: 8px; }
+#screens .rv-dots i { width: 14px; height: 14px; border-radius: 50%; border: 3px solid var(--paper); box-sizing: border-box; }
+#screens .rv-dots i.on { background: var(--sun); border-color: var(--ink); }
+#screens .rv-hint { font-family: var(--font-display); font-size: 16px; animation: dl-pulse 1.2s ease-in-out infinite; text-shadow: 0 2px 0 var(--ink); }
+#screens .reveal:not([data-stage='closed']) .rv-dots, #screens .reveal:not([data-stage='closed']) .rv-hint { visibility: hidden; }
+#screens .reveal:not([data-stage='closed']) .rv-lid { transform: translate(40px, -90px) rotate(38deg); opacity: 0; }
+#screens .reveal:not([data-stage='closed']) .rv-tape { opacity: 0; }
+#screens .rv-beam { position: absolute; left: 50%; bottom: 60px; width: 260px; height: 420px; margin-left: -130px; opacity: 0; transform: scaleY(0.2); transform-origin: 50% 100%;
+  background: radial-gradient(ellipse at 50% 100%, var(--beam, #fff4e3) 0%, rgba(255, 244, 227, 0) 70%); transition: opacity 0.35s, transform 0.5s cubic-bezier(.2, .9, .3, 1.2); z-index: 1; }
+#screens .reveal:not([data-stage='closed']) .rv-beam { opacity: 0.95; transform: none; }
+#screens .reveal[data-rarity='rare'] { --beam: #4fb3e8; } #screens .reveal[data-rarity='epic'] { --beam: #a06bff; }
+#screens .reveal[data-rarity='coins'] { --beam: #ffc94a; } #screens .reveal[data-rarity='common'] { --beam: #fff4e3; }
+#screens .reveal[data-rarity='legendary'] .rv-beam { background: radial-gradient(ellipse at 50% 100%, #ffc94a 0%, #ff7ab6 40%, rgba(255, 122, 182, 0) 72%); animation: rv-hue 1.6s linear infinite; }
+@keyframes rv-hue { 0% { filter: hue-rotate(0deg); } 50% { filter: hue-rotate(-30deg); } 100% { filter: hue-rotate(0deg); } }
+#screens .rv-item { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; z-index: 3;
+  opacity: 0; pointer-events: none; }
+#screens .reveal[data-stage='item'] .rv-item, #screens .reveal[data-stage='done'] .rv-item { opacity: 1; }
+#screens .reveal[data-stage='item'] .rv-card { animation: rv-rise 0.95s cubic-bezier(.2, .9, .3, 1) both; }
+#screens .reveal[data-stage='item'] .rv-crate, #screens .reveal[data-stage='done'] .rv-crate { opacity: 0; transition: opacity 0.2s; }
+@keyframes rv-rise { 0% { transform: perspective(600px) translateY(90px) rotateY(0deg) scale(0.4); opacity: 0; }
+  30% { opacity: 1; } 100% { transform: perspective(600px) translateY(0) rotateY(720deg) scale(1); opacity: 1; } }
+#screens .rv-card { position: relative; width: 168px; background: #fff; color: var(--ink); border: 3px solid var(--ink); border-radius: 18px; box-shadow: 0 6px 0 var(--ink); overflow: hidden; }
+#screens .rv-card .card-band { display: block; height: 24px; line-height: 24px; font-family: var(--font-display); font-size: 12px; letter-spacing: 0.12em;
+  background: var(--r-common); border-bottom: 3px solid var(--ink); }
+#screens .rv-card.r-rare .card-band { background: var(--r-rare); color: #fff; text-shadow: 0 1px 0 var(--ink); }
+#screens .rv-card.r-epic .card-band { background: var(--r-epic); color: #fff; text-shadow: 0 1px 0 var(--ink); }
+#screens .rv-card.r-legendary .card-band { background: var(--r-legendary-grad); }
+#screens .rv-art { width: 132px; height: 132px; display: block; margin: 6px auto 0; }
+#screens .rv-name { font-weight: 900; font-size: 17px; padding: 2px 8px 10px; }
+#screens .rv-stamp { position: absolute; right: -10px; top: 34px; transform: rotate(12deg); font-family: var(--font-display); font-size: 15px; background: var(--coral);
+  color: #fff; border: 3px solid var(--ink); border-radius: 10px; padding: 3px 8px; text-shadow: 0 1px 0 var(--ink); }
+#screens .rv-stamp:empty { display: none; }
+#screens .reveal.dup .rv-stamp { background: var(--ink); color: var(--paper); right: 12px; top: 70px; font-size: 18px; }
+#screens .reveal.dup[data-stage='done'] .rv-card { animation: rv-shatter 0.5s ease-in forwards; }
+@keyframes rv-shatter { to { transform: scale(0.6) rotate(-10deg); opacity: 0; } }
+#screens .rv-coins { font-size: 34px; color: var(--paper); text-shadow: 0 3px 0 var(--ink); -webkit-text-stroke: 1.5px var(--ink); paint-order: stroke fill; }
+#screens .rv-coins:empty { display: none; }
+#screens .rv-coins .coin-dot { width: 30px; height: 30px; }
+#screens .rv-shards { position: absolute; left: 50%; top: 50%; width: 0; height: 0; }
+#screens .rv-shards i { position: absolute; width: 14px; height: 14px; margin: -7px; border-radius: 50%; opacity: 0;
+  background: radial-gradient(circle at 35% 30%, #fff1b8 0 18%, #ffc94a 22%); box-shadow: 0 0 0 2px var(--ink); }
+#screens .reveal.dup[data-stage='done'] .rv-shards i, #screens .reveal[data-rarity='coins'][data-stage='item'] .rv-shards i {
+  animation: rv-coin 0.9s cubic-bezier(.2, .8, .4, 1) var(--d) forwards; }
+@keyframes rv-coin { 0% { opacity: 1; transform: rotate(var(--a)) translateX(0); } 55% { opacity: 1; transform: rotate(var(--a)) translateX(90px); }
+  100% { opacity: 0; transform: rotate(var(--a)) translateX(60px) translateY(-260px); } }
+#screens .rv-actions { display: flex; flex-direction: column; align-items: center; gap: 10px; opacity: 0; visibility: hidden; transition: opacity 0.25s; width: min(320px, 100%); }
+#screens .rv-actions.on { opacity: 1; visibility: visible; }
+#screens .rv-actions .primary { width: 100%; }
+#screens .rv-actions .row { width: 100%; flex-wrap: nowrap; }
+#screens .rv-actions .row button { flex: 1; min-width: 0; font-size: 14px; }
+@media (prefers-reduced-motion: reduce) {
+  #screens .reveal[data-stage='item'] .rv-card { animation-duration: 0.01s; }
+  #screens .rv-hint { animation: none; }
+}
