@@ -31,7 +31,14 @@ const KIND_NAMES: Partial<Record<PropKind, string>> = { trash_can: 'bin', barrie
   wheelie_bins: 'bin', crosswalk_car: 'car', backout_car: 'car', parked_van: 'van', drum_cluster: 'drum', delivery_robot: 'robot' };
 export const kindName = (k: PropKind | null) => (k ? KIND_NAMES[k] ?? k.replace(/_/g, ' ') : 'something');
 
-/** One-line crash cause (DESIGN §9): "Clipped a bin", "Flip 62% done — flick earlier", "Landed on a car". */
+/** Low props you clear with an ollie (≤ 0.6 m, DESIGN §5.5); a slam into one teaches the ollie. */
+const JUMP_KINDS: ReadonlySet<PropKind> = new Set<PropKind>(['curb', 'flatbar', 'cone', 'barrier_low', 'trench', 'stairs', 'handrail',
+  'hubba', 'incline', 'terrace', 'speed_hump', 'porch_steps', 'pallet_1', 'spool_lying', 'dock_lip', 'rail_track', 'neon_curb']);
+/** Low props with a grindable top: their end face is what you hit. */
+const GRIND_KINDS: ReadonlySet<PropKind> = new Set<PropKind>(['granite_ledge', 'bench', 'manual_pad', 'garden_wall', 'guard_rail']);
+
+/** One-line crash cause that teaches (DESIGN §9; G0 review row 59): "Clipped a bin — steer around it",
+ *  "Hit the barrier — tap to ollie it", "Flip 62% done — flick earlier", "Landed on a car". */
 export function crashCause(e: { cause: CrashCause; kind: PropKind | null; flipProgress: number; spinProgress: number }): string {
   const kind = kindName(e.kind);
   if (e.cause === 'badLanding' && (e.flipProgress > 0 || e.spinProgress > 0)) {
@@ -40,7 +47,10 @@ export function crashCause(e: { cause: CrashCause; kind: PropKind | null; flipPr
     return `${flip ? 'Flip' : 'Spin'} ${p}% done — flick earlier`;
   }
   if (e.cause === 'badLanding') return `Landed on a ${kind}`;
-  if (e.cause === 'fall') return 'Fell in the trench';
+  if (e.cause === 'fall') return 'Fell in the trench — ollie it or take the plank';
   if (e.cause === 'splash') return 'Splashed into the water';
-  return `Clipped a ${kind}`;
+  if (e.kind && JUMP_KINDS.has(e.kind)) return `Hit the ${kind} — tap to ollie it`;
+  if (e.kind && GRIND_KINDS.has(e.kind)) return `Hit the ${kind} end — ollie onto it`;
+  if (!e.kind) return 'Clipped something — steer around it';
+  return `Clipped a ${kind} — steer around it`;
 }

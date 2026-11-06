@@ -16,7 +16,7 @@ import type { PoseId, SkaterPose } from '../core/view';
 import { frameAlong, reachForFlex, solveTwoBone } from './ik';
 import { CHANNELS, NEUTRAL, boardFlatness, resolvePose, type PoseChannels, type PoseContext, type PoseTarget } from './poses';
 import type { Rig, RigDims } from './rig';
-import { BOARD, CRASH, FX, POSE, SHOWCASE, SPRING } from './skater.config';
+import { BOARD, CRASH, FLIP_VIEW, FX, POSE, SHOWCASE, SPRING } from './skater.config';
 
 const DEG = Math.PI / 180;
 const N = CHANNELS.length;
@@ -98,6 +98,8 @@ export class Animator {
   private fakie = 0; private fakieV = 0; private prevFakie = false; private prevSpin = 0;
   private dipT = 99; private dipAmp = 0;
   private flipAge = 0; private lastPose: PoseId = 'idle';
+  /** Flip readability blend (FLIP_VIEW): 1 while a flip rotates in the air. */
+  private flipVis = 0;
   private hem = 0; private hemV = 0;
   private waveT = 99;
   private crash: CrashSim | null = null;
@@ -129,6 +131,10 @@ export class Animator {
     const pc = this.pctx;
     pc.stance = st.stance; pc.upright = st.upright; pc.boardFlat = boardFlatness(p.board); pc.flipAge = this.flipAge;
     const tg = resolvePose(p, pc, this.target);
+    // From the flip's start until the catch (the same test poses.ts uses for the re-catch).
+    const flipping = p.mode === 'air' && p.pose === 'flip' && !(this.flipAge > 0.1 && pc.boardFlat > POSE.flip.catchAt);
+    this.flipVis = this.snapNext ? (flipping ? 1 : 0)
+      : clamp(this.flipVis + (flipping ? 1 : -1) * FLIP_VIEW.rate * dt, 0, 1);
     // Sketchy: the windmill lasts POSE.sketchy.dur from the sketchy landing, however long the sim holds the pose.
     if (p.pose === 'sketchy') { if (this.sketchyAge > POSE.sketchy.dur) tg.windmill = 0; this.sketchyAge += dt; }
     else this.sketchyAge = 0;
@@ -192,10 +198,12 @@ export class Animator {
 
     // Board pivot: flip / shove-it rotation from the sim plus the pose offsets. On the ground a pitched board pivots
     // about the low truck (the board lifts so its wheels stay down).
-    const bp = p.board.pitch + ch('bPitch'), by = p.board.yaw + ch('bYaw'), br = p.board.roll + ch('bRoll');
+    const fv = smooth(this.flipVis);
+    const bp = p.board.pitch + ch('bPitch'), by = p.board.yaw + ch('bYaw') + FLIP_VIEW.yawDeg * fv, br = p.board.roll + ch('bRoll');
     const ground = !air && p.mode !== 'grind';
     const lift = ground ? BOARD.truckZ * Math.abs(Math.sin(bp * DEG)) : 0;
-    b.board.position.set(0, BOARD.deckY + lift, 0);
+    b.board.position.set(0, BOARD.deckY + lift - FLIP_VIEW.drop * fv, 0);
+    b.board.scale.setScalar(1 + (FLIP_VIEW.scale - 1) * fv);
     e3.set(bp * DEG, -sx * by * DEG, sx * br * DEG, 'YXZ');
     b.board.quaternion.setFromEuler(e3);
     // Foot frame: in the air the feet hover over a "virtual" flat deck (the board flips under them).
@@ -462,6 +470,7 @@ export class Animator {
     b.hips.position.copy(k.c).sub(va.copy(C_OFF).applyQuaternion(qHips));
     b.board.position.copy(k.bp);
     b.board.quaternion.copy(k.bq);
+    b.board.scale.setScalar(1);
     // Limbs flail with 4 Hz noise ±40° (the noise's main partial runs at flailHz), fading once the body has settled.
     const env = k.settleT < 0 ? 1 : Math.exp(-(t - k.settleT) / 0.5);
     const fl = (i: number) => CRASH.flailDeg * env * noise(t * CRASH.flailHz, ph[i]!, ph[i + 1]!);

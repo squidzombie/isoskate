@@ -22,6 +22,7 @@ import { createVfx } from '../vfx';
 import { createCameraRig, createWorldView } from '../world/render';
 import { App } from './app';
 import { GameLoop } from './loop';
+import { FirstRunHints } from './onboarding';
 import { createRunSession } from './runSession';
 
 export interface Game { app: App; loop: GameLoop }
@@ -71,6 +72,7 @@ export function wire(root: HTMLElement): Game {
   audio.attach(gameBus, appBus);
   ui.attach(gameBus, appBus, meta);
   const session = createRunSession(save, flags.seed);
+  const hints = new FirstRunHints(ui.hud, gameBus);
 
   // Slides (boardslide family) vs grinds (truck locks), for the grind sound; precomputed so render() never allocates.
   const SLIDE_GRINDS: ReadonlySet<string> = new Set(TRICKS.grinds.filter((d) => d.slide).map((d) => d.id));
@@ -95,6 +97,7 @@ export function wire(root: HTMLElement): Game {
     cameraRig.update(f);
     gfx.renderer.render(gfx.scene, cameraRig.camera);
     if (app.current === 'run' || app.current === 'crash') ui.hud.update(f.score, f.cur, f.dt, cameraRig.project(f.cur.p));
+    if (app.current === 'run') hints.update(f.cur.t, f.cur);
     return worldView.stats().chunksBuilt !== before;
   };
   const loop = new GameLoop({
@@ -131,7 +134,7 @@ export function wire(root: HTMLElement): Game {
   applySettings();
 
   const app = new App({ root, play, sim, loop, input, ui, meta, save, audio, analytics, worldView, skater, cameraRig, vfx,
-    gameBus, appBus, session, viewport: () => viewport, applySettings });
+    gameBus, appBus, session, viewport: () => viewport, applySettings, hints });
 
   onViewportChange(() => { applyViewport(); app.checkRotate(sim.cur.vel.s); });
   canvas.addEventListener('webglcontextlost', (e) => {

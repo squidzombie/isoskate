@@ -14,6 +14,15 @@ import { fmtScore, fmtShort } from './format';
 import { h, setText } from './h';
 
 export type PopupKind = 'flip' | 'grind' | 'manual' | 'gap' | 'perfect' | 'sketchy' | 'bonus';
+
+/** Hint chip texts (DESIGN §12.5; interim first-runs hints at G0, the M4 Lesson Line reuses the ids). `keys` is the
+ *  desktop wording, used when the primary pointer is fine (mouse) rather than coarse (touch). */
+export const HINT_TEXT: Readonly<Record<string, { touch: string; keys: string }>> = {
+  drag: { touch: 'DRAG TO STEER', keys: 'A / D TO STEER' },
+  tap: { touch: 'TAP TO OLLIE', keys: 'SPACE TO OLLIE' },
+  grind: { touch: 'OLLIE ONTO THE LEDGE', keys: 'OLLIE ONTO THE LEDGE' },
+  avoid: { touch: 'STEER AROUND TALL STUFF', keys: 'STEER AROUND TALL STUFF' },
+};
 const POPUP_COLOR: Readonly<Record<PopupKind, string>> = {
   flip: '#FFE3A3', grind: '#8FE3FF', manual: '#C3A8FF', gap: '#FF9E7A', perfect: '#FFC94A', sketchy: '#C9C2B8', bonus: '#7EE0B5',
 };
@@ -54,12 +63,16 @@ export function createHud(root: HTMLElement, raise: (i: UiIntent) => void): HudE
     onclick: (e: Event) => { e.stopPropagation(); (e.currentTarget as HTMLElement).blur(); raise({ k: 'pause' }); } },
   h('span', { 'aria-hidden': 'true' }, h('i'), h('i')));
   const pop = h('div', { class: 'hud-popup', 'aria-hidden': 'true' }, '');
+  // Hint chip: centred 13% above the bottom (DESIGN §13.8 allows first-run hints in the thumb zone), never a target.
+  const hintEl = h('div', { class: 'hud-hint', 'data-hint': '', role: 'status' }, '');
+  let hintId: string | null = null;
+  const coarse = () => typeof matchMedia === 'undefined' || matchMedia('(pointer: coarse)').matches;
   root.replaceChildren(
     h('div', { class: 'hud-band' },
       h('div', { class: 'hud-left' }, score, dist),
       h('div', { class: 'hud-mid' }, combo, trick),
       h('div', { class: 'hud-right' }, coins, pause)),
-    pop,
+    pop, hintEl,
   );
   /** The trick name shrinks to fit the middle column (down to HUD_TIMING.trickMinPx; past that it ellipsizes),
    *  measured only when the text changes. */
@@ -85,7 +98,7 @@ export function createHud(root: HTMLElement, raise: (i: UiIntent) => void): HudE
   if (typeof window !== 'undefined') window.addEventListener('resize', () => { vw = window.innerWidth; });
 
   const hud: HudExt = {
-    show(on: boolean) { root.classList.toggle('on', on); if (!on) { popT = Infinity; pop.style.opacity = '0'; } },
+    show(on: boolean) { root.classList.toggle('on', on); if (!on) { popT = Infinity; pop.style.opacity = '0'; hud.hint(null); } },
     update(sc: Readonly<ScoreState>, cur: Readonly<SkaterState>, dt: number, anchor: { x: number; y: number }) {
       lastAnchorX = anchor.x;
       // Popup: beside the skater, away from the nearer screen edge.
@@ -121,7 +134,14 @@ export function createHud(root: HTMLElement, raise: (i: UiIntent) => void): HudE
       if (v?.trick !== undefined) setTrick(v.trick);
       else if (trickTtl <= 0 && !active) setTrick('');
     },
-    hint(_id: string | null) { /* TODO(MU): the hint component (DESIGN §12.5) */ },
+    hint(id: string | null) {
+      // TODO(MU): ghost thumb / key caps and the "rest here" mark (DESIGN §12.3); this is the text chip only.
+      if (id === hintId) return;
+      hintId = id;
+      const t = id ? HINT_TEXT[id] : undefined;
+      if (t) { setText(hintEl, coarse() ? t.touch : t.keys); hintEl.dataset.hint = id!; }
+      hintEl.classList.toggle('on', !!t);
+    },
     lastTrick(name: string) { setTrick(name); trickTtl = HUD_TIMING.trickHoldSec; },
     popup(text: string, kind: PopupKind, predicted = false) {
       setText(pop, text);

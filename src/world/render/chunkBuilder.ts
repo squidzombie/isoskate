@@ -3,7 +3,8 @@
 //   - street base, verges and every GroundSlab by surface (stairs as steps, inclines as wedges), pits as dark recesses
 //   - solids as boxes coloured by height class (DESIGN §5.5): bump, low landable, low crash (ink), tall (ink body,
 //     lighter top, one accent band on the camera face), knock (coral), forbidden band (magenta: a generator bug)
-//   - full-width low hazards get safety chevrons (amber / ink)
+//   - full-width low hazards get safety chevrons (amber / ink); pits read as holes: a lit far wall, a dark band under
+//     the near lip, and amber / ink chevrons along the near lip on the road (G0 review)
 //   - grind edges: a cream top stripe over a wider ink underline (DESIGN §18.4), widened to stay ≥ minEdgePx on screen
 //   - decor as tinted boxes per zone (decor never uses chevrons or the cream edge colour)
 // Geometry is chunk-local: x = x, y = y, z = −(s − chunk.s0) (≤ 32 m), so the view rebases with group.position.z.
@@ -183,7 +184,20 @@ const PIT_TOP = 0.004;
 function obstacle(ob: Obstacle, s0: number, s1: number, z: (s: number) => number, w: GeoWriter, opts: Readonly<BuildOptions>): void {
   for (const p of ob.pits) {
     const r = clipS(p.s0, p.s1, s0, s1);
-    if (r) w.box(p.x0, p.lipY - Math.max(0.05, p.depth), z(r[1]), p.x1, p.lipY + PIT_TOP, z(r[0]), p.cause === 'splash' ? COLORS.water : COLORS.pit);
+    if (!r) continue;
+    const water = p.cause === 'splash';
+    w.box(p.x0, p.lipY - Math.max(0.05, p.depth), z(r[1]), p.x1, p.lipY + PIT_TOP, z(r[0]), water ? COLORS.water : COLORS.pit);
+    if (water) continue;
+    // Depth cues drawn on the pit's face (pits are not solids, so the contrast gate's hazard ring is unaffected).
+    const len = p.s1 - p.s0, wall = Math.min(0.55, 0.3 * len), shadow = Math.min(0.35, 0.18 * len), y = p.lipY + 1.5 * PIT_TOP;
+    const far = clipS(p.s1 - wall, p.s1, s0, s1), near = clipS(p.s0, p.s0 + shadow, s0, s1);
+    if (far) w.box(p.x0, p.lipY, z(far[1]), p.x1, y, z(far[0]), COLORS.pitWall);
+    if (near) w.box(p.x0, p.lipY, z(near[1]), p.x1, y, z(near[0]), COLORS.pitShadow);
+    const lip = clipS(p.s0 - 0.32, p.s0 - 0.04, s0, s1);
+    if (lip && p.x1 - p.x0 > 2) {
+      w.box(p.x0, p.lipY - 0.05, z(lip[1]), p.x1, p.lipY + PIT_TOP, z(lip[0]), COLORS.ink);
+      for (let x = p.x0 + 0.1; x < p.x1 - 0.3; x += 0.7) w.box(x, p.lipY - 0.05, z(lip[1]) - 0.03, x + 0.35, p.lipY + 1.5 * PIT_TOP, z(lip[0]) + 0.03, COLORS.chevron);
+    }
   }
   for (const sl of ob.slabs) {
     if (ob.solids.length && sl.kind === 'flat') continue;      // a solid body already draws this landable top

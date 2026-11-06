@@ -6,6 +6,8 @@ import type { Surface } from '../../core/ids';
 
 export const COLORS = {
   asphalt: 0x79728a, verge: 0xcdb8a3, pit: 0x2f2742, water: 0x4f6a8f,
+  /** Pit read (G0 review): the far wall catching the light, the floor shadow under the near lip. */
+  pitWall: 0x6a5a8c, pitShadow: 0x1c1530,
   bump: 0xcfc3b8, lowLandable: 0xa99cc0, lowCrash: 0x2b2140, chevron: 0xf2b630, knock: 0xff8a5b,
   forbidden: 0xff00ff, tall: 0x2b2140, tallTop: 0x352a4c, tallAccent: 0xd9765a,
   edgeCream: 0xfff1d6, ink: 0x2b2140,

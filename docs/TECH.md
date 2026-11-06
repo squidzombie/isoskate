@@ -1346,6 +1346,7 @@ frames.ts: queue of timestamped gestures → InputFrame per tick:
 - A HOLD released at 300 ms emits both `holdEnd` and `tap`; a HOLD that moves 12 px becomes a DRAG.
 - A swipe during a drag is detected, with correct `fast`, `fromRest` and `steer` labels and `swipeDx` (window, or since touch-down when ≤ 150 ms old).
 - **Misfire traces** (Mobile review): one long 90 px / 130 ms flick fires once, not twice; a lift right after a fire adds no third swipe; a corrective air drag at 0.4–0.7 px/ms on the steering stroke is labelled `steer` and not `fast`; a parked-then-flicked thumb is `fromRest`.
+- **G0 playtest traces** (`recognizer.test.ts`, `tests/unit/integration/labels.test.ts`, real recognizer → real sim): owner sectors (a fresh or steering thumb's 34° flick is →, 36° is ↗; a parked thumb's first flick and second fingers keep ±15°); a fast fresh dodge rising 32° steers its full sideways motion; one rising 40° pops a FS 180 and keeps its steering; a 0.5 px/ms fresh dodge at 36° does not pop; a fresh 0.41 px/ms sideways stroke in the air steers, a 1.2 px/ms one kickflips; sloppy taps (< 20 px, < 15 px sideways, ≤ 250 ms) are taps.
 - Arc compensation: a right-thumb leftward stroke starting at x = 0.8·W rising 28° is ←, not ↖; sector edges at 30° and 15°; `simpleTricks`.
 - Recoil suppression, re-fire conditions (doubles), and diagonal sector edges.
 - Two-pointer ownership and `pointercancel` handing steering to the next DRAG.
@@ -1660,7 +1661,7 @@ frames.ts: queue of timestamped gestures → InputFrame per tick:
 |---|---|---|
 | `npm run typecheck` | `tsc --noEmit` | Every commit |
 | `npm run lint` | `node scripts/lint.mjs` (determinism bans + import boundaries) | Every commit |
-| `npm test` | Unit + `bots.quick` + benches (sim ≤ 0.05 ms per tick, segment ≤ 3 ms p95) | Every commit |
+| `npm test` | Unit + `bots.quick` + benches (sim ≤ 0.05 ms per tick: `tests/unit/sim/bench.test.ts`; segment ≤ 3 ms p95: `tests/unit/gen/bench.test.ts`; best of repeats, since CPU noise only adds time) | Every commit |
 | `npm run test:bots` | Gate bot suite (§11.2); `--release` doubles the seeds | Merge gates; `--release` at M5 |
 | `npm run e2e` | Playwright (after build) | Merge gates |
 | `npm run shots -- --contrast` | Readability pixel gate | Merge gates from G2 |

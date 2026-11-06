@@ -1,6 +1,9 @@
 /* ui/styles/hud.css: the debug HUD in the 56 px band + safe-area top (DESIGN §13.8). Transform/opacity animations only. */
 #hud { display: none; color: var(--paper); font-family: var(--font-ui); font-variant-numeric: tabular-nums;
   text-shadow: 0 2px 0 rgba(43, 33, 64, 0.65); }
+/* Ink scrim behind the band: cream digits read over the light sidewalk too (G0 review: 1.7:1 → shadow-only). */
+#hud .hud-band { background: linear-gradient(rgba(43, 33, 64, 0.5), rgba(43, 33, 64, 0.22) 70%, rgba(43, 33, 64, 0)); }
+#hud .hud-score, #hud .hud-dist, #hud .hud-coins { -webkit-text-stroke: 1.5px var(--ink); paint-order: stroke fill; }
 #hud.on { display: block; }
 #hud .hud-band { height: calc(56px + var(--safe-top)); box-sizing: border-box;
   padding: var(--safe-top) calc(6px + var(--safe-right)) 0 calc(10px + var(--safe-left));
@@ -8,6 +11,8 @@
 #hud .hud-left { display: flex; flex-direction: column; min-width: 0; }
 #hud .hud-score { font-weight: 900; font-size: calc(26px * var(--k, 1)); line-height: 1; white-space: nowrap; }
 #hud .hud-dist { font-weight: 800; font-size: calc(12px * var(--k, 1)); line-height: 1.1; opacity: 0.9; white-space: nowrap; margin-top: 2px; }
+/* A unit label, so "24 / 24 m" at the start (score = distance points) doesn't read as a duplicated number. */
+#hud .hud-dist::before { content: 'DIST '; font-size: 0.8em; letter-spacing: 0.06em; opacity: 0.8; }
 #hud .hud-mid { display: flex; flex-direction: column; align-items: center; min-width: 0; overflow: hidden; }
 #hud .hud-combo { font-weight: 900; font-size: calc(15px * var(--k, 1)); line-height: 1.2; padding: 1px 10px; border-radius: 999px;
   background: rgba(43, 33, 64, 0.6); color: #fff1d6; visibility: hidden; white-space: nowrap; max-width: 100%;
@@ -31,6 +36,12 @@
 #hud .hud-popup { position: absolute; left: 0; top: 0; pointer-events: none; opacity: 0; white-space: nowrap; will-change: transform, opacity;
   font-family: var(--font-display); font-size: calc(17px * var(--k, 1)); -webkit-text-stroke: 1px var(--ink); paint-order: stroke fill;
   text-shadow: 0 2px 0 var(--ink); }
+#hud .hud-hint { position: fixed; left: 50%; bottom: calc(13% + var(--safe-bottom, 0px)); transform: translate(-50%, 6px);
+  pointer-events: none; opacity: 0; transition: opacity 160ms ease-out, transform 160ms ease-out; white-space: nowrap;
+  font-family: var(--font-display); font-size: calc(17px * var(--k, 1)); letter-spacing: 0.02em; color: var(--paper);
+  background: rgba(43, 33, 64, 0.86); border: 2px solid var(--paper); border-radius: 999px; padding: 6px 16px; text-shadow: none;
+  box-shadow: 0 3px 0 rgba(43, 33, 64, 0.5); }
+#hud .hud-hint.on { opacity: 1; transform: translate(-50%, 0); }
 @keyframes hud-bump-a { 0% { transform: scale(1.15); } 100% { transform: scale(1); } }
 @keyframes hud-bump-b { 0% { transform: scale(1.15); } 100% { transform: scale(1); } }
 @media (prefers-reduced-motion: reduce) { #hud .hud-combo { animation: none !important; } }

@@ -31,12 +31,15 @@ describe('formats', () => {
 describe('crash cause line (DESIGN §9)', () => {
   const e = (o: Partial<Parameters<typeof crashCause>[0]>) => crashCause({ cause: 'slam', kind: null, flipProgress: 0, spinProgress: 0, ...o });
   it('one line per cause', () => {
-    expect(e({ cause: 'slam', kind: 'trash_can' })).toBe('Clipped a bin');
+    expect(e({ cause: 'slam', kind: 'trash_can' })).toBe('Clipped a bin — steer around it');
+    expect(e({ cause: 'slam', kind: 'news_box' })).toBe('Clipped a news box — steer around it');
+    expect(e({ cause: 'slam', kind: 'barrier_low' })).toBe('Hit the barrier — tap to ollie it');
+    expect(e({ cause: 'slam', kind: 'granite_ledge' })).toBe('Hit the ledge end — ollie onto it');
     expect(e({ cause: 'badLanding', kind: 'parked_car' })).toBe('Landed on a car');
     expect(e({ cause: 'badLanding', flipProgress: 0.62 })).toBe('Flip 62% done — flick earlier');
     expect(e({ cause: 'badLanding', spinProgress: 0.4 })).toBe('Spin 40% done — flick earlier');
-    expect(e({ cause: 'fall' })).toBe('Fell in the trench');
-    expect(e({ cause: 'slam', kind: 'forklift' })).toBe('Clipped a forklift');
+    expect(e({ cause: 'fall' })).toBe('Fell in the trench — ollie it or take the plank');
+    expect(e({ cause: 'slam', kind: 'forklift' })).toBe('Clipped a forklift — steer around it');
   });
 });
 

@@ -29,6 +29,8 @@ export interface AppDeps {
   gameBus: Bus<GameEvent>; appBus: Bus<AppEvent>; session: RunSession; viewport(): Viewport;
   /** Pushes save.data.settings into the modules (input, audio, haptics, loop, camera, quality). */
   applySettings(): void;
+  /** First-runs hints (game/onboarding.ts), armed at every run start. */
+  hints?: { start(runsStarted: number, startT: number, god: boolean): void };
 }
 
 type UiParams = NonNullable<Parameters<UiApi['show']>[1]>;
@@ -115,6 +117,7 @@ export class App {
     d.skater.setMode('run');
     d.cameraRig.setMode('run'); this.camMode = 'run';   // always: a new run re-snaps the framing
     d.save.mutate((s) => { s.onboarding.runsStarted++; });
+    d.hints?.start(d.save.data.onboarding.runsStarted, cfg.startT ?? 0, !!cfg.god);
     d.analytics.track('run_start', { seed: cfg.seed, runIndex: d.save.data.onboarding.runsStarted, lesson: cfg.mode === 'lesson' });
     blurActive();
     d.play.classList.add('run');

@@ -46,6 +46,11 @@ export const BOARD = {
   footYawFront: 22, footYawBack: -6,
 } as const;
 
+/** Flip readability (G0 playtest review: at 25×82 CSS px the board hid under the shoes for the whole flip). While a
+ *  flip rotates in the air the board drops below the tucked feet (0.22 m tuck + `drop`), grows a little and turns
+ *  off the camera axis so it is never seen end-on; it rises back for the catch (board flat ≥ POSE.flip.catchAt). `rate`: 1/s of the ease in and out. */
+export const FLIP_VIEW = { drop: 0.28, scale: 1.25, yawDeg: 18, rate: 14 } as const;
+
 /** Spring blending (DESIGN §18.5): critically damped, ω = 18 rad/s, 30 for pop and landing. */
 export const SPRING = { omega: 18, omegaFast: 30, fakiePivot: 26 } as const;
 
