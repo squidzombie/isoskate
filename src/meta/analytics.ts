@@ -39,8 +39,12 @@ export function createAnalyticsImpl(save: SaveStore, o: AnalyticsOptions = {}): 
   } catch { buf = []; }
   if (optOut) buf = [];
   let timer: ReturnType<typeof setTimeout> | null = null;
-  const write = () => { if (timer) { clearTimeout(timer); timer = null; } io.set(ANALYTICS_KEY, JSON.stringify(buf)); };
-  const schedule = () => { if (!timer) timer = setTimeout(write, ANALYTICS.writeMs); };
+  const write = () => { if (timer) { clearTimeout(timer); timer = null; } if (!optOut) io.set(ANALYTICS_KEY, JSON.stringify(buf)); };
+  // Written at most every 2 s, in idle time where the browser offers it (a 500-event buffer is ~50 KB of JSON:
+  // never a synchronous storage write in the middle of a run frame).
+  const g = globalThis as { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number };
+  const ric = typeof g.requestIdleCallback === 'function' ? g.requestIdleCallback.bind(globalThis) : null;
+  const schedule = () => { if (!timer) timer = setTimeout(() => { if (ric) ric(write, { timeout: 3000 }); else write(); }, ANALYTICS.writeMs); };
 
   const a: AnalyticsExt = {
     get optOut() { return optOut; },
