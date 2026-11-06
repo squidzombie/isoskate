@@ -7,6 +7,7 @@ import type { InputFrame } from '../core/input';
 import type { PropKind } from '../core/ids';
 import { DT, MANUAL } from '../core/tuning';
 import { addTrick, finishTrick, openWindow, pauseWindow } from '../tricks';
+import { MANUAL_END_WOBBLE } from './consts';
 import type { Ctx } from './state';
 
 /** Kinds whose top counts as "a manual pad or ledge top" (a HOLD there starts a manual outside a combo). */
@@ -49,7 +50,7 @@ export function endManual(k: Ctx, reason: 'budget' | 'pop' | 'bump' | 'release')
   k.ev.push({ t: 'manualEnd', tick: c.tick, kind: m.kind, dur: m.t, reason });
   c.manual = null;
   if (c.mode === 'manual') c.mode = 'roll';
-  if (reason === 'budget') c.wobble = Math.max(c.wobble, 0.3);
+  if (reason === 'budget') c.wobble = Math.max(c.wobble, MANUAL_END_WOBBLE);
   if (reason !== 'pop') openWindow(sc);
 }
 

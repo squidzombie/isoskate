@@ -10,5 +10,4 @@ export function createSim(tables: TrickTables, deps?: SimDeps): Sim {
 }
 
 export { insetBox, insetOf } from './collide';
-export { COIN_VOLUME } from './pickups';
-export { ROLL_OFF_DROP, STICKY_DROP } from './ground';
+export { BUMP_WOBBLE, COIN_CHAIN_TICKS, COIN_VOLUME, MANUAL_END_WOBBLE, PICK_MISS_TICKS, ROLL_OFF_DROP, STICKY_DROP } from './consts';

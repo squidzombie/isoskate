@@ -11,14 +11,17 @@
 //               landable with top − boardBottom ≤ STEP_UP → skim (y := top, airborne keeps vy ≥ 0, `bump`); else slam.
 //  - God mode: crashes are emitted with god: true and the obstacle is passed through from then on.
 import type { Obstacle, Solid } from '../core/world';
-import { FACE_INSET, HITBOX, SIDE_BUMP_V, STEP_UP } from '../core/tuning';
+import { HITBOX, SIDE_BUMP_V, STEP_UP } from '../core/tuning';
+import { insetOf } from '../world/gen';
+import { BUMP_WOBBLE } from './consts';
 import { SCORE, addBonus } from '../tricks';
 import { modeOf, type Ctx } from './state';
 import { touchdown } from './landing';
 import { endManual } from './manual';
 
-/** Inset of one axis: FACE_INSET, but never more than a quarter of the extent. */
-export const insetOf = (extent: number): number => Math.min(FACE_INSET, Math.max(0, extent) / 4);
+/** Inset of one axis: FACE_INSET, but never more than a quarter of the extent (one definition, shared with the
+ *  validator: world/gen validator/path.ts). */
+export { insetOf };
 
 /** The inset crash box of a solid (scratch-free: plain numbers in a reused object). */
 export interface Box { s0: number; s1: number; x0: number; x1: number; y0: number; y1: number }
@@ -112,7 +115,7 @@ export function collide(k: Ctx): void {
       c.p.x = side < 0 ? I.x0 - HW - 1e-3 : I.x1 + HW + 1e-3;
       c.vel.x = side * SIDE_BUMP_V;
       c.targetX = c.p.x;
-      c.wobble = Math.max(c.wobble, 0.3);
+      c.wobble = Math.max(c.wobble, BUMP_WOBBLE);
       k.ev.push({ t: 'bump', tick: c.tick, side, kind: ob.kind });
       if (c.mode === 'manual') endManual(k, 'bump');
     }

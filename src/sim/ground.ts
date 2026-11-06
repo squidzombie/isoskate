@@ -5,12 +5,9 @@
 //  - Otherwise, ground falling away by > ROLL_OFF_DROP → airborne 'rollOff' with coyote (never over a pit).
 import type { GroundHit, GroundSlab, Obstacle } from '../core/world';
 import { COYOTE, PIT_FALL_EPS, STEP_UP } from '../core/tuning';
+import { ROLL_OFF_DROP, STICKY_DROP } from './consts';
 import { freshAir, type Ctx } from './state';
 
-/** Ground falling away by more than this goes airborne (TECH §6.3). */
-export const ROLL_OFF_DROP = 0.05;
-/** A sticky slab (stairs / incline) is followed down by up to this much per tick (10-stair at 10.5 m/s ≈ 0.10). */
-export const STICKY_DROP = 0.3;
 
 /** Obstacle id owning a slab (−1 for none / the bare street). */
 export function slabOwner(obs: readonly Obstacle[], slab: GroundSlab | null): number {

@@ -4,8 +4,8 @@
 //   S_TRENCH  T1–T3 2.0 s  full-width trench (gap 0.25 / 0.30 / 0.35 s·v) with a 1.2 m plank; safe line steers onto it
 //   S_GATE    T2–T4 1.5 s  row of tall blockers with 1–2 openings of 2.5 / 2.2 / 2.0 m, ≥ 3 m from the previous safe x
 import { clamp, round1cm } from '../../../core/math';
-import { sAt, speedAt, tAt } from '../../../core/tuning';
-import { GEN, type Tier } from '../gen.config';
+import { HEIGHT, sAt, speedAt, tAt } from '../../../core/tuning';
+import { GEN } from '../gen.config';
 import { groundUnder } from '../props/common';
 import { buildBarrier, buildBlocker, buildFlatbar, buildTrench } from '../props/shared';
 import { MOVE_MIN } from '../safe';
@@ -67,15 +67,13 @@ export const S_BARRIER: Template = {
   },
 };
 
-const TRENCH_GAP_SEC: Record<Tier, number> = { 0: 0.25, 1: 0.25, 2: 0.30, 3: 0.35, 4: 0.35 };
-const PLANK_OFF: Record<Tier, readonly [number, number]> = { 0: [0, 1], 1: [0, 1], 2: [1, 2], 3: [2, 3], 4: [2, 3] };
 
 export const S_TRENCH: Template = {
   id: 'S_TRENCH', tiers: [1, 2, 3],
   build(c: TemplateCtx): TemplateOut {
     const x = c.line.x, v = c.v;
-    const len = round1cm(clamp(v * TRENCH_GAP_SEC[c.tier], 1.8, Math.min(3.7, 0.35 * v)));
-    const off = c.rng.range(PLANK_OFF[c.tier][0], PLANK_OFF[c.tier][1]);
+    const len = round1cm(clamp(v * GEN.trench.gapSec[c.tier], 1.8, Math.min(3.7, HEIGHT.pitMaxSec * v)));
+    const off = c.rng.range(GEN.trench.plankOff[c.tier][0], GEN.trench.plankOff[c.tier][1]);
     let dir = c.rng.chance(0.5) ? 1 : -1;
     if (Math.abs(x + dir * off) > 2.4) dir = -dir;
     const plankX = round1cm(clamp(x + dir * off, -2.4, 2.4));
@@ -83,7 +81,7 @@ export const S_TRENCH: Template = {
     const start = Math.abs(dx) >= MOVE_MIN ? moveStart(c) : c.t0 + 0.1;
     const arrive = c.line.moveTo(plankX, start);
     const s = round1cm(sAt(arrive + GEN.arriveMargin + c.rng.range(0, 0.3)));
-    c.obstacles.push(buildTrench(s, len, plankX, v, c.props));
+    c.obstacles.push(buildTrench(s, len, plankX, v, c.props, GEN.trench.plankW, GEN.trench.depth));
     c.cuts.push([s, s + len]);
     // Trick line: flip across, away from the plank.
     const tx = clamp(plankX + (plankX >= 0 ? -2.2 : 2.2), -2.8, 2.8);
@@ -92,8 +90,7 @@ export const S_TRENCH: Template = {
   },
 };
 
-const GATE_W: Record<Tier, number> = { 0: 2.5, 1: 2.5, 2: 2.5, 3: 2.2, 4: 2.0 };
-export const GATE_REACH = 4.6, GATE_MAX_C = 3.2, GATE_APART = 2.4;
+export const GATE_REACH = GEN.gate.reach, GATE_MAX_C = GEN.gate.maxC, GATE_APART = GEN.gate.apart;
 
 /** Width (m) of opening centres the next gate could still use, given this gate's openings (≥ GATE_APART away). */
 export function nextGateRoom(centres: readonly number[]): number {
@@ -106,12 +103,12 @@ export const S_GATE: Template = {
   id: 'S_GATE', tiers: [2, 3, 4],
   build(c: TemplateCtx): TemplateOut {
     const x0 = c.line.x;
-    const w = GATE_W[c.tier];
+    const w = GEN.gate.width[c.tier];
     // Opening ≥ 3 m (≤ 3.6 m, for decision time) from the previous safe x, inside ±3.2, and ≥ GATE_APART from the
     // last gate's opening: a straight lane can pass at most one of two consecutive gates (A1/A2 stand-in).
     // Search a 0.1 m grid: prefer |cx − x0| ∈ [3.0, 3.6] (rng tie-break), never closer than GATE_APART to the last
     // gate's openings; if nothing is that far, fall back to the best shift alone.
-    const want0 = 3.0, want1 = 3.6, jitter = c.rng.range(0, 1);
+    const want0 = GEN.gate.shift[0], want1 = GEN.gate.shift[1], jitter = c.rng.range(0, 1);
     let cx = NaN, best = Infinity, cxAny = NaN, bestAny = Infinity;
     for (let i = 0; i <= 64; i++) {
       const x = -GATE_MAX_C + i * 0.1;
@@ -129,15 +126,15 @@ export const S_GATE: Template = {
     const sRow = round1cm(sAt(arrive + GEN.arriveMargin) + 0.35);
     const open: [number, number][] = [[cx - w / 2, cx + w / 2]];
     const centres = [cx];
-    if (c.tier === 2 && c.rng.chance(0.4)) {
-      const c2 = round1cm(cx - dir * c.rng.range(3.5, 5.0));
+    if (c.tier === 2 && c.rng.chance(GEN.gate.second)) {
+      const c2 = round1cm(cx - dir * c.rng.range(GEN.gate.secondOff[0], GEN.gate.secondOff[1]));
       if (Math.abs(c2) <= GATE_MAX_C && !c.lastGateX.some((o) => Math.abs(c2 - o) < GATE_APART) && nextGateRoom([cx, c2]) >= 0.6) {
-        open.push([c2 - 1.25, c2 + 1.25]);
+        open.push([c2 - w / 2, c2 + w / 2]);
         centres.push(c2);
       }
     }
     open.sort((a, b) => a[0] - b[0]);
-    const kind = c.rng.chance(0.3) ? 'news_box' : 'trash_can';
+    const kind = c.rng.chance(GEN.gate.newsBox) ? 'news_box' : 'trash_can';
     const bw = kind === 'trash_can' ? 0.6 : 0.5, pitch = bw + 0.1;
     let a = -GATE_REACH;
     const runs: [number, number][] = [];
@@ -153,6 +150,6 @@ export const S_GATE: Template = {
         c.obstacles.push(buildBlocker(kind, sRow, round1cm(bx), c.props, i % 3));
       }
     }
-    return { t1: tAt(sRow + bw) + 0.5, gate: true, gateX: centres, mirror: dir < 0 };
+    return { t1: tAt(sRow + bw) + 0.5, gate: true, gateX: centres, gateT: tAt(sRow), mirror: dir < 0 };
   },
 };

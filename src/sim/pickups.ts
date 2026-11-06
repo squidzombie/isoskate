@@ -2,11 +2,9 @@
 // (a gateway entry banks the combo; arriving in a new area pays New Ground), the BEST line and speed tiers.
 import { SPEED_TIERS } from '../core/tuning';
 import { SCORE, addBonus, bank } from '../tricks';
+import { COIN_CHAIN_TICKS, COIN_VOLUME } from './consts';
 import type { Ctx } from './state';
 
-/** Coin pickup volume around the skater's centre (board bottom + 0.75 m), DESIGN §10.8. */
-export const COIN_VOLUME = { lat: 0.3, fwd: 0.4, vert: 0.7, centreUp: 0.75 } as const;
-const CHAIN_TICKS = 30;
 const PRUNE_EVERY = 600;
 
 export function pickups(k: Ctx): void {
@@ -18,7 +16,7 @@ export function pickups(k: Ctx): void {
     // Inclusive bounds (+1 µm): a coin string on a 0.6 m ledge's centre is exactly 0.3 m from either grind edge.
     if (Math.abs(coin.p.x - c.p.x) > COIN_VOLUME.lat + 1e-6 || Math.abs(coin.p.y - cy) > COIN_VOLUME.vert + 1e-6) continue;
     st.collected.add(coin.id);
-    st.coinChain = c.tick - st.lastCoinTick <= CHAIN_TICKS ? st.coinChain + 1 : 0;
+    st.coinChain = c.tick - st.lastCoinTick <= COIN_CHAIN_TICKS ? st.coinChain + 1 : 0;
     st.lastCoinTick = c.tick;
     st.score.coins += coin.value;
     k.ev.push({ t: 'coin', tick: c.tick, id: coin.id, value: coin.value, p: coin.p, chain: st.coinChain });

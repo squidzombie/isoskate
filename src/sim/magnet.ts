@@ -15,6 +15,7 @@ import { approach, clamp } from '../core/math';
 import { DT, FACE_INSET, GRIND, GROUND_ALIGN, HITBOX, MAGNET, STEP_UP, TARGET_X_MAX } from '../core/tuning';
 import type { Ctx } from './state';
 import { edgeX } from './predict';
+import { PICK_MISS_TICKS } from './consts';
 
 export function magnet(k: Ctx, applied: number): void {
   const st = k.st, c = st.cur, pr = st.pred;
@@ -57,9 +58,6 @@ export function groundAlign(k: Ctx): void {
   }
   if (best !== Infinity) c.targetX = clamp(approach(c.targetX, axis, GROUND_ALIGN.rateMax * DT), -TARGET_X_MAX, TARGET_X_MAX);
 }
-
-/** Air ticks an open pick window survives without a predicted capture (0.05 s). */
-export const PICK_MISS_TICKS = 3;
 
 function closeWindow(k: Ctx): void {
   const st = k.st, c = st.cur, pk = st.pick;

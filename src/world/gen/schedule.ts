@@ -1,6 +1,6 @@
 // world/gen/schedule.ts: what the next segment is (DESIGN §10.5, §10.7, §11): gateways at their timeline times,
-// cut-down fillers before them, the A3 full-width hazard scheduler, the M0 gate scheduler (A1/A2 stand-in),
-// breathers, and the tier-weighted draw. Pure functions of the cursor and the layout RNG.
+// cut-down fillers before them, the A3 full-width hazard scheduler, the M0 gate scheduler (A1/A2 stand-in, by deadline:
+// see GEN.gate), breathers, and the tier-weighted draw. Pure functions of the cursor and the layout RNG.
 import type { Sfc32 } from '../../core/rng';
 import { FIRST_VISIT_SEC, GATEWAY_AFTER, GATEWAY_SEC, VISIT_SEC, areaAtTime } from './areas';
 import type { GatewayId, AreaId } from '../../core/ids';
@@ -39,25 +39,47 @@ export function drawTier(phase: PhaseId, rng: Sfc32, lastTier: Tier): Tier {
 
 export interface Plan { id: TemplateId; tier: Tier; dur?: number; reason: 'rollout' | 'gateway' | 'filler' | 'a3' | 'gate' | 'breather' | 'draw' }
 
-/** The template for the next segment (before validation). `left` = seconds until the next gateway starts. */
-export function planSegment(c: GenCursor, phase: PhaseId, rng: Sfc32, left: number): Plan {
+/** The A3 full-width hazard (S_BARRIER, or S_TRENCH when enabled). */
+export const a3Plan = (c: GenCursor, rng: Sfc32, tier: Tier): Plan =>
+  ({ id: rng.chance(0.5) && c.trench ? 'S_TRENCH' : 'S_BARRIER', tier, reason: 'a3' });
+
+const durMax = (id: TemplateId): number => GEN.durMax[id] ?? GEN.open.dur[1];
+
+/** Seconds from now in which the next gate segment must start (GEN.gate): its row by the deadline, and before the
+ *  gateway [gwStart, gwEnd) when the deadline falls inside it or too soon after it. */
+export function gateRoom(c: GenCursor, gwStart: number, gwEnd: number): number {
+  const startBy = c.gateDueT - GEN.gate.lead;
+  if (startBy >= gwEnd || startBy <= gwStart - GEN.gate.fit) return startBy - c.t;
+  return gwStart - GEN.gate.fit - c.t;
+}
+
+/** The template for the next segment (before validation). `left` = seconds until the next gateway starts, `room` =
+ *  seconds before the next gate segment must start (gateRoom). Only templates that end in time are drawn; when none
+ *  does, the gate (if it fits before the gateway; else a filler, and the gate comes right after the gateway). */
+export function planSegment(c: GenCursor, phase: PhaseId, rng: Sfc32, left: number, room: number): Plan {
   if (left < GEN.minTemplateSec) return { id: 'S_OPEN', tier: 0, dur: left, reason: 'filler' };
   const tier = drawTier(phase, rng, c.lastTier);
+  const gateFits = left >= GEN.gate.fit;
+  const gate: Plan = { id: 'S_GATE', tier: Math.max(2, tier) as Tier, reason: 'gate' };
+  const limit = gateFits ? room : left;
   if (c.aClock + 1.2 >= c.fwTargetA) {
-    return { id: rng.chance(0.5) ? 'S_BARRIER' : 'S_TRENCH', tier: Math.max(1, Math.min(tier, 2)) as Tier, reason: 'a3' };
+    // A3 is due: it goes first when it fits, or when its own clock is the tighter one (the a3 rejection's bound).
+    const a3Slack = c.hazardA + a3Range(phase)[1] - GEN.a3Lead - c.aClock;
+    if (durMax('S_BARRIER') <= limit || a3Slack < room) return a3Plan(c, rng, Math.max(1, Math.min(tier, 2)) as Tier);
   }
-  if (c.aClock + 0.6 >= c.gateTargetA) return { id: 'S_GATE', tier: Math.max(2, tier) as Tier, reason: 'gate' };
   const br = GEN.breather[phase];
-  if (br && c.t >= c.breatherDueT) return { id: 'S_OPEN', tier: 0, dur: br.dur, reason: 'breather' };
+  if (br && c.t >= c.breatherDueT && br.dur <= limit) return { id: 'S_OPEN', tier: 0, dur: br.dur, reason: 'breather' };
   const allowFw = c.aClock + 1.0 >= c.hazardA + a3Range(phase)[0];
   const items: [TemplateId, number][] = [];
   for (const id of DRAWN) {
     const tpl = TEMPLATES[id];
-    if (id === 'S_OPEN') { items.push([id, GEN.templateWeights[id] ?? 0]); continue; }
-    if (!tpl.tiers.includes(tier)) continue;
+    if (id !== 'S_OPEN' && !tpl.tiers.includes(tier)) continue;
     if ((id === 'S_BARRIER' || id === 'S_TRENCH') && !allowFw) continue;
+    if (id === 'S_TRENCH' && !c.trench) continue;
+    if (id !== 'S_GATE' && durMax(id) > limit) continue;
     items.push([id, GEN.templateWeights[id] ?? 0]);
   }
+  if (!items.length) return gateFits ? gate : { id: 'S_OPEN', tier: 0, dur: left, reason: 'filler' };
   const id = rng.weighted(items);
   return { id, tier: id === 'S_OPEN' ? 0 : tier, reason: 'draw' };
 }

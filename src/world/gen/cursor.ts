@@ -20,8 +20,11 @@ export interface GenCursor {
   aClock: number;
   /** A-time of the last full-width hazard, and the target A-time of the next one (A3). */
   hazardA: number; fwTargetA: number;
-  /** A1/A2 stand-in: A-time of the next forced gate, and the last gate's opening centres. */
-  gateTargetA: number; lastGateX: number[];
+  /** A1/A2 stand-in: run time by which the next gate's row must come (the last row + GEN.gate.gap), and the last
+   *  gate's opening centres. */
+  gateDueT: number; lastGateX: number[];
+  /** S_TRENCH allowed (GEN_FLAGS.trench at construction). */
+  trench: boolean;
   /** Run time the next breather is due. */
   breatherDueT: number;
   lastTier: Tier;

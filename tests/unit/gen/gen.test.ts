@@ -5,7 +5,8 @@ import { hash32 } from '../../../src/core/rng';
 import { CHUNK_LEN, HEIGHT, R_MIN, T_SHIFT, sAt, speedAt, tAt } from '../../../src/core/tuning';
 import type { Chunk, SafeKey, WorldGen } from '../../../src/core/world';
 import { ObTag } from '../../../src/core/world';
-import { createWorldGen, createWorldQuery, gatewayWindow, rMinAt, ROLLOUT_CHAIN_T, ROLLOUT_END_S } from '../../../src/world/gen';
+import { createWorldGen, createWorldQuery, GEN, GEN_FLAGS, gatewayWindow, rMinAt, ROLLOUT_CHAIN_T, ROLLOUT_END_S } from '../../../src/world/gen';
+import { DECOR_KINDS } from '../../../src/core/decor';
 import { insetOf } from '../../../src/sim';
 import { checkPath } from '../../../src/world/gen/validator/path';
 import { SafeLine } from '../../../src/world/gen/safe';
@@ -26,8 +27,15 @@ function hashChunk(c: Chunk, h: number): number {
   for (const d of c.decor) w(d.kind.length, cm(d.s), cm(d.x), d.variant);
   return h;
 }
-function worldHash(seed: number, chunks: number, o: { startT?: number } = {}): number {
-  const gen = createWorldGen({ seed, mode: 'normal', ...o });
+/** A generator built with GEN_FLAGS.trench forced (the flag is read once, at construction). */
+function genWith(trench: boolean, cfg: Parameters<typeof createWorldGen>[0]): WorldGen {
+  const was = GEN_FLAGS.trench;
+  GEN_FLAGS.trench = trench;
+  try { return createWorldGen(cfg); } finally { GEN_FLAGS.trench = was; }
+}
+function worldHash(seed: number, chunks: number, o: { startT?: number; trench?: boolean } = {}): number {
+  const { trench, ...rest } = o;
+  const gen = genWith(trench ?? GEN_FLAGS.trench, { seed, mode: 'normal', ...rest });
   let h = 0x9e3779b9 | 0;
   const first = Math.floor(sAt(o.startT ?? 0) / CHUNK_LEN);
   for (let i = first; i < first + chunks; i++) h = hashChunk(gen.chunk(i), h);
@@ -41,9 +49,11 @@ function keysOf(gen: WorldGen, s1: number): SafeKey[] {
 const SEEDS = Array.from({ length: 20 }, (_, i) => i + 1);
 
 describe('world/gen determinism', () => {
-  it('golden chunk hashes (100 chunks ≈ 3.2 km) for 3 seeds', () => {
+  it('golden chunk hashes (100 chunks ≈ 3.2 km) for 3 seeds, S_TRENCH off (the M0 default) and on', () => {
     // Update deliberately when the generator changes (TECH §5.4).
-    expect([1, 2, 3].map((s) => worldHash(s, 100))).toEqual(GOLDEN);
+    expect(GEN_FLAGS.trench).toBe(false);
+    expect([1, 2, 3].map((s) => worldHash(s, 100, { trench: false }))).toEqual(GOLDEN);
+    expect([1, 2, 3].map((s) => worldHash(s, 100, { trench: true }))).toEqual(GOLDEN_TRENCH);
   });
   it('the same seed gives the same street, whatever order the chunks are asked for', () => {
     const a = createWorldGen({ seed: 7, mode: 'normal' });
@@ -107,8 +117,83 @@ describe('area timeline and gateways (DESIGN §12.1)', () => {
   });
 });
 
-describe('validator rules on generated streets (20 seeds × 3,000 m)', () => {
-  const gens = SEEDS.map((seed) => { const g = createWorldGen({ seed, mode: 'normal' }); g.ensure(3000); return g; });
+describe('validator rules on generated streets (20 seeds × 3,000 m, S_TRENCH on for odd seeds)', () => {
+  const gens = SEEDS.map((seed) => { const g = genWith(seed % 2 === 1, { seed, mode: 'normal' }); g.ensure(3000); return g; });
+
+  it('S_TRENCH only when GEN_FLAGS.trench is on; off, every A3 slot is an S_BARRIER', () => {
+    const count = (g: WorldGen, id: string) => g.segments().filter((s) => s.templateId === id).length;
+    const on = gens.filter((_, i) => i % 2 === 0), off = gens.filter((_, i) => i % 2 === 1);
+    expect(on.reduce((n, g) => n + count(g, 'S_TRENCH'), 0)).toBeGreaterThan(50);
+    expect(off.reduce((n, g) => n + count(g, 'S_TRENCH'), 0)).toBe(0);
+    for (const g of off) expect(createWorldQuery(g).obstacles(0, 3000).every((o) => o.pits.length === 0)).toBe(true);
+    expect(off.reduce((n, g) => n + count(g, 'S_BARRIER'), 0)).toBeGreaterThan(on.reduce((n, g) => n + count(g, 'S_BARRIER'), 0));
+  });
+
+  it('curb grinds never carry the board into a blocker: each curb edge ends one exit zone before any crash face or pit', () => {
+    let curbEdges = 0;
+    for (const g of gens) {
+      const w = createWorldQuery(g);
+      for (const c of w.obstacles(0, 3000)) for (const e of c.edges) {
+        if (c.kind !== 'curb') continue;
+        curbEdges++;
+        const zone = 0.6 * speedAt(tAt(e.a.s)) - 0.05;
+        for (const o of w.obstacles(e.a.s - 1, e.b.s + zone + 1)) {
+          if (o.kind === 'curb') continue;
+          const near = (x0: number, x1: number) => x1 > e.a.x - 1.5 && x0 < e.a.x + 1.5;
+          for (const so of o.solids) {
+            if (so.top === 'knock' || (so.top === 'landable' && so.box.y1 - e.a.y <= 0.18) || !near(so.box.x0, so.box.x1)) continue;
+            expect(so.box.s1 <= e.a.s || so.box.s0 >= e.b.s + zone, `curb ${e.a.s}–${e.b.s} vs ${o.kind} @${so.box.s0}`).toBe(true);
+          }
+          for (const p of o.pits) if (near(p.x0, p.x1)) expect(p.s1 <= e.a.s || p.s0 >= e.b.s + zone).toBe(true);
+        }
+      }
+    }
+    expect(curbEdges).toBeGreaterThan(200);
+  });
+
+  it('tall blockers stand 1.15 m above any ground a board touching them can ride on (road bins beside the curb too)', () => {
+    let n = 0;
+    const groundHi = (x0: number, x1: number) => (x1 > 3.0 || x0 < -3.0 ? 0.15 : 0);
+    for (const g of gens) for (const o of createWorldQuery(g).obstacles(0, 3000)) {
+      if (o.kind !== 'trash_can' && o.kind !== 'news_box') continue;
+      for (const so of o.solids) { n++; expect(so.box.y1 - groundHi(so.box.x0 - 0.2, so.box.x1 + 0.2)).toBeGreaterThanOrEqual(HEIGHT.tallMin - 1e-9); }
+    }
+    expect(n).toBeGreaterThan(1000);
+  });
+
+  it('decor stays inside the documented parameter ranges (buildings: w 6–14, d 8–30, h 6–40 m)', () => {
+    expect(DECOR_KINDS.building.params.w).toContain('6–14');
+    let n = 0;
+    for (const g of gens) for (let i = 0; i * CHUNK_LEN < 3000; i++) for (const d of g.chunk(i).decor) {
+      if (d.kind !== 'building') continue;
+      n++;
+      const p = d.params as Record<string, number>;
+      expect(p.w! >= 6 && p.w! <= 14 && p.d! >= 8 && p.d! <= 30 && p.h! >= 6 && p.h! <= 40, JSON.stringify(p)).toBe(true);
+    }
+    expect(n).toBeGreaterThan(500);
+  });
+
+  it('gate rows (A1/A2 stand-in) come ≤ GEN.gate.gap apart, plus at most one gateway when the gate could not precede it', () => {
+    let rows = 0, worst = 0;
+    for (const g of gens) {
+      const w = createWorldQuery(g);
+      const segs = g.segments();
+      const rowsT = segs.filter((s) => s.templateId === 'S_GATE').map((s) => {
+        const ob = w.obstacles(s.s0, s.s1).find((o) => o.kind === 'trash_can' || o.kind === 'news_box')!;
+        return tAt(ob.s);
+      });
+      for (let i = 1; i < rowsT.length; i++) {
+        const a = rowsT[i - 1]!, b = rowsT[i]!;
+        const ph = a < 45 ? 'opening' : a < 90 ? 'warm' : a < 150 ? 'build' : 'plateau';
+        const gw = segs.some((s) => s.gateway && s.t0 >= a && s.t0 < b);
+        const over = b - a - GEN.gate.gap[ph] - (gw ? 4 + GEN.gate.fit : 0);
+        worst = Math.max(worst, over);
+      }
+      rows += rowsT.length;
+    }
+    expect(rows).toBeGreaterThan(20 * 50);
+    expect(worst).toBeLessThanOrEqual(2.0);      // an A3 hazard may take the slot first (its own deadline): ≤ 1.42 s seen
+  });
 
   it('height bands: no solid top in 0.61–1.14 m; full-width hazards ≤ 0.50 m tall and ≤ 0.6 m long; pits ≤ 0.35 s·v', () => {
     let solids = 0;
@@ -213,4 +298,5 @@ describe('startT and the validator path check', () => {
   });
 });
 
-const GOLDEN = [2011377950, 2084888104, 744411108];
+const GOLDEN = [3721521044, 3146777944, 867771022];
+const GOLDEN_TRENCH = [1763372308, 491250573, 291711547];

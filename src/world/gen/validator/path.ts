@@ -5,7 +5,7 @@
 // than STEP_UP below it, pits prune at lip level. Each ollie is also checked shifted by ±shift (ollie window ≥ 2·shift).
 // It also refuses lines that would be captured by a grind edge while airborne (bots and the conformance check follow
 // the line exactly). TODO(WG): the full grid validator (TECH §5.2: planes, F/B passes, DP, dead ends, greedy check).
-import { CAPTURE, DT, G, HITBOX, PIT_FALL_EPS, STEP_UP, V_POP, VALIDATOR, sAt } from '../../../core/tuning';
+import { CAPTURE, DT, FACE_INSET, G, HITBOX, PIT_FALL_EPS, STEP_UP, V_POP, VALIDATOR, sAt } from '../../../core/tuning';
 import type { GroundSlab, Obstacle, Pit } from '../../../core/world';
 import { slabYAt } from '../query';
 import type { SafeLine } from '../safe';
@@ -15,7 +15,9 @@ export const TUBE_LAG = 0.2, TUBE_LEAD = 0.1;
 /** Extra margin on the board centre when crossing a pit on a plank (m). */
 export const PIT_CENTRE_MARGIN = 0.15;
 
-const inset = (extent: number) => Math.min(0.08, Math.max(0, extent) / 4);
+/** The sim's crash-face inset of one axis (TECH §6.4): FACE_INSET, never more than a quarter of the extent. The one
+ *  definition; sim/collide.ts uses it too. */
+export const insetOf = (extent: number): number => Math.min(FACE_INSET, Math.max(0, extent) / 4);
 
 interface Flat { slabs: GroundSlab[]; pits: Pit[] }
 
@@ -72,7 +74,7 @@ export function checkPath(line: SafeLine, obs: readonly Obstacle[], tFrom: numbe
       if (ob.s > s + halfL + 0.1 || ob.s + ob.len < s - halfL - 0.1) continue;
       for (const so of ob.solids) {
         const b = so.box;
-        const is = inset(b.s1 - b.s0), ix = inset(b.x1 - b.x0), iy = inset(b.y1 - b.y0);
+        const is = insetOf(b.s1 - b.s0), ix = insetOf(b.x1 - b.x0), iy = insetOf(b.y1 - b.y0);
         if (s + halfL <= b.s0 + is || s - halfL >= b.s1 - is) continue;
         if (hi + halfW <= b.x0 + ix || lo - halfW >= b.x1 - ix) continue;
         if (y >= b.y1 - iy - 1e-9 || y + HITBOX.h <= b.y0) continue;

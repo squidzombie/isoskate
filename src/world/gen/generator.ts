@@ -13,12 +13,12 @@ import { areaAtTime } from './areas';
 import { CoinWriter } from './coins';
 import type { GenCursor } from './cursor';
 import { emitDecor } from './decor';
-import { GEN, PHASES, type Tier } from './gen.config';
+import { GEN, GEN_FLAGS, PHASES, type Tier } from './gen.config';
 import { ROLLOUT_DECOR_SEED } from './lesson';
 import type { PropCtx } from './props/common';
 import { buildCurb } from './props/shared';
 import { SafeLine } from './safe';
-import { a3Range, gatewayWindow, nextFullWidthTarget, phaseAt, planSegment, type Plan } from './schedule';
+import { a3Plan, a3Range, gateRoom, gatewayWindow, nextFullWidthTarget, phaseAt, planSegment, type Plan } from './schedule';
 import { TEMPLATES, type TemplateCtx, type TemplateOut } from './templates';
 import { checkBands, checkEdges, checkLine, checkSpacing, spacingAfter } from './validator/rules';
 
@@ -67,7 +67,8 @@ export class Generator implements WorldGen {
       segIndex: 0, t: this.startT, s: sAt(this.startT), area: this.startArea, safeX: 0,
       last: null, firstActionT: this.rollout ? 0 : this.startT + GEN.spawnGrace,
       aClock: 0, hazardA: 0, fwTargetA: nextFullWidthTarget(0, phaseAt(clockT), rng),
-      gateTargetA: rng.range(GEN.gate.first[0], GEN.gate.first[1]), lastGateX: [],
+      gateDueT: clockT + GEN.gate.lead + rng.range(GEN.gate.first[0], GEN.gate.first[1]), lastGateX: [],
+      trench: GEN_FLAGS.trench,
       breatherDueT: Math.max(PHASES[1]!.t0, this.startT) + rng.range(br.every[0], br.every[1]) / 2,
       lastTier: 0, ids: { ob: 0, coin: 0, edge: 0 }, history: [], historyLine: null,
     };
@@ -147,15 +148,19 @@ export class Generator implements WorldGen {
     const area = areaAtTime(t0 + 1e-6, this.startArea).area;
     let plan: Plan = isRollout ? { id: 'ROLLOUT', tier: 0, reason: 'rollout' }
       : inGw ? { id: 'GATEWAY', tier: 0, dur: gw.end - t0, reason: 'gateway' }
-      : planSegment(c, phase, rng, gw.start - t0);
+      : planSegment(c, phase, rng, gw.start - t0, gateRoom(c, gw.start, gw.end));
     const maxT1 = isRollout ? Infinity : inGw ? gw.end : gw.start;
     let built: Built | null = null, rerolls = 0;
     for (let attempt = 0; attempt <= GEN.rerolls; attempt++) {
-      const r = this.tryBuild(plan, index, area, rng, coinRng, maxT1);
+      const r = this.tryBuild(plan, index, area, rng, coinRng, maxT1, true, inGw || isRollout ? Infinity : gateRoom(c, gw.start, gw.end));
       if (typeof r !== 'string') { built = r; break; }
       this.rejections[r] = (this.rejections[r] ?? 0) + 1;
       rerolls++;
-      if (r === 'a3') plan = { id: rng.chance(0.5) ? 'S_BARRIER' : 'S_TRENCH', tier: 1, reason: 'a3' };
+      const gate: Plan = { id: 'S_GATE', tier: Math.max(2, plan.tier) as Tier, reason: 'gate' };
+      if (r === 'a3') plan = a3Plan(c, rng, 1);
+      // Would overrun the gate deadline, or leave no room for the gate before the gateway: the gate instead.
+      else if (r === 'gate') plan = gate;
+      else if (r === 'fit' && plan.reason !== 'gate' && plan.reason !== 'filler' && maxT1 - t0 >= GEN.gate.fit) plan = gate;
       // Doesn't fit before the gateway: fill the rest with a cut-down S_OPEN (T0, always valid).
       else if (r === 'fit' && attempt >= 1 && maxT1 - t0 <= GEN.open.dur[1]) plan = { id: 'S_OPEN', tier: 0, dur: maxT1 - t0, reason: 'filler' };
     }
@@ -170,7 +175,8 @@ export class Generator implements WorldGen {
     this.commit(built, index, area, decorRng, rerolls, fallback, inGw ? gw.id : undefined, rng);
   }
 
-  private tryBuild(plan: Plan, index: number, area: AreaId, rng: Sfc32, coinRng: Sfc32, maxT1: number, validate = true): Built | string {
+  private tryBuild(plan: Plan, index: number, area: AreaId, rng: Sfc32, coinRng: Sfc32, maxT1: number, validate = true,
+    gateRoomSec = Infinity): Built | string {
     const c = this.cur;
     const t0 = c.t, s0 = c.s;
     const ids0 = { ...c.ids };
@@ -187,12 +193,16 @@ export class Generator implements WorldGen {
     const t1 = plan.dur !== undefined && (plan.id === 'S_OPEN' || plan.id === 'GATEWAY') ? Math.min(out.t1, t0 + plan.dur) : out.t1;
     if (t1 > maxT1 + 1e-6) return fail('fit');
     if (t1 <= t0 + 1e-6) return fail('empty');
-    if (validate && plan.tier > 0 && !out.fullWidth && c.aClock + (t1 - t0) + 1.6 > c.hazardA + a3Range(phaseAt(t0))[1]) return fail('a3');
+    if (validate && plan.tier > 0 && !out.fullWidth && c.aClock + (t1 - t0) + GEN.a3Lead > c.hazardA + a3Range(phaseAt(t0))[1]) return fail('a3');
+    // Gate deadline (A1/A2 stand-in, GEN.gate): a template may not end after the next gate segment must start
+    // (A3 hazards pass when theirs was the tighter clock; fillers only fill up to a gateway).
+    if (validate && !out.gate && plan.reason !== 'a3' && plan.reason !== 'filler' && t1 - t0 > gateRoomSec + 1e-6) return fail('gate');
     const s1 = sAt(t1);
-    obstacles.unshift(...buildCurb(-1, s0, s1, props, cuts), ...buildCurb(1, s0, s1, props, cuts));
+    const v0 = speedAt(t0);
+    obstacles.unshift(...buildCurb(-1, s0, s1, props, cuts, obstacles, v0), ...buildCurb(1, s0, s1, props, cuts, obstacles, v0));
     if (validate) {
       for (const a of line.actions) if (a.t < c.firstActionT - 1e-6) return fail('grace');
-      const why = checkBands(obstacles) ?? checkSpacing(line.actions, c.last) ?? checkEdges(obstacles, s1, speedAt(t0))
+      const why = checkBands(obstacles) ?? checkSpacing(line.actions, c.last) ?? checkEdges(obstacles, s1, v0)
         ?? checkLine(line.withHistory(c.historyLine), [...c.history, ...obstacles], Math.max(this.startT, t0 - 1.0), t1);
       if (why) return fail(why);
     }
@@ -239,7 +249,8 @@ export class Generator implements WorldGen {
       c.fwTargetA = nextFullWidthTarget(c.hazardA, phaseAt(t1), rng);
     }
     if (b.out.gate) {
-      c.gateTargetA = c.aClock + GEN.gate.period[phaseAt(t1)];
+      const rowT = b.out.gateT ?? t1;
+      c.gateDueT = rowT + GEN.gate.gap[phaseAt(rowT)];
       c.lastGateX = b.out.gateX ?? [];
     }
     if (b.plan.reason === 'breather' || b.plan.id === 'GATEWAY') {

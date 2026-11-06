@@ -16,8 +16,9 @@ export function createWorldQuery(gen: WorldGen): WorldQuery {
 
 export { areaAtTime, GATEWAY_AFTER, LOOP_SEC, FIRST_VISIT_SEC, VISIT_SEC, GATEWAY_SEC, BLEND_SEC } from './areas';
 export { slabYAt, STREET } from './query';
-export { GEN, PHASES, type PhaseId, type Tier } from './gen.config';
+export { GEN, GEN_FLAGS, PHASES, type PhaseId, type Tier } from './gen.config';
 export { gatewayWindow, phaseAt } from './schedule';
 export { polyX, KEY_EVERY } from './safe';
 export { rMinAt, spacingAfter } from './validator/rules';
+export { insetOf } from './validator/path';
 export { ROLLOUT_END_S, ROLLOUT_CHAIN_T, ROLLOUT_LEDGE } from './lesson';

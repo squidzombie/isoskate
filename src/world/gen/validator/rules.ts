@@ -6,6 +6,7 @@ import { HEIGHT, R_MIN, STEP_UP, T_SHIFT, VALIDATOR, speedAt, tAt } from '../../
 import type { Obstacle } from '../../../core/world';
 import { ObTag } from '../../../core/world';
 import type { RequiredAction, SafeLine } from '../safe';
+import { EXIT_ZONE_HALF_W, EXIT_ZONE_SEC } from '../props/shared';
 import { checkPath } from './path';
 
 export const rMinAt = (t: number): number => {
@@ -43,19 +44,18 @@ export function checkSpacing(actions: readonly RequiredAction[], last: { t: numb
   return null;
 }
 
-/** Rule (d), simplified: every grind edge ends inside the segment with a clear exit zone (0.6 s·v long, ±1.5 m wide):
- *  no crash face and no landable face taller than STEP_UP above the edge in it. */
+/** Rule (d), simplified: every grind edge (curbs included) ends inside the segment with a clear exit zone (0.6 s·v
+ *  long, ±1.5 m wide): no crash face and no landable face taller than STEP_UP above the edge in it. */
 export function checkEdges(obs: readonly Obstacle[], s1: number, v: number): string | null {
-  const zone = 0.6 * v;
+  const zone = EXIT_ZONE_SEC * v;
   for (const ob of obs) {
     for (const e of ob.edges) {
-      if (e.pickOnly) continue;
       if (e.b.s > s1 - zone * 0.9) return 'edge:boundary';
       for (const o2 of obs) {
         if (o2.id === ob.id) continue;
         for (const so of o2.solids) {
           const b = so.box;
-          if (b.s1 <= e.b.s || b.s0 >= e.b.s + zone || b.x1 <= e.b.x - 1.5 || b.x0 >= e.b.x + 1.5) continue;
+          if (b.s1 <= e.b.s || b.s0 >= e.b.s + zone || b.x1 <= e.b.x - EXIT_ZONE_HALF_W || b.x0 >= e.b.x + EXIT_ZONE_HALF_W) continue;
           if (so.top === 'landable' && b.y1 - e.b.y <= STEP_UP) continue;
           if (so.top === 'knock') continue;
           return 'edge:exit';
@@ -66,9 +66,10 @@ export function checkEdges(obs: readonly Obstacle[], s1: number, v: number): str
   return null;
 }
 
-/** The safe line survives with every ollie on time and shifted by ±(window/2 − ε) (required ollie window ≥ 0.24 s). */
+/** The safe line survives with every ollie on time and shifted by ±window/2 (required ollie window 0.25 s; 1 ms of
+ *  float slack, far below a tick, so a trench at exactly 0.35 s·v, whose window is exactly 0.25 s, passes). */
 export function checkLine(line: SafeLine, obs: readonly Obstacle[], tFrom: number, tTo: number): string | null {
-  const shift = VALIDATOR.ollieWindowRequired / 2 - 0.005;
+  const shift = VALIDATOR.ollieWindowRequired / 2 - 0.001;
   for (const sh of line.ollies.length ? [0, -shift, shift] : [0]) {
     const r = checkPath(line, obs, tFrom, tTo, sh);
     if (r) return r;

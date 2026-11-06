@@ -43,6 +43,8 @@ export interface TemplateOut {
   /** True when it is an S_GATE (A1/A2 stand-in), with its opening centres. */
   gate?: boolean;
   gateX?: number[];
+  /** Run time the board centre reaches the gate's row (the A1/A2 stand-in deadline counts from it). */
+  gateT?: number;
 }
 
 export interface Template {
