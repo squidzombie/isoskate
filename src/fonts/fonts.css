@@ -1,0 +1,30 @@
+/* Self-hosted fonts (TECH §1): woff2 straight from the @fontsource packages, hashed by Vite.
+   No third-party requests. Bungee for display text, Nunito 700/800/900 (tabular-nums) for UI. */
+@font-face {
+  font-family: 'Bungee';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('@fontsource/bungee/files/bungee-latin-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Nunito';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('@fontsource/nunito/files/nunito-latin-700-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Nunito';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url('@fontsource/nunito/files/nunito-latin-800-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Nunito';
+  font-style: normal;
+  font-weight: 900;
+  font-display: swap;
+  src: url('@fontsource/nunito/files/nunito-latin-900-normal.woff2') format('woff2');
+}
