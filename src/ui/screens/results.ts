@@ -81,6 +81,16 @@ export function resultsScreen(ctx: ScreenCtx, hooks: ResultsHooks): Screen {
       }
       case 'crate': {
         const pending = m?.pendingReveal();
+        // The Level 2 crate after its reveal: show what came out of it (with Equip), not the closed crate again.
+        if (rw.forced && wx?.pending?.item && !pending) {
+          const it = m?.item(wx.pending.item);
+          if (it) {
+            const img = h('img', { class: 'rw-art', alt: '' }); img.src = itemArt(it);
+            return h('div', { class: `reward item r-${it.rarity}` }, img,
+              h('div', { class: 'rw-txt' }, h('b', null, it.name), h('span', { class: `rar r-${it.rarity}` }, `${RARITY_LABEL[it.rarity]} · from the Street Crate`)),
+              equipButton(it.id));
+          }
+        }
         const forced = rw.forced?.rarity ? `Guaranteed ${RARITY_LABEL[rw.forced.rarity]} ${rw.forced.slot ?? 'item'} inside!` : '';
         const name = rw.tier === 'pro' ? 'Pro Crate' : rw.tier === 'street' ? 'Street Crate' : 'Cardboard Box';
         const open = pending && pending.tier === rw.tier
