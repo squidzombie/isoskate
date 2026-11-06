@@ -1449,7 +1449,7 @@ The palette lerps over 8 s, centred on each gateway. Palettes are looked up by `
 
 | Surface | Colour |
 |---|---|
-| Asphalt | `#6B6478` (lightened from `#5B5466` so ink hazards reach ≥ 2.5:1) |
+| Asphalt | `#79728A` (lightened from `#5B5466`, then from `#6B6478` at G0, so ink hazards reach ≥ 2.5:1 in building shadows and against sun-lit faces) |
 | Wet neon asphalt | `#352F55` |
 | Neon hazard body | `#7A6FB0` (mid-value, lighter than the road; see §18.4) |
 | Sidewalk / concrete | `#D9C3AE` |

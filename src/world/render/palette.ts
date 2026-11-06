@@ -5,9 +5,9 @@
 import type { Surface } from '../../core/ids';
 
 export const COLORS = {
-  asphalt: 0x6b6478, verge: 0xcdb8a3, pit: 0x2f2742, water: 0x4f6a8f,
+  asphalt: 0x79728a, verge: 0xcdb8a3, pit: 0x2f2742, water: 0x4f6a8f,
   bump: 0xcfc3b8, lowLandable: 0xa99cc0, lowCrash: 0x2b2140, chevron: 0xf2b630, knock: 0xff8a5b,
-  forbidden: 0xff00ff, tall: 0x2b2140, tallTop: 0x4a3b6b, tallAccent: 0xd9765a,
+  forbidden: 0xff00ff, tall: 0x2b2140, tallTop: 0x352a4c, tallAccent: 0xd9765a,
   edgeCream: 0xfff1d6, ink: 0x2b2140,
   /** DESIGN §18.1 / §18.8: coins are emissive #FFC94A (drawn unlit and not tone-mapped, so they stay gold). */
   coin: 0xffc94a,
@@ -18,7 +18,7 @@ export const COLORS = {
 
 /** Ground colours by surface (DESIGN §18.1). */
 export const SURFACE_COLOR: Readonly<Record<Surface, number>> = {
-  asphalt: 0x6b6478, wetAsphalt: 0x352f55, concrete: 0xd9c3ae, tile: 0xd7c4b5, granite: 0xb9a9a0, wood: 0xa9744f,
+  asphalt: 0x79728a, wetAsphalt: 0x352f55, concrete: 0xd9c3ae, tile: 0xd7c4b5, granite: 0xb9a9a0, wood: 0xa9744f,
   metal: 0x9ba3b5, grass: 0x9db36b,
 };
 

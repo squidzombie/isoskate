@@ -200,9 +200,10 @@ function obstacle(ob: Obstacle, s0: number, s1: number, z: (s: number) => number
     w.box(b.x0, b.y0, z(r[1]), b.x1, b.y1, z(r[0]), solidColor(so.top, b.y0, b.y1));
     const front = Math.abs(r[0] - b.s0) < 1e-6;
     if (cls === 'tall') {
-      // Ink body, a lighter top, one saturated accent band on the camera-facing front face (DESIGN §18.4).
+      // Ink body, a barely lighter top, one slim saturated accent band on the camera-facing front face (DESIGN §18.4).
+      // Top and band stay small and dark: on a 0.6 m bin they are a large share of the silhouette's mean luminance.
       w.box(b.x0 + 0.02, b.y1, z(r[1]) + 0.02, b.x1 - 0.02, b.y1 + 0.012, z(r[0]) - 0.02, COLORS.tallTop);
-      if (front) w.box(b.x0, b.y1 - 0.18, z(r[0]), b.x1, b.y1 - 0.06, z(r[0]) + 0.012, COLORS.tallAccent);
+      if (front) w.box(b.x0, b.y1 - 0.12, z(r[0]), b.x1, b.y1 - 0.07, z(r[0]) + 0.012, COLORS.tallAccent);
     }
     if (cls === 'low' && so.top === 'crash' && front && (fullWidth || b.x1 - b.x0 > 6)) {
       // Full-width hazard: a slim band of amber / ink safety chevrons along the top of the front face. Slim on
