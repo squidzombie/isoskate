@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { AREA_MUSIC, COIN, FEEDBACK, VOICING_RANGE, type MusicArea } from '../../../src/audio/mix.config';
 import {
-  allowedPool, altBars, chordPcs, coinMidi, feedbackMidi, isAvoid, midiHz, mod12, pentatonicNote, pentatonicPcs, pentatonicRoot, pivotChord,
+  allowedPool, altBars, chordPcs, coinMidi, feedbackMidi, isAvoid, midiHz, mod12, pentatonicNote, pentatonicPcs, pentatonicRoot, pivotChord, tuneHz,
 } from '../../../src/audio/music/progressions';
 
 const AREAS = Object.keys(AREA_MUSIC) as MusicArea[];
@@ -111,5 +111,19 @@ describe('progressions and voicings', () => {
     expect(pentatonicNote(AREA_MUSIC.downtown, 0, 4)).toBe(65);      // F4
     expect(pentatonicNote(AREA_MUSIC.downtown, 5, 4)).toBe(77);      // F5
     expect(pentatonicNote(AREA_MUSIC.downtown, -1, 5)).toBe(74);     // D5
+  });
+
+  it('tuneHz: the wheel whir lands on a chord tone near its nominal pitch (or the key pentatonic with no chord)', () => {
+    for (const area of ['downtown', 'suburbs', 'docks', 'neon', 'menu'] as MusicArea[]) {
+      for (const bar of AREA_MUSIC[area].bars) for (const ch of bar) {
+        for (const hz of [810, 900, 990]) {
+          const f = tuneHz(AREA_MUSIC[area], ch, hz), m = Math.round(69 + 12 * Math.log2(f / 440));
+          expect(chordPcs(ch).has(((m % 12) + 12) % 12), `${area} ${ch.name} ${hz}`).toBe(true);
+          expect(Math.abs(Math.log2(f / hz)) * 12).toBeLessThanOrEqual(6);
+        }
+      }
+      const f = tuneHz(AREA_MUSIC[area], null, 900), m = Math.round(69 + 12 * Math.log2(f / 440));
+      expect(pentatonicPcs(AREA_MUSIC[area])).toContain(((m % 12) + 12) % 12);
+    }
   });
 });

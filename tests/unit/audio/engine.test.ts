@@ -153,6 +153,31 @@ describe('AudioCore (fake context)', () => {
     }
   });
 
+  it('sliders at 0: the music keeps time and form without building nodes; muted, one-shots are skipped too', () => {
+    const h = harness();
+    h.core.setScene('run');
+    h.game.emit({ t: 'runStart', tick: 1, seed: 1, mode: 'normal' });
+    for (let i = 0; i < 120; i++) h.frame(0.9);
+    h.core.setVolumes({ music: 0, sfx: 0.9 });
+    const oscs = () => h.ctx.created.osc ?? 0;
+    let n0 = oscs(), bar0 = h.core.stats().bar;
+    for (let i = 0; i < 60 * 8; i++) h.frame(0.9);
+    expect(h.core.stats().bar).toBeGreaterThan(bar0 + 1);          // bar lines go on
+    expect(oscs() - n0).toBeLessThan(12);                          // no notes (the odd ambience chirp at most)
+    n0 = h.ctx.nodes;
+    h.core.cue('pop');
+    expect(h.ctx.nodes - n0).toBeGreaterThan(0);                   // SFX still play
+    h.core.setVolumes({ music: 0, sfx: 0 });
+    n0 = h.ctx.nodes;
+    h.core.cue('pop'); h.core.note(3); h.core.coin(h.tick, 1);
+    expect(h.ctx.nodes).toBe(n0);
+    h.core.setVolumes({ music: 0.8, sfx: 0.9 });
+    bar0 = h.core.stats().bar; n0 = oscs();
+    for (let i = 0; i < 60 * 4; i++) h.frame(0.9);
+    expect(oscs() - n0).toBeGreaterThan(30);                       // notes again
+    expect(h.core.stats().bar).toBeGreaterThan(bar0);
+  });
+
   it('a 2-minute storm of simultaneous SFX never exceeds the voice cap', () => {
     const h = harness();
     h.core.setScene('run');

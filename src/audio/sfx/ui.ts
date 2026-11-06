@@ -1,11 +1,11 @@
 // audio/sfx/ui.ts: interface and meta sounds (DESIGN §19.3 "Other sounds"): taps, back, toggle, error, purchase,
 // level up (Maj9 arpeggio on EP + mallet with a 6 kHz shimmer), crate shake / open and the four reveal stingers.
 // All of them are in the current key, short and soft; they play on the SFX bus and never through the music chain.
-import { LEVEL_UP, SFX_LEVEL, VARIATION } from '../mix.config';
+import { EP, LEVEL_UP, SFX_LEVEL, VARIATION } from '../mix.config';
 import type { Graph } from '../graph';
 import { playEp, playMallet } from '../music/instruments';
 import { midiHz, pentatonicNote } from '../music/progressions';
-import { gain, osc, perc, vary, voice } from '../synth';
+import { filter, gain, osc, perc, vary, voice } from '../synth';
 import { PRI } from '../voices';
 import { nz, tn, type CueOpts, type KeyInfo } from './oneshots';
 
@@ -39,11 +39,14 @@ export function playUi(g: Graph, id: string, t: number, o: CueOpts, key: KeyInfo
     }
     case 'levelUp': {
       // Maj9 arpeggio, 5 notes 70 ms apart on EP + mallet, the last held 1.2 s; 0.6 s shimmer high-passed at 6 kHz.
+      // The EP goes through its own low-pass (the EP bus's 2.8 kHz) on the SFX bus: never the music chain, so the
+      // stinger is not combo-filtered, follows the SFX slider and is not caught by its own 3 dB music duck.
       const notes = maj9(key, 4);
+      const ep = filter(g.ctx, 'lowpass', EP.lpHz, 0.5, filter(g.ctx, 'highpass', EP.hpHz, 0.7, gain(g.ctx, LEVEL_UP.epGain * (o.gain ?? 1), g.sfx)));
       notes.forEach((m, i) => {
         const at = t + (i * LEVEL_UP.noteMs) / 1000;
         const hold = i === notes.length - 1 ? LEVEL_UP.holdSec : 0.25;
-        playEp(g, at, m, 0.7, hold);
+        playEp(g, at, m, 0.7, hold, ep, PRI.sfx);
         playMallet(g, g.sfx, at, m + 12, 0.7, { gain: 0.12 * L.levelUp / 0.3, decay: hold + 0.3, pri: PRI.sfx });
       });
       const s = v(LEVEL_UP.shimmerSec, L.levelUp); if (!s) return;

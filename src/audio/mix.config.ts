@@ -230,7 +230,7 @@ export const SFX_LEVEL = {
   spin: 1.6, revert: 1.5, pickChime: 0.22, rewind: 0.55, needle: 0.45, newBest: 0.22, newArea: 0.18,
   ui: 1.8, purchase: 1.1, crate: 0.5, crateOpen: 0.9, reveal: 0.26, levelUp: 0.3,
 } as const;
-export const LEVEL_UP = { noteMs: 70, holdSec: 1.2, shimmerHz: 6000, shimmerSec: 0.6, duckDb: 3, duckSec: 1.6 } as const;
+export const LEVEL_UP = { noteMs: 70, holdSec: 1.2, shimmerHz: 6000, shimmerSec: 0.6, duckDb: 3, duckSec: 1.6, epGain: 1.0 } as const;
 export const COMBO_BANK = { noteMs: 50, gain: 0.26 } as const;
 
 // ── Ambience (§19.1 per-area signatures) ──────────────────────────────────────────────────────────────────────────

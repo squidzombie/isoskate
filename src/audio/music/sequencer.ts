@@ -8,7 +8,7 @@ import {
   type MusicArea, type Section,
 } from '../mix.config';
 import { PATTERNS } from './patterns';
-import { allowedPool, altBars, areaMusic, chordAt, chordPcs, nearestIn, pentatonicNote } from './progressions';
+import { allowedPool, altBars, areaMusic, chordAt, chordPcs, isAvoid, nearestIn, pentatonicNote } from './progressions';
 
 export type Inst = 'kick' | 'snare' | 'rim' | 'clap' | 'hatC' | 'hatO' | 'shaker' | 'ep' | 'bass' | 'pad' | 'mallet' | 'arp' | 'clank';
 export type Layer = 'drums' | 'ghost' | 'shaker' | 'bass' | 'ep' | 'pad' | 'melody' | 'arp' | 'clank';
@@ -267,7 +267,9 @@ export function composeBar(c: BarCtx): NoteEv[] {
     const ch0 = barChords[0]!, ch2 = chordAt(barChords, 2);
     const nextRoot = c.approachTo ?? nextBarChords[0]!.bass;
     const approach = !!pivot || (jitter(seed, bar, 15, LANE.bass) + 1) / 2 < BASS.approachChance;
-    const third = split ? ch2.bass : (jitter(seed, bar, 8, LANE.bass) + 1) / 2 < BASS.fifthChance ? ch0.bass + 7 : ch0.bass + 12;
+    // The fifth only where it does not rub against the voicing (G7alt's E♭ over a D would be a minor 9th): else the octave.
+    const fifth = !isAvoid(ch0.bass + 7, chordPcs(ch0)) && (jitter(seed, bar, 8, LANE.bass) + 1) / 2 < BASS.fifthChance;
+    const third = split ? ch2.bass : fifth ? ch0.bass + 7 : ch0.bass + 12;
     push({ inst: 'bass', layer: 'bass', t: at(0, LANE.bass), step: 0, vel: 0.95 * vh(0, LANE.bass), midi: ch0.bass, dur: 7.4 * s16, pan: 0 });
     push({ inst: 'bass', layer: 'bass', t: at(8, LANE.bass), step: 8, vel: 0.8 * vh(8, LANE.bass), midi: third, dur: (approach ? 6.4 : 7.4) * s16, pan: 0 });
     if (approach) {

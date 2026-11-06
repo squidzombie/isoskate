@@ -13,7 +13,7 @@ import {
 import { prioritize } from './bank';
 import { playDrum } from './music/drums';
 import { areaMallet, Bass, playArp, playClank, playEp, playMallet, playPad } from './music/instruments';
-import { chordAt, feedbackMidi, pivotChord } from './music/progressions';
+import { chordAt, feedbackMidi, pivotChord, tuneHz } from './music/progressions';
 import { composeBar, drumLpFor, formAt, LAYERS, layersFor, progression, sectionStart, type Layer, type Level, type NoteEv } from './music/sequencer';
 import { tapeReset, tapeStop } from './music/tape';
 import { Ambience } from './sfx/ambience';
@@ -52,6 +52,9 @@ export class AudioCore {
   g: Graph | null = null;
   scene: Scene = 'menu';
   private vol = { music: 1, sfx: 1 };
+  /** Music slider at 0: the music keeps its time, form and harmony (bar lines, pivots, keyInfo) but creates no
+   *  nodes, and feedback notes are skipped; both at 0 (muted, context suspended): one-shots are skipped too. */
+  private musicOn = true; private sfxOn = true;
   private song: Song | null = null;
   private playing = false;
   private stopped = true;                 // tape-stopped or stopped: the next start is a needle drop
@@ -144,6 +147,7 @@ export class AudioCore {
 
   setVolumes(v: { music: number; sfx: number }): void {
     this.vol = { music: clamp01(v.music), sfx: clamp01(v.sfx) };
+    this.musicOn = this.vol.music > 0; this.sfxOn = this.vol.sfx > 0;
     const g = this.g;
     if (!g) return;
     const now = g.ctx.currentTime;
@@ -213,7 +217,7 @@ export class AudioCore {
       if (nb - 0.03 >= horizon) break;
       this.advanceBar(nb);
     }
-    while (this.qi < this.q.length && this.q[this.qi]!.at < horizon) this.dispatch(this.q[this.qi++]!, now);
+    while (this.qi < this.q.length && this.q[this.qi]!.at < horizon) { const it = this.q[this.qi++]!; if (this.musicOn) this.dispatch(it, now); }
     if (this.qi > 48) { this.q.splice(0, this.qi); this.qi = 0; }
   }
 
@@ -460,7 +464,7 @@ export class AudioCore {
     this.begin('roll');
     this.frame();
     if (this.g) {
-      this.rollLoop!.update(this.g.ctx.currentTime, this.scene === 'run' ? speed01 : 0, surface, airborne, manual);
+      this.rollLoop!.update(this.g.ctx.currentTime, this.scene === 'run' ? speed01 : 0, surface, airborne, manual, this.tuneWhir);
       this.tick();
     }
     this.end();
@@ -473,6 +477,7 @@ export class AudioCore {
   }
 
   // ── one-shots and feedback ────────────────────────────────────────────────────────────────────────────────────
+  private readonly tuneWhir = (hz: number): number => { const k = this.keyInfo(this.now()); return tuneHz(k.area, k.chord, hz); };
   /** The key and chord sounding at time t (for pitched one-shots). */
   keyInfo(t: number): KeyInfo {
     const s = this.song;
@@ -486,7 +491,7 @@ export class AudioCore {
   }
   cue(id: Cue, o: CueOpts = {}, at?: number): void {
     const g = this.g;
-    if (!g) return;
+    if (!g || (!this.sfxOn && !this.musicOn)) return;   // muted (the context is suspended): nothing piles up
     this.begin('cue', id);
     const t = Math.max(at ?? 0, g.ctx.currentTime);
     if (UI_CUES.has(id)) playUi(g, id, t, o, this.keyInfo(t));
@@ -497,7 +502,7 @@ export class AudioCore {
    *  away, delayed by the tape latency so it lands with the beat the player hears. */
   note(seq: number, o: { gain?: number; degreeOffset?: number } = {}): void {
     const g = this.g;
-    if (!g) return;
+    if (!g || !this.musicOn) return;                    // the feedback bus follows the music slider
     this.begin('note');
     const now = g.ctx.currentTime;
     const s = this.song;

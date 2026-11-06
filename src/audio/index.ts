@@ -60,16 +60,27 @@ function prepareBank(): void {
   startPrep();
 }
 
+/** Live music seed: a new one per app launch, so sessions do not all open with the same menu song and motif (DESIGN
+ *  §19.1 "each song has its own seed"); reproducible with the debug `?seed=` flag. Offline renders use fixed seeds. */
+function liveSeed(): number {
+  const s = typeof window !== 'undefined' ? readFlags().seed : null;
+  return hash32(LIVE_SEED, s ?? Math.floor(Math.random() * 0x100000000));
+}
+
 export function createAudio(): AudioEngine {
   if (typeof window !== 'undefined') prepareBank();
-  const core = new AudioCore({ seed: LIVE_SEED, nowMs: () => performance.now() });
+  const core = new AudioCore({ seed: liveSeed(), nowMs: () => performance.now() });
   let ctx: AudioContext | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
+  // Both sliders at 0: the context is suspended (no audio-thread cost, no battery) and the core skips its work;
+  // audio still counts as unlocked once it has run, so wiring does not keep retrying.
+  let muted = false, ran = false;
+  const wake = () => { if (ctx && !muted && document.visibilityState !== 'hidden') void ctx.resume().catch(() => undefined); };
+  const sleep = () => { if (ctx && ctx.state === 'running') void ctx.suspend().catch(() => undefined); };
 
   const onVisibility = () => {
     if (!ctx) return;
-    if (document.visibilityState === 'hidden') void ctx.suspend().catch(() => undefined);
-    else void ctx.resume().catch(() => undefined);
+    if (document.visibilityState === 'hidden') sleep(); else wake();
   };
   const create = (): AudioContext | null => {
     const w = window as unknown as { AudioContext?: AudioCtor; webkitAudioContext?: AudioCtor };
@@ -91,9 +102,10 @@ export function createAudio(): AudioEngine {
   };
 
   const engine: AudioEngine & { debug: AudioDebug } = {
-    get unlocked() { return ctx?.state === 'running'; },
+    get unlocked() { return ctx?.state === 'running' || (muted && ran); },
     async unlock(): Promise<boolean> {
       try {
+        if (muted && ran) return true;
         if (!ctx) ctx = create();
         if (!ctx) return false;
         // Everything up to the first await runs inside the user-activation handler (required by iOS).
@@ -101,14 +113,22 @@ export function createAudio(): AudioEngine {
         const src = ctx.createBufferSource();
         src.buffer = buf; src.connect(ctx.destination); src.start(0);
         if (ctx.state !== 'running') await ctx.resume();
-        return ctx.state === 'running';
+        const ok = ctx.state === 'running';
+        if (ok) { ran = true; if (muted) sleep(); }
+        return ok;
       } catch {
         return false;
       }
     },
-    suspend() { void ctx?.suspend().catch(() => undefined); },
-    resume() { void ctx?.resume().catch(() => undefined); },
-    setVolumes(v) { core.setVolumes(v); },
+    suspend() { sleep(); },
+    resume() { wake(); },
+    setVolumes(v) {
+      core.setVolumes(v);
+      const m = !(v.music > 0) && !(v.sfx > 0);
+      if (m === muted) return;
+      muted = m;
+      if (muted) sleep(); else wake();
+    },
     setScene(s: Scene) { core.setScene(s); },
     music: {
       start(area: AreaId, seed: number) { core.start(area, seed); },

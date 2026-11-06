@@ -142,3 +142,17 @@ export function feedbackMidi(a: Pick<AreaMusic, 'tonic' | 'mode'>, ch: ChordSpec
 export function coinMidi(a: Pick<AreaMusic, 'tonic' | 'mode'>, n: number, octave: number, maxDeg: number): number {
   return pentatonicNote(a, Math.max(0, Math.min(maxDeg, Math.floor(n))), octave);
 }
+
+/** The frequency nearest `hz` that is a chord tone (or, with no chord, a pentatonic note of the key): for pitched
+ *  noises that are not notes (the wheel whir), so they never rub against the harmony. */
+export function tuneHz(a: Pick<AreaMusic, 'tonic' | 'mode'>, ch: ChordSpec | null, hz: number): number {
+  const pcs = ch ? [...chordPcs(ch)] : pentatonicPcs(a);
+  const m = 69 + 12 * Math.log2(Math.max(20, hz) / 440);
+  let best = Math.round(m), bd = Infinity;
+  for (let k = Math.floor(m) - 6; k <= Math.ceil(m) + 6; k++) {
+    if (!pcs.includes(mod12(k))) continue;
+    const d = Math.abs(k - m);
+    if (d < bd) { bd = d; best = k; }
+  }
+  return midiHz(best);
+}

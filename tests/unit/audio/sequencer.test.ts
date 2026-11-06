@@ -87,6 +87,25 @@ describe('composeBar', () => {
     expect(fills / phrases).toBeLessThan(0.65);
   });
 
+  it('bass: no note a semitone from the voicing above it (the fifth gives way to the octave, e.g. Docks G7alt)', () => {
+    let fifths = 0, octaves = 0;
+    for (const area of ['downtown', 'suburbs', 'docks', 'neon', 'menu'] as const) {
+      for (const alt of [false, true]) {
+        const prog = progression(area, alt);
+        for (let bar = 4; bar < 64; bar++) {
+          const ch = prog[bar % 4]!;
+          for (const e of composeBar({ area, seed: 9 + bar, alt, bar, level: 2 }).filter((x) => x.inst === 'bass' && x.step === 8)) {
+            const c = chordAt(ch, 2);
+            expect(isAvoid(e.midi, chordPcs(c)), `${area} ${alt ? 'alt ' : ''}bar ${bar} ${c.name}: bass ${e.midi}`).toBe(false);
+            if (e.midi === c.bass + 7) fifths++; else if (e.midi === c.bass + 12) octaves++;
+          }
+        }
+      }
+    }
+    expect(fifths).toBeGreaterThan(50);
+    expect(octaves).toBeGreaterThan(50);
+  });
+
   it('bass: root on beat 1, fifth/octave or the 2nd chord root on beat 3, chromatic approach into the next root', () => {
     let approaches = 0;
     for (let bar = 4; bar < 64; bar++) {

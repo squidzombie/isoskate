@@ -36,7 +36,7 @@ export class RollLoop {
     this.wood = gain(ctx, 0, this.lp);
     white.connect(filter(ctx, 'bandpass', 400, 4, this.wood));
     white.start(0, noiseOffset(g)); brown.start(0, noiseOffset(g));
-    // Airborne wheel whir (900 Hz, fades over 0.4 s from take-off).
+    // Airborne wheel whir (about 900 Hz, tuned to the nearest chord tone at take-off; fades over 0.4 s).
     this.whir = gain(ctx, 0, g.sfx);
     this.whirOsc = osc(ctx, 'triangle', ROLL.whirHz, this.whir);
     this.whirOsc.start(0);
@@ -56,7 +56,8 @@ export class RollLoop {
     p.setTargetAtTime(v, now, tau);
   }
 
-  update(now: number, speed01: number, surface: Surface, airborne: boolean, manual: boolean): void {
+  /** `tune` maps the whir's nominal frequency to the nearest chord tone (called at take-off only). */
+  update(now: number, speed01: number, surface: Surface, airborne: boolean, manual: boolean, tune?: (hz: number) => number): void {
     const dt = this.lastT < 0 ? 0 : Math.min(0.1, Math.max(0, now - this.lastT));
     this.lastT = now;
     const sf: SurfaceRoll = ROLL.surfaces[surface] ?? ROLL.surfaces.asphalt;
@@ -84,7 +85,8 @@ export class RollLoop {
       p.cancelScheduledValues(now);
       p.setValueAtTime(ROLL.whirGain * (0.6 + 0.4 * s), now);
       p.setTargetAtTime(0, now, ROLL.whirFade / 4);
-      this.whirOsc.frequency.setValueAtTime(ROLL.whirHz * (0.9 + 0.2 * s), now);
+      const hz = ROLL.whirHz * (0.9 + 0.2 * s);
+      this.whirOsc.frequency.setValueAtTime(tune ? tune(hz) : hz, now);
     } else if (!airborne && this.wasAir) this.whir.gain.setTargetAtTime(0, now, 0.01);
     this.wasAir = airborne;
     // Joint ticks by distance travelled (concrete 1.5 m, wood planks 0.3 m).

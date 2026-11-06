@@ -6,7 +6,7 @@ import type { EdgeMaterial } from '../../core/ids';
 import { COIN, COMBO_BANK, FEEDBACK, GRIND_MATERIAL, SFX_LEVEL, VARIATION, type AreaMusic, type ChordSpec } from '../mix.config';
 import type { Graph } from '../graph';
 import { playMallet } from '../music/instruments';
-import { coinMidi, feedbackMidi, midiHz, pentatonicNote } from '../music/progressions';
+import { coinMidi, feedbackMidi, midiHz, pentatonicNote, tuneHz } from '../music/progressions';
 import { filter, gain, noiseOffset, osc, perc, swell, sweep, vary, voice, type VoiceOut } from '../synth';
 import { PRI } from '../voices';
 
@@ -187,7 +187,8 @@ export function playOneShot(g: Graph, id: string, t: number, o: CueOpts, key: Ke
         tn(g, s.v, s.d, at, 0.05, 'sine', f, 0.55 * (1 - i / (n + 1)), 0.001, f * 0.8);
         nz(g, s.v, s.d, at, 0.02, 'bandpass', 1800, 1.5, 0.25 * (1 - i / (n + 1)));
       }
-      tn(g, s.v, s.d, t, 0.5, 'triangle', 900, 0.06, 0.01, 700);
+      const whir = tuneHz(key.area, key.chord, 900);
+      tn(g, s.v, s.d, t, 0.5, 'triangle', whir, 0.06, 0.01, whir * 0.78);   // wheels spinning down from a chord tone
       return;
     }
     case 'grindEntry': case 'grindSwitch': {

@@ -7,10 +7,11 @@ import { FLOOR, gain, osc, perc, tanhCurve, voice } from '../synth';
 import { PRI } from '../voices';
 
 /** FM electric piano note: sine carrier, ratio-1 modulator (index 1.6 → 0.3 over 0.8 s), ratio-14 tine (index 0.4,
- *  50 ms), ADSR 5 ms / 1.6 s / 0.25 / 0.6 s. Tremolo, auto-pan and the low-pass are shared on the EP bus. */
-export function playEp(g: Graph, t: number, midi: number, vel: number, dur: number): void {
+ *  50 ms), ADSR 5 ms / 1.6 s / 0.25 / 0.6 s. Tremolo, auto-pan and the low-pass are shared on the EP bus (`dest`;
+ *  UI stingers pass their own chain on the SFX bus). */
+export function playEp(g: Graph, t: number, midi: number, vel: number, dur: number, dest: AudioNode = g.music.ep, pri: number = PRI.music): void {
   const end = t + dur + EP.r + 0.05;
-  const v = voice(g, g.music.ep, t, end, PRI.music);
+  const v = voice(g, dest, t, end, pri);
   if (!v) return;
   const ctx = g.ctx, f = midiHz(midi);
   const car = v.src(osc(ctx, 'sine', f, v.out), t, end);
