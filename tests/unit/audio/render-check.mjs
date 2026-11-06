@@ -9,7 +9,10 @@
 //  3. ANALYSES them (we cannot listen): sample and true peak, RMS, integrated loudness (BS.1770 K-weighting), DC
 //     offset, dropouts and long silences, tempo by onset autocorrelation vs the area BPM, swing (odd-16th delay),
 //     spectral balance (octave-band tilt, mud and 2–5 kHz harshness residuals, air), SFX one-shots under the music,
-//     and determinism (two renders of the same area are bit-identical).
+//     and determinism (two renders of the same seed match to within Chrome's float summing noise: the difference
+//     stays under −70 dBFS peak and −90 dBFS RMS; a real divergence measures −20 dB or louder),
+//  4. scene changes (pause, Home, results) never make the music louder, and a skilled line (combo to level 3, coins,
+//     flips) never makes the voice pool refuse a sound.
 // Writes artifacts/audio/report.json and exits non-zero on any failure.
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -52,6 +55,9 @@ const LIMITS = {
                               //     is exempt: it plays after the tape stop, over silence)
   hazardUnderMusicDb: 12,     // the hazard tick is a gameplay cue: within 12 dB of the music p90
   bedUnderMusicDb: 6,         // roll + wind at plateau speed ≥ 6 dB under the music (integrated)
+  sceneOverDb: 0.5,           // leaving a run: no 100 ms window in the next 3 s above the loudest of the 4 s before
+  sceneMeanOverDb: 0,         // ... and the first 1.5 s no louder on average than the 4 s before
+  pauseUnderDb: 3,            // the settled pause sits at least this far under the run
 };
 
 // ── Server and page ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -87,11 +93,11 @@ async function scene(o) {
     const res = await window.__skateAudio.renderScene(o);
     if (!res) return null;
     const enc = (a) => { const u = new Uint8Array(a.buffer, a.byteOffset, a.byteLength); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000)); return btoa(s); };
-    return { sr: res.buffer.sampleRate, L: enc(res.buffer.getChannelData(0)), R: enc(res.buffer.getChannelData(1)), marks: res.marks };
+    return { sr: res.buffer.sampleRate, L: enc(res.buffer.getChannelData(0)), R: enc(res.buffer.getChannelData(1)), marks: res.marks, trace: res.trace };
   }, o);
   if (!r) throw new Error(`renderScene returned null for ${JSON.stringify(o)}`);
   const f = (b) => { const x = b64ToBuf(b); return new Float32Array(x.buffer, x.byteOffset, x.byteLength / 4); };
-  return { L: f(r.L), R: f(r.R), sr: r.sr, marks: r.marks };
+  return { L: f(r.L), R: f(r.R), sr: r.sr, marks: r.marks, trace: r.trace };
 }
 function writeWav(path, a) {
   const n = a.L.length, b = Buffer.alloc(44 + n * 4);
@@ -417,6 +423,51 @@ try {
   report.sfx = { musicP90: +refP90.toFixed(1), musicLufs: +refInt.toFixed(1), bedLufs: +bedInt.toFixed(1), oneShots: sfx };
   console.log(`sfx       music p90(100ms) ${refP90.toFixed(1)}  music ${refInt.toFixed(1)} LUFS  roll+wind ${bedInt.toFixed(1)} LUFS`);
   console.log('          ' + Object.entries(sfx).map(([k, v]) => `${k} ${v}`).join('  '));
+  // Scene changes out of a run (pause, Home, results) at t = 8 s, music only at FLOW (level 2).
+  report.scenes = {};
+  const rms100 = (a, from, to) => {
+    const W = Math.round(0.1 * a.sr), out = [];
+    for (let i = Math.round(from * a.sr); i + W <= Math.min(a.L.length, Math.round(to * a.sr)); i += W) {
+      let s = 0; for (let k = i; k < i + W; k++) s += a.L[k] * a.L[k] + a.R[k] * a.R[k];
+      out.push(pdb(s / (2 * W)));
+    }
+    return out;
+  };
+  const meanDb = (arr) => pdb(arr.reduce((s, x) => s + Math.pow(10, x / 10), 0) / arr.length);
+  for (const area of ['downtown', 'docks']) {
+    for (const to of ['paused', 'menu', 'results']) {
+      const T = 8;
+      const r = await scene({ area, sec: 15, script: 'music', level: 2, actions: [{ t: T, scene: to }] });
+      const before = rms100(r, T - 4, T), after = rms100(r, T, T + 3), settled = rms100(r, T + 4, 15);
+      const res = { maxBefore: +Math.max(...before).toFixed(1), maxAfter: +Math.max(...after).toFixed(1), meanBefore: +meanDb(before).toFixed(1),
+        meanAfter1_5: +meanDb(after.slice(0, 15)).toFixed(1), settled: +meanDb(settled).toFixed(1) };
+      report.scenes[`${area}->${to}`] = res;
+      if (res.maxAfter > res.maxBefore + LIMITS.sceneOverDb) fail('scene', `${area} → ${to}: a 100 ms window reaches ${res.maxAfter} dBFS, over the run's ${res.maxBefore}`);
+      if (res.meanAfter1_5 > res.meanBefore + LIMITS.sceneMeanOverDb) fail('scene', `${area} → ${to}: ${res.meanAfter1_5} dBFS in the first 1.5 s, over the run's ${res.meanBefore}`);
+      if (to === 'paused' && res.settled > res.meanBefore - LIMITS.pauseUnderDb) fail('scene', `${area} pause settles at ${res.settled} dBFS, not ${LIMITS.pauseUnderDb} dB under the run (${res.meanBefore})`);
+      console.log(`scene     ${area} → ${to}: max ${res.maxBefore} → ${res.maxAfter}, mean ${res.meanBefore} → ${res.meanAfter1_5} (first 1.5 s), settled ${res.settled}`);
+    }
+  }
+
+  // A skilled line: ollie + flip every 0.9 s, clean landings, links to ×10 (level 3), coin trios, a bank every 10.
+  {
+    const acts = []; let links = 0, seq = 0;
+    for (let t = 1; t < 28; t += 0.9) {
+      acts.push({ t, ev: { t: 'ollie', tick: 0, from: 'roll', linked: true } });
+      acts.push({ t: t + 0.05, ev: { t: 'flipStart', tick: 0, id: 'treFlip', dur: 0.36 } });
+      acts.push({ t: t + 0.6, ev: { t: 'land', tick: 0, airT: 0.6, dropH: 0, quality: 'clean', surface: 'asphalt' } });
+      links++; acts.push({ t: t + 0.6, ev: { t: 'trickScored', tick: 0, id: 'treFlip', pts: 100, factor: 1, link: true, comboPts: 0, links, seq: seq++ } });
+      for (let j = 0; j < 3; j++) acts.push({ t: t + 0.65 + j * 0.07, ev: { t: 'coin', tick: Math.round((t + 0.65 + j * 0.07) * 60), id: j, value: 1, p: { s: 0, x: 0, y: 0 }, chain: j } });
+      if (links % 10 === 0) { acts.push({ t: t + 0.8, ev: { t: 'comboBanked', tick: 0, total: 1, links, variety: 0, coins: 0, reason: 'heat', durSec: 3 } }); links = 0; seq = 0; }
+    }
+    const r = await scene({ area: 'neon', sec: 30, script: 'music', level: 2, rolling: true, stems: { sfx: true, amb: true }, actions: acts });
+    const lv = levels(r);
+    report.skilledLine = { ...r.trace, bars: undefined, maxIntensity: Math.max(...r.trace.bars.map((b) => b.intensity)), peakDb: lv.peakDb };
+    if (r.trace.dropped > 0) fail('voices', `the voice pool refused ${r.trace.dropped} sound(s) on a skilled line (peak ${r.trace.peak}, stolen ${r.trace.stolen})`);
+    if (r.trace.peak > 32) fail('voices', `voice peak ${r.trace.peak} > 32`);
+    if (!(lv.peakDb < LIMITS.peakDb)) fail('voices', `skilled line peaks at ${lv.peakDb} dBFS`);
+    console.log(`voices    skilled line (Neon, combo to ×10): peak ${r.trace.peak}, stolen ${r.trace.stolen}, dropped ${r.trace.dropped}, level ${report.skilledLine.maxIntensity}, peak ${lv.peakDb} dBFS`);
+  }
   if (errors.length) fail('page', errors.join(' | '));
 } finally {
   await browser.close();

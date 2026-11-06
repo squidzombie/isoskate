@@ -118,7 +118,12 @@ export class Bass {
     p.setTargetAtTime(vel * BASS.s, t + BASS.a, BASS.d / 3);
     p.setTargetAtTime(0, t + dur, BASS.r / 4);
   }
-  silence(t: number): void { this.env.gain.setTargetAtTime(0, t, 0.02); }
+  /** Releases the bass at t, cancelling a note already scheduled within the lookahead (it would start after t). */
+  silence(t: number): void {
+    const p = this.env.gain;
+    if (typeof p.cancelAndHoldAtTime === 'function') p.cancelAndHoldAtTime(t); else p.cancelScheduledValues(t);
+    p.setTargetAtTime(0, t, 0.02);
+  }
 }
 
 export function areaMallet(a: AreaMusic): { plucky: boolean } { return { plucky: a.mallet === 'plucky' }; }

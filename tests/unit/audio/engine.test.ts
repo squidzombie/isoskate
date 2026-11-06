@@ -99,6 +99,60 @@ describe('AudioCore (fake context)', () => {
     expect(h.ctx.created.osc ?? 0).toBeGreaterThan(2000);
   });
 
+  it('gateways carry the song form on: the next area starts at the bar after the pivot, so a run reaches B and A′', () => {
+    const h = harness();
+    h.core.setScene('run');
+    h.game.emit({ t: 'runStart', tick: 1, seed: 1, mode: 'normal' });
+    h.core.setIntensity(2);
+    const gates = [['greenway', 'suburbs'], ['levelCrossing', 'docks'], ['harborBridge', 'neon'], ['underpass', 'downtown']] as const;
+    const seen: { song: string; bar: number }[] = [];
+    const step = (sec: number) => {
+      const end = h.t + sec;
+      while (h.t < end) {
+        h.frame(0.9);
+        const s = h.core.stats(), last = seen[seen.length - 1];
+        if (!last || last.song !== s.song || last.bar !== s.bar) seen.push({ song: s.song, bar: s.bar });
+      }
+    };
+    step(30);
+    for (const [gw, area] of gates) {
+      const before = h.core.stats();
+      h.game.emit({ t: 'gatewayEnter', tick: h.tick, gateway: gw });
+      step(4);
+      h.game.emit({ t: 'areaEnter', tick: h.tick, area, firstThisRun: true });
+      step(8);
+      const i = seen.findIndex((x, k) => k > 0 && x.song === area && seen[k - 1]!.song !== area);
+      expect(i, `${gw} → ${area}`).toBeGreaterThan(0);
+      // The old song played its next bar as the V7 pivot; the new one picks up right after it.
+      expect(seen[i]!.bar).toBe(seen[i - 1]!.bar + 1);
+      expect(seen[i - 1]!.bar).toBeGreaterThanOrEqual(before.bar);
+      step(26);
+    }
+    const bars = seen.map((x) => x.bar);
+    expect(Math.max(...bars)).toBeGreaterThanOrEqual(36);      // B (20–27) and into A′ (28–43) within one run
+    expect(bars.filter((b) => b >= 20 && b < 28).length).toBeGreaterThanOrEqual(8);
+  });
+
+  it('leaving the run drops the queued layers that level 0 does not play and releases the bass at once', () => {
+    const h = harness();
+    h.core.setScene('run');
+    h.game.emit({ t: 'runStart', tick: 1, seed: 1, mode: 'normal' });
+    h.core.setIntensity(2);
+    for (let i = 0; i < 60 * 14; i++) h.frame(0.9);
+    for (const to of ['paused', 'menu'] as const) {
+      h.core.setScene('run');
+      for (let i = 0; i < 60 * 6; i++) h.frame(0.9);
+      const q = h.core as unknown as { q: { ev: { layer: string } }[]; qi: number; bass: { env: GainNode } };
+      expect(q.q.slice(q.qi).some((x) => !['drums', 'ep', 'pad'].includes(x.ev.layer))).toBe(true);
+      h.core.setScene(to);
+      expect(q.q.slice(q.qi).every((x) => ['drums', 'ep', 'pad'].includes(x.ev.layer))).toBe(true);
+      const ev = (q.bass.env.gain as unknown as { events: { kind: string; t: number; v: number }[] }).events;
+      expect(ev[ev.length - 1]).toMatchObject({ kind: 'target', v: 0 });
+      expect(ev.every((e) => e.t <= h.ctx.currentTime + 1e-9)).toBe(true);   // nothing of a queued note survives
+      expect(h.core.stats().intensity).toBe(0);
+    }
+  });
+
   it('a 2-minute storm of simultaneous SFX never exceeds the voice cap', () => {
     const h = harness();
     h.core.setScene('run');

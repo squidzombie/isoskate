@@ -42,6 +42,10 @@ export interface PerfStats {
 const PERF_BIN_MS = 0.025, PERF_BINS = 400;
 
 const START_A = sectionStart('A');
+/** Gateways keep the song form going: the next area's song starts at the bar the old one would have played next
+ *  (never in the intro; a finished form starts again at A), so a run walks A → B → A′ → break → A″ across areas. */
+const CARRY_FORM = -1;
+const carryBar = (bar: number) => (bar < START_A || bar >= FORM_BARS ? START_A : bar);
 const clampLevel = (l: number): Level => (l <= 0 ? 0 : l >= 3 ? 3 : (Math.round(l) as Level));
 
 export class AudioCore {
@@ -54,6 +58,7 @@ export class AudioCore {
   private stoppedUntil = 0;
   private q: Queued[] = [];
   private qi = 0;
+  /** A song change waiting for a bar line. startBar < 0: carry on from the old song's next form bar (gateways). */
   private pending: { to: MusicArea; stage: 'pivot' | 'cut'; startBar: number } | null = null;
   private runArea: AreaId = 'downtown';
   private songCount = 0;
@@ -159,11 +164,15 @@ export class AudioCore {
     const g = this.g;
     if (!g) return;
     const now = g.ctx.currentTime, m = g.music;
-    m.duck.gain.setTargetAtTime(sceneGain(s), now, 0.1);
     if (s !== 'run') {
+      // Level 0 at once (not at the bar line): the muffle, and the bass, melody, ghosts, arp and shaker already
+      // queued for this bar are dropped; only then is the music lifted to the scene level (level 0 lacks bass and
+      // bright drums), more slowly than the layers leave, so leaving a run never makes the music louder.
+      if (prev === 'run') this.dropToLevel0(now);
       m.drumLp.frequency.setTargetAtTime(INTENSITY.drumLp[0], now, INTENSITY.sceneFade / 3);
       m.drumBus.gain.setTargetAtTime(DRUM_LEVEL * INTENSITY.drumGain[0], now, INTENSITY.sceneFade / 3);
-    }
+      m.duck.gain.setTargetAtTime(sceneGain(s), now, INTENSITY.sceneLift / 3);
+    } else m.duck.gain.setTargetAtTime(sceneGain(s), now, 0.1);
     this.setComboFilter(this.mult);
     if (s === 'run') {
       if (this.stopped) this.resumeMusic(now, this.runArea, prev === 'menu' ? 0 : START_A);
@@ -225,7 +234,7 @@ export class AudioCore {
     if (p && p.stage === 'cut') {
       this.pending = null;
       this.dropQueueFrom(t);
-      this.beginSong(p.to, t, p.startBar);
+      this.beginSong(p.to, t, p.startBar >= 0 ? p.startBar : carryBar(s.bar + 1));
       s = this.song!;
     } else if (p && p.stage === 'pivot') {
       s.pivotTo = p.to;
@@ -254,6 +263,19 @@ export class AudioCore {
     }
     const ch = pivot ?? progression(s.area, s.alt)[bar % 4]![0]!;
     this.lastVoicing = ch.voicing;
+  }
+
+  /** Leaving the run: the queued events of layers that level 0 does not play are dropped and the bass released, so the
+   *  rest of the bar already sounds like level 0. */
+  private dropToLevel0(now: number): void {
+    const s = this.song;
+    if (!s || !this.playing) return;
+    const L = layersFor(0, formAt(Math.max(0, s.bar)).section, AREA_MUSIC[s.area], false);
+    let w = this.qi;
+    for (let i = this.qi; i < this.q.length; i++) if (L[this.q[i]!.ev.layer]) this.q[w++] = this.q[i]!;
+    this.q.length = w;
+    this.bass?.silence(now);
+    this.layerOn = L; this.applied = 0; this.fadeIn = {};
   }
 
   private dropQueueFrom(t: number): void {
@@ -366,13 +388,14 @@ export class AudioCore {
     const song = this.song as Song | null;
     if (seed !== undefined && song) song.seed = seed >>> 0;
   }
-  /** Gateway: one bar of the new key's V7 at the next bar line, then the new song at the following one. */
+  /** Gateway: one bar of the new key's V7 at the next bar line, then the new song at the following one, continuing the
+   *  song form where the old song was. */
   setArea(area: AreaId, _gatewaySec: number): void {
     this.runArea = area;
     if (this.g && this.scene === 'run') this.amb?.setArea(area, this.g.ctx.currentTime);   // ambience crossfades over the gateway
     if (!this.g || !this.playing || !this.song || this.scene !== 'run') return;
     if (this.song.area === area || this.pending?.to === area || this.song.pivotTo === area) return;
-    this.pending = { to: area, stage: 'pivot', startBar: START_A };
+    this.pending = { to: area, stage: 'pivot', startBar: CARRY_FORM };
   }
   setIntensity(level: number): void { this.levelBase = clampLevel(level); }
   setComboFilter(mult: number): void {

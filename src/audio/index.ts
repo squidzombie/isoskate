@@ -43,7 +43,7 @@ export interface AudioDebug {
    *  spent finishing buffers on demand (a tap before the idle build got there). */
   prep(): ReturnType<typeof prepStats>;
   perf(): PerfStats;
-  renderScene(o: SceneOptions): Promise<{ buffer: AudioBuffer; marks: { id: string; t: number }[] } | null>;
+  renderScene(o: SceneOptions): Promise<{ buffer: AudioBuffer; marks: { id: string; t: number }[]; trace: SceneTrace } | null>;
 }
 declare global { interface Window { __skateAudio?: AudioDebug } }
 
@@ -148,7 +148,14 @@ export interface SceneOptions {
   script?: 'demo' | 'music' | 'sfxTour' | 'roll';
   stems?: Partial<AudioCore['stems']>;
   level?: 0 | 1 | 2 | 3;
+  /** Extra timed actions on top of the script (render-check: scene changes, gateways, a skilled line). */
+  actions?: SceneAction[];
+  /** Roll at plateau speed even for the 'music' script. */
+  rolling?: boolean;
 }
+export type SceneAction = { t: number } & ({ scene: Scene } | { ev: GameEvent } | { level: 0 | 1 | 2 | 3 });
+/** What renderScene reports besides the audio: the bar-by-bar song position and the voice pool. */
+export interface SceneTrace { bars: { t: number; song: string; bar: number; bpm: number; intensity: number }[]; peak: number; stolen: number; dropped: number }
 interface Step { t: number; run(c: AudioCore, st: BindState): void; mark?: string }
 
 /** shots --audio (TECH §11.4): `sec` seconds of `area` at plateau speed (FLOW intensity, mid-song), with the roll bed,
@@ -157,7 +164,7 @@ export function renderOffline(area: AreaId, sec: number): Promise<AudioBuffer | 
   return renderScene({ area, sec, script: 'demo' }).then((r) => r?.buffer ?? null);
 }
 
-export async function renderScene(o: SceneOptions): Promise<{ buffer: AudioBuffer; marks: { id: string; t: number }[] } | null> {
+export async function renderScene(o: SceneOptions): Promise<{ buffer: AudioBuffer; marks: { id: string; t: number }[]; trace: SceneTrace } | null> {
   const w = globalThis as unknown as { OfflineAudioContext?: OfflineCtor; webkitOfflineAudioContext?: OfflineCtor };
   const Ctor = w.OfflineAudioContext ?? w.webkitOfflineAudioContext;
   if (!Ctor || !(o.sec > 0)) return null;
@@ -174,6 +181,15 @@ export async function renderScene(o: SceneOptions): Promise<{ buffer: AudioBuffe
   core.attach(ctx);
   if (!music) core.stop();
   const steps = scriptSteps(script, area, o.sec);
+  for (const a of o.actions ?? []) {
+    steps.push({ t: a.t, run: (c, st) => {
+      if ('scene' in a) c.setScene(a.scene);
+      else if ('level' in a) c.setIntensity(a.level);
+      else (GAME_BINDINGS[a.ev.t] as { on(x: GameEvent, s: AudioCore, b: BindState): void }).on(a.ev, c, st);
+    } });
+  }
+  steps.sort((x, y) => x.t - y.t);
+  const bars: SceneTrace['bars'] = [];
   const marks = steps.filter((s) => s.mark).map((s) => ({ id: s.mark!, t: s.t }));
   const st: BindState = { material: null, seq: 0 };
   const surface: Surface = area === 'menu' ? 'asphalt' : AREA_MUSIC[area].demoSurface;
@@ -186,9 +202,11 @@ export async function renderScene(o: SceneOptions): Promise<{ buffer: AudioBuffe
       if (s.mark === 'air') air = t + 0.6;
       if (s.mark?.startsWith('grind:')) { grindMat = s.mark.slice(6) as EdgeMaterial; grindUntil = t + 1.2; }
     }
-    const rolling = script === 'demo' || script === 'roll';
+    const rolling = script === 'demo' || script === 'roll' || !!o.rolling;
     core.roll(rolling ? 1 : 0, surface, t < air, false);
     core.grind(t < grindUntil, t < grindUntil ? grindMat : null, false);
+    const x = core.stats(), last = bars[bars.length - 1];
+    if (!last || last.bar !== x.bar || last.song !== x.song) bars.push({ t: +t.toFixed(3), song: x.song, bar: x.bar, bpm: x.bpm, intensity: x.intensity });
   };
   run(0);
   for (let i = 1, t = dt; t < o.sec - dt; i++, t = i * dt) {
@@ -196,8 +214,9 @@ export async function renderScene(o: SceneOptions): Promise<{ buffer: AudioBuffe
     void ctx.suspend(at).then(() => { run(at); void ctx.resume(); });
   }
   const buffer = await ctx.startRendering();
+  const trace: SceneTrace = { bars, ...core.voiceStats() };
   core.dispose();
-  return { buffer, marks };
+  return { buffer, marks, trace };
 }
 
 const ev = <K extends GameEvent['t']>(e: Extract<GameEvent, { t: K }>) => (c: AudioCore, st: BindState) => (GAME_BINDINGS[e.t] as { on(x: GameEvent, s: AudioCore, b: BindState): void }).on(e, c, st);

@@ -63,10 +63,12 @@ export const INTENSITY = {
   flowTier: 2,              // speed tier ≥ 2 (9.0 m/s) → level 2
   comboL2: 3, comboL3: 6,   // combo ×3 → level 2, ×6 → level 3
   drumLp: [1200, 9000, 9000, 12000] as const,    // per level (0 = muffled)
-  drumGain: [0.55, 1, 1, 1] as const,
+  drumGain: [0.32, 1, 1, 1] as const,  // level 0: × the menu lift (+10 dB) ≈ the run's drum level, never above
   padLpBoost: 600,          // level 3
   sceneFade: 0.35,          // pause / menu: the level-0 muffle is applied at once, not at the bar line
-  menuDb: 10, pauseDb: 4,    // level 0 lacks bass and bright drums: lifted on menus / results, less on pause
+  sceneLift: 1.2,           // ... and the scene lift below comes in over this (s, ~95%), after the layers have gone
+  menuDb: 10, pauseDb: 4,    // level 0 lacks bass and bright drums: lifted on menus / results, less on pause (net: the
+                            // pause sits ~6 dB under the run, menus close to it)
 } as const;
 /** Combo filter (§19.1): low-pass on the harmonic bus (EP, pad, melody, arp; drums and bass stay crisp).
  *  800 Hz at ×1 → 8 kHz at ×10+, exponential. Off the run screen it rests at `offRunHz`. */

@@ -110,7 +110,7 @@ const UI = { tap: 'uiTap', back: 'uiBack', toggle: 'uiToggle', error: 'uiError' 
 
 export const APP_BINDINGS: AppBindings = {
   screen: silent('scene changes come through setScene; buttons raise ui events'),
-  pause: silent('setScene(paused): level 0, muffled, −4 dB'),
+  pause: silent('setScene(paused): level 0 at once (muffled drums, no bass or melody), about 6 dB under the run'),
   resume: silent('setScene(run)'),
   hint: silent('hints are visual; a sound would read as a gameplay cue'),
   levelUp: { cues: ['levelUp'], doc: 'Maj9 arpeggio + shimmer, music ducks 3 dB', on: (_e, s) => { s.cue('levelUp'); s.duck(LEVEL_UP.duckDb, LEVEL_UP.duckSec); } },
