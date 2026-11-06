@@ -10,10 +10,13 @@ import { BODY } from './skater.config';
 import { ATLAS } from './textures';
 
 const WHITE: UvMap = { kind: 'solid', u: ATLAS.white.u, v: ATLAS.white.v };
-const TORSO_UV: UvMap = { kind: 'cyl', rect: ATLAS.torso.uv };
+const CHEST_UV: UvMap = { kind: 'cyl', rect: ATLAS.torso.chest };
+const BELLY_UV: UvMap = { kind: 'cyl', rect: ATLAS.torso.belly };
 const LEGS_UV: UvMap = { kind: 'cyl', rect: ATLAS.legs.uv };
 const SLEEVE_UV: UvMap = { kind: 'cyl', rect: ATLAS.sleeves.uv };
 const DEG = Math.PI / 180;
+/** The dome helmet's tilt and rim (helmet.ts): hair curtains tuck under it. */
+const DOME_TILT = 18, RIM_R = BODY.headR * 1.08 * Math.sin((100 * Math.PI) / 180), RIM_Y = -0.02;
 
 /** Options that depend on the rest of the loadout. */
 export interface BodyOptions {
@@ -59,8 +62,8 @@ export function buildBody(look: SkaterLook, d: RigDims, opt: BodyOptions): PartB
     add(ball(0.065, 6, 4), { color: top, bone: B.shoulderR, outline: 0.6 });
   } else {
     const hemDrop = tee ? 0.05 : coat ? 0.02 : 0;
-    add(tubeY(R.waist * w * wide, R.waist * w * wide * 1.02, -0.05 - hemDrop, 0.2, 8), textured({ bone: B.spine, uv: TORSO_UV }), place(0, 0, 0, 0, 0, 0, dep, 1, 1));
-    add(tubeY(R.waist * w * wide * 1.02, R.chest * w * wide, -0.06, 0.16, 8), textured({ bone: B.chest, uv: TORSO_UV }), place(0, 0, 0, 0, 0, 0, dep * 1.02, 1, 1));
+    add(tubeY(R.waist * w * wide, R.waist * w * wide * 1.02, -0.05 - hemDrop, 0.2, 8), textured({ bone: B.spine, uv: BELLY_UV }), place(0, 0, 0, 0, 0, 0, dep, 1, 1));
+    add(tubeY(R.waist * w * wide * 1.02, R.chest * w * wide, -0.06, 0.16, 8), textured({ bone: B.chest, uv: CHEST_UV }), place(0, 0, 0, 0, 0, 0, dep * 1.02, 1, 1));
     // Shoulder caps (deltoids) in the sleeve colour.
     const sleeve = topKind === 'varsity' ? top2 : over ? top2 : top;
     for (const bn of [B.shoulderL, B.shoulderR]) add(ball(0.066 * w * (coat ? 1.15 : 1), 6, 4), { color: sleeve, bone: bn, outline: 0.7 }, place(0, -0.015, 0));
@@ -250,15 +253,18 @@ function shoe(pb: PartBuilder, look: SkaterLook, ankle: number, knee: number, d:
 function hair(pb: PartBuilder, look: SkaterLook, d: RigDims, opt: BodyOptions): void {
   const col = look.hairColor, hc = d.headUp, r = d.headR, bone = B.head;
   const front = Math.PI / 2;                              // CylinderGeometry θ for +x
-  const curtain = (y0: number, y1: number, r0: number, r1: number, openDeg: number, color = col, outline = 0.8) =>
-    pb.add(curtainGeo(r0, r1, y0, y1, front + (openDeg / 2) * DEG, (360 - openDeg) * DEG), { color, bone, outline }, place(0, hc, 0));
+  // Hair curtains hang from just under the dome helmet's rim, in the helmet's tilted frame (DOME_TILT), so their top
+  // edge follows the rim instead of zigzagging across it; `len` is the visible length, `rb` the bottom radius.
+  const curtain = (len: number, rb: number, openDeg: number, color = col, outline = 0.8) =>
+    pb.add(curtainGeo(rb, RIM_R, RIM_Y - len, RIM_Y, front + (openDeg / 2) * DEG, (360 - openDeg) * DEG), { color, bone, outline },
+      place(-0.01, hc + 0.02, 0, 0, 0, DOME_TILT));
   const cap = () => { if (opt.headVisible) pb.add(shell(r * 1.03, 10, 4, 0, Math.PI * 2, 0, Math.PI * 0.42), { color: col, bone, outline: 0 }, place(-0.01, hc + 0.005, 0, 0, 0, 10)); };
   switch (look.hair) {
     case 'bob':
-      curtain(-0.13, 0.04, r * 1.13, r * 1.04, 110); cap();
+      curtain(0.12, r * 1.14, 110); cap();
       break;
     case 'longStraight':
-      curtain(-0.16, 0.04, r * 1.1, r * 1.04, 120); cap();
+      curtain(0.15, r * 1.12, 120); cap();
       pb.add(curtainGeo(r * 1.16, r * 1.08, -0.42, -0.1, front + 105 * DEG, 150 * DEG), { color: col, bone, outline: 0.8 }, place(0, hc, 0));
       break;
     case 'curlyMop': {
@@ -268,28 +274,28 @@ function hair(pb: PartBuilder, look: SkaterLook, d: RigDims, opt: BodyOptions): 
       break;
     }
     case 'afroPuff':
-      curtain(-0.06, 0.03, r * 1.02, r * 1.05, 120); cap();
-      pb.add(ball(0.11, 7, 5), { color: col, bone, outline: 1 }, place(-0.17, hc + 0.06, 0));
+      curtain(0.05, r * 1.06, 120); cap();
+      pb.add(ball(0.095, 7, 5), { color: col, bone, outline: 1 }, place(-0.175, hc - 0.085, 0));
       break;
     case 'buzz': case 'shortGrey':
-      curtain(-0.075, 0.02, r * 1.01, r * 1.03, look.hair === 'buzz' ? 140 : 120); cap();
+      curtain(look.hair === 'buzz' ? 0.035 : 0.055, r * 1.04, look.hair === 'buzz' ? 140 : 120); cap();
       if (look.hair === 'shortGrey') for (const s of [-1, 1]) pb.add(boxAt(-0.02, -0.08, -0.008, 0.02, 0, 0.008), { color: col, bone, outline: 0 }, place(0.035, hc, s * r * 0.98));
       break;
     case 'twinBuns':
-      curtain(-0.07, 0.03, r * 1.02, r * 1.05, 120); cap();
+      curtain(0.06, r * 1.06, 120); cap();
       for (const s of [-1, 1]) pb.add(ball(0.068, 6, 4), { color: col, bone, outline: 1 }, place(-0.06, hc + 0.0, s * 0.165));
       break;
     case 'topBun':
-      curtain(-0.07, 0.03, r * 1.02, r * 1.05, 120); cap();
-      pb.add(ball(0.075, 6, 4), { color: col, bone, outline: 1 }, place(-0.19, hc + 0.06, 0));
+      curtain(0.06, r * 1.06, 120); cap();
+      pb.add(ball(0.07, 6, 4), { color: col, bone, outline: 1 }, place(-0.195, hc - 0.05, 0));
       break;
     case 'ponytail':
-      curtain(-0.07, 0.03, r * 1.02, r * 1.05, 120); cap();
+      curtain(0.06, r * 1.06, 120); cap();
       pb.add(tube(0.05, 0.022, 0.28, 6), { color: col, bone, outline: 0.8 }, place(-0.18, hc + 0.02, 0, 0, 0, -28));
       pb.add(tube(0.03, 0.03, 0.025, 6, true), { color: 0xff5e6c, bone, outline: 0 }, place(-0.185, hc + 0.025, 0, 0, 0, -28));
       break;
     case 'spikes': {
-      curtain(-0.06, 0.03, r * 1.01, r * 1.04, 120); cap();
+      curtain(0.05, r * 1.05, 120); cap();
       const tip = look.hairTip ?? col;
       for (let i = 0; i < 9; i++) {
         const a = front + (70 + i * 27.5) * DEG, x = Math.sin(a) * r * 0.95, z = Math.cos(a) * r * 0.95;

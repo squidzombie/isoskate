@@ -4,7 +4,7 @@
 // Helmet frame: the head-sphere centre (the `helmet` socket bone), +x = the face, +y up.
 import { CylinderGeometry, SphereGeometry } from 'three';
 import type { HelmetLook } from '../core/cosmetics';
-import { ball, beam, boxAt, PartBuilder, place, shade, spike, tubeY, type UvMap } from './parts';
+import { ball, beam, boxAt, mix, PartBuilder, place, shade, tubeY, type UvMap } from './parts';
 import { BODY } from './skater.config';
 import { DECAL_UV } from './textures';
 
@@ -34,19 +34,21 @@ export function buildHelmet(look: HelmetLook): HelmetBuild {
   const glow = look.finish === 'emissive' ? 1 : 0;
   let glass: PartBuilder | null = null, fish: PartBuilder | null = null;
   const tiltBack = (x: number, y: number, z: number, deg: number, sx = 1, sy = 1, sz = 1) => place(x, y, z, 0, 0, deg, sx, sy, sz);
-  const domeRim = (r: number, theta: number, y: number, tilt: number) => {
+  // The rim band: a short tube whose vertices line up with the dome's (SphereGeometry φ = 0 is −x, CylinderGeometry
+  // θ = 0 is +z: θ = φ − 90°), so the two edges never cross into a zigzag.
+  const domeRim = (r: number, theta: number, y: number, tilt: number, color = rim, w = 10) => {
     const rr = r * Math.sin((theta * Math.PI) / 180), yy = r * Math.cos((theta * Math.PI) / 180);
-    pb.add(new CylinderGeometry(rr * 1.02, rr * 1.03, 0.022, 10, 1, true), { color: rim, outline: 0 }, tiltBack(-0.01, y + yy, 0, tilt));
+    pb.add(new CylinderGeometry(rr * 1.025, rr * 1.035, 0.03, w, 1, true, -Math.PI / 2), { color, outline: 0 }, tiltBack(-0.01, y + yy, 0, tilt));
   };
 
   switch (look.shell) {
     case 'dome': case 'visor': case 'catEars': case 'petalRing': case 'wrapVisor': {
       const r = HR * 1.08;
       pb.add(dome(r, 100), { color: shellCol, uv: SHELL, emit: glow ? [0.6, 0] : undefined }, tiltBack(-0.01, 0.02, 0, 18));
-      domeRim(r, 100, 0.02, 18);
+      domeRim(r, 100, 0.02, 18, look.shell === 'visor' ? look.visorTint ?? rim : rim);   // Visor Pro: tinted rim (reads from behind)
       if (look.shell === 'visor') {
         // Visor Pro: a tinted brim that reflects the sky gradient.
-        pb.add(new CylinderGeometry(r * 1.06, r * 1.16, 0.05, 8, 1, true, Math.PI / 2 - 0.95, 1.9), { color: 0xffffff, uv: VISOR },
+        pb.add(new CylinderGeometry(r * 1.06, r * 1.16, 0.05, 8, 1, false, Math.PI / 2 - 0.95, 1.9), { color: 0xffffff, uv: VISOR },
           place(0.0, 0.07, 0, 0, 0, -22));
       }
       if (look.shell === 'catEars') {
@@ -59,8 +61,8 @@ export function buildHelmet(look: HelmetLook): HelmetBuild {
         // Sunflower: a ring of 12 petals around the brown seed dome.
         for (let i = 0; i < 12; i++) {
           const a = (i / 12) * 360;
-          pb.add(spike(0.05, 0.11, 4), { color: i % 2 ? look.decalColor : shade(look.decalColor, 0.9), outline: 0.5 },
-            place(0, 0.045, 0, 0, a, 0).multiply(place(0, 0, r * 0.84, 74, 0, 0, 1, 1, 0.3)));
+          pb.add(ball(1, 4, 3), { color: i % 2 ? look.decalColor : mix(look.decalColor, 0xf2b630, 0.55), outline: 0.5 },
+            place(0, 0.04, 0, 0, a, 0).multiply(place(0, 0, r * 1.12, 12, 0, 0, 0.042, 0.014, 0.075)));
         }
       }
       if (look.shell === 'wrapVisor') {
@@ -78,7 +80,8 @@ export function buildHelmet(look: HelmetLook): HelmetBuild {
     case 'bucket': {
       // Picnic Plaid: a low bucket hat: crown with a flat-ish top and a sloped brim all round (gingham canvas).
       pb.add(new CylinderGeometry(HR * 1.0, HR * 1.13, 0.19, 10, 1, false), { color: shellCol, uv: CYL_SHELL }, place(-0.005, 0.085, 0));
-      pb.add(new CylinderGeometry(HR * 1.14, HR * 1.72, 0.06, 12, 1, true), { color: shellCol, uv: CYL_SHELL }, place(-0.005, -0.04, 0, 0, 0, 6));
+      // Brims are closed solids so their undersides read from the low Locker camera too.
+      pb.add(new CylinderGeometry(HR * 1.14, HR * 1.72, 0.06, 12, 1, false), { color: shellCol, uv: CYL_SHELL }, place(-0.005, -0.04, 0, 0, 0, 6));
       pb.add(new CylinderGeometry(HR * 1.15, HR * 1.15, 0.025, 10, 1, true), { color: shade(look.color, 0.65), outline: 0 }, place(-0.005, 0.0, 0));
       break;
     }
@@ -86,7 +89,7 @@ export function buildHelmet(look: HelmetLook): HelmetBuild {
       // Hard Hat: a tall crown with a ridge and a full brim, wider at the front peak.
       const r = HR * 1.1;
       pb.add(dome(r, 92, 10, 5), { color: shellCol, uv: SHELL }, place(-0.01, 0.025, 0, 0, 0, 6, 1, 1.12, 1));
-      pb.add(new CylinderGeometry(r * 1.0, r * 1.42, 0.03, 12, 1, true), { color: shellCol, uv: CYL_SHELL }, place(0.03, 0.005, 0, 0, 0, 6, 1.12, 1, 1));
+      pb.add(new CylinderGeometry(r * 1.02, r * 1.42, 0.03, 12, 1, false), { color: shellCol, uv: CYL_SHELL }, place(0.03, 0.005, 0, 0, 0, 6, 1.12, 1, 1));
       pb.add(beam([-0.16, 0.17, 0], [0.14, 0.2, 0], 0.03, 0.026), { color: shade(look.color, 1.08), outline: 0.5 });
       break;
     }

@@ -26,7 +26,9 @@ type Rect = readonly [number, number, number, number];
 const uvRect = (x0: number, y0: number, x1: number, y1: number, W: number = A, H: number = A): Rect => [x0 / W, 1 - y1 / H, x1 / W, 1 - y0 / H];
 export const ATLAS = {
   face: { px: [0, 0, 64, 64] as const, uv: uvRect(8, 8, 56, 56), back: uvRect(3, 3, 61, 5) },
-  torso: { px: [128, 0, 256, 128] as const, uv: uvRect(132, 6, 252, 122) },
+  torso: { px: [128, 0, 256, 128] as const, uv: uvRect(132, 6, 252, 122),
+    // The torso is two parts (chest bone, spine bone): each maps its own band of the cell (they overlap 6 cm).
+    chest: uvRect(132, 6, 252, 68), belly: uvRect(132, 51, 252, 122) },
   legs: { px: [0, 64, 128, 128] as const, uv: uvRect(4, 68, 124, 124) },
   sleeves: { px: [0, 128, 128, 192] as const, uv: uvRect(4, 132, 124, 188) },
   white: { px: [0, 192, 256, 256] as const, u: 32 / A, v: 1 - 224 / A },

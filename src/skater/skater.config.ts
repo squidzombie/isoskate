@@ -51,7 +51,7 @@ export const SPRING = { omega: 18, omegaFast: 30, fakiePivot: 26 } as const;
 
 /** DESIGN §18.5 pose table values, plus the view-side oscillators. */
 export const POSE = {
-  roll: { knee: 15, hipDrop: 0.04, armAbd: 26, armFlex: 24, headTurn: 80, spineTwist: 14, chestTwist: 46, bobHz: 0.6, bobAmp: 0.015 },
+  roll: { knee: 15, hipDrop: 0.04, armAbd: 32, armFlex: 24, headTurn: 80, spineTwist: 14, chestTwist: 46, bobHz: 0.6, bobAmp: 0.015 },
   carve: { leanMax: 22, toeKnee: 30, heelHipBack: 0.06, armCounter: 15 },
   pop: { backKnee: 8, frontKnee: 70, boardPitch: 25, stretch: 1.06, frontLift: 0.08 },
   tuck: { knee: 85, footLift: 0.22, armAbd: 45 },
