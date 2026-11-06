@@ -52,7 +52,7 @@ interface LiveChunk {
 export function buildOptionsFor(vp: Viewport): BuildOptions {
   const mPerPx = solveFraming(V_MAX, vp).H / Math.max(1, vp.hCss);
   const hw = Math.max(DEFAULT_BUILD.edgeHalfW, (CAMERA.minEdgePx * mPerPx) / 2);
-  return { edgeHalfW: hw, inkPad: Math.max(DEFAULT_BUILD.inkPad, VIEW.inkPadPx * mPerPx) };
+  return { edgeHalfW: hw, inkPad: Math.max(DEFAULT_BUILD.inkPad, VIEW.inkPadPx * mPerPx), yawDeg: yawForAspect(vp.aspect) };
 }
 
 /** Ambient emitters of the live chunks, per context (vfx/ reads them through world/render's index). */
@@ -237,7 +237,8 @@ class WorldViewImpl implements WorldView {
     if (vp.wCss !== ov.w || vp.hCss !== ov.h || vp.safeTop !== ov.safeTop || vp.aspect !== ov.aspect) {
       ov.w = vp.wCss; ov.h = vp.hCss; ov.safeTop = vp.safeTop; ov.aspect = vp.aspect;
       const want = buildOptionsFor(vp);
-      if (Math.abs(want.edgeHalfW - this.opts.edgeHalfW) > STREAM.rebuildFrac * this.opts.edgeHalfW || this.optsKey === 0) {
+      if (Math.abs(want.edgeHalfW - this.opts.edgeHalfW) > STREAM.rebuildFrac * this.opts.edgeHalfW
+        || Math.abs(want.yawDeg - this.opts.yawDeg) > STREAM.rebuildYawDeg || this.optsKey === 0) {
         this.opts = want; this.optsKey++;
       }
     }
@@ -312,7 +313,8 @@ class WorldViewImpl implements WorldView {
       verts, chunkTris: tris, maxChunkTris, coinSlotsUsed: this.coins.used, decalsUsed: this.decals.used, lanternsUsed: this.lanterns.used,
       originS: this.originS, edgeHalfW: this.opts.edgeHalfW, mainCalls: this.mainCalls, shadowCalls: this.shadowCalls,
       chunksBuilt: this.built, cacheHits: this.cacheHits, buildMsP95: this.buildP95, quality: this.ctx.quality, autoQuality: this.autoOn,
-      bench: (n?: number) => this.benchBuild(n) };
+      bench: (n?: number) => this.benchBuild(n),
+      obstacles: (id?: number) => [...this.chunks.values()].flatMap((c) => c.chunk.obstacles).filter((o) => id === undefined || o.id === id) };
   }
 
   /** Debug / wa.spec: rebuilds the live chunk under `index` (default: the nearest ahead) n times into scratch buffers

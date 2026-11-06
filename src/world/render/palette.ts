@@ -37,13 +37,14 @@ export const PRESETS: Readonly<Record<AreaId, Readonly<PaletteSample>>> = {
 };
 
 /** Per-preset extras the PaletteSample does not carry. haze: strength of the far-30% haze (≤ 0.35, DESIGN §18.3). */
-/** hemiK / sunK scale the preset light intensities: a lower sky fill and a stronger sun give long, purple-leaning
- *  shadows (DESIGN §18.2: never black, the darkest near #4A3B6B) and warm lit ground, i.e. readable sun stripes. */
+/** hemiK / sunK scale the preset light intensities (sun stripes vs the sky fill). Bounded by the gate: shadowed
+ *  asphalt must stay ≥ ~0.11 relative luminance so a near-black hazard in a building's shadow still reaches 2.5:1,
+ *  sun-lit asphalt ≤ ~0.31 so a cream-topped rail still does (DESIGN §18.4). */
 export interface AreaLook { haze: number; skyGlow: number; road: number; sunDisc: number; hemiK: number; sunK: number }
 export const LOOK: Readonly<Record<AreaId, Readonly<AreaLook>>> = {
-  downtown: { haze: 0.3, skyGlow: 0.25, road: 0x7f7890, sunDisc: 1, hemiK: 0.82, sunK: 1.12 },
-  suburbs: { haze: 0.28, skyGlow: 0.25, road: 0x746d84, sunDisc: 1, hemiK: 0.85, sunK: 1.08 },
-  docks: { haze: 0.32, skyGlow: 0.25, road: 0x857c92, sunDisc: 1, hemiK: 0.85, sunK: 1.12 },
+  downtown: { haze: 0.3, skyGlow: 0.25, road: 0x7f7890, sunDisc: 1, hemiK: 1.0, sunK: 1.1 },
+  suburbs: { haze: 0.28, skyGlow: 0.25, road: 0x777087, sunDisc: 1, hemiK: 1.1, sunK: 0.96 },
+  docks: { haze: 0.32, skyGlow: 0.25, road: 0x857c92, sunDisc: 1, hemiK: 1.0, sunK: 1.1 },
   neon: { haze: 0.35, skyGlow: 0.25, road: 0x352f55, sunDisc: 0, hemiK: 1.0, sunK: 1.0 },
 };
 
@@ -76,14 +77,14 @@ export const HAZARD: Readonly<Record<AreaId, Readonly<HazardLook>>> = {
   downtown: { body: 0x170f24, top: 0x2c2240, accent: 0xd9765a, accent2: 0x3e8e8a, rim: 0, rimEmissive: 0, inverted: false, glow: 0 },
   suburbs: { body: 0x170f24, top: 0x2c2240, accent: 0x8fb8de, accent2: 0xb5645a, rim: 0, rimEmissive: 0, inverted: false, glow: 0 },
   docks: { body: 0x170f24, top: 0x2c2240, accent: 0xf2b630, accent2: 0xb5552f, rim: 0, rimEmissive: 0, inverted: false, glow: 0 },
-  neon: { body: 0x7a6fb0, top: 0x9489c8, accent: 0xff3fa4, accent2: 0xff5a3c, rim: 0xff3fa4, rimEmissive: 1.2, inverted: true, glow: 1.05 },
+  neon: { body: 0x7a6fb0, top: 0x9489c8, accent: 0xff3fa4, accent2: 0xff5a3c, rim: 0xff3fa4, rimEmissive: 1.2, inverted: true, glow: 1.6 },
 };
 
 /** Area accents (DESIGN §18.1). Index order is the one DECOR_KINDS `color` params use. */
 export const ACCENTS: Readonly<Record<AreaId, readonly number[]>> = {
   downtown: [0xd9765a, 0x3e8e8a, 0xf3e3c3, 0xc9a15a, 0xc4473d],
   suburbs: [0x9ccfb3, 0xf4d58d, 0x8fb8de, 0xf7efe3, 0xb5645a],
-  docks: [0xb5552f, 0x2f5d7c, 0xf2b630, 0x5e8c6a, 0x8a8fa0, 0x4f6a8f],
+  docks: [0xb5552f, 0x2f5d7c, 0xe6ad3a, 0x5e8c6a, 0x8a8fa0, 0x4f6a8f],   // decor safety yellow stays off the chevron amber #F2B630
   neon: [0xff3fa4, 0x3ff2ff, 0xff5a3c, 0xffd39a, 0x8a5cff, 0xffb7d0],
 };
 

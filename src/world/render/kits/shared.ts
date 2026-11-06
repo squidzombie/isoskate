@@ -86,8 +86,10 @@ const curb: KitFn = (c, ob) => {
   for (const sl of ob.slabs) {
     const roadSide = Math.abs(sl.x0) < Math.abs(sl.x1) ? sl.x0 : sl.x1, dir = Math.sign(sl.x0 + sl.x1) || 1;
     const area = c.areaAt(sl.s0);
-    const col = area === 'neon' ? 0x9a91b8 : area === 'suburbs' ? 0xe3d9cc : 0xe8d6c2;
-    const x0 = Math.min(roadSide, roadSide + dir * 0.3), x1 = Math.max(roadSide, roadSide + dir * 0.3);
+    // A mid-tone stone band, clearly darker than the cream lip at its road edge, so the lip reads as its own stripe
+    // (the band never merges with it into one wide light surface, DESIGN §18.4).
+    const col = area === 'neon' ? 0x7d759c : area === 'suburbs' ? 0xbdb2a6 : 0xbfae9e;
+    const x0 = Math.min(roadSide, roadSide + dir * 0.26), x1 = Math.max(roadSide, roadSide + dir * 0.26);
     K.lit(0).col(col).box(x0, sl.y0 - 0.05, sl.s0, x1, sl.y0 + 0.008, sl.s1, FACE.top);
   }
 };

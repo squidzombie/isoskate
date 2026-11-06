@@ -95,10 +95,10 @@ export function building(c: KitCtx, d: Decor): void {
   windows(c, (d.s * 17 + d.x * 5) | 0, 'front', x0 + 0.4, x1 - 0.4, s0, 0, y + 3.6, y + h - 0.6, 2.6, warm, flags);
   void lit;
   // Ground floor: a lit shopfront band on the street face and the front, a brand board above it, an awning.
-  K.to('e').glowing(1.15, rnd(d.s, d.x, 11) * 0.7, flags).col(area === 'neon' ? 0xffb7d0 : 0xffd9a0);
-  if (out > 0) K.quad(xin - 0.04, y + 0.3, s1 - 0.6, xin - 0.04, y + 0.3, s0 + 0.6, xin - 0.04, y + 2.6, s0 + 0.6, xin - 0.04, y + 2.6, s1 - 0.6);
-  else K.quad(xin + 0.04, y + 0.3, s0 + 0.6, xin + 0.04, y + 0.3, s1 - 0.6, xin + 0.04, y + 2.6, s1 - 0.6, xin + 0.04, y + 2.6, s0 + 0.6);
-  K.quad(x0 + 0.6, y + 0.3, s0 - 0.04, x1 - 0.6, y + 0.3, s0 - 0.04, x1 - 0.6, y + 2.6, s0 - 0.04, x0 + 0.6, y + 2.6, s0 - 0.04);
+  const neon = area === 'neon', wr = rnd(d.s, d.x, 11) * 0.7;
+  if (out > 0) shopBand(K, neon, wr, flags, xin - 0.04, s1 - 0.6, xin - 0.04, s0 + 0.6, y + 0.3, y + 2.6, -0.012, 0);
+  else shopBand(K, neon, wr, flags, xin + 0.04, s0 + 0.6, xin + 0.04, s1 - 0.6, y + 0.3, y + 2.6, 0.012, 0);
+  shopBand(K, neon, wr, flags, x0 + 0.6, s0 - 0.04, x1 - 0.6, s0 - 0.04, y + 0.3, y + 2.6, 0, -0.012);
   K.to('b');
   const brand = num(d, 'brand', -1);
   const brands = DECOR_BRANDS[area];
@@ -189,6 +189,26 @@ export function warehouse(c: KitCtx, d: Decor): void {
 }
 
 /** Slim Neon tower (8–14 storeys): emissive window dots, vertical blade signs on the street face, a roof crown. */
+/** A lit ground-floor shopfront from bottom corner a to b (the winding faces the street): dim glass under a brighter
+ *  head strip, with dark mullions every ~1.8 m a hair in front (o = offset toward the viewer). Its mean stays low so a
+ *  light Neon hazard in front of it keeps its ring dark (DESIGN §18.4). */
+function shopBand(K: Kit, neon: boolean, rand: number, flags: number, ax: number, as: number, bx: number, bs: number,
+  y0: number, y1: number, ox: number, os: number): void {
+  const q = (u0: number, u1: number, ya: number, yb: number, dx = 0, ds = 0) => {
+    const xa = ax + (bx - ax) * u0 + dx, sa = as + (bs - as) * u0 + ds, xb = ax + (bx - ax) * u1 + dx, sb = as + (bs - as) * u1 + ds;
+    K.quad(xa, ya, sa, xb, ya, sb, xb, yb, sb, xa, yb, sa);
+  };
+  const head = y1 - 0.18;
+  K.to('e').glowing(neon ? 0.55 : 0.85, rand, flags).col(neon ? 0x8a5684 : 0xe3b67e);
+  q(0, 1, y0, head);
+  K.glowing(1.1, rand, flags).col(neon ? 0xff8ac4 : 0xffe2ad);
+  q(0, 1, head, y1);
+  const len = Math.hypot(bx - ax, bs - as), n = Math.max(1, Math.round(len / 1.8)), hw = 0.05 / Math.max(len, 0.1);
+  K.to('b').lit(0, 0, flags).col(0x1c1530);
+  q(0, 1, head - 0.06, head, ox, os);
+  for (let i = 1; i < n; i++) q(i / n - hw, i / n + hw, y0, head, ox, os);
+}
+
 export function tower(c: KitCtx, d: Decor): void {
   const K = c.K, out = Math.sign(d.x) || 1, sc = d.scale || 1;
   const w = num(d, 'w', 8) * sc, dd = num(d, 'd', 9) * sc, h = num(d, 'floors', 11) * 3.2 * sc;
@@ -203,8 +223,7 @@ export function tower(c: KitCtx, d: Decor): void {
   windows(c, (d.s * 7 + d.x) | 0, 'side', s0 + 0.4, s1 - 0.4, d.x, -out, y + 3.4, y + h - 0.6, 1.4, 0xbfd8ff, near);
   windows(c, (d.s * 11 + d.x) | 0, 'front', x0 + 0.4, x1 - 0.4, s0, 0, y + 3.4, y + h - 0.6, 1.4, 0xffd39a, near);
   // Ground floor shopfront (lit) and blade signs hung perpendicular to the street face.
-  K.to('e').glowing(1.4, -1, near).col(0xffb7d0);
-  K.quad(x0 + 0.4, y + 0.3, s0 - 0.04, x1 - 0.4, y + 0.3, s0 - 0.04, x1 - 0.4, y + 2.8, s0 - 0.04, x0 + 0.4, y + 2.8, s0 - 0.04);
+  shopBand(K, true, -1, near, x0 + 0.4, s0 - 0.04, x1 - 0.4, s0 - 0.04, y + 0.3, y + 2.4, 0, -0.012);
   K.to('b');
   const n = num(d, 'bladeSigns', 1);
   for (let k = 0; k < n; k++) bladeSignAt(c, d.x - out * 0.05, s0 + 1.5 + k * 3.2, y + 4 + k * 2.5, 3.2, 0.6, (d.variant + k) % (DECOR_BRANDS.neon.length + NEON_SIGN_WORDS.length), 'neon', near);
@@ -287,7 +306,7 @@ export function containerStack(c: KitCtx, d: Decor): void {
   const K = c.K, out = Math.sign(d.x) || 1;
   const cols = num(d, 'cols', 2), rows = num(d, 'rows', 2), runs = num(d, 'runs', 1);
   const near = d.x > 0 ? FX.near : 0;
-  const pal = [0xb5552f, 0x2f5d7c, 0x5e8c6a, 0xf2b630, 0x8a8fa0, 0x7a2f24];
+  const pal = [0xb5552f, 0x2f5d7c, 0x5e8c6a, 0xe6ad3a, 0x8a8fa0, 0x7a2f24];
   K.reset().to('b');
   for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) for (let k = 0; k < runs; k++) {
     const x = d.x + out * (i * 2.5), s = d.s + k * 6.2, y = d.y + j * 2.62;
@@ -307,7 +326,7 @@ export function crane(c: KitCtx, d: Decor): void {
   const bx0 = Math.min(d.x, d.x + side * boom), bx1 = Math.max(d.x, d.x + side * boom);
   K.col(0xc9643a).box(bx0, d.y + h + 0.2, d.s + 3.6, bx1, d.y + h + 1.4, d.s + 5.2);
   K.col(0x2b2140).box(d.x - 1.5, d.y + h, d.s + 2.5, d.x + 1.5, d.y + h + 3, d.s + 6);
-  if (num(d, 'beacon', 1)) { K.to('e').glowing(1.8, -1, near, 2).col(0xf2b630).cyl(d.x, d.s + 4.2, d.y + h + 3, d.y + h + 3.4, 0.25, 6, true); K.to('b'); }
+  if (num(d, 'beacon', 1)) { K.to('e').glowing(1.8, -1, near, 2).col(0xe6ad3a).cyl(d.x, d.s + 4.2, d.y + h + 3, d.y + h + 3.4, 0.25, 6, true); K.to('b'); }
 }
 
 /** Harbor Bridge side girders and truss beyond the corridor edge. */

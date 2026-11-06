@@ -13,11 +13,18 @@ import { DECAL, type DecalId } from '../textures/decals';
 import { FACE, FX, type Kit } from '../writer';
 
 /** Edge stripe widths (m): cream half-width ≥ CAMERA.minEdgePx / 2 on screen at the widest framing, ink pad beside. */
-export interface BuildOptions { edgeHalfW: number; inkPad: number }
-export const DEFAULT_BUILD: Readonly<BuildOptions> = { edgeHalfW: 0.035, inkPad: 0.02 };
+/** Per-viewport build settings: grind-edge stripe half-width and ink pad (m, from CAMERA.minEdgePx at the framing
+ *  scale) and the run camera yaw (deg, yawForAspect), which sets where a hazard's screen hull falls on the ground. */
+export interface BuildOptions { edgeHalfW: number; inkPad: number; yawDeg: number }
+export const DEFAULT_BUILD: Readonly<BuildOptions> = { edgeHalfW: 0.035, inkPad: 0.02, yawDeg: 0 };
 
 /** One decal instance (the global instanced decal layer, decals.ts). Track space; rot about +y (rad). */
-export interface DecalRec { id: DecalId; x: number; y: number; s: number; w: number; len: number; rot: number; color: number; alpha: number; kind: 0 | 1 | 2 }
+export interface DecalRec {
+  id: DecalId; x: number; y: number; s: number; w: number; len: number; rot: number; color: number; alpha: number; kind: 0 | 1 | 2;
+  /** A parallelogram instead of the w × len rectangle: its edge vectors (e1x, e1s, e2x, e2s), centred on (x, s);
+   *  texture u runs along e1, v along e2. */
+  e?: readonly [number, number, number, number];
+}
 /** One lantern sphere (the global instanced lantern layer). */
 export interface LanternRec { x: number; y: number; s: number; r: number; color: number; phase: number; glow: number }
 
@@ -110,14 +117,33 @@ export function contact(c: KitCtx, x0: number, x1: number, s0: number, s1: numbe
  *  behind its back) so the hazard reads as one dark silhouette across the street (DESIGN §18.4 gate). Split by the
  *  ground under it (road / sidewalk bands). */
 export function hazardPool(c: KitCtx, x0: number, x1: number, s0: number, s1: number, h: number, alpha = 0.95): void {
-  const back = s1 + h * 1.43 * 0.92;
-  const sm = (s0 + back) / 2;
+  // The hull's ground: the footprint swept along the camera's screen-up direction on the ground, (−sin yaw, cos yaw)
+  // (camera.ts screenX), by h·cot(pitch) (trimmed 8% so the pool never shows above the hull top).
+  const reach = h * 1.43 * 0.92, yaw = (c.opts.yawDeg * Math.PI) / 180;
+  const vx = -Math.sin(yaw) * reach, vs = Math.cos(yaw) * reach;
   const cuts = [x0];
   for (const b of [-4.5, -3, -2.6, 2.6, 3, 4.5]) if (b > x0 + 0.05 && b < x1 - 0.05) cuts.push(b);
   cuts.push(x1);
+  const put = (x: number, s: number, w: number, len: number, e?: readonly [number, number, number, number]) => {
+    const y = c.groundAt(s, x) + 0.012;
+    c.decal({ id: DECAL.pool, x, y, s, w, len, rot: 0, color: 0x1a1428, alpha, kind: 0, ...(e ? { e } : {}) });
+  };
   for (let i = 0; i + 1 < cuts.length; i++) {
-    const a = cuts[i]!, b = cuts[i + 1]!, y = c.groundAt(Math.min(sm, s0 + 0.1), (a + b) / 2) + 0.012;
-    c.decal({ id: DECAL.pool, x: (a + b) / 2, y, s: (s0 - 0.04 + back) / 2, w: b - a + 0.01, len: back - s0 + 0.04, rot: 0, color: 0x1a1428, alpha, kind: 0 });
+    const a = cuts[i]!, b = cuts[i + 1]!;
+    if (Math.abs(vx) < 0.02) {
+      // Portrait (yaw 0): one rectangle from the front edge to the swept back edge.
+      const back = s1 + vs, sm = (s0 + back) / 2;
+      const y = c.groundAt(Math.min(sm, s0 + 0.1), (a + b) / 2) + 0.012;
+      c.decal({ id: DECAL.pool, x: (a + b) / 2, y, s: (s0 - 0.04 + back) / 2, w: b - a + 0.01, len: back - s0 + 0.04, rot: 0, color: 0x1a1428, alpha, kind: 0 });
+      continue;
+    }
+    // Yawed: hull(R ∪ R+v) = R ∪ (R+v) ∪ the sweep of R's diagonal across v (front corner on the far side of the
+    // lean → back corner on the near side).
+    const W = b - a, L = s1 - s0;
+    put((a + b) / 2, (s0 + s1) / 2, W + 0.01, L + 0.04);
+    put((a + b) / 2 + vx, (s0 + s1) / 2 + vs, W + 0.01, L + 0.04);
+    const fx = vx < 0 ? a : b, d1x = vx < 0 ? W : -W;           // the diagonal from the front corner opposite the lean
+    put(fx + d1x / 2 + vx / 2, s0 + L / 2 + vs / 2, 1, 1, [d1x, L, vx, vs]);
   }
 }
 

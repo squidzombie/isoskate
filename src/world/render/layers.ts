@@ -135,6 +135,14 @@ if (vKind > 0.5 && vKind < 1.5) {
   private write(k: number): void {
     const d = this.slots.rec[k];
     if (!d) { this.mesh.setMatrixAt(k, ZERO); return; }
+    if (d.e) {
+      // Parallelogram: local u (x) → e1, local plane z (−v, s backward) → −e2 (track s runs along −z).
+      // (e1 is negated when e1 × e2 < 0, so the quad keeps facing up: same parallelogram, u mirrored.)
+      const [ex, es, bx, bs] = d.e, sg = ex * bs - es * bx < 0 ? -1 : 1, ax = ex * sg, as = es * sg;
+      this.m.set(ax, 0, -bx, d.x, 0, 1, 0, d.y, -as, 0, bs, -(d.s - this.originS), 0, 0, 0, 1);
+      this.mesh.setMatrixAt(k, this.m);
+      return;
+    }
     this.q.setFromAxisAngle(this.up, d.rot);
     this.mesh.setMatrixAt(k, this.m.compose(this.v.set(d.x, d.y, -(d.s - this.originS)), this.q, this.sc.set(d.w, 1, d.len)));
   }

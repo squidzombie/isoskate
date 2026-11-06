@@ -4,7 +4,7 @@ import type { QualityTier } from '../../core/ids';
 export const RENDER = {
   /** Direct-sun scale on hazard bodies (fx flag `matte`): a sun-lit ink front stays dark enough for the 2.5:1 gate
    *  (DESIGN §18.4) while the top, lit by the sky, still reads lighter than the front. */
-  matte: 0.4,
+  matte: 0.28,
   /** Haze over the far 30% of the frame (DESIGN §18.3: ≤ 35%); menus use distance haze (near → far, m). */
   hazeY0: 0.7, hazeMenuNear: 28, hazeMenuFar: 150, hazeMenuAmt: 0.85,
   /** Emissive scale: golden → blue hour (DESIGN §18.2 neon 1.5–2.5 rolls off under ACES; this scales the authored k). */
@@ -17,8 +17,9 @@ export const RENDER = {
 
 /** The chunk window (TECH §8.6): built ≥ 2 chunks before visible; a chunk whose drawn content (a long building, a
  *  skywalk) still reaches the screen is kept past the CHUNK_WINDOW until it does not (keepBehindM behind the player),
- *  and never more than maxBehind chunks back. */
-export const STREAM = { buildBudgetMs: 4, keepBehindM: 14, maxBehind: 3, rebuildFrac: 0.1 } as const;
+ *  and never more than maxBehind chunks back. Live chunks rebuild when the stripe width changes by rebuildFrac or the
+ *  camera yaw (hazard pools follow it) by rebuildYawDeg. */
+export const STREAM = { buildBudgetMs: 4, keepBehindM: 14, maxBehind: 3, rebuildFrac: 0.1, rebuildYawDeg: 1 } as const;
 
 /** Per-tier world settings (TECH §8.9): glow cards per chunk, particle cap (vfx reads it), shadow map size. */
 export const QUALITY: Readonly<Record<QualityTier, { glowCards: number; particles: number; shadow: number; dpr: number }>> = {

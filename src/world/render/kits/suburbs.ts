@@ -52,9 +52,9 @@ const picketFence: KitFn = (c, ob) => {
     K.box(xm - 0.04, b.y0 + 0.25, a, xm + 0.04, b.y0 + 0.33, z, FACE.sides5);
     K.box(xm - 0.04, b.y1 - 0.4, a, xm + 0.04, b.y1 - 0.32, z, FACE.sides5);
     K.lit(0, 0, HZ).col(0xf7efe3).box(xm - 0.041, b.y1 - 0.39, a, xm + 0.041, b.y1 - 0.375, z, FACE.top);
-    for (let s = Math.ceil(a / 0.16) * 0.16; s < z - 0.06; s += 0.16) {
-      body(c, 0x2a2238); K.box(xm - 0.02, b.y0, s, xm + 0.02, b.y1 - 0.1, s + 0.09);
-      body(c, c.hz.top); K.box(xm - 0.021, b.y1 - 0.1, s, xm + 0.021, b.y1, s + 0.09);
+    for (let s = Math.ceil(a / 0.24) * 0.24; s < z - 0.08; s += 0.24) {
+      body(c, 0x2a2238); K.box(xm - 0.02, b.y0 + 0.2, s, xm + 0.02, b.y1 - 0.1, s + 0.11, FACE.front | FACE.left | FACE.right);
+      body(c, c.hz.top); K.box(xm - 0.021, b.y1 - 0.1, s, xm + 0.021, b.y1, s + 0.11, FACE.top | FACE.front | FACE.left | FACE.right);
     }
     K.capY = null;
     contact(c, b.x0 - 0.05, b.x1 + 0.05, a, z, b.y0 + 0.01, 0.45, 0.15);

@@ -248,7 +248,7 @@ const trafficLight: DecorFn = (c, d) => {
   K.reset().to('b').lit(0, 0, nf).col(0x3a3052).cyl(d.x, d.s, d.y, d.y + h, 0.07, 6, false);
   K.bar(d.x, d.y + h - 0.1, d.s, hx, d.y + h - 0.1, d.s, 0.04);
   K.col(0x2b2140).box(hx - 0.16, d.y + h - 1.0, d.s - 0.12, hx + 0.16, d.y + h, d.s + 0.12);
-  const cols = [0xff5a3c, 0xf2b630, 0x7ee0b5];
+  const cols = [0xff5a3c, 0xe6ad3a, 0x7ee0b5];
   K.to('e');
   for (let i = 0; i < 3; i++) K.glowing(i === st ? 1.8 : 0.15, -1, nf).col(cols[i]!).box(hx - 0.09, d.y + h - 0.3 - i * 0.3, d.s - 0.125, hx + 0.09, d.y + h - 0.14 - i * 0.3, d.s - 0.12, FACE.front);
   K.to('b');
@@ -335,7 +335,7 @@ const drumPile: DecorFn = (c, d) => {
   for (let i = 0; i < n; i++) {
     const x = d.x + (i % 2) * 0.62 * Math.sign(d.x), s = d.s + Math.floor(i / 2) * 0.62;
     K.lit(0, 0, nf).col(i % 3 === 0 ? 0x2f5d7c : col).cyl(x, s, d.y, d.y + 0.9, 0.29, 8, true);
-    K.col(0xf2b630).cyl(x, s, d.y + 0.45, d.y + 0.49, 0.3, 8, false);
+    K.col(0xe6ad3a).cyl(x, s, d.y + 0.45, d.y + 0.49, 0.3, 8, false);
   }
 };
 
