@@ -6,7 +6,7 @@
 //   - `contrast()` is the DESIGN §18.4 pixel gate on the rendered frame (debug/contrast.ts).
 //   - `ext` (DebugExt) holds the tooling hooks shots.mjs and the e2e specs use: overlays, perf HUD, tuning panel,
 //     canvas capture around the skater, the cosmetic catalog, a HUD layout preview and world-view stats.
-import { Box3, Vector3 } from 'three';
+import { Box3, Color, type Light, type Mesh, type Object3D, PerspectiveCamera, Vector3 } from 'three';
 import { BUILD, type AreaId, type QualityTier, type ScreenId } from '../core/ids';
 import type { AudioEngine } from '../core/audio';
 import type { Bus } from '../core/bus';
@@ -101,9 +101,15 @@ export interface DebugExt {
   tuning(on?: boolean): boolean;
   /** The full contrast report (every measured hazard and edge) of the current frame. */
   contrastReport(): ContrastReport;
-  /** Renders now and returns a PNG data URL: the whole canvas, or a square crop around the skater (cosmetics sheet). */
-  capture(o?: { target?: 'canvas' | 'skater'; size?: number; pad?: number; bg?: string }):
-    { dataUrl: string; rect: { x: number; y: number; w: number; h: number } | null };
+  /** Renders now and returns a PNG data URL: the whole canvas, or a square crop around the skater (cosmetics sheet).
+   *  `native`: the crop is returned at its rendered pixel size (no resampling: real in-run scale). `view`: instead of
+   *  the live frame, the skater alone on a plain `bg`, framed by its own perspective camera (CaptureView). */
+  capture(o?: { target?: 'canvas' | 'skater'; size?: number; pad?: number; bg?: string; native?: boolean; view?: CaptureView }):
+    { dataUrl: string; rect: { x: number; y: number; w: number; h: number } | null;
+      /** target 'skater' on the live frame: the skater's projected size, CSS px. */ skaterCss?: { w: number; h: number } };
+  /** Puts one catalog item on the skater over the equipped loadout, in any mode (null = the equipped loadout). Lasts
+   *  until the next run start or Locker visit; shots --cosmetics uses it for the in-run insets at real scale. */
+  tryOn(id: string | null): boolean;
   /** The cosmetic catalog (content/ CATALOG): what shots --cosmetics iterates. */
   catalog(): { id: string; slot: string; name: string; rarity: string; source: string; theme?: string; look: unknown }[];
   /** HUD layout preview with fake values (null = live values again). */
@@ -114,6 +120,13 @@ export interface DebugExt {
   readonly clockMs: number;
 }
 export type DebugApiWithExt = DebugAPI & { ext: DebugExt };
+
+/** An isolated turntable view of the skater (shots --cosmetics). Angles are relative to the direction toward the
+ *  active camera (the Locker camera: the showcase faces it at yaw 0): `azDeg` orbits about the vertical (+ moves the
+ *  camera toward screen-left), `elevDeg` looks down (negative: from below, e.g. a deck's graphic).
+ *  `part` frames the whole skater, its board (meshes named board / deck / wheel / truck, else the lowest meshes) or
+ *  its head (meshes named helmet / head, else the top 28%). */
+export interface CaptureView { azDeg?: number; elevDeg?: number; part?: 'all' | 'board' | 'head'; fovDeg?: number; pad?: number }
 
 export function installDebugApiImpl(host: DebugHost, tools: DebugTools = {}): DebugApiWithExt {
   const ring: GameEvent[] = [];
@@ -168,10 +181,12 @@ export function installDebugApiImpl(host: DebugHost, tools: DebugTools = {}): De
     tuning: (on) => toggle(tools.tuning, on),
     contrastReport: () => measureContrast(host),
     capture(o = {}) {
+      if (o.view) return isolatedCapture(host, o.view, o.size ?? 256, o.bg ?? '#3a3058');
       host.loop.renderNow();
       const gl = host.gfx.renderer.domElement;
       const W = gl.width, H = gl.height, size = o.size ?? 256;
       let rect: { x: number; y: number; w: number; h: number } | null = null;
+      let skaterCss: { w: number; h: number } | undefined;
       if (o.target === 'skater') {
         const box = new Box3().setFromObject(host.skater.object3d);
         if (!box.isEmpty()) {
@@ -182,20 +197,30 @@ export function installDebugApiImpl(host: DebugHost, tools: DebugTools = {}): De
             const px = ((v.x + 1) / 2) * W, py = ((1 - v.y) / 2) * H;
             x0 = Math.min(x0, px); y0 = Math.min(y0, py); x1 = Math.max(x1, px); y1 = Math.max(y1, py);
           }
+          const pr = host.gfx.renderer.getPixelRatio() || 1;
+          skaterCss = { w: (x1 - x0) / pr, h: (y1 - y0) / pr };
           const side = Math.max(x1 - x0, y1 - y0) * (1 + (o.pad ?? 0.35));
           rect = { x: (x0 + x1) / 2 - side / 2, y: (y0 + y1) / 2 - side / 2, w: side, h: side };
         }
       }
       const r = rect ?? { x: 0, y: 0, w: W, h: H };
+      if (rect && o.native) { r.x = Math.round(r.x); r.y = Math.round(r.y); r.w = r.h = Math.round(r.w); }
       const out = document.createElement('canvas');
       const scale = Math.min(size / r.w, size / r.h);
-      out.width = rect ? size : Math.round(W * Math.min(1, scale * 4));
-      out.height = rect ? size : Math.round(H * Math.min(1, scale * 4));
+      out.width = rect ? (o.native ? r.w : size) : Math.round(W * Math.min(1, scale * 4));
+      out.height = rect ? (o.native ? r.h : size) : Math.round(H * Math.min(1, scale * 4));
       const c = out.getContext('2d')!;
       c.fillStyle = o.bg ?? '#2b2140';
       c.fillRect(0, 0, out.width, out.height);
       c.drawImage(gl, r.x, r.y, r.w, r.h, 0, 0, out.width, out.height);   // same task as the render
-      return { dataUrl: out.toDataURL('image/png'), rect };
+      return { dataUrl: out.toDataURL('image/png'), rect, ...(skaterCss ? { skaterCss } : {}) };
+    },
+    tryOn(id) {
+      const item = id ? CATALOG.find((c) => c.id === id) : undefined;
+      if (id && !item) return false;
+      host.skater.setLoadout(item ? { ...host.meta.loadout(), [item.slot]: item.look } as ReturnType<MetaApi['loadout']> : host.meta.loadout());
+      host.loop.renderNow();
+      return true;
     },
     catalog: () => CATALOG.map((c) => ({ id: c.id, slot: c.slot, name: c.name, rarity: c.rarity, source: c.source,
       ...(c.theme ? { theme: c.theme } : {}), look: c.look })),
@@ -289,6 +314,111 @@ export function installDebugApiImpl(host: DebugHost, tools: DebugTools = {}): De
     },
   };
   return api;
+}
+
+/** The meshes of a part of the skater (CaptureView.part) and their world bounds; `all` = every visible mesh. */
+function partMeshes(root: Object3D, part: CaptureView['part']): { meshes: Mesh[]; box: Box3 } {
+  const every: { m: Mesh; b: Box3 }[] = [];
+  root.traverseVisible((o) => { if ((o as Mesh).isMesh) every.push({ m: o as Mesh, b: new Box3().setFromObject(o) }); });
+  const all = new Box3();
+  for (const e of every) all.union(e.b);
+  if ((part !== 'board' && part !== 'head') || all.isEmpty()) return { meshes: every.map((e) => e.m), box: all };
+  const named = (re: RegExp) => every.filter(({ m }) => { for (let p: Object3D | null = m; p && p !== root.parent; p = p.parent) if (re.test(p.name)) return true; return false; });
+  const h = all.max.y - all.min.y;
+  let pick = named(part === 'board' ? /board|deck|wheel|truck/i : /helmet|head/i);
+  if (!pick.length && part === 'board') pick = every.filter(({ b }) => b.max.y <= all.min.y + 0.3 * h);
+  const box = new Box3();
+  for (const { b } of pick) box.union(b);
+  if (!box.isEmpty()) return { meshes: pick.map((e) => e.m), box };
+  if (part === 'head') { all.min.y = all.max.y - 0.28 * h; return { meshes: every.map((e) => e.m), box: all }; }
+  all.max.y = all.min.y + 0.2 * h;
+  return { meshes: every.map((e) => e.m), box: all };
+}
+
+/** Horizontal long axis of some meshes (principal axis of their vertices on the ground plane), unit (x, z). */
+function longAxis(meshes: readonly Mesh[]): [number, number] {
+  let n = 0, mx = 0, mz = 0, sxx = 0, szz = 0, sxz = 0;
+  const v = new Vector3();
+  for (const m of meshes) {
+    const pos = m.geometry.getAttribute('position');
+    if (!pos) continue;
+    const step = Math.max(1, Math.floor(pos.count / 400));
+    for (let i = 0; i < pos.count; i += step) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld);
+      n++; const dx = v.x - mx, dz = v.z - mz; mx += dx / n; mz += dz / n;
+      sxx += dx * (v.x - mx); szz += dz * (v.z - mz); sxz += dx * (v.z - mz);
+    }
+  }
+  if (n < 2) return [0, 1];
+  const ang = 0.5 * Math.atan2(2 * sxz, sxx - szz);
+  return [Math.cos(ang), Math.sin(ang)];
+}
+
+/** The skater alone on a plain background, framed by its own camera (CaptureView), rendered into the bottom-left of
+ *  the canvas and read back in the same task; the live frame is redrawn afterwards. */
+function isolatedCapture(host: DebugHost, v: CaptureView, size: number, bg: string):
+  { dataUrl: string; rect: { x: number; y: number; w: number; h: number } | null } {
+  host.loop.renderNow();                                   // pose and matrices for this frame
+  const r = host.gfx.renderer, scene = host.gfx.scene, gl = r.domElement, pr = r.getPixelRatio() || 1;
+  const root = host.skater.object3d;
+  root.updateWorldMatrix(true, true);
+  const part = v.part ?? 'all';
+  const { meshes, box } = partMeshes(root, part);
+  if (box.isEmpty()) return { dataUrl: '', rect: null };
+  const centre = box.getCenter(new Vector3()), radius = Math.max(0.05, box.getSize(new Vector3()).length() / 2);
+  // Reference direction: toward the active camera, flattened. A board is seen from its side instead (perpendicular to
+  // its long axis, on the camera's side), so the deck never shows end-on.
+  const ref = host.cameraRig.camera.getWorldPosition(new Vector3()).sub(centre).setY(0);
+  if (ref.lengthSq() < 1e-6) ref.set(0, 0, 1);
+  ref.normalize();
+  if (part === 'board') {
+    const [ax, az0] = longAxis(meshes);
+    const side = new Vector3(-az0, 0, ax);
+    ref.copy(side.dot(ref) >= 0 ? side : side.negate());
+  }
+  const az = ((v.azDeg ?? 20) * Math.PI) / 180, el = ((v.elevDeg ?? 8) * Math.PI) / 180, fov = v.fovDeg ?? 28;
+  const dir = new Vector3(ref.x * Math.cos(az) - ref.z * Math.sin(az), 0, ref.x * Math.sin(az) + ref.z * Math.cos(az));
+  dir.multiplyScalar(Math.cos(el)).setY(Math.sin(el));
+  const dist = (radius * (1 + (v.pad ?? 0.08))) / Math.sin(((fov / 2) * Math.PI) / 180);
+  const cam = new PerspectiveCamera(fov, 1, Math.max(0.01, dist - radius * 3), dist + radius * 3);
+  cam.position.copy(centre).addScaledVector(dir, dist);
+  cam.lookAt(centre);
+  cam.updateMatrixWorld();
+  // Only the skater (and the lights) on a plain background, no fog.
+  const hidden: Object3D[] = [];
+  if (part === 'board') {
+    // The board alone: the rider's meshes would stand in front of it.
+    const keep = new Set<Object3D>(meshes);
+    root.traverseVisible((o) => { if ((o as Mesh).isMesh && !keep.has(o)) hidden.push(o); });
+    for (const o of hidden) o.visible = false;
+  }
+  for (const c of scene.children) {
+    let holds = false;
+    for (let p: Object3D | null = root; p; p = p.parent) if (p === c) holds = true;
+    if (!holds && c.visible && !(c as Light).isLight) { c.visible = false; hidden.push(c); }
+  }
+  const bgWas = scene.background, fogWas = scene.fog;
+  scene.background = new Color(bg); scene.fog = null;
+  const cssW = gl.width / pr, cssH = gl.height / pr;
+  const side = Math.max(16, Math.min(size / pr, cssW, cssH));
+  const px = Math.round(side * pr);
+  let dataUrl = '';
+  try {
+    r.setScissorTest(true);
+    r.setViewport(0, 0, side, side); r.setScissor(0, 0, side, side);
+    r.render(scene, cam);
+    const out = document.createElement('canvas');
+    out.width = out.height = size;
+    out.getContext('2d')!.drawImage(gl, 0, gl.height - px, px, px, 0, 0, size, size);   // same task as the render
+    dataUrl = out.toDataURL('image/png');
+  } finally {
+    r.setScissorTest(false);
+    r.setViewport(0, 0, cssW, cssH);
+    scene.background = bgWas; scene.fog = fogWas;
+    for (const c of hidden) c.visible = true;
+    host.loop.renderNow();
+  }
+  return { dataUrl, rect: { x: 0, y: 0, w: px, h: px } };
 }
 
 /** Fake score / skater state for the HUD preview (only the fields the HUD reads are meaningful). */

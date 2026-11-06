@@ -5,8 +5,9 @@
 //   node scripts/shots.mjs [modes] [--seed N] [--ticks a,b,c] [--no-build] [--vp 390x844,...]
 //     (no mode)    title, run frames, every area at blend 0 and in the gateway blends, every UI screen, the debug
 //                  overlay frame, at 390×844, 390×664 and 1280×800                      → artifacts/shots/*.png
-//     --cosmetics  every CATALOG item on the turntable (per-item PNG at 200 px plus 60 px and 31 px skater heights)
-//                  as a contact sheet, and the Locker with 6 loadouts                    → artifacts/shots/cosmetics/
+//     --cosmetics  every CATALOG item: turntable views on a plain background (front 3/4 plus slot close-ups) and the
+//                  item at real in-run scale (≈ 60 px and ≈ 31 px skater, native pixels), one PNG per item, the
+//                  contact sheet, and the Locker with 6 loadouts                         → artifacts/shots/cosmetics/
 //     --contrast   the DESIGN §18.4 pixel gate (hazard ≥ 2.5:1, grind edge ≥ 1.8:1) at every area preset and gateway
 //                  blend; exits 1 on a failure                                           → artifacts/shots/contrast/
 //     --hud        HUD layouts at 320 / 360 / 390 px (live and a worst-case preview), overlap and 56 px band
@@ -160,55 +161,117 @@ async function defaultMode() {
 }
 
 // ── --cosmetics ────────────────────────────────────────────────────────────────────────────────────────────────
+// Per item: the turntable views on a plain background (ext.capture view: front 3/4 for every item, plus close-ups
+// of the slot: the rider from behind, the board from below (its graphic) and from above, the helmet front and back),
+// and the item at real in-run scale (ext.tryOn in a god run, cropped at native pixels, no resampling): 390×844 at the
+// start speed (≈ 60 CSS px skater) and 375×548 (SE in Safari) at top speed (≈ 31 CSS px), both at DPR 2.
+const COSMETIC_BG = '#3a3058';
+const SLOT_VIEWS = {
+  skater: [['rear 3/4', { azDeg: 160, elevDeg: 12 }], ['face', { part: 'head', azDeg: 20, elevDeg: 6 }]],
+  board: [['graphic (below)', { part: 'board', azDeg: 25, elevDeg: -42 }], ['top', { part: 'board', azDeg: 25, elevDeg: 48 }]],
+  helmet: [['helmet', { part: 'head', azDeg: 25, elevDeg: 14 }], ['helmet back', { part: 'head', azDeg: 150, elevDeg: 24 }]],
+};
+const RUN_SCALES = [
+  { name: '390×844 start', vp: { name: '390x844', width: 390, height: 844, mobile: true, dpr: 2 }, startT: 0, slot: 220 },
+  { name: '375×548 top speed', vp: { name: '375x548', width: 375, height: 548, mobile: true, dpr: 2 }, startT: 160, slot: 112 },
+];
+
 async function cosmeticsMode() {
   const dir = join(OUT, 'cosmetics');
   mkdirSync(dir, { recursive: true });
   const vp = { name: '390x844', width: 390, height: 844, mobile: true, dpr: 2 };
   const { page, close } = await openPage(vp, '&quality=high');
+  const runPages = [];
+  for (const r of RUN_SCALES) runPages.push({ ...r, ...(await openPage(r.vp, '&quality=high')) });
   const items = await page.evaluate(() => window.__skate.ext.catalog().map(({ look: _l, ...rest }) => rest));
   console.log(`cosmetics: ${items.length} catalog items`);
-  // One cell per item: the turntable at 200 px, plus the skater scaled to 60 px and 31 px tall (DESIGN: reads at both).
   const cells = [];
+  const sizes = RUN_SCALES.map(() => []);
   for (const it of items) {
-    const cap = await page.evaluate((id) => {
-      window.__skate.ui('locker', { preview: id, yaw: 30 });
-      return window.__skate.ext.capture({ target: 'skater', size: 200, bg: '#3a3058' });
-    }, it.id);
-    if (!cap.rect) { fail(`cosmetics: no skater on screen for ${it.id}`); continue; }
-    writeDataUrl(join(dir, `${it.id}.png`), cap.dataUrl);
-    cells.push({ ...it, dataUrl: cap.dataUrl });
+    // Turntable views: re-enter the Locker so the showcase clock restarts at its idle pose.
+    await page.evaluate(() => window.__skate.ui('title'));
+    await page.evaluate((id) => window.__skate.ui('locker', { preview: id, yaw: 0 }), it.id);
+    await settle(page, 120);
+    const views = await page.evaluate(([bg, extra]) => {
+      const cap = (view, size) => window.__skate.ext.capture({ view, size, bg }).dataUrl;
+      return { main: cap({ azDeg: 20, elevDeg: 8 }, 240), extra: extra.map(([label, v]) => ({ label, url: cap(v, 116) })) };
+    }, [COSMETIC_BG, SLOT_VIEWS[it.slot] ?? []]);
+    if (!views.main) { fail(`cosmetics: no skater to frame for ${it.id}`); continue; }
+    // Real in-run scale.
+    const runs = [];
+    for (let k = 0; k < runPages.length; k++) {
+      const rp = runPages[k];
+      await rp.page.evaluate(([t]) => { window.__skate.start({ startT: t, god: true }); window.__skate.manual(true); window.__skate.step(2); }, [rp.startT]);
+      const ok = await rp.page.evaluate((id) => window.__skate.ext.tryOn(id), it.id);
+      if (!ok) fail(`cosmetics: tryOn(${it.id}) refused`);
+      await settle(rp.page, 160);                                // skater springs settle on rAF renders
+      const cap = await rp.page.evaluate(() => { window.__skate.step(6); return window.__skate.ext.capture({ target: 'skater', native: true, pad: 0.3 }); });
+      if (!cap.rect) { fail(`cosmetics: no skater on screen in the run (${rp.name}) for ${it.id}`); continue; }
+      sizes[k].push(cap.skaterCss.h);
+      runs.push({ label: rp.name, px: cap.skaterCss.h, url: cap.dataUrl, slot: rp.slot });
+    }
+    cells.push({ ...it, views, runs });
   }
-  const sheet = await page.evaluate(async (list) => {
-    const cols = Math.min(5, Math.max(1, list.length)), cw = 236, ch = 262, rows = Math.ceil(list.length / cols);
+  // One cell per item (also written alone as <id>.png), then the grid.
+  const sheet = await page.evaluate(async ([list, bg]) => {
+    const CW = 720, CH = 330, load = (src) => new Promise((r) => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = src; });
+    const RARITY = { common: '#c9c2b8', rare: '#5eb8ff', epic: '#b47cff', legendary: '#ffb13b' };
+    const drawCell = async (x, it, ox, oy) => {
+      x.fillStyle = '#fff4e3'; x.fillRect(ox, oy, CW, CH);
+      x.fillStyle = RARITY[it.rarity] ?? '#c9c2b8'; x.fillRect(ox + 4, oy, CW - 8, 6);
+      x.font = '600 10px ui-monospace, monospace';
+      const label = (t, lx, ly) => { x.fillStyle = '#2b2140'; x.fillText(t, lx, ly); };
+      const main = await load(it.views.main);
+      if (main) x.drawImage(main, ox + 4, oy + 10, 240, 240);
+      label('front 3/4', ox + 6, oy + 262);
+      for (let k = 0; k < it.views.extra.length; k++) {
+        const e = it.views.extra[k], img = await load(e.url), ey = oy + 10 + k * 126;
+        if (img) x.drawImage(img, ox + 250, ey, 116, 116);
+        label(e.label, ox + 250, ey + 124 > oy + 262 ? oy + 262 : ey + 124);
+      }
+      // In-run crops at native pixels (scaled down only if a crop is larger than its slot, and then labelled so).
+      let rx = ox + 374;
+      for (const r of it.runs) {
+        const img = await load(r.url);
+        if (img) {
+          const s = Math.min(1, r.slot / Math.max(img.width, img.height));
+          const w = Math.round(img.width * s), h = Math.round(img.height * s);
+          x.fillStyle = bg; x.fillRect(rx, oy + 10, r.slot, r.slot);
+          x.drawImage(img, rx + (r.slot - w) / 2, oy + 10 + (r.slot - h) / 2, w, h);
+          label(r.label, rx, oy + 10 + r.slot + 12);
+          label(`skater ${r.px.toFixed(0)} px${s < 1 ? ' (scaled)' : ''}`, rx, oy + 10 + r.slot + 24);
+        }
+        rx += r.slot + 8;
+      }
+      x.fillStyle = '#2b2140'; x.font = '800 14px Nunito, sans-serif';
+      x.fillText(it.name, ox + 6, oy + 284, CW - 12);
+      x.font = '600 11px ui-monospace, monospace';
+      x.fillText(`${it.id} · ${it.slot} · ${it.rarity.toUpperCase()} · ${it.source}${it.theme ? ` · ${it.theme}` : ''}`, ox + 6, oy + 302, CW - 12);
+    };
+    const per = [];
+    for (const it of list) {
+      const c = document.createElement('canvas'); c.width = CW; c.height = CH;
+      await drawCell(c.getContext('2d'), it, 0, 0);
+      per.push({ id: it.id, url: c.toDataURL('image/png') });
+    }
+    const cols = Math.min(3, Math.max(1, list.length)), rows = Math.ceil(list.length / cols);
     const c = document.createElement('canvas');
-    c.width = cols * cw; c.height = rows * ch + 34;
+    c.width = cols * CW; c.height = rows * CH + 34;
     const x = c.getContext('2d');
     x.fillStyle = '#fff4e3'; x.fillRect(0, 0, c.width, c.height);
     x.fillStyle = '#2b2140'; x.font = '700 16px Nunito, sans-serif';
-    x.fillText(`DUSKLANE cosmetics · ${list.length} items · turntable 200 px, skater at 60 px and 31 px`, 10, 22);
-    const RARITY = { common: '#c9c2b8', rare: '#5eb8ff', epic: '#b47cff', legendary: '#ffb13b' };
-    for (let i = 0; i < list.length; i++) {
-      const it = list[i], cx = (i % cols) * cw, cy = 34 + Math.floor(i / cols) * ch;
-      const img = new Image();
-      await new Promise((r) => { img.onload = r; img.src = it.dataUrl; });
-      x.fillStyle = RARITY[it.rarity] ?? '#c9c2b8'; x.fillRect(cx + 4, cy, cw - 8, 6);
-      x.drawImage(img, cx + 4, cy + 8, 160, 160);
-      // The skater fills ~1/(1+pad) of the crop height: scale so it is 60 px and 31 px tall.
-      const fill = 1 / 1.35;
-      for (const [hpx, oy] of [[60, 8], [31, 100]]) {
-        const s = hpx / fill;
-        x.drawImage(img, cx + 168 + (64 - s) / 2 + 0, cy + oy + (80 - s) / 2, s, s);
-      }
-      x.fillStyle = '#2b2140'; x.font = '800 13px Nunito, sans-serif';
-      x.fillText(it.name, cx + 6, cy + 186, cw - 12);
-      x.font = '600 11px ui-monospace, monospace';
-      x.fillText(`${it.id}`, cx + 6, cy + 202, cw - 12);
-      x.fillText(`${it.slot} · ${it.rarity.toUpperCase()} · ${it.source}${it.theme ? ` · ${it.theme}` : ''}`, cx + 6, cy + 217, cw - 12);
-    }
-    return c.toDataURL('image/png');
-  }, cells);
-  writeDataUrl(join(dir, 'contact-sheet.png'), sheet);
-  // The Locker with 6 loadouts (slots cycled through the catalog, turntable yaw 0..300).
+    x.fillText(`DUSKLANE cosmetics · ${list.length} items · turntable views on a plain background; in-run crops at native pixels (DPR 2)`, 10, 22);
+    for (let i = 0; i < list.length; i++) await drawCell(x, list[i], (i % cols) * CW, 34 + Math.floor(i / cols) * CH);
+    return { sheet: c.toDataURL('image/png'), per };
+  }, [cells, COSMETIC_BG]);
+  for (const p of sheet.per) writeDataUrl(join(dir, `${p.id}.png`), p.url);
+  writeDataUrl(join(dir, 'contact-sheet.png'), sheet.sheet);
+  for (let k = 0; k < RUN_SCALES.length; k++) {
+    const v = sizes[k];
+    if (v.length) console.log(`cosmetics: in-run skater height at ${RUN_SCALES[k].name}: ${Math.min(...v).toFixed(1)}–${Math.max(...v).toFixed(1)} CSS px`);
+  }
+  for (const rp of runPages) await rp.close();
+  // The Locker with 6 loadouts (slots cycled through the catalog; turntable yaw: front 3/4 both ways, front, back).
   const n = await page.evaluate(() => {
     const cat = window.__skate.ext.catalog();
     const by = (s) => cat.filter((c) => c.slot === s);
@@ -219,15 +282,17 @@ async function cosmeticsMode() {
     }));
     return 6;
   });
+  const YAWS = [20, -20, 40, -40, 0, 160];
   for (let i = 0; i < n; i++) {
-    const ids = await page.evaluate((k) => {
+    await page.evaluate(() => window.__skate.ui('title'));
+    const ids = await page.evaluate(([k, yaw]) => {
       const l = window.__shotsLoadouts[k];
-      window.__skate.ui('locker', { loadout: { skater: l.skater, board: l.board, helmet: l.helmet }, yaw: k * 60 });
+      window.__skate.ui('locker', { loadout: { skater: l.skater, board: l.board, helmet: l.helmet }, yaw });
       return l.ids;
-    }, i);
+    }, [i, YAWS[i]]);
     await settle(page, 200);
     await page.screenshot({ path: join(dir, `locker-loadout-${i + 1}.png`) });
-    console.log(`locker-loadout-${i + 1}.png  ${ids.join(' + ')}`);
+    console.log(`locker-loadout-${i + 1}.png  ${ids.join(' + ')}  yaw ${YAWS[i]}`);
   }
   await page.evaluate(() => window.__skate.ui('title'));
   await close();
