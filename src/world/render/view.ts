@@ -119,6 +119,13 @@ class WorldViewImpl implements WorldView {
   private trainClock = 0;
   // Draw-call split (main vs shadow pass), measured by a probe drawn first in the main pass.
   private readonly probe: Mesh;
+  // Pooled geometries the renderer has not drawn yet get one frame on an invisible-material mesh (no draw call, never
+  // frustum-culled): the renderer registers and uploads them when they are first built, not when they first scroll
+  // into view, so the GPU geometry count only moves when a pool really grows.
+  private readonly warmed = new WeakSet<object>();
+  private readonly warm: Mesh[] = [];
+  private warmDrawn = false;
+  private readonly warmMat = new MeshBasicMaterial({ visible: false });
   private shadowCalls = 0;
   private mainCalls = 0;
   // Quality.
@@ -177,13 +184,13 @@ class WorldViewImpl implements WorldView {
     // Maglev train: a long light streak (additive) along the guideway.
     this.train = new Mesh(new BoxGeometry(0.5, 0.45, 1), new MeshBasicMaterial({ color: 0xbff9ff, transparent: true, opacity: 0.9,
       blending: AdditiveBlending, depthWrite: false }));
-    this.train.name = 'maglevTrain'; this.train.visible = false; this.train.frustumCulled = false;
+    this.train.name = 'maglevTrain'; this.trainMat().visible = false; this.train.frustumCulled = false;
     ctx.scene.add(this.train);
     // Probe: drawn first in the main pass (empty draw range), records the shadow pass's draw calls.
     this.probe = new Mesh(new PlaneGeometry(0.01, 0.01), new MeshBasicMaterial({ colorWrite: false, depthWrite: false }));
     this.probe.geometry.setDrawRange(0, 0);
     this.probe.frustumCulled = false; this.probe.renderOrder = -1e9; this.probe.name = 'callProbe';
-    this.probe.onBeforeRender = (r) => { this.shadowCalls = r.info.render.calls; };
+    this.probe.onBeforeRender = (r) => { this.shadowCalls = r.info.render.calls; if (this.warm.length) this.warmDrawn = true; };
     ctx.scene.add(this.probe);
     ctx.scene.onAfterRender = (r) => {
       this.mainCalls = r.info.render.calls - this.shadowCalls;
@@ -206,6 +213,7 @@ class WorldViewImpl implements WorldView {
   }
 
   update(f: RenderFrame): void {
+    if (this.warmDrawn) { for (const m of this.warm) this.ctx.scene.remove(m); this.warm.length = 0; this.warmDrawn = false; }
     const fs = frameStartMs();
     // Auto quality: last frame's work (frame start → end of render submit) against the frame interval.
     if (fs !== null) {
@@ -296,6 +304,8 @@ class WorldViewImpl implements WorldView {
     this.clearFlash();
     this.ctx.scene.remove(this.root, this.blob, this.glow, this.train, this.probe, this.decals.mesh, this.lanterns.mesh, this.coins.mesh);
     for (const p of Object.values(this.pools)) p.dispose();
+    for (const m of this.warm) this.ctx.scene.remove(m);
+    this.warm.length = 0; this.warmMat.dispose();
     this.mats.dispose(); this.decals.dispose(); this.lanterns.dispose(); this.coins.dispose(); this.sky.dispose();
     setPaletteSource(this.ctx, null);
   }
@@ -313,16 +323,25 @@ class WorldViewImpl implements WorldView {
       verts, chunkTris: tris, maxChunkTris, coinSlotsUsed: this.coins.used, decalsUsed: this.decals.used, lanternsUsed: this.lanterns.used,
       originS: this.originS, edgeHalfW: this.opts.edgeHalfW, mainCalls: this.mainCalls, shadowCalls: this.shadowCalls,
       chunksBuilt: this.built, cacheHits: this.cacheHits, buildMsP95: this.buildP95, quality: this.ctx.quality, autoQuality: this.autoOn,
-      bench: (n?: number) => this.benchBuild(n),
-      obstacles: (id?: number) => [...this.chunks.values()].flatMap((c) => c.chunk.obstacles).filter((o) => id === undefined || o.id === id) };
+      bench: (n?: number, index?: number) => this.benchBuild(n, index),
+      obstacles: (id?: number) => [...this.chunks.values()].flatMap((c) => c.chunk.obstacles).filter((o) => id === undefined || o.id === id),
+      sceneGeos: () => {
+        // Scene geometries; `?` marks one the renderer has not registered yet (no dispose listener: never drawn).
+        const m = new Map<string, string>();
+        this.ctx.scene.traverse((o) => {
+          const g = (o as Mesh).geometry as (Mesh['geometry'] & { _listeners?: Record<string, unknown[]> }) | undefined;
+          if (g) m.set(g.uuid, `${o.parent?.name ? o.parent.name + '/' : ''}${o.name || o.type}${o.visible ? '' : '(hidden)'}${g._listeners?.dispose?.length ? '' : '?'}`);
+        });
+        return [...m.values()];
+      } };
   }
 
   /** Debug / wa.spec: rebuilds the live chunk under `index` (default: the nearest ahead) n times into scratch buffers
    *  and returns the build-time distribution (ms). The live chunk is untouched. */
-  benchBuild(n = 40, index?: number): { p50: number; p95: number; max: number; tris: number } {
+  benchBuild(n = 40, index?: number): { p50: number; p95: number; min: number; max: number; tris: number } {
     const idx = index ?? Math.max(...this.chunks.keys());
     const ch = this.chunks.get(idx)?.chunk;
-    if (!ch) return { p50: 0, p95: 0, max: 0, tris: 0 };
+    if (!ch) return { p50: 0, p95: 0, min: 0, max: 0, tris: 0 };
     const w = this.writers, t: number[] = [];
     let tris = 0;
     for (let k = 0; k < n; k++) {
@@ -334,7 +353,7 @@ class WorldViewImpl implements WorldView {
       for (const tg of TARGETS) { tris += w[tg].tris; this.pools[tg].release(w[tg].end()); }
     }
     t.sort((a, b) => a - b);
-    return { p50: t[Math.floor(n / 2)]!, p95: t[Math.min(n - 1, Math.floor(n * 0.95))]!, max: t[n - 1]!, tris };
+    return { p50: t[Math.floor(n / 2)]!, p95: t[Math.min(n - 1, Math.floor(n * 0.95))]!, min: t[0]!, max: t[n - 1]!, tris };
   }
 
   // ── internals ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -397,6 +416,12 @@ class WorldViewImpl implements WorldView {
       mesh.name = `chunk${index}:${t}`;
       group.add(mesh);
       parts[t] = { mesh, geo };
+      if (!this.warmed.has(geo.geo)) {
+        this.warmed.add(geo.geo);
+        const wm = new Mesh(geo.geo, this.warmMat);
+        wm.frustumCulled = false; wm.name = 'warm';
+        this.warm.push(wm); this.ctx.scene.add(wm);
+      }
     }
     const lc: LiveChunk = { index, s0: ch.s0, group, parts, coinSlots: [], decalSlots: [], lanternSlots: [], decals: out.decals,
       lanterns: out.lanterns, ambient: out.ambient, far: out.far, key: this.optsKey, hash, chunk: ch, tris };
@@ -530,17 +555,21 @@ class WorldViewImpl implements WorldView {
     this.flash = null;
   }
 
+  /** Toggled objects hide through their material, not `visible`: the geometry is registered with the renderer from
+   *  the first frame, so the GPU geometry count does not step up the first time one shows (bot-survival bound). */
+  private trainMat(): MeshBasicMaterial { return this.train.material as MeshBasicMaterial; }
+
   /** Sora Line pass: a light streak along the guideway every ~20 s while a maglev beam is in view. */
   private updateTrain(f: RenderFrame, origin: number): void {
     let beam: Decor | null = null;
     for (const c of this.chunks.values()) { for (const d of c.chunk.decor) if (d.kind === 'maglev_beam') { beam = d; break; } if (beam) break; }
-    if (!beam) { this.train.visible = false; return; }
+    if (!beam) { this.trainMat().visible = false; return; }
     let period = 20, len = 40, speed = 45;
     for (const c of this.chunks.values()) for (const a of c.ambient) if (a.kind === 'train') { period = a.rate; len = a.len; speed = a.p.speed ?? 45; }
     this.trainClock = (this.trainClock + Math.max(0, f.dt)) % Math.max(4, period);
     const run = this.trainClock * speed;
     const s = f.playerS + 70 - run;
-    this.train.visible = run < 160;
+    this.trainMat().visible = run < 160;
     this.train.scale.set(1, 1, len);
     this.train.position.set(beam.x, Math.max(7, beam.y) + 0.55, -(s - origin));
   }

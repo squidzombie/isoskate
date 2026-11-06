@@ -46,16 +46,16 @@ export class Rings {
 
   constructor() {
     this.arc = new Mesh(ringGeometry(), this.arcMat);
-    this.arc.name = 'bankArc'; this.arc.frustumCulled = false; this.arc.renderOrder = 4; this.arc.visible = false;
+    this.arc.name = 'bankArc'; this.arc.frustumCulled = false; this.arc.renderOrder = 4; this.arcMat.visible = false;
     this.perfect = new Mesh(ringGeometry(), this.perfMat);
-    this.perfect.name = 'perfectRing'; this.perfect.frustumCulled = false; this.perfect.renderOrder = 4; this.perfect.visible = false;
+    this.perfect.name = 'perfectRing'; this.perfect.frustumCulled = false; this.perfect.renderOrder = 4; this.perfMat.visible = false;
     writeArc(this.perfect.geometry, 0.9, 1.0, 1);
   }
 
   /** Bank-timer arc at the board's ground point. bankIn ≤ 0 or no combo hides it. */
   updateArc(active: boolean, bankIn: number, x: number, y: number, z: number, dt: number): void {
     this.time += dt;
-    if (!active || bankIn <= 0) { this.arc.visible = false; this.norm = 0; this.lastBank = 0; return; }
+    if (!active || bankIn <= 0) { this.arcMat.visible = false; this.norm = 0; this.lastBank = 0; return; }
     if (bankIn > this.lastBank + 1e-3 || this.norm <= 0) this.norm = Math.max(bankIn, 0.3);
     this.lastBank = bankIn;
     const frac = Math.min(1, bankIn / this.norm);
@@ -65,22 +65,22 @@ export class Rings {
     this.arcMat.color.copy(this.cream).lerp(this.coral, 1 - frac);
     this.arcMat.opacity = 0.85 + 0.15 * pulse;
     this.arc.position.set(x, y + 0.02, z);
-    this.arc.visible = true;
+    this.arcMat.visible = true;
   }
 
   triggerPerfect(): void { this.perfT = 0; }
   updatePerfect(x: number, y: number, z: number, dt: number): void {
-    if (this.perfT < 0) { this.perfect.visible = false; return; }
+    if (this.perfT < 0) { this.perfMat.visible = false; return; }
     this.perfT += dt;
     const u = this.perfT / VFX.perfectRing.life;
-    if (u >= 1) { this.perfT = -1; this.perfect.visible = false; return; }
+    if (u >= 1) { this.perfT = -1; this.perfMat.visible = false; return; }
     const r = VFX.perfectRing.r0 + (VFX.perfectRing.r1 - VFX.perfectRing.r0) * u;
     this.perfect.scale.setScalar(r);
     this.perfMat.opacity = 0.9 * (1 - u);
     this.perfect.position.set(x, y + 0.025, z);
-    this.perfect.visible = true;
+    this.perfMat.visible = true;
   }
 
-  clear(): void { this.arc.visible = false; this.perfect.visible = false; this.perfT = -1; this.norm = 0; this.lastBank = 0; }
+  clear(): void { this.arcMat.visible = false; this.perfMat.visible = false; this.perfT = -1; this.norm = 0; this.lastBank = 0; }
   dispose(): void { this.arc.geometry.dispose(); this.perfect.geometry.dispose(); this.arcMat.dispose(); this.perfMat.dispose(); }
 }

@@ -201,6 +201,42 @@ The first block is the frozen behaviour later packages (GP, WG, WA, the bots) ca
 
 ## WA: World art (W2a)
 
+### App: put the camera in 'title' on the Title screen   (status: open, for G2 / MU; no core change)
+- File / symbol: game/app.ts › boot() / home() / open() (the two `TODO(WA)` lines)
+- Change: `this.setCamera('title')` when the Title screen opens (boot and home), `'run'` when a run starts, `'locker'` for Locker / Shop as now. The rig already implements all three (world/render/camera.ts: the 'title' mode is the static perspective diorama; menu cameras see the sky layer).
+- Why: the Title diorama (DESIGN §18.7) only shows when the rig is in 'title'; today the Title sits on the ortho run camera.
+- Local workaround meanwhile: none (gallery `title` scenes and `ui('locker')` show the menu cameras).
+
+### Quality setting → WorldView: an explicit auto-quality switch   (status: open; additive, optional)
+- File / symbol: core/view.ts › WorldView
+- Change: `setAutoQuality?(on: boolean): void;` (App calls it from the saved setting and on Settings changes).
+- Why: auto-adjust (TECH §8.9) must stay off when the player picked a tier. world/render reads it today without a contract.
+- Local workaround meanwhile: world/render/view.ts reads `localStorage['dusklane.save']` read-only (quality ≠ 'auto' → off), and turns auto off for `?quality=`, `navigator.webdriver` and any external `setQuality`.
+
+### Vfx reduced motion from the setting   (status: open; additive, optional)
+- File / symbol: core/view.ts › Vfx
+- Change: `setReducedMotion?(on: boolean): void;` (App calls it with settings.reducedMotion).
+- Why: DESIGN §18.8 reduced motion (no speed lines, no ambient drift, camera shake off). vfx/ implements it; the rig's shake is off with it too.
+- Local workaround meanwhile: vfx/ and the rig follow `matchMedia('(prefers-reduced-motion: reduce)')`; `VfxImpl.setReducedMotion` exists.
+
+### Contrast gate: thin grindable crash tops   (status: open, for INT: debug/contrast.ts)
+- File / symbol: debug/contrast.ts › hazard items
+- Change: measure a `crash` solid whose top is also a grind edge (handrail, dock_lip, ibeam: < 0.12 m wide on screen) as an edge (its stripes) instead of a hull, or exempt it from the hull measure.
+- Why: their hull is the cream stripe itself; a dark body under a 2 px cream lip cannot reach 2.5:1 as a hull mean against a mid ground without losing the edge rule. Gallery shade scenes: handrail / dock_lip / ibeam 1.3–1.9 (all other hazards pass). Not hit by `shots --contrast` (seed 1).
+- Local workaround meanwhile: none (rails keep the edge rule: cream lip ≥ 1.8:1).
+
+### Shared uniforms and palette routing in gfx/   (status: info; gfx edits WA made, additive)
+- gfx/uniforms.ts (new): `sharedUniforms(ctx)` (uDesat, uTime, haze, emissive / glow / window-lit scales, sky colours) and `GRADING_PARS` (`dlGrade`). SK can now patch the toon materials with `sharedUniforms(ctx).uDesat` (the deferred SK request above).
+- gfx/renderer.ts: `palette(area, blend)` routes through `setPaletteSource(ctx, f)` (world/render installs its presets; GOLDEN without it); `getHemi(ctx)`. gfx/index.ts exports them.
+
+### Notes for WG (no contract change)
+- Decor beyond the dock lip (water side) and gaps between side buildings on the sun side give the long sun stripes their depth; both read well and are worth keeping in the layouts.
+- Landscape (yaw > 0): camera-side (+x) decor is hidden so it never covers the corridor; the +x verge then looks bare. Low decor (planters, bins, posts ≤ 1.2 m) on +x could be marked to stay visible in a later param.
+
+### Notes for the gate (behaviour other packages can rely on)
+- `__skate.ext.world()` (WorldView debug info) adds `mainCalls`, `shadowCalls`, `chunksBuilt`, `cacheHits`, `buildMsP95`, `bench(n)` and `obstacles(id?)`; wa.spec reads them.
+- `shots --contrast` (seed 1): all 32 presets / blends pass at 390×844 and 1280×800 (min hazard 2.64, min edge 2.41). The contrast PNGs show the Title UI over the preview run (`previewArea` does not close the Title); harmless for the gate.
+
 ## SK: Skater and cosmetics (W2b)
 
 ### Shared crash-desaturation uniform for the skater materials   (status: deferred to WA (W2a): nothing desaturates the world yet; WA adds `sharedUniforms` with the crash grading, SK then patches the toon materials)

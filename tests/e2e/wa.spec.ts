@@ -1,9 +1,9 @@
 // wa.spec (W2a, world art): the per-area budgets at the plateau, the run's first frame and the Roll-out cache, and
 // context loss. Everything goes through window.__skate (DebugAPI + ext.world(): world/render WorldView.debugInfo).
 //   - each area at the plateau (startT past 150 s, safe bot, god mode, 30 s): main-pass draw calls ≤ 70, all calls ≤ 120
-//     (the shadow pass included), triangles ≤ 120k (TECH §8.4, DESIGN §24 row 23); chunk build p95 ≤ 4 ms, measured by
-//     rebuilding the nearest chunk 40× in place (ext.world().bench), so frame-render contention under SwiftShader is
-//     not counted (FPS under SwiftShader is not a metric);
+//     (the shadow pass included), triangles ≤ 120k (TECH §8.4, DESIGN §24 row 23); chunk build p95 ≤ 4 ms across the
+//     chunks the run streams in, each rebuilt 7× in place (ext.world().bench) and its best time kept, so frame-render
+//     contention under SwiftShader and other processes are not counted (FPS under SwiftShader is not a metric);
 //   - the first frame of a run makes exactly the three chunks the camera sees (TECH §8.6 exception); a retry restores
 //     the Roll-out chunks from the cache instead of building them;
 //   - WEBGL_lose_context → restore → Resume: the scene is rebuilt and renders again.
@@ -13,7 +13,7 @@ declare global { interface Window { __skate?: import('../../src/core/debug').Deb
 
 interface WorldInfo {
   chunks: number[]; cached: number[]; mainCalls: number; shadowCalls: number; chunksBuilt: number; cacheHits: number;
-  maxChunkTris: number; bench(n?: number): { p50: number; p95: number; max: number; tris: number };
+  maxChunkTris: number; bench(n?: number, index?: number): { p50: number; p95: number; min: number; max: number; tris: number };
 }
 const world = (page: Page) => page.evaluate(() => {
   const w = (window.__skate as unknown as { ext: { world(): WorldInfo } }).ext.world();
@@ -41,18 +41,23 @@ test('each area at the plateau stays within the draw-call, triangle and chunk-bu
       let main = 0, calls = 0, tris = 0, chunkTris = 0;
       const w = () => (s as unknown as { ext: { world(): WorldInfo } }).ext.world();
       const area = s.step(1).area;
+      // Build time per chunk: every chunk the run streams in is rebuilt 7 times into scratch buffers and its best time
+      // kept (TECH §11.6: CPU noise from other processes only adds time); the budget is the p95 across chunks.
+      const perChunk = new Map<number, number>();
+      const benchNew = () => { for (const i of w().chunks) if (!perChunk.has(i)) perChunk.set(i, w().bench(7, i).min); };
+      benchNew();
       for (let k = 0; k < 50; k++) {
         s.step(30);
         const p = s.perf(), wi = w();
         main = Math.max(main, wi.mainCalls); calls = Math.max(calls, p.calls); tris = Math.max(tris, p.tris); chunkTris = Math.max(chunkTris, wi.maxChunkTris);
+        benchNew();
       }
-      // Best of three rounds (TECH §11.6: CPU noise from other processes only adds time).
-      const rounds = [w().bench(40), w().bench(40), w().bench(40)];
-      const bench = rounds.reduce((a, b) => (b.p95 < a.p95 ? b : a));
+      const t = [...perChunk.values()].sort((a, b) => a - b);
+      const bench = { n: t.length, p50: t[Math.floor(t.length / 2)]!, p95: t[Math.min(t.length - 1, Math.floor(t.length * 0.95))]!, max: t[t.length - 1]! };
       s.bot('off');
       return { area, main, calls, tris, chunkTris, bench };
     }, [startT] as const);
-    console.log(`wa ${area}: main ${r.main} / all ${r.calls} calls, ${r.tris} tris, chunk ≤ ${r.chunkTris} tris, build p50 ${r.bench.p50.toFixed(2)} p95 ${r.bench.p95.toFixed(2)} ms`);
+    console.log(`wa ${area}: main ${r.main} / all ${r.calls} calls, ${r.tris} tris, chunk ≤ ${r.chunkTris} tris, build p50 ${r.bench.p50.toFixed(2)} p95 ${r.bench.p95.toFixed(2)} max ${r.bench.max.toFixed(2)} ms over ${r.bench.n} chunks`);
     expect(r.area).toBe(area);
     expect(r.main).toBeLessThanOrEqual(BUDGET.main);
     expect(r.calls).toBeLessThanOrEqual(BUDGET.calls);
