@@ -1,6 +1,6 @@
 // audio/graph.ts: the mix graph (DESIGN §19.1 lo-fi chain, §19.2 buses), built once per AudioContext (live or offline).
 //
-//  drums ─▶ drumBus ─▶ drumLp ─────────────────────────────┐
+//  drums (pre-rendered kit buffers) ─▶ drumBus ─▶ drumLp ─────────────────────────────┐
 //  EP ─▶ epLp ─▶ tremolo/auto-pan ─┐                         │
 //  pad ─▶ padLp(+LFO) ─▶ [chorus] ─┼▶ harmonic ─▶ comboLp ─▶ side ─┼▶ sum ─▶ formLp ─▶ tape ─▶ stop ─▶ duck ─▶ musicVol ─┐
 //  mallet ─▶ (dry + 3/16 echo) ────┤               bass ───▶ side ─┘   ▲ vinyl                                          │
@@ -10,7 +10,7 @@
 //  ambience ─▶ amb ─▶ ambVol ─────────────────────────────────────────────────────────────────────────────┘
 import { Sfc32 } from '../core/rng';
 import {
-  ARP, BUS, CLAP, COMBO_FILTER, DRUM_BUS_LP, DRUM_LEVEL, EP, HATS, MALLET, MASTER, MUD_CUT, PAD, RIM, SHAKER, SNARE, BRUSH, KICK,
+  ARP, BUS, COMBO_FILTER, DRUM_BUS_LP, DRUM_LEVEL, EP, MALLET, MASTER, MUD_CUT, PAD,
 } from './mix.config';
 import { buildTape, type Tape } from './music/tape';
 import { startVinyl } from './music/vinyl';
@@ -18,13 +18,11 @@ import { makeNoiseBank } from './sfx/noise';
 import { filter, gain, lfo, osc, type Synth } from './synth';
 import { VoicePool } from './voices';
 
-export interface DrumFilters { click: BiquadFilterNode; snare: BiquadFilterNode; rim: BiquadFilterNode; brush: BiquadFilterNode;
-  hat: BiquadFilterNode; shaker: BiquadFilterNode; clap: BiquadFilterNode }
 export interface Graph extends Synth {
   master: GainNode; out: GainNode; comp: DynamicsCompressorNode; limiter: DynamicsCompressorNode;
   music: {
     sum: GainNode; formLp: BiquadFilterNode; tape: Tape; stop: GainNode; duck: GainNode; vol: GainNode;
-    drumBus: GainNode; drumLp: BiquadFilterNode; drums: DrumFilters;
+    drumBus: GainNode; drumLp: BiquadFilterNode;
     harmonic: GainNode; comboLp: BiquadFilterNode; side: GainNode; bassIn: GainNode;
     ep: GainNode; epLp: BiquadFilterNode; pad: GainNode; padLp: BiquadFilterNode; padLfo: GainNode; chorusWet: GainNode;
     mallet: GainNode; echo: DelayNode; arp: GainNode; arpL: GainNode; arpR: GainNode; vinyl: GainNode;
@@ -69,15 +67,7 @@ export function buildGraph(ctx: BaseAudioContext, seed: number): Graph {
   const bassIn = gain(ctx, 1, side);
   const drumLp = filter(ctx, 'lowpass', DRUM_BUS_LP, 0.6, sum);
   const drumBus = gain(ctx, DRUM_LEVEL, drumLp);
-  const drums: DrumFilters = {
-    click: filter(ctx, 'highpass', KICK.clickHp, 0.7, drumBus),
-    snare: filter(ctx, 'bandpass', SNARE.bpHz, SNARE.bpQ, drumBus),
-    rim: filter(ctx, 'bandpass', RIM.bpHz, RIM.bpQ, drumBus),
-    brush: filter(ctx, 'bandpass', BRUSH.bpHz, BRUSH.bpQ, drumBus),
-    hat: filter(ctx, 'highpass', HATS.hpHz, 0.7, drumBus),
-    shaker: filter(ctx, 'bandpass', SHAKER.bpHz, SHAKER.bpQ, drumBus),
-    clap: filter(ctx, 'bandpass', CLAP.bpHz, CLAP.bpQ, drumBus),
-  };
+
 
   // Electric piano: shared low-pass, 4.5 Hz tremolo and ±0.3 auto-pan.
   const epPan = ctx.createStereoPanner();
@@ -131,7 +121,7 @@ export function buildGraph(ctx: BaseAudioContext, seed: number): Graph {
 
   const g: Graph = {
     ctx, noise, voices, rng, live: !('startRendering' in ctx), master, out, comp, limiter,
-    music: { sum, formLp, tape, stop, duck, vol, drumBus, drumLp, drums, harmonic, comboLp, side, bassIn, ep, epLp, pad, padLp,
+    music: { sum, formLp, tape, stop, duck, vol, drumBus, drumLp, harmonic, comboLp, side, bassIn, ep, epLp, pad, padLp,
       padLfo, chorusWet, mallet, echo, arp, arpL, arpR, vinyl },
     fb, fbEcho, fbVol, sfx, sfxVol, amb, ambVol,
   };

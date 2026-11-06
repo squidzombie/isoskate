@@ -10,7 +10,7 @@ import {
   AREA_MUSIC, BUS, COIN, COMBO_FILTER, DRUM_LEVEL, DUCK_TAU, FEEDBACK, FORM_BARS, INTENSITY, MALLET, NEEDLE_DROP_SEC, PAD,
   SCHED, SLIDER_CURVE, TAPE, TAPE_STOP, BREAK_SWEEP, type ChordSpec, type MusicArea,
 } from './mix.config';
-import { playDrum } from './music/drums';
+import { kitFor, playDrum, prepareKit, stepKits } from './music/drums';
 import { areaMallet, Bass, playArp, playClank, playEp, playMallet, playPad } from './music/instruments';
 import { chordAt, feedbackMidi, pivotChord } from './music/progressions';
 import { composeBar, drumLpFor, formAt, LAYERS, layersFor, progression, sectionStart, type Layer, type Level, type NoteEv } from './music/sequencer';
@@ -32,7 +32,7 @@ const UI_CUES = new Set<string>(['uiTap', 'uiBack', 'uiToggle', 'uiError', 'purc
 interface Song { area: MusicArea; seed: number; alt: boolean; clock: SongClock; bar: number; pivotBar: number; pivot: ChordSpec | null; pivotTo: MusicArea | null }
 interface Queued { at: number; ev: NoteEv; area: MusicArea }
 export interface CoreOptions { seed: number; nowMs?: () => number; offline?: boolean }
-export interface PerfStats { frames: number; msPerFrame: number; p95: number; max: number; tickMs: number }
+export interface PerfStats { frames: number; msPerFrame: number; p95: number; max: number; tickMs: number; slowest: { ms: number; what: string } }
 
 const START_A = sectionStart('A');
 const clampLevel = (l: number): Level => (l <= 0 ? 0 : l >= 3 ? 3 : (Math.round(l) as Level));
@@ -70,8 +70,15 @@ export class AudioCore {
   constructor(readonly opts: CoreOptions) { this.nowMs = opts.nowMs ?? (() => 0); }
 
   // ── perf ──────────────────────────────────────────────────────────────────────────────────────────────────────
-  begin(): void { if (this.depth++ === 0) this.t0 = this.nowMs(); }
-  end(): void { if (--this.depth === 0) this.acc += this.nowMs() - this.t0; }
+  private label = '';
+  private slowest = { ms: 0, what: '' };
+  begin(label = ''): void { if (this.depth++ === 0) this.t0 = this.nowMs(); if (label) this.label = label; }
+  end(): void {
+    if (--this.depth !== 0) return;
+    const d = this.nowMs() - this.t0;
+    this.acc += d;
+    if (d > this.slowest.ms) this.slowest = { ms: d, what: this.label };
+  }
   /** Frame boundary (called from roll(), which wiring calls every rendered frame). */
   private frame(): void {
     this.ring[this.ringN++ % this.ring.length] = this.acc;
@@ -83,7 +90,7 @@ export class AudioCore {
     const n = Math.min(this.ringN, this.ring.length);
     const a = Array.from(this.ring.subarray(0, n)).sort((x, y) => x - y);
     const sum = a.reduce((s, x) => s + x, 0);
-    return { frames: this.frames, msPerFrame: n ? sum / n : 0, p95: n ? a[Math.floor(n * 0.95)]! : 0, max: this.maxMs, tickMs: this.ticks ? this.tickAcc / this.ticks : 0 };
+    return { frames: this.frames, msPerFrame: n ? sum / n : 0, p95: n ? a[Math.floor(n * 0.95)]! : 0, max: this.maxMs, tickMs: this.ticks ? this.tickAcc / this.ticks : 0, slowest: { ...this.slowest } };
   }
 
   // ── lifecycle ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -103,6 +110,7 @@ export class AudioCore {
     // after 4 bars); unlocked anywhere else: the menu song.
     if (this.scene === 'run') this.resumeMusic(now, this.runArea, this.opts.offline ? START_A : 0);
     else this.resumeMusic(now, 'menu', 0);
+    if (!this.opts.offline) for (const area of Object.keys(AREA_MUSIC) as MusicArea[]) prepareKit(g, area, AREA_MUSIC[area]);
   }
 
   setVolumes(v: { music: number; sfx: number }): void {
@@ -150,11 +158,12 @@ export class AudioCore {
   tick(): void {
     const g = this.g;
     if (!g) return;
-    this.begin();
+    this.begin('tick');
     const a = this.nowMs();
     const now = g.ctx.currentTime, horizon = now + SCHED.lookahead;
     this.amb?.tick(now, horizon);
     if (this.playing && this.song) this.schedule(now, horizon);
+    if (stepKits(g)) this.label = 'kit';                  // the other areas' drum kits, one drum per tick
     this.tickAcc += this.nowMs() - a; this.ticks++;
     this.end();
   }
@@ -188,6 +197,7 @@ export class AudioCore {
 
   private advanceBar(t: number): void {
     let s = this.song!;
+    this.label = `bar:${s.area}`;
     const p = this.pending;
     if (p && p.stage === 'cut') {
       this.pending = null;
@@ -274,14 +284,14 @@ export class AudioCore {
       case 'arp': playArp(g, t, e.midi, vel, e.pan); return;
       case 'clank': playClank(g, t, e.midi, vel, e.pan); return;
       case 'bass': this.bass!.note(t, e.midi, vel, e.dur, true); return;
-      default: playDrum(g, e.inst, t, vel, a);
+      default: playDrum(g, e.inst, t, vel, item.area, a);
     }
   }
 
   private applyArea(area: MusicArea, t: number): void {
     const g = this.g!, m = g.music, a = AREA_MUSIC[area];
     m.epLp.frequency.setTargetAtTime(a.epLp, t, 0.2);
-    m.drums.hat.frequency.setTargetAtTime(a.hats.hpHz, t, 0.05);
+    kitFor(g, area, a);                                   // synthesize the area's drum kit now, not on the first hit
     m.chorusWet.gain.setTargetAtTime(a.chorus ? PAD_CHORUS_MIX : 0, t, 0.5);
     const echo = MALLET.echo.sixteenths * sixteenthSec(a.bpm);
     m.echo.delayTime.setTargetAtTime(echo, t, 0.08);
@@ -400,7 +410,7 @@ export class AudioCore {
 
   // ── continuous layers ─────────────────────────────────────────────────────────────────────────────────────────
   roll(speed01: number, surface: Surface, airborne: boolean, manual: boolean): void {
-    this.begin();
+    this.begin('roll');
     this.frame();
     if (this.g) {
       this.rollLoop!.update(this.g.ctx.currentTime, this.scene === 'run' ? speed01 : 0, surface, airborne, manual);
@@ -410,7 +420,7 @@ export class AudioCore {
   }
   grind(active: boolean, material: EdgeMaterial | null, slide: boolean): void {
     if (!this.g) return;
-    this.begin();
+    this.begin('grind');
     this.grindLoop!.update(this.g.ctx.currentTime, active && this.scene === 'run', material, slide);
     this.end();
   }
@@ -430,7 +440,7 @@ export class AudioCore {
   cue(id: Cue, o: CueOpts = {}, at?: number): void {
     const g = this.g;
     if (!g) return;
-    this.begin();
+    this.begin(`cue:${id}`);
     const t = Math.max(at ?? 0, g.ctx.currentTime);
     if (UI_CUES.has(id)) playUi(g, id, t, o, this.keyInfo(t));
     else playOneShot(g, id, t, o, this.keyInfo(t));
@@ -441,7 +451,7 @@ export class AudioCore {
   note(seq: number, o: { gain?: number; degreeOffset?: number } = {}): void {
     const g = this.g;
     if (!g) return;
-    this.begin();
+    this.begin('note');
     const now = g.ctx.currentTime;
     const s = this.song;
     const t = (s && this.playing ? quantize(s.clock, now) : now) + (this.playing ? TAPE.delay : 0);

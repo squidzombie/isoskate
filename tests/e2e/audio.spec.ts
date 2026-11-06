@@ -63,9 +63,12 @@ test('2-minute god-mode run with gestures: voices ≤ 32, audio main-thread cost
   await page.waitForTimeout(SEC * 1000);
   const r = await page.evaluate(() => ({ log: window.__auLog!, perf: window.__skateAudio!.perf(), stats: window.__skateAudio!.stats(),
     events: window.__skate!.events().map((e) => e.t) }));
+  // The scheduler's work follows musical time, not frames: at SwiftShader's ~25 fps a frame carries ~2.4× the work of
+  // a 60 fps phone frame. Both numbers are reported; the budget is asserted on the measured per-rendered-frame cost.
+  const per60 = (r.perf.msPerFrame * r.perf.frames) / (SEC * 60);
   const maxVoices = Math.max(...r.log.voices);
-  console.log(`audio.spec: ${r.log.voices.length} samples, max voices ${maxVoices} (pool peak ${r.stats.peak}), intensity ${Math.max(...r.log.intensity)}, ` +
-    `gestures ${r.log.gestures}, frames ${r.perf.frames}, audio ms/frame avg ${r.perf.msPerFrame.toFixed(3)} p95 ${r.perf.p95.toFixed(3)} max ${r.perf.max.toFixed(2)}, tick ${r.perf.tickMs.toFixed(3)} ms`);
+  console.log(`audio.spec: slowest call ${r.perf.slowest.ms.toFixed(2)} ms in ${r.perf.slowest.what}; ${r.log.voices.length} samples, max voices ${maxVoices} (pool peak ${r.stats.peak}), intensity ${Math.max(...r.log.intensity)}, ` +
+    `gestures ${r.log.gestures}, frames ${r.perf.frames} (${(r.perf.frames / SEC).toFixed(1)} fps), audio ms/frame avg ${r.perf.msPerFrame.toFixed(3)} (≈ ${per60.toFixed(3)} per 60 Hz frame) p95 ${r.perf.p95.toFixed(3)} max ${r.perf.max.toFixed(2)}, tick ${r.perf.tickMs.toFixed(3)} ms`);
   expect(r.log.voices.length).toBeGreaterThan(SEC * 5);
   expect(maxVoices).toBeLessThanOrEqual(32);
   expect(r.stats.peak).toBeLessThanOrEqual(32);
