@@ -247,11 +247,6 @@ export function mix(a: Hex, b: Hex, u: number): Hex {
   const ch = (s: number) => Math.round(((a >> s) & 255) * (1 - u) + ((b >> s) & 255) * u);
   return (ch(16) << 16) | (ch(8) << 8) | ch(0);
 }
-/** Relative luminance (0..1) of a hex colour (WCAG). */
-export function luminance(hex: Hex): number {
-  const lin = (c: number) => { const s = c / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; };
-  return 0.2126 * lin((hex >> 16) & 255) + 0.7152 * lin((hex >> 8) & 255) + 0.0722 * lin(hex & 255);
-}
 
 const BA = new Vector3(), BB = new Vector3(), BD = new Vector3(), BQ = new Quaternion(), BY = new Vector3(0, 1, 0);
 /** A box beam from a to b with a square cross-section t (part space). */

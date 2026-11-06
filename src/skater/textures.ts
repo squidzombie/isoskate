@@ -660,7 +660,6 @@ export function drawHelmetDecal(c: Ctx, look: HelmetLook, sky: readonly [Hex, He
       const az = (i < 4 ? -1 : 1) * (0.06 + (i % 4) * 0.05), el = 0.5 + (i % 2) * 0.18;
       const x = cx + az * W, y = yOf(el);
       roundRect(c, x - 3, y - 9, 6, 18, 3); c.fill();
-      roundRect(c, x - 3 + W / 2 * (az > 0 ? -1 : 1) * 0, y - 9, 6, 18, 3);
     }
     for (let i = 0; i < 4; i++) { const x = (i < 2 ? 0.08 : 0.92) * W + (i % 2) * 10 - 5; roundRect(c, x - 3, yOf(0.62) - 9, 6, 18, 3); c.fill(); }
   }

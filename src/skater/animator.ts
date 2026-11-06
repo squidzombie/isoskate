@@ -279,7 +279,7 @@ export class Animator {
     const p = inp.pose, c = p.crash!;
     const key = `${c.seed}`;
     let k = this.crash;
-    if (!k || k.key !== key) k = this.crash = this.startCrash(rig, st, inp, key);
+    if (!k || k.key !== key) k = this.crash = this.startCrash(rig, inp, key);
     // The tumble clock: the sim's crash time if it advances, else view time (the sim stops stepping after a crash).
     const tWant = Math.min(CRASH.maxT, Math.max(c.t, k.t + dt));
     const h = CRASH.step;
@@ -288,7 +288,7 @@ export class Animator {
     this.snapNext = false;
   }
 
-  private startCrash(rig: Rig, st: AnimStyle, inp: AnimInput, key: string): CrashSim {
+  private startCrash(rig: Rig, inp: AnimInput, key: string): CrashSim {
     const b = rig.bone, rng = new Sfc32(inp.pose.crash!.seed | 0);
     // Current hips and board transforms in the object frame (root rotation folded in), then the root is reset.
     mA.compose(b.root.position, b.root.quaternion, b.root.scale);

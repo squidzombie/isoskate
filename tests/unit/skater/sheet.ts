@@ -208,13 +208,15 @@ for (let i = 0; i < cells.length; i++) {
   labels.appendChild(d);
 }
 
+const pct = (a: number[], q: number) => { const b = [...a].sort((x, y) => x - y); return b[Math.min(b.length - 1, Math.floor(q * b.length))] ?? 0; };
 const st = views.map((v) => v.stats());
 const info = r.info;
 (window as unknown as { __views: unknown }).__views = views;
 (window as unknown as { __sheet: object }).__sheet = {
   done: true, cells: cells.length, width: W * ZOOM, height: H * ZOOM,
   maxCalls: Math.max(...st.map((s) => s.drawCalls)), maxTris: Math.max(...st.map((s) => s.tris)),
-  switchMs: { first: Math.max(...switchMs), firstAvg: switchMs.reduce((a, b) => a + b, 0) / switchMs.length, again: Math.max(...reSwitch) },
+  switchMs: { first: Math.max(...switchMs), firstAvg: switchMs.reduce((a, b) => a + b, 0) / switchMs.length, again: Math.max(...reSwitch),
+    p50: pct([...switchMs, ...reSwitch], 0.5), p95: pct([...switchMs, ...reSwitch], 0.95) },
   parts: st.map((s, i) => ({ label: cells[i]!.label, ...s.parts, calls: s.drawCalls, tris: s.tris })),
   renderInfo: { calls: info.render.calls, triangles: info.render.triangles },
 };

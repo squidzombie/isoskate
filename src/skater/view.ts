@@ -6,7 +6,7 @@
 // RenderFrame's SkaterPose. Showcase mode (Locker / Shop turntable): the same rig, facing the menu camera at
 // turntable 0, with a slow idle and a trick-preview loop.
 import {
-  BufferGeometry, type Camera, Color, Group, Matrix4, Mesh, type Material, type MeshBasicMaterial, type MeshToonMaterial,
+  BufferGeometry, type Camera, Color, Group, Matrix4, Mesh, type Material, type MeshToonMaterial,
   type Object3D, SkinnedMesh, type Texture, Vector2, Vector3, type WebGLRenderer,
 } from 'three';
 import { DEFAULT_LOADOUT } from '../content';
@@ -22,7 +22,7 @@ import { Animator, type AnimStyle } from './animator';
 import { buildBoard } from './board';
 import { buildBody } from './body';
 import { buildHelmet } from './helmet';
-import { newUniforms, outlineMaterial, toonMaterial, glassMaterial, toonRamp, type SkaterUniforms } from './materials';
+import { newUniforms, outlineMaterial, toonMaterial, glassMaterial, toonRamp } from './materials';
 import type { PartBuilder } from './parts';
 import { applyRest, createRig, rigDims, type Rig, type RigDims } from './rig';
 import { BLINK, FX, OUTLINE, SHOWCASE, TEX } from './skater.config';
@@ -37,7 +37,7 @@ let viewSeq = 0;
 interface Twin { mesh: Mesh; outline: Mesh; geo: BufferGeometry; outlineGeo: BufferGeometry; tris: number; outlineTris: number }
 type OutlineMat = ReturnType<typeof outlineMaterial>;
 
-const v2 = new Vector2(), v3 = new Vector3();
+const v2 = new Vector2(), v3 = new Vector3(), v4 = new Vector3();
 /** Per-frame outline width from the camera: never below OUTLINE.minPx on screen, capped at OUTLINE.maxWidth. */
 function outlineWidth(renderer: WebGLRenderer, camera: Camera, obj: Object3D): number {
   const h = Math.max(1, renderer.getSize(v2).y);
@@ -46,7 +46,7 @@ function outlineWidth(renderer: WebGLRenderer, camera: Camera, obj: Object3D): n
   if (c.isOrthographicCamera) wpp = ((c.top ?? 1) - (c.bottom ?? -1)) / (c.zoom ?? 1) / h;
   else if (c.isPerspectiveCamera) {
     obj.getWorldPosition(v3);
-    const d = v3.distanceTo(camera.getWorldPosition(new Vector3()));
+    const d = v3.distanceTo(camera.getWorldPosition(v4));
     wpp = (2 * d * Math.tan(((c.fov ?? 35) * DEG) / 2)) / h;
   }
   return clamp(Math.max(OUTLINE.width, OUTLINE.minPx * wpp), 0, OUTLINE.maxWidth);
@@ -126,9 +126,11 @@ export class SkaterViewImpl implements SkaterView {
     const x = lerp(f.prev.p.x, f.cur.p.x, f.alpha), y = lerp(f.prev.p.y, f.cur.p.y, f.alpha);
     this.object3d.position.set(Number.isFinite(x) ? x : 0, Number.isFinite(y) ? y : 0, -(s - originOf(s)));
     this.dusk = duskOf(f.area, f.blend);
-    let landed = 0, perfect = false;
-    if (f.pose.landImpulse > 0) landed = f.pose.landImpulse;
-    for (const e of f.events) this.onEvent(e, (imp, perf) => { landed = Math.max(landed, imp); perfect ||= perf; });
+    let landed = f.pose.landImpulse > 0 ? f.pose.landImpulse : 0, perfect = false;
+    for (const e of f.events) {
+      if (e.t === 'land') { landed = Math.max(landed, clamp(0.7 + e.dropH * 0.35, 0.5, 1.5)); perfect ||= e.quality === 'perfect'; }
+      this.onEvent(e);
+    }
     if (this.mode === 'showcase') {
       const prevT = this.showT;
       this.showT += dt;
@@ -188,9 +190,10 @@ export class SkaterViewImpl implements SkaterView {
   }
 
   // ── internals ───────────────────────────────────────────────────────────────────────────────────────────────
-  private onEvent(e: GameEvent, land: (impulse: number, perfect: boolean) => void): void {
+  /** Kettle's screen face reacts to tricks, sketchy landings and crashes. */
+  private onEvent(e: GameEvent): void {
     switch (e.t) {
-      case 'land': land(clamp(0.7 + e.dropH * 0.35, 0.5, 1.5), e.quality === 'perfect'); this.robotFace = e.quality === 'sketchy' ? 3 : this.robotFace; break;
+      case 'land': if (e.quality === 'sketchy' && this.loadout?.skater.fx.includes('screenFace')) { this.robotFace = 3; this.redrawFace(); } break;
       case 'trickScored': case 'flipStart': case 'spinStart': case 'grindStart':
         if (this.loadout?.skater.fx.includes('screenFace')) { this.robotFace = (this.robotFace + 1) % 12; this.redrawFace(); }
         break;

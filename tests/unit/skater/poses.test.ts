@@ -7,7 +7,7 @@ import type { GrindId, ManualId } from '../../../src/core/ids';
 import type { PoseId, SkaterPose } from '../../../src/core/view';
 import { Animator, type AnimStyle } from '../../../src/skater/animator';
 import { CHANNELS, GRIND_POSES, MANUAL_POSES, NEUTRAL, POSE_TABLE, boardFlatness, resolvePose } from '../../../src/skater/poses';
-import { BONES, createRig, applyRest, rigDims } from '../../../src/skater/rig';
+import { createRig, applyRest, rigDims } from '../../../src/skater/rig';
 import { basePose } from '../../../src/skater/showcase';
 import { BOARD } from '../../../src/skater/skater.config';
 

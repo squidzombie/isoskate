@@ -66,7 +66,7 @@ try {
     const file = join(OUT, `${s.name}.png`);
     await page.screenshot({ path: file, clip: { x: 0, y: 0, width: size.w, height: size.h } });
     report[s.name] = { ...info, errors };
-    console.log(`${s.name}: ${file}  calls ≤ ${info.maxCalls}, tris ≤ ${info.maxTris}, switch first ${info.switchMs.first.toFixed(1)} ms (avg ${info.switchMs.firstAvg.toFixed(1)}), cached ${info.switchMs.again.toFixed(1)} ms${errors.length ? `, ${errors.length} console errors` : ''}`);
+    console.log(`${s.name}: ${file}  calls ≤ ${info.maxCalls}, tris ≤ ${info.maxTris}, switch p50 ${info.switchMs.p50.toFixed(1)} / p95 ${info.switchMs.p95.toFixed(1)} / max ${Math.max(info.switchMs.first, info.switchMs.again).toFixed(1)} ms${errors.length ? `, ${errors.length} console errors` : ''}`);
     for (const e of errors.slice(0, 5)) console.log(`  error: ${e}`);
     if (errors.length) failed = true;
     await page.close();
