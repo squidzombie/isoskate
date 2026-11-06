@@ -1,6 +1,21 @@
-// tricks/score.config.ts: every scoring tunable (DESIGN §13, §22), plus the trick-rule timings of DESIGN §6 that
-// core/tuning.ts does not hold (core is frozen; the rule tunables GP added in W1a live in RULES below). Trick base
-// points live in tricks/defs.ts (TrickTables); everything that modifies, links, decays or banks them lives here.
+// tricks/score.config.ts: every scoring number (DESIGN §13, §22): the trick base points (POINTS, from which
+// tricks/defs.ts builds the TrickTables), and everything that modifies, links, decays or banks them (SCORE). Plus the
+// trick-rule timings of DESIGN §6 that core/tuning.ts does not hold (core is frozen; GP's W1a rule tunables: RULES).
+
+/** Base points of every trick (DESIGN §6.1, §6.1a, §6.2, §6.4, §13.1); tricks/defs.ts builds the TrickTables from
+ *  them. Grinds, manuals and the grab pay entry + perSec · seconds (the grab for at most maxDur). */
+export const POINTS = {
+  ollie: 50, ollieMinFactor: 0.5,
+  flips: { popShuvit: 100, kickflip: 150, heelflip: 150, impossible: 200, shuvit360: 200, varialKickflip: 250,
+    varialHeelflip: 250, hardflip: 300, inwardHeelflip: 300, treFlip: 350, laserFlip: 400, doubleKickflip: 400,
+    doubleHeelflip: 400, tripleKickflip: 650, tripleHeelflip: 650 },
+  spins: { fs180: 150, bs180: 150, fs360: 350, bs360: 350 },
+  grinds: { fiftyFifty: [100, 150], fiveO: [100, 175], nosegrind: [125, 175], boardslide: [125, 175],
+    lipslide: [150, 200], noseslide: [150, 225], tailslide: [150, 225], feeble: [200, 250], smith: [200, 250],
+    crooked: [200, 250], overcrook: [225, 275], bluntslide: [250, 300], noseBluntslide: [250, 300] },
+  manuals: { manual: [75, 100], noseManual: [100, 125] },
+  grabs: { indy: { entry: 100, perSec: 150, maxDur: 1.0 } },
+} as const;
 
 export const SCORE = {
   /** After a ground touchdown, seconds to pop or start a manual again (DESIGN §13.2). Paused in air/grind/manual. */

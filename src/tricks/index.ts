@@ -5,7 +5,7 @@ import { TRICK_TABLES } from './defs';
 
 export const TRICKS: TrickTables = TRICK_TABLES;
 export { FLIPS, SPINS, GRINDS, MANUALS, GRABS } from './defs';
-export { RULES, SCORE } from './score.config';
+export { POINTS, RULES, SCORE } from './score.config';
 export { emptyView, interpret, swipeCounts, type AmendView, type InputFrameExt, type Intent, type InterpretView } from './interpret';
 export {
   addBonus, addLink, addTrick, bank, emptyCombo, finishTrick, lose, openWindow, pauseWindow, recompute, refreshHeat,
