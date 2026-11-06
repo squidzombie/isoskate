@@ -13,7 +13,7 @@ export const MASTER = {
   comp: { threshold: -14, ratio: 3, knee: 10, attack: 0.012, release: 0.25 },
   limiter: { threshold: -4, ratio: 20, knee: 0, attack: 0.001, release: 0.09 },
   /** Input trim before the compressor (gain staging) and the final output gain. */
-  trim: 0.5, out: 0.9,
+  trim: 0.7, out: 0.9,
   /** DC blocker / sub-rumble high-pass at the master input (FM electric piano 1:1 ratio makes DC). */
   dcHz: 22,
 } as const;
@@ -58,7 +58,7 @@ export const INTENSITY = {
   drumGain: [0.55, 1, 1, 1] as const,
   padLpBoost: 600,          // level 3
   sceneFade: 0.35,          // pause / menu: the level-0 muffle is applied at once, not at the bar line
-  menuDb: 7, pauseDb: 2,    // level 0 lacks bass and bright drums: lifted on menus / results, less on pause
+  menuDb: 10, pauseDb: 4,    // level 0 lacks bass and bright drums: lifted on menus / results, less on pause
 } as const;
 /** Combo filter (§19.1): low-pass on the harmonic bus (EP, pad, melody, arp; drums and bass stay crisp).
  *  800 Hz at ×1 → 8 kHz at ×10+, exponential. Off the run screen it rests at `offRunHz`. */
@@ -103,7 +103,7 @@ export const MALLET = { partial: 4, partialGain: 0.25, partialSec: 0.12, decay: 
   restChance: 0.35, mutate: 0.25, lo: 67, hi: 84,
   echo: { sixteenths: 3, feedback: 0.3, lpHz: 2500, send: 0.35 } } as const;
 export const PLUCKY = { decay: 0.35, partialGain: 0.4 } as const;    // Suburbs mallet
-export const ARP = { decay: 0.09, gain: 0.06, octave: 12 } as const;
+export const ARP = { decay: 0.09, gain: 0.06, octave: 12, pan: 0.25 } as const;
 export const CLANK = { ratio: 1.41, index: 3, sec: 0.35, gain: 0.05, chance: 0.45 } as const;   // Docks off-beat FM clanks
 
 // ── Areas (§19.1 progressions + per-area variations) ──────────────────────────────────────────────────────────────
@@ -187,7 +187,7 @@ export interface SurfaceRoll { q: number; gain: number; rumble: number; joint: n
   ring: number; hiss: number; lpHz: number; woodRes: number }
 const sr = (o: Partial<SurfaceRoll>): SurfaceRoll => ({ q: 0.5, gain: 1, rumble: 0.6, joint: null, thumpHz: 90, ring: 0, hiss: 0, lpHz: 18000, woodRes: 0, ...o });
 export const ROLL = {
-  bpBase: 300, bpSpan: 900, gainLo: 0.05, gainHi: 0.12, rumbleLp: 180, level: 0.38,
+  bpBase: 300, bpSpan: 900, gainLo: 0.05, gainHi: 0.12, rumbleLp: 180, level: 0.32,
   airFade: 0.04, whirHz: 900, whirGain: 0.035, whirFade: 0.4, manualGain: 0.8, manualBp: 1.15,
   jointGain: 0.5, jointMs: 8, jointHp: 1500, tau: 0.05,
   surfaces: {
@@ -216,9 +216,9 @@ export const GRIND_MATERIAL: Readonly<Record<EdgeMaterial, 'metal' | 'concrete' 
 // ── One-shot levels (relative, before the SFX bus; calibrated so every one-shot sits under the music) ─────────────
 export const SFX_LEVEL = {
   pop: 0.55, whoosh: 1.3, catch: 0.6, land: 0.6, sketchy: 0.45, perfect: 0.42, perfectLock: 0.22, stair: 0.7,
-  bump: 0.7, knock: 0.55, nearMiss: 1.1, hazardTick: 0.9, crash: 0.5, grindEntry: 0.45, grindExit: 0.8,
+  bump: 0.7, knock: 0.55, nearMiss: 1.1, hazardTick: 0.9, crash: 0.4, grindEntry: 0.45, grindExit: 0.8,
   spin: 1.6, revert: 1.5, pickChime: 0.22, rewind: 0.55, needle: 0.45, newBest: 0.22, newArea: 0.18,
-  ui: 1.8, crate: 0.5, crateOpen: 0.9, reveal: 0.3, levelUp: 0.3,
+  ui: 1.8, purchase: 1.1, crate: 0.5, crateOpen: 0.9, reveal: 0.26, levelUp: 0.3,
 } as const;
 export const LEVEL_UP = { noteMs: 70, holdSec: 1.2, shimmerHz: 6000, shimmerSec: 0.6, duckDb: 3, duckSec: 1.6 } as const;
 export const COMBO_BANK = { noteMs: 50, gain: 0.26 } as const;

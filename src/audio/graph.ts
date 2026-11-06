@@ -10,7 +10,7 @@
 //  ambience ─▶ amb ─▶ ambVol ─────────────────────────────────────────────────────────────────────────────┘
 import { Sfc32 } from '../core/rng';
 import {
-  BUS, CLAP, COMBO_FILTER, DRUM_BUS_LP, DRUM_LEVEL, EP, HATS, MALLET, MASTER, MUD_CUT, PAD, RIM, SHAKER, SNARE, BRUSH, KICK,
+  ARP, BUS, CLAP, COMBO_FILTER, DRUM_BUS_LP, DRUM_LEVEL, EP, HATS, MALLET, MASTER, MUD_CUT, PAD, RIM, SHAKER, SNARE, BRUSH, KICK,
 } from './mix.config';
 import { buildTape, type Tape } from './music/tape';
 import { startVinyl } from './music/vinyl';
@@ -27,7 +27,7 @@ export interface Graph extends Synth {
     drumBus: GainNode; drumLp: BiquadFilterNode; drums: DrumFilters;
     harmonic: GainNode; comboLp: BiquadFilterNode; side: GainNode; bassIn: GainNode;
     ep: GainNode; epLp: BiquadFilterNode; pad: GainNode; padLp: BiquadFilterNode; padLfo: GainNode; chorusWet: GainNode;
-    mallet: GainNode; echo: DelayNode; arp: GainNode; vinyl: GainNode;
+    mallet: GainNode; echo: DelayNode; arp: GainNode; arpL: GainNode; arpR: GainNode; vinyl: GainNode;
   };
   fb: GainNode; fbEcho: DelayNode; fbVol: GainNode;
   sfx: GainNode; sfxVol: GainNode;
@@ -111,6 +111,8 @@ export function buildGraph(ctx: BaseAudioContext, seed: number): Graph {
   mallet.connect(gain(ctx, MALLET.echo.send, echo));
   echo.connect(echoLp); echoLp.connect(echoFb);
   const arp = gain(ctx, 1, harmonic);
+  const arpPan = (pan: number) => { const p = ctx.createStereoPanner(); p.pan.value = pan; p.connect(arp); return gain(ctx, 1, p); };
+  const arpL = arpPan(-ARP.pan), arpR = arpPan(ARP.pan);
   const vinyl = gain(ctx, 1, sum);
 
   // Feedback (musical scoring notes, mallet timbre): dry, its own short echo; follows the music slider.
@@ -130,9 +132,12 @@ export function buildGraph(ctx: BaseAudioContext, seed: number): Graph {
   const g: Graph = {
     ctx, noise, voices, rng, live: !('startRendering' in ctx), master, out, comp, limiter,
     music: { sum, formLp, tape, stop, duck, vol, drumBus, drumLp, drums, harmonic, comboLp, side, bassIn, ep, epLp, pad, padLp,
-      padLfo, chorusWet, mallet, echo, arp, vinyl },
+      padLfo, chorusWet, mallet, echo, arp, arpL, arpR, vinyl },
     fb, fbEcho, fbVol, sfx, sfxVol, amb, ambVol,
   };
   startVinyl(g, vinyl);
+  // Warm the band-limited wavetables now (Chrome builds them on first use of each type, a one-off main-thread cost
+  // that would otherwise land on whichever frame first plays a saw, triangle or square).
+  for (const type of ['sawtooth', 'triangle', 'square'] as const) osc(ctx, type, 440);
   return g;
 }

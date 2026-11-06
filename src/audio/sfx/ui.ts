@@ -29,7 +29,7 @@ export function playUi(g: Graph, id: string, t: number, o: CueOpts, key: KeyInfo
     case 'uiError': { const s = v(0.16, L.ui); if (!s) return; tn(g, s, s.out, t, 0.06, 'triangle', 466, 0.14); tn(g, s, s.out, t + 0.07, 0.08, 'triangle', 392, 0.12); return; }
     case 'purchase': {
       // Three coin chimes climbing the pentatonic.
-      const s = v(0.5, L.ui); if (!s) return;
+      const s = v(0.5, L.purchase); if (!s) return;
       [0, 2, 4].forEach((d, i) => {
         const f = midiHz(pentatonicNote(key.area, d, 5));
         tn(g, s, s.out, t + i * 0.08, 0.18, 'sine', f, 0.2);

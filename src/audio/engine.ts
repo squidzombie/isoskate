@@ -31,7 +31,7 @@ const UI_CUES = new Set<string>(['uiTap', 'uiBack', 'uiToggle', 'uiError', 'purc
 
 interface Song { area: MusicArea; seed: number; alt: boolean; clock: SongClock; bar: number; pivotBar: number; pivot: ChordSpec | null; pivotTo: MusicArea | null }
 interface Queued { at: number; ev: NoteEv; area: MusicArea }
-export interface CoreOptions { seed: number; nowMs?: () => number }
+export interface CoreOptions { seed: number; nowMs?: () => number; offline?: boolean }
 export interface PerfStats { frames: number; msPerFrame: number; p95: number; max: number; tickMs: number }
 
 const START_A = sectionStart('A');
@@ -99,7 +99,9 @@ export class AudioCore {
     this.setVolumes(this.vol);
     const now = ctx.currentTime;
     g.music.duck.gain.setValueAtTime(sceneGain(this.scene), now);
-    if (this.scene === 'run') this.resumeMusic(now, this.runArea, START_A);
+    // Unlocked by the tap that starts the first run: that run opens with the song's muffled intro (the beat drops
+    // after 4 bars); unlocked anywhere else: the menu song.
+    if (this.scene === 'run') this.resumeMusic(now, this.runArea, this.opts.offline ? START_A : 0);
     else this.resumeMusic(now, 'menu', 0);
   }
 

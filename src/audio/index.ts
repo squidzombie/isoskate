@@ -30,6 +30,8 @@ export interface AudioDebug {
 declare global { interface Window { __skateAudio?: AudioDebug } }
 
 const LIVE_SEED = 0x64736b6c;
+/** The save's default sliders (save/defaults.ts): offline renders use them so the analysis hears what players hear. */
+const DEFAULT_VOLUMES = { music: 0.8, sfx: 0.9 } as const;
 
 export function createAudio(): AudioEngine {
   const core = new AudioCore({ seed: LIVE_SEED, nowMs: () => performance.now() });
@@ -132,11 +134,12 @@ export async function renderScene(o: SceneOptions): Promise<{ buffer: AudioBuffe
   const ctx = new Ctor(2, Math.ceil(sr * o.sec), sr);
   const script = o.script ?? 'demo';
   const area = o.area;
-  const core = new AudioCore({ seed: o.seed ?? hash32(0xa0d10, AREA_MUSIC[area].tonic, AREA_MUSIC[area].bpm) });
+  const core = new AudioCore({ seed: o.seed ?? hash32(0xa0d10, AREA_MUSIC[area].tonic, AREA_MUSIC[area].bpm), offline: true });
   const music = script !== 'sfxTour' && script !== 'roll';
   core.stems = { music, sfx: script !== 'music', amb: script === 'demo', fb: script !== 'roll', vinyl: true, ...o.stems } as AudioCore['stems'];
   if (area !== 'menu') { core.setRunArea(area); core.setScene('run'); }
   core.setIntensity(o.level ?? 2);
+  core.setVolumes(DEFAULT_VOLUMES);                   // what a new player hears (save defaults)
   core.attach(ctx);
   if (!music) core.stop();
   const steps = scriptSteps(script, area, o.sec);

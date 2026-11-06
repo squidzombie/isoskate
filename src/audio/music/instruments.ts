@@ -69,13 +69,9 @@ export function playMallet(g: Graph, dest: AudioNode, t: number, midi: number, v
 
 export function playArp(g: Graph, t: number, midi: number, vel: number, pan: number): void {
   const end = t + ARP.decay + 0.03;
-  const v = voice(g, g.music.arp, t, end, PRI.music);
+  const v = voice(g, pan < 0 ? g.music.arpL : g.music.arpR, t, end, PRI.music);
   if (!v) return;
-  const ctx = g.ctx;
-  const p = ctx.createStereoPanner();
-  p.pan.value = pan;
-  p.connect(v.out);
-  v.src(osc(ctx, 'triangle', midiHz(midi), p), t, end);
+  v.src(osc(g.ctx, 'triangle', midiHz(midi), v.out), t, end);
   perc(v.out.gain, t, ARP.gain * vel, 0.002, ARP.decay);
 }
 
