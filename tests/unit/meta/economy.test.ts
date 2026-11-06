@@ -5,12 +5,14 @@ import { describe, expect, it } from 'vitest';
 import { CATALOG } from '../../../src/content';
 import type { AreaId, ItemId, TrickId } from '../../../src/core/ids';
 import type { RunResult } from '../../../src/core/sim';
+import { AREA_ORDER } from '../../../src/core/ids';
 import {
-  addXp, applyRunRules, arrivalDistance, BEYOND_30, cappedRun, COINS, CRATES, crateOdds, crateValue, createMetaImpl, DUPLICATE_VALUE,
-  featuredFor, isRewardsExt, LEVEL_REWARDS, levelGrants, nextGoal, PITY, PRICE, rollCrate, xpToNext, xpToReach,
-  type MetaCtx, type RunRewardsExt,
+  addXp, applyRunRules, AREA_TIMELINE, arrivalDistance, BEYOND_30, cappedRun, COINS, complianceValue, CRATE_HELD_MAX, CRATE_METER, CRATES, crateOdds, crateValue,
+  createMetaImpl, DUPLICATE_VALUE, featuredFor, featuredPrice, isRewardsExt, LEVEL_REWARDS, levelGrants, nextGoal, pendingReveals, PITY, PRICE,
+  rollCrate, xpToNext, xpToReach, type MetaCtx, type RunRewardsExt,
 } from '../../../src/meta';
-import { createStorage, makeDefaults, Store, type StorageLike } from '../../../src/save';
+import { createStorage, makeDefaults, sanitize, Store, type SaveCratesExt, type StorageLike } from '../../../src/save';
+import { createWorldGen } from '../../../src/world/gen';
 
 const byId = new Map(CATALOG.map((c) => [c.id, c]));
 const NOW = new Date(2026, 10, 6, 18, 0, 0).getTime();          // local 2026-11-06 18:00
@@ -98,6 +100,8 @@ describe('crates (DESIGN §16.3)', () => {
     }
     expect(crateValue('street', PRICE)).toBeCloseTo(573, 0);
     expect(crateValue('pro', PRICE)).toBeCloseTo(1788, 0);
+    // Where crates are disabled (DESIGN §20) a free crate pays exactly its expected value, derived from the tables.
+    expect([complianceValue('cardboard'), complianceValue('street'), complianceValue('pro')]).toEqual([183, 573, 1788]);
     expect(CRATES.street.price).toBe(450);
     expect(CRATES.pro.price).toBe(1500);
   });
@@ -215,9 +219,76 @@ describe('onboarding cap (DESIGN §14.2, §14.4)', () => {
     expect(rewards.pending).not.toBeNull();
     const it2 = byId.get(rewards.pending!.item!)!;
     expect(it2.slot).toBe('skater'); expect(it2.rarity).toBe('rare');
-    expect(s.owned).toContain(it2.id);                           // granted now; the reveal only shows it
+    expect(s.owned).not.toContain(it2.id);                       // still in the crate: nothing spoils the reveal
+    expect(s.unseen).not.toContain(it2.id);
     expect(s.crates.pending).toEqual(rewards.pending);
     expect(s.crates.pity).toEqual({ streetEpic: 0, streetLegendary: 0, proLegendary: 0 });   // gifts don't move pity
+  });
+  it('run 1 Results: the goal line never says "Level 3 in 1 XP" when the held XP already guarantees Level 3', () => {
+    const s = makeDefaults(0, 1);
+    const { rewards } = applyRunRules(s, run(TYPICAL[0]), ctx());
+    expect(rewards.xp.levelAfter).toBe(2);
+    expect(rewards.held).toBeGreaterThanOrEqual(xpToNext(2));      // 460 XP − 150 = 310 held ≥ 260
+    expect(rewards.nextGoal.text).not.toMatch(/in \d+ XP/);
+    expect(rewards.nextGoal.kind).not.toBe('level');
+    expect(rewards.nextGoal.text).toBe(`Docks: ${Math.round(arrivalDistance(2) - 560).toLocaleString('en-US')} m further`);
+    // A small held amount is still a level goal, with the true remainder.
+    const t = makeDefaults(0, 1);
+    t.xp = { total: 200, level: 2, intoLevel: 0, held: 60 }; t.postcards = [...AREA_ORDER];
+    expect(nextGoal(t, null, ctx())).toMatchObject({ kind: 'level', text: 'Level 3 in 200 XP' });
+    // Nothing else to chase: the guaranteed level is said as it is.
+    t.xp.held = 300;
+    expect(nextGoal(t, null, ctx())).toMatchObject({ kind: 'level', text: 'Level 3 on your next run' });
+  });
+  it('the Level 2 crate opens into the Locker only at its reveal; a reveal left unfinished before it is queued, never lost', () => {
+    const { store } = memStore(9);
+    const save = store();
+    const meta = createMetaImpl(save, CATALOG, { now: () => NOW });
+    meta.claimDailyGift();
+    const gift = meta.openCrate('cardboard');                      // the player leaves mid-reveal (reload, tab closed)
+    expect(save.data.crates.pending).toEqual(gift);
+    const coins0 = save.data.wallet.coins;
+    const w = meta.applyRun(run(TYPICAL[0])) as RunRewardsExt;
+    expect(w.pending?.item).toBeTruthy();
+    const skater = w.pending!.item!;
+    expect(meta.pendingCount()).toBe(2);
+    expect(pendingReveals(save.data).map((p) => p.item)).toEqual([gift.item, skater]);
+    expect(meta.owns(skater)).toBe(false);
+    const reloaded = createMetaImpl(store(), CATALOG, { now: () => NOW });   // the queue survives a reload (sanitize)
+    expect(reloaded.pendingCount()).toBe(2);
+    expect(reloaded.pendingReveal()).toEqual(gift);
+    reloaded.ackReveal();                                          // the gift: its coins or item now
+    const s1 = store().data;
+    if (gift.item && !gift.dup) expect(s1.owned).toContain(gift.item);
+    else expect(s1.wallet.coins).toBe(coins0 + w.coins.total + w.levelCoins + gift.coins);
+    expect(reloaded.pendingReveal()?.item).toBe(skater);
+    reloaded.ackReveal();
+    expect(reloaded.owns(skater)).toBe(true);
+    expect(reloaded.data.unseen).toContain(skater);
+    expect(reloaded.pendingCount()).toBe(0);
+    expect((reloaded.data.crates as SaveCratesExt).queue).toBeUndefined();
+  });
+  it('an item bought while its crate is still closed converts to its duplicate value at the reveal (DESIGN §14.2)', () => {
+    const { store } = memStore(4);
+    const save = store();
+    const meta = createMetaImpl(save, CATALOG, { now: () => NOW });
+    save.mutate((s) => { s.crates.held.street = 1; });
+    const res = meta.openCrate('street');
+    expect(res.item).toBeTruthy();
+    save.mutate((s) => { s.owned.push(res.item!); s.wallet.coins = 0; });
+    meta.ackReveal();
+    expect(save.data.wallet.coins).toBe(DUPLICATE_VALUE[byId.get(res.item!)!.rarity]);
+    expect(save.data.owned.filter((x) => x === res.item)).toHaveLength(1);
+  });
+  it('sanitize keeps a well-formed reveal queue and drops junk', () => {
+    const d = makeDefaults(0, 1);
+    const raw = JSON.parse(JSON.stringify(d)) as { crates: Record<string, unknown> };
+    raw.crates.pending = null;
+    raw.crates.queue = [{ tier: 'street', rarity: 'rare', item: 'sk_kofi', coins: 0, dup: false }, { tier: 'nope' }, 7,
+      { tier: 'cardboard', rarity: 'coins', item: null, coins: 90, dup: false }];
+    const s = sanitize(raw, d);
+    expect(s.crates.pending).toMatchObject({ tier: 'street', item: 'sk_kofi' });    // the head moves up
+    expect((s.crates as SaveCratesExt).queue).toEqual([{ tier: 'cardboard', rarity: 'coins', item: null, coins: 90, dup: false }]);
   });
   it('run 2 reaches Level 3: 300 coins and the shop and wishlist unlock; run 3 Level 4: Sunset Stripe, Crate Meter, Trick Book', () => {
     const s = makeDefaults(0, 1);
@@ -346,6 +417,34 @@ describe('crate meter and next goal', () => {
     s.wishlist = null; s.stats.bestDist = 0;
     expect(nextGoal(s, { distance: arrivalDistance(2) - 100 }, ctx())).toMatchObject({ kind: 'area', text: `Docks: 100 m further` });
     expect(area).toBe('docks');
+  });
+  it('the area timeline mirrored in meta matches the frozen WorldGen.areaAt (a WG change shows up here)', () => {
+    expect(AREA_TIMELINE).toEqual({ firstVisitSec: 40, visitSec: 35, gatewaySec: 4 });
+    const gen = createWorldGen({ seed: 1, mode: 'normal' });
+    for (let k = 1; k < AREA_ORDER.length; k++) {
+      const at = arrivalDistance(k);
+      expect(gen.areaAt(at + 0.5).area, `visit ${k}`).toBe(AREA_ORDER[k]);
+      expect(gen.areaAt(at + 0.5).gateway).toBeNull();
+      expect(gen.areaAt(at - 0.5).area).toBe(AREA_ORDER[k - 1]);
+      expect(gen.areaAt(at - 0.5).gateway).not.toBeNull();
+    }
+  });
+  it('the wishlist need is the price the player would pay today (the featured price when it is a pick)', () => {
+    const s = makeDefaults(0, 1);
+    s.stats.runs = 5; s.xp.level = 5; s.wallet.coins = 100; s.daily.lastWarmupDay = ctx().today;
+    const pick = featuredFor(ctx().today, new Set(s.owned), CATALOG)[1]!;
+    s.shop = { featuredDay: ctx().today, featured: [pick] };
+    s.wishlist = pick;
+    const w = applyRunRules(s, run({ score: 100 }), ctx()).rewards;
+    const it = byId.get(pick)!;
+    expect(w.wishlist?.need).toBe(featuredPrice(it));
+    expect(w.nextGoal.kind === 'wishlist' ? w.nextGoal.text : `${it.name} ${s.wallet.coins}/${featuredPrice(it).toLocaleString('en-US')}`)
+      .toContain(`/${featuredPrice(it).toLocaleString('en-US')}`);
+    // The save layer mirrors two economy numbers (it may not import meta): pinned here.
+    expect(makeDefaults(0, 1).crateMeter.nextAt).toBe(CRATE_METER.first);
+    const raw = JSON.parse(JSON.stringify(makeDefaults(0, 1))) as { crates: { held: { cardboard: number } } };
+    raw.crates.held.cardboard = 9;
+    expect(sanitize(raw, makeDefaults(0, 1)).crates.held.cardboard).toBe(CRATE_HELD_MAX.cardboard);
   });
   it('a typical run 2 shows a concrete goal line', () => {
     const s = makeDefaults(0, 1);

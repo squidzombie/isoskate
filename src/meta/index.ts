@@ -13,11 +13,11 @@ import type { SaveStore, SaveV1 } from '../core/save';
 import type { RunResult } from '../core/sim';
 import { localDay, requestPersist, type SaveDailyExt } from '../save';
 import { analyticsFor, createAnalyticsImpl } from './analytics';
-import { crateOdds as oddsOf, pityRemaining } from './crates';
-import { COMPLIANCE, CRATES, PITY, UNLOCK_LEVEL } from './economy.config';
+import { complianceValue, crateOdds as oddsOf, pityRemaining } from './crates';
+import { COMPLIANCE, CRATE_HELD_MAX, CRATES, PITY, UNLOCK_LEVEL } from './economy.config';
 import { createOfferPolicy, type OfferPolicyExt } from './offers';
 import { xpToNext } from './progression';
-import { applyRunRules, commitRoll, nextGoal, type MetaCtx, type RunRewardsExt } from './results';
+import { ackPending, applyRunRules, commitRoll, nextGoal, pendingReveals, type MetaCtx, type RunRewardsExt } from './results';
 import { basePrice, featuredFor, featuredPrice, isBuyable } from './shop';
 import { addCoins, spendCoins } from './wallet';
 
@@ -38,6 +38,8 @@ export interface MetaExt extends MetaApi {
   crateHeld(tier: CrateTier): number;
   cratePrice(tier: CrateTier): number;
   cratesEnabled(): boolean;
+  /** Reveals waiting to be opened (the pending one plus any queued behind it). */
+  pendingCount(): number;
   /** Crates left until each pity guarantee ("Epic+ guaranteed within 4"). */
   pity(): { streetEpic: number; streetLegendary: number; proLegendary: number };
   markSeen(ids?: readonly ItemId[]): void;
@@ -159,8 +161,7 @@ export function createMetaImpl(save: SaveStore, catalog: readonly CosmeticItem[]
       save.mutate((s) => {
         s.crates.held[tier]--;
         if (tier === 'cardboard') s.daily.giftHeld = false;
-        res = commitRoll(s, tier, ctx());
-        s.crates.pending = { ...(res as CrateResult) };
+        res = commitRoll(s, tier, ctx());                       // becomes crates.pending (nothing was waiting)
       });
       save.flush();                                              // written BEFORE the reveal animation (DESIGN §16.3)
       const out = res as unknown as CrateResult;
@@ -175,7 +176,7 @@ export function createMetaImpl(save: SaveStore, catalog: readonly CosmeticItem[]
     },
     ackReveal() {
       if (!save.data.crates.pending) return;
-      save.mutate((s) => { s.crates.pending = null; });
+      save.mutate((s) => { ackPending(s, byId); });            // grants what was inside, moves the next reveal up
       save.flush();
     },
     dailyGiftReady: () => save.data.daily.lastGiftDay !== today() && !save.data.daily.giftHeld,
@@ -184,8 +185,8 @@ export function createMetaImpl(save: SaveStore, catalog: readonly CosmeticItem[]
       const d = today();
       save.mutate((s) => {
         s.daily.lastGiftDay = d;
-        if (COMPLIANCE.cratesEnabled) { s.daily.giftHeld = true; s.crates.held.cardboard = Math.min(2, s.crates.held.cardboard + 1); }
-        else addCoins(s, COMPLIANCE.cardboardValue);
+        if (COMPLIANCE.cratesEnabled) { s.daily.giftHeld = true; s.crates.held.cardboard = Math.min(CRATE_HELD_MAX.cardboard, s.crates.held.cardboard + 1); }
+        else addCoins(s, complianceValue('cardboard'));
       });
       save.flush();
     },
@@ -200,6 +201,7 @@ export function createMetaImpl(save: SaveStore, catalog: readonly CosmeticItem[]
     crateHeld: (tier) => save.data.crates.held[tier],
     cratePrice: (tier) => CRATES[tier].price,
     cratesEnabled: () => COMPLIANCE.cratesEnabled,
+    pendingCount: () => pendingReveals(save.data).length,
     pity: () => pityRemaining(save.data.crates.pity),
     markSeen(ids) {
       const drop = ids ? new Set(ids) : null;
@@ -217,7 +219,7 @@ export function createMetaImpl(save: SaveStore, catalog: readonly CosmeticItem[]
         if (s.daily.adsDay !== d) { s.daily.adsDay = d; s.daily.adsCount = 0; }
         s.daily.adsCount++;
         if (p === 'results_double_coins') { n = addCoins(s, runCoins); offerRunId = runId; }
-        else { (s.daily as SaveV1['daily'] & SaveDailyExt).giftBonusDay = d; s.crates.held.cardboard = Math.min(2, s.crates.held.cardboard + 1); n = 1; }
+        else { (s.daily as SaveV1['daily'] & SaveDailyExt).giftBonusDay = d; s.crates.held.cardboard = Math.min(CRATE_HELD_MAX.cardboard, s.crates.held.cardboard + 1); n = 1; }
       });
       save.flush();
       return n;
@@ -265,10 +267,10 @@ export function runEndProps(r: RunResult, w: RunRewards | null, retryKind: 'inst
 }
 
 export { xpToNext, xpToReach, addXp, runXp, levelGrants, cappedRun } from './progression';
-export { rollCrate, crateOdds, pityRemaining, crateValue, RARITY_ORDER } from './crates';
+export { rollCrate, crateOdds, pityRemaining, crateValue, complianceValue, RARITY_ORDER } from './crates';
 export { featuredFor, featuredPrice, basePrice, isBuyable, daySeed } from './shop';
 export { createOfferPolicy, type OfferPolicyExt } from './offers';
-export { applyRunRules, nextGoal, arrivalDistance, isRewardsExt, type RunRewardsExt, type MetaCtx } from './results';
+export { applyRunRules, nextGoal, arrivalDistance, isRewardsExt, pendingReveals, wishPrice, meterSpan, AREA_TIMELINE, type RunRewardsExt, type MetaCtx } from './results';
 export { createAnalyticsImpl, analyticsFor, ANALYTICS_KEY, ANALYTICS, type AnalyticsExt } from './analytics';
 export { COINS, XP, LEVEL_REWARDS, UNLOCK_LEVEL, PRICE, DUPLICATE_VALUE, FEATURED, CRATES, PITY, CRATE_METER, COMPLIANCE, OFFERS,
-  CARDBOARD_COINS, BEYOND_30 } from './economy.config';
+  CARDBOARD_COINS, BEYOND_30, CRATE_HELD_MAX } from './economy.config';

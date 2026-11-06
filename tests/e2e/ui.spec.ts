@@ -197,6 +197,102 @@ for (const [w, h] of [[320, 568], [360, 640], [390, 844]] as const) {
   });
 }
 
+test('Level 2: Results opens the crate by itself, the skater reaches the Locker only at the reveal, "Equip now?" works', async ({ page }) => {
+  test.setTimeout(120_000);
+  const errors: string[] = [];
+  await boot(page, errors);
+  await editSave(page, 's.xp.intoLevel = 149;');                   // any run 1 now ends at Level 2 (the forced crate)
+  await page.evaluate(() => { const k = window.__skate!; k.start({ seed: 2 }); k.manual(true); let s = k.step(60); while (s.alive && s.tick < 900) s = k.step(1); k.manual(false); });
+  await expect(screenOn(page, 'results')).toHaveClass(/\bon\b/, { timeout: 30_000 });
+  const s0 = await save(page);
+  expect(s0.xp.level).toBe(2);
+  const skater = s0.crates.pending!.item!;
+  expect(skater).toMatch(/^sk_/);
+  expect(s0.owned).not.toContain(skater);                          // still in the crate: Locker and badges can't spoil it
+  await expect(page.locator('.reveal')).toBeVisible({ timeout: 15_000 });   // after the XP bar, without a tap
+  await expect(page.locator('.reveal .rv-later')).toBeVisible();
+  for (let i = 0; i < 3; i++) await page.locator('.rv-crate').click();
+  await expect(page.locator('.rv-actions')).toHaveClass(/\bon\b/, { timeout: 8000 });
+  await expect(page.locator('.rv-equip')).toHaveText('Equip now?');
+  await page.locator('.rv-equip').click();
+  await page.locator('.rv-back').click();
+  await expect(screenOn(page, 'results')).toHaveClass(/\bon\b/);
+  const s1 = await save(page);
+  expect(s1.owned).toContain(skater);
+  expect(s1.equipped.skater).toBe(skater);
+  expect(s1.crates.pending).toBeNull();
+  await expect(screenOn(page, 'results').locator('.reward.item')).toContainText('Equipped');
+  // Run 2 rides as the new skater.
+  await page.getByRole('button', { name: /roll again/i }).click();
+  await expect(screenOn(page, 'results')).not.toHaveClass(/\bon\b/);
+  expect((await save(page)).equipped.skater).toBe(skater);
+  expect(errors).toEqual([]);
+});
+
+test('Level 2 skipped by ROLL AGAIN: the crate waits, "Later" is honoured, and Title opens it once', async ({ page }) => {
+  test.setTimeout(120_000);
+  const errors: string[] = [];
+  await boot(page, errors);
+  await editSave(page, 's.xp.intoLevel = 149;');
+  await page.evaluate(() => { const k = window.__skate!; k.start({ seed: 2 }); k.manual(true); let s = k.step(60); while (s.alive && s.tick < 900) s = k.step(1); k.manual(false); });
+  await expect(screenOn(page, 'results')).toHaveClass(/\bon\b/, { timeout: 30_000 });
+  await page.getByRole('button', { name: /roll again/i }).click();  // before the reveal opens
+  await expect(screenOn(page, 'results')).not.toHaveClass(/\bon\b/);
+  expect(await page.evaluate(() => window.__dusklaneUi!.modalOpen())).toBe(false);
+  const pending = (await save(page)).crates.pending!;
+  expect(pending.item).toMatch(/^sk_/);
+  await page.evaluate(() => window.__skate!.ui('title'));
+  await expect(page.locator('.reveal')).toBeVisible({ timeout: 10_000 });
+  await page.locator('.reveal .rv-later').click();
+  await expect(screenOn(page, 'title')).toHaveClass(/\bon\b/);
+  await page.evaluate(() => { window.__skate!.ui('stats'); });
+  await page.evaluate(() => { window.__skate!.ui('title'); });
+  await page.waitForTimeout(1200);
+  expect(await page.evaluate(() => window.__dusklaneUi!.modalOpen())).toBe(false);       // "Later" is not nagged again
+  expect((await save(page)).crates.pending).toEqual(pending);
+  expect((await save(page)).owned).not.toContain(pending.item);
+  expect(errors).toEqual([]);
+});
+
+test('320 × 568: Shop cards, labels and the detail bar fit; Results shows the next goal above the fold', async ({ page }, info) => {
+  test.skip(info.project.name !== 'mobile', 'viewport override on one project');
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 320, height: 568 });
+  const errors: string[] = [];
+  await boot(page, errors);
+  const shop = screenOn(page, 'shop');
+  const measure = () => page.evaluate(() => {
+    const root = document.querySelector('#screens [data-screen="shop"]')!;
+    const r = (sel: string) => { const e = root.querySelector(sel); if (!e || !(e as HTMLElement).offsetParent) return null; const b = e.getBoundingClientRect(); return { y0: b.top, y1: b.bottom, x0: b.left, x1: b.right }; };
+    const clipped = [...root.querySelectorAll<HTMLElement>('.featured .card-band, .featured .card-foot, .lock-note span, .detail .act-buy, .detail .act-equip')]
+      .filter((e) => e.offsetParent && e.scrollWidth > e.clientWidth + 1).map((e) => `${e.className}: ${e.textContent}`);
+    const first = root.querySelector('.card-grid .card');
+    return { panel: r('.panel'), detail: r('.detail'), buy: r('.detail .act-buy'), equip: r('.detail .act-equip'), first: first ? (() => { const b = first.getBoundingClientRect(); return { y0: b.top, y1: b.bottom }; })() : null, clipped, vh: innerHeight };
+  });
+  for (const level of [1, 5]) {
+    await editSave(page, `s.xp.level = ${level}; s.wallet.coins = 120;`);
+    await page.evaluate(() => { window.__skate!.ui('title'); window.__skate!.ui('shop'); });
+    await shop.locator('.card-grid [data-item]').nth(4).click();
+    const m = await measure();
+    expect(m.clipped, `clipped at Level ${level}`).toEqual([]);
+    const act = m.buy ?? m.equip;
+    expect(act, `a detail action at Level ${level}`).not.toBeNull();
+    expect(act!.y1, `detail action inside the panel at Level ${level}`).toBeLessThanOrEqual(m.panel!.y1 + 0.5);
+    expect(m.panel!.y1).toBeLessThanOrEqual(m.vh + 0.5);
+    expect(m.first!.y1, `one full card row above the detail bar at Level ${level}`).toBeLessThanOrEqual(m.detail!.y0 + 1);
+  }
+  // Results: the goal line is on screen without scrolling.
+  await page.evaluate(() => { const k = window.__skate!; k.start({ seed: 2 }); k.manual(true); let s = k.step(60); while (s.alive && s.tick < 900) s = k.step(1); k.manual(false); });
+  await expect(screenOn(page, 'results')).toHaveClass(/\bon\b/, { timeout: 30_000 });
+  const goal = screenOn(page, 'results').locator('.res-goal');
+  await expect(goal).toBeVisible();
+  const g = await goal.boundingBox();
+  expect(g!.y + g!.height).toBeLessThanOrEqual(568);
+  const roll = await page.getByRole('button', { name: /roll again/i }).boundingBox();
+  expect(g!.y + g!.height).toBeLessThanOrEqual(roll!.y);
+  expect(errors).toEqual([]);
+});
+
 test('the instant-retry reward toast sits in the HUD band and is gone by 3.0 s', async ({ page }, info) => {
   test.skip(info.project.name !== 'mobile', 'touch flow');
   const errors: string[] = [];

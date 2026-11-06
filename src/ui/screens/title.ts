@@ -2,15 +2,18 @@
 // ink stroke, "TAP TO ROLL" pulsing every 1.2 s (Space / Enter on desktop), level chip with its XP bar, best score,
 // coins, and the bottom tab bar Play / Locker / Shop / Crates / Stats + the Settings gear, with calm badges (NEW items,
 // a ready daily gift, crates to open). A tap anywhere outside the bar and the chips plays (the middle of the screen is
-// never a button, so a first tap always rolls).
+// never a button, so a first tap always rolls). A crate reveal still waiting (the Level 2 crate after an instant retry,
+// or a reveal interrupted by a reload) opens by itself once per session, with "Later".
 import { GAME_NAME } from '../../core/ids';
 import { isMetaExt } from '../../meta';
 import { fmtScore } from '../format';
 import { icon, type IconName } from '../icons';
 import { h, setText } from '../h';
+import type { Reveal } from '../reveal';
+import { TITLE } from '../ui.config';
 import { bar, btn, coinTag, finePointer, fmtN, section, type Screen, type ScreenCtx } from './common';
 
-export function titleScreen(ctx: ScreenCtx): Screen {
+export function titleScreen(ctx: ScreenCtx, getReveal?: () => Reveal): Screen {
   const best = h('div', { class: 'title-best' }, '');
   const keys = h('div', { class: 'title-keys' }, 'or press Space');
   const lvNum = h('b', null, '1');
@@ -29,13 +32,34 @@ export function titleScreen(ctx: ScreenCtx): Screen {
   const logo = h('h1', { class: 'logo', 'aria-label': GAME_NAME }, ...GAME_NAME.toUpperCase().split('').map((ch, i) => h('span', { style: `--i:${i}` }, ch)));
   const el = section('title', 'title',
     top,
-    h('div', { class: 'title-hero' }, logo, h('div', { class: 'tagline' }, 'Roll from golden hour into the neon night.')),
+    h('div', { class: 'title-hero' }, logo, h('div', { class: 'tagline' }, 'Roll from golden hour into the neon\u00a0night.')),
     h('div', { class: 'title-mid' }, h('div', { class: 'tap' }, 'TAP TO ROLL'), keys, best),
     h('div', { class: 'spacer' }), tabs);
   el.addEventListener('click', () => ctx.raise({ k: 'play' }));
-  return {
+  const autoShown = new Set<string>();
+  let autoTimer: ReturnType<typeof setTimeout> | null = null;
+  let last: Parameters<Screen['show']>[0] = {};
+  const autoReveal = () => {
+    const m = ctx.meta();
+    const x = isMetaExt(m) ? m : null;
+    const p = m?.pendingReveal();
+    if (!getReveal || !p || !x || getReveal().wasPostponed(p)) return;
+    const key = `${JSON.stringify(p)}|${x.data.crates.opened}`;
+    if (autoShown.has(key) || autoTimer) return;
+    autoTimer = setTimeout(() => {
+      autoTimer = null;
+      const q = ctx.meta()?.pendingReveal();
+      if (ctx.current() !== 'title' || ctx.modal.open || !q || JSON.stringify(q) !== JSON.stringify(p)) return;
+      autoShown.add(key);
+      const it = q.item ? x.item(q.item) : undefined;
+      getReveal().play(q, { later: true, equipLabel: it?.slot === 'skater' ? 'Equip now?' : 'Equip', onClose: () => screen.show(last) });
+    }, TITLE.revealDelayMs);
+  };
+  const screen: Screen = {
     id: 'title', el,
+    hide() { if (autoTimer) { clearTimeout(autoTimer); autoTimer = null; } },
     show(p) {
+      last = p;
       const m = ctx.meta();
       const ext = isMetaExt(m) ? m : null;
       const lv = m?.levelInfo();
@@ -49,11 +73,13 @@ export function titleScreen(ctx: ScreenCtx): Screen {
       const unseen = ext?.data.unseen.length ?? 0;
       setText(bLocker, unseen ? 'NEW' : '');
       const gift = !!m?.dailyGiftReady();
-      const held = ext ? ext.crateHeld('cardboard') + ext.crateHeld('street') + ext.crateHeld('pro') + (m?.pendingReveal() ? 1 : 0) : 0;
+      const held = ext ? ext.crateHeld('cardboard') + ext.crateHeld('street') + ext.crateHeld('pro') + ext.pendingCount() : 0;
       setText(bCrates, gift ? 'GIFT' : held ? String(held) : '');
       bCrates.classList.toggle('gift', gift);
       setText(bShop, ext && !ext.unlocked('shop') ? 'LV 3' : '');
       bShop.classList.toggle('lock', !!ext && !ext.unlocked('shop'));
+      autoReveal();
     },
   };
+  return screen;
 }

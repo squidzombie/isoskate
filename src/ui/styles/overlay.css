@@ -69,8 +69,11 @@
 #screens .reveal:not([data-stage='closed']) .rv-beam { opacity: 0.95; transform: none; }
 #screens .reveal[data-rarity='rare'] { --beam: #4fb3e8; } #screens .reveal[data-rarity='epic'] { --beam: #a06bff; }
 #screens .reveal[data-rarity='coins'] { --beam: #ffc94a; } #screens .reveal[data-rarity='common'] { --beam: #fff4e3; }
-#screens .reveal[data-rarity='legendary'] .rv-beam { background: radial-gradient(ellipse at 50% 100%, #ffc94a 0%, #ff7ab6 40%, rgba(255, 122, 182, 0) 72%); animation: rv-hue 1.6s linear infinite; }
-@keyframes rv-hue { 0% { filter: hue-rotate(0deg); } 50% { filter: hue-rotate(-30deg); } 100% { filter: hue-rotate(0deg); } }
+/* Legendary: gold-to-pink, cross-faded with a pink-to-gold twin (opacity only, no filter animation). */
+#screens .reveal[data-rarity='legendary'] .rv-beam { background: radial-gradient(ellipse at 50% 100%, #ffc94a 0%, #ff7ab6 40%, rgba(255, 122, 182, 0) 72%); }
+#screens .reveal[data-rarity='legendary'] .rv-beam::after { content: ''; position: absolute; inset: 0; opacity: 0;
+  background: radial-gradient(ellipse at 50% 100%, #ff7ab6 0%, #ffc94a 42%, rgba(255, 201, 74, 0) 72%); animation: rv-legend 1.6s ease-in-out infinite; }
+@keyframes rv-legend { 50% { opacity: 1; } }
 #screens .rv-item { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; z-index: 3;
   opacity: 0; pointer-events: none; }
 #screens .reveal[data-stage='item'] .rv-item, #screens .reveal[data-stage='done'] .rv-item { opacity: 1; }
@@ -107,7 +110,12 @@
 #screens .rv-actions .primary { width: 100%; }
 #screens .rv-actions .row { width: 100%; flex-wrap: nowrap; }
 #screens .rv-actions .row button { flex: 1; min-width: 0; font-size: 14px; }
+/* "Later" under the closed crate, only when the reveal opened by itself (Results after the Level 2 crate, Title). */
+#screens .rv-later { min-height: 48px; padding: 0 18px; font-size: 13px; background: transparent; color: var(--paper); border-color: rgba(255, 244, 227, 0.6);
+  box-shadow: none; }
+#screens .reveal:not([data-stage='closed']) .rv-later, #screens .reveal:not(.can-later) .rv-later { display: none; }
 @media (prefers-reduced-motion: reduce) {
   #screens .reveal[data-stage='item'] .rv-card { animation-duration: 0.01s; }
   #screens .rv-hint { animation: none; }
+  #screens .reveal[data-rarity='legendary'] .rv-beam::after { animation: none; opacity: 0.5; }
 }

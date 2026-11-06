@@ -104,7 +104,7 @@ export function createUiImpl(root: HTMLElement): UiExt {
 
   const shownResults = new Set<string>(), toasted = new Set<string>(), discovered = new Set<string>();
   const screens = new Map<ScreenId, Screen>();
-  for (const s of [bootScreen(), titleScreen(ctx), crashScreen(), resultsScreen(ctx, { reveal: getReveal, onShown: (id) => shownResults.add(id) }),
+  for (const s of [bootScreen(), titleScreen(ctx, getReveal), crashScreen(), resultsScreen(ctx, { reveal: getReveal, onShown: (id) => shownResults.add(id) }),
     pauseScreen(ctx), showcaseScreen(ctx, 'locker'), showcaseScreen(ctx, 'shop'), settingsScreen(ctx), statsScreen(ctx),
     cratesScreen(ctx, getReveal), rewardsScreen(ctx, getReveal)]) {
     screens.set(s.id, s);
@@ -127,7 +127,13 @@ export function createUiImpl(root: HTMLElement): UiExt {
   }
 
   // Per-run bookkeeping for the analytics UI owns.
-  const run = { banks: 0, bankMax: 0, bankSum: 0, maxLinks: 0, area: 'downtown' as AreaId, tracked: false };
+  const run = { banks: 0, bankMax: 0, bankSum: 0, maxLinks: 0, area: 'downtown' as AreaId, tracked: true };
+  /** combo_banked once per run: at the crash, or when the run ends another way (Pause → Home or Restart). */
+  const flushRun = () => {
+    if (run.tracked) return;
+    run.tracked = true;
+    track('combo_banked', { count: run.banks, max: run.bankMax, sum: run.bankSum, max_links: run.maxLinks });
+  };
 
   const ui: UiExt = {
     hud, guard,
@@ -145,6 +151,7 @@ export function createUiImpl(root: HTMLElement): UiExt {
         s.el.inert = !on;
       }
       root.dataset.screen = screen;
+      if (screen === 'title') flushRun();
       if (screen !== 'run' && screen !== 'pause' && screen !== 'crash') lofi.set({ neon: false });
       const p: ScreenParams = { ...params, cause: lastCause, lost: lastLost, best };
       screens.get(screen)?.show(p);
@@ -162,6 +169,7 @@ export function createUiImpl(root: HTMLElement): UiExt {
       const offs = [
         game.onAny((e) => hud.onGame(e)),
         game.on('runStart', () => {
+          flushRun();                                                   // a Restart from Pause ends the last run
           lastCause = ''; lastLost = 0;
           Object.assign(run, { banks: 0, bankMax: 0, bankSum: 0, maxLinks: 0, area: 'downtown', tracked: false });
           discovered.clear();
@@ -172,9 +180,13 @@ export function createUiImpl(root: HTMLElement): UiExt {
           const last = ext()?.lastRun();
           if (last && !shownResults.has(last.runId) && !toasted.has(last.runId)) {
             toasted.add(last.runId);
-            const lv = last.levelUps.length ? ` · Level ${last.xp.levelAfter}!` : '';
-            const extra = last.rewards.some((r) => r.kind === 'item' || r.kind === 'crate') ? ' · NEW in Locker' : '';
-            hud.rewardToast(`+${fmtShort(last.coins.total)} coins · +${fmtShort(last.xp.gained)} XP${lv}${extra}`);
+            // Chunks never break inside ("+2 XP" stays together); only the separators wrap in the 93 px column.
+            const nb = (t: string) => t.replace(/ /g, '\u00a0');
+            const parts = [nb(`+${fmtShort(last.coins.total)} coins`), nb(`+${fmtShort(last.xp.gained)} XP`)];
+            if (last.levelUps.length) parts.push(nb(`Level ${last.xp.levelAfter}!`));
+            if (last.pending || last.rewards.some((r) => r.kind === 'crate')) parts.push(nb('crate to open'));
+            else if (last.rewards.some((r) => r.kind === 'item')) parts.push(nb('NEW in Locker'));
+            hud.rewardToast(parts.join(' · '));
           }
         }),
         game.on('crash', (e) => {
@@ -182,7 +194,7 @@ export function createUiImpl(root: HTMLElement): UiExt {
           lastCause = crashCause(e);
           track('crash', { cause: e.cause, obstacle_kind: e.kind ?? 'none', area: run.area, speed: Math.round(e.speed * 100) / 100,
             t_s: Math.round(e.tick * DT * 10) / 10, state: e.state === 'crashed' ? 'roll' : e.state, flip_progress: e.flipProgress, spin_progress: e.spinProgress });
-          if (!run.tracked) { run.tracked = true; track('combo_banked', { count: run.banks, max: run.bankMax, sum: run.bankSum, max_links: run.maxLinks }); }
+          flushRun();
         }),
         game.on('comboLost', (e) => { lastLost = e.total; }),
         // Trick discovery (DESIGN §12.5): the first landing of a Trick Book entry names its input, once.

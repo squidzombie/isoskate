@@ -100,8 +100,12 @@ export const PITY = { streetEpic: 10, streetLegendary: 40, proLegendary: 10 } as
 /** Crate Meter (DESIGN §14.3): a free Street Crate at 4 km of total distance, then every 8 km. */
 export const CRATE_METER = { first: 4000, every: 8000, tier: 'street' as CrateTier } as const;
 
-/** Region compliance (DESIGN §20): with crates off, purchase is hidden and free crates pay their expected value. */
-export const COMPLIANCE = { cratesEnabled: true, cardboardValue: 183, streetValue: 573, proValue: 1788 } as const;
+/** Crates you can hold: the daily Cardboard gift plus the rewarded bonus one (no stockpiling of free gifts). */
+export const CRATE_HELD_MAX = { cardboard: 2, street: 999, pro: 999 } as const;
+
+/** Region compliance (DESIGN §20): with crates off, purchase is hidden and every free crate pays its expected value
+ *  (meta/crates.ts › complianceValue, computed from CRATES and PRICE: Cardboard 183, Street 573, Pro 1,788). */
+export const COMPLIANCE = { cratesEnabled: true } as const;
 
 /** Rewarded offers (DESIGN §20). Policy lives in meta/offers.ts. */
 export const OFFERS = {

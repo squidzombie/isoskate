@@ -1,6 +1,8 @@
 // ui/fit.ts: text fitting without layout reads (TECH §9 "nothing reads layout during a run"). Widths come from a
 // 2D canvas `measureText` (no DOM layout), and the HUD column widths are pure arithmetic from the viewport width,
 // `k` and the safe insets (read only at boot and on resize), so the HUD can never overlap by construction.
+import { HUD_LAYOUT } from './ui.config';
+
 let c2d: CanvasRenderingContext2D | null | undefined;
 const cache = new Map<string, number>();
 
@@ -39,11 +41,12 @@ export interface HudColumns { padL: number; padR: number; gap: number; leftW: nu
 /** HUD band columns (DESIGN §13.8): score left (26·k px digits, 7 chars max thanks to the 1M abbreviation), coins
  *  and the 56 px pause hit area right, the combo pill and the trick name in the middle. Pure. */
 export function hudColumns(vw: number, safeL = 0, safeR = 0): HudColumns {
-  const k = Math.min(1.3, Math.max(0.85, vw / 390));
-  const padL = 10 + safeL, padR = 4 + safeR, gap = 6, pause = 56;
-  const leftW = Math.round(26 * k * 3.95);
-  const coinW = Math.round(17 * k * 3.9);
-  const rightW = coinW + 2 + pause;
-  const midW = Math.max(40, vw - padL - padR - leftW - rightW - 2 * gap);
+  const L = HUD_LAYOUT;
+  const k = Math.min(L.kMax, Math.max(L.kMin, vw / L.refW));
+  const padL = L.padL + safeL, padR = L.padR + safeR, gap = L.gap, pause = L.pause;
+  const leftW = Math.round(L.scorePx * k * L.scoreEm);
+  const coinW = Math.round(L.coinPx * k * L.coinEm);
+  const rightW = coinW + L.coinGap + pause;
+  const midW = Math.max(L.midMin, vw - padL - padR - leftW - rightW - 2 * gap);
   return { padL, padR, gap, leftW, midW, rightW, coinW, pause, k };
 }

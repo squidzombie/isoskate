@@ -14,7 +14,6 @@
 import type { GameEvent } from '../core/events';
 import type { ScoreState, SkaterState } from '../core/sim';
 import type { HudApi, UiIntent } from '../core/ui';
-import { SCORE } from '../tricks';
 import { areaName, fmtScore, fmtShort, trickName } from './format';
 import { DISPLAY_FONT, fitPx, hudColumns, UI_FONT, type HudColumns } from './fit';
 import { h, setText } from './h';
@@ -113,6 +112,8 @@ export function createHud(root: HTMLElement, o: HudOptions): HudExt {
   let shownScore = 0, rollFrom = 0, rollTo = 0, rollT0 = 0;
   let trickLabel = '', trickDecayed = 0, trickTtl = 0, trickDirty = false;
   let lastLinks = -1, bumpFlip = false, lastTier = '', comboOn = false, ringWarn = false, ringScale = -1;
+  // The bank-timer ring is normalised by the longest bankIn seen since the last link (no scoring constants needed).
+  let ringLinks = -1, ringMax = 0;
   let floatText: string | null = null, stampText: string | null = null, cardText: [string, string] | null = null, rewardText: string | null = null;
   const flip: Record<string, boolean> = {};
   let rewardUntil = Infinity;                     // wall clock: "gone by 3.0 s" is real time, even on slow frames
@@ -170,11 +171,16 @@ export function createHud(root: HTMLElement, o: HudOptions): HudExt {
     if (rewardText !== null) { write(reward, rewardText); rewardText = null; reward.classList.add('on'); band.classList.add('rewarding'); rewardUntil = t + HUD_TIMING.rewardSec * 1000; }
   };
 
-  const resetRun = () => {
-    shownScore = rollFrom = rollTo = 0; trickLabel = ''; trickDecayed = 0; trickTtl = 0; trickDirty = true;
-    lastLinks = -1; lastTier = ''; comboOn = false; combo.classList.remove('on', 'lost'); popups.clear();
+  /** Clears the transient pieces under the band (bank float, speed stamp, area card) and the popup. */
+  const clearTransients = () => {
+    popups.clear();
     floatText = stampText = null; cardText = null;
     floatEl.classList.remove('fl-a', 'fl-b'); stamp.classList.remove('st-a', 'st-b'); card.classList.remove('cd-a', 'cd-b');
+  };
+  const resetRun = () => {
+    shownScore = rollFrom = rollTo = 0; trickLabel = ''; trickDecayed = 0; trickTtl = 0; trickDirty = true;
+    lastLinks = -1; lastTier = ''; comboOn = false; combo.classList.remove('on', 'lost'); ringLinks = -1; ringMax = 0;
+    clearTransients();
     force = true;
   };
 
@@ -191,7 +197,11 @@ export function createHud(root: HTMLElement, o: HudOptions): HudExt {
       hints.update(cur.t, cur.mode === 'crashed');
       trickTtl -= dt;
       const live = comboOn && !preview;
-      const q = live ? Math.round(Math.max(0, Math.min(1, sc.combo.bankIn / SCORE.heat)) * 100) / 100 : 0;
+      if (live) {
+        if (sc.combo.links !== ringLinks) { ringLinks = sc.combo.links; ringMax = 0; }
+        if (sc.combo.bankIn > ringMax) ringMax = sc.combo.bankIn;
+      } else ringLinks = -1;
+      const q = live && ringMax > 0 ? Math.round(Math.max(0, Math.min(1, sc.combo.bankIn / ringMax)) * 100) / 100 : 0;
       if (q !== ringScale) { ringScale = q; ring.style.transform = `scaleX(${q})`; }
       const warn = live && sc.combo.bankIn < HUD_TIMING.bankWarnSec;
       if (warn !== ringWarn) { ringWarn = warn; combo.classList.toggle('warn', warn); }
@@ -243,7 +253,7 @@ export function createHud(root: HTMLElement, o: HudOptions): HudExt {
         case 'coin': restart(coinIcon, 'cp'); break;
         case 'speedTier': if (e.tier > 0) stampText = SPEED_STAMP[e.tier]; break;
         case 'areaEnter': if (e.tick > 1) cardText = [areaName(e.area).toUpperCase(), e.firstThisRun ? '+500 NEW GROUND' : 'WELCOME BACK']; break;
-        case 'crash': if (!e.god) { popups.clear(); hints.hide(); } break;
+        case 'crash': if (!e.god) { clearTransients(); hints.hide(); } break;   // BAILED! gets the screen to itself
         default: break;
       }
     },

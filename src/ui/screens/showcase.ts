@@ -6,7 +6,7 @@
 //           tomorrow", no countdown); pin one item to the wishlist (♥); the shop opens at Level 3; Crates link.
 import type { ItemId, Slot } from '../../core/ids';
 import type { CosmeticItem } from '../../core/cosmetics';
-import { isMetaExt, type MetaExt } from '../../meta';
+import { FEATURED, isMetaExt, UNLOCK_LEVEL, type MetaExt } from '../../meta';
 import { h, setText } from '../h';
 import { icon } from '../icons';
 import { btn, coinTag, fmtN, header, itemCard, RARITY_LABEL, section, SLOT_LABEL, type Screen, type ScreenCtx } from './common';
@@ -18,8 +18,9 @@ export function showcaseScreen(ctx: ScreenCtx, id: 'locker' | 'shop'): Screen {
   const coins = coinTag('0', 'head-coins');
   const grid = h('div', { class: 'card-grid', role: 'list' });
   const featured = h('div', { class: 'featured' });
-  const featWrap = h('div', { class: 'feat-wrap' }, h('div', { class: 'feat-head' }, h('b', null, "Today's picks · 25% off"), h('span', null, 'New picks tomorrow')), featured);
-  const lockNote = h('div', { class: 'lock-note' }, icon('lock'), h('span', null, 'The shop opens at Level 3. Try anything on for free meanwhile.'));
+  const featWrap = h('div', { class: 'feat-wrap' },
+    h('div', { class: 'feat-head' }, h('div', null, "Today's picks ", h('b', null, `−${Math.round(FEATURED.discount * 100)}%`)), h('span', null, 'New picks tomorrow')), featured);
+  const lockNote = h('div', { class: 'lock-note' }, icon('lock'), h('span', null, `Shop opens at Level ${UNLOCK_LEVEL.shop} · try-ons free`));
   const dName = h('b', { class: 'd-name' }, ''), dRar = h('span', { class: 'd-rar' }, ''), dInfo = h('span', { class: 'd-info' }, '');
   const actBuy = btn('', () => buy(), ctx, 'primary act-buy');
   const actEquip = btn('Equip', () => equip(), ctx, 'primary act-equip');
@@ -108,9 +109,10 @@ export function showcaseScreen(ctx: ScreenCtx, id: 'locker' | 'shop'): Screen {
     }
     if (shop) {
       const f = m.featured();
-      featured.replaceChildren(...f.map((fid) => { const it = m.item(fid)!; return itemCard(it, footer(m, it), { onClick: () => { ctx.sfx('tap'); slot = it.slot; picked = it.id; fill(); pick(it); }, badge: '−25%' }); }));
+      featured.replaceChildren(...f.map((fid) => { const it = m.item(fid)!; return itemCard(it, footer(m, it), { onClick: () => { ctx.sfx('tap'); slot = it.slot; picked = it.id; fill(); pick(it); } }); }));
       featWrap.style.display = f.length ? '' : 'none';
       lockNote.style.display = m.unlocked('shop') ? 'none' : '';
+      panel.classList.toggle('locked', !m.unlocked('shop'));
     }
     renderDetail();
   };

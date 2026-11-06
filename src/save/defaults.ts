@@ -48,7 +48,7 @@ export function makeDefaults(now: number = Date.now(), seed: number = random32()
       pending: null, opened: 0,
     },
     daily: { lastGiftDay: null, giftHeld: false, lastWarmupDay: null, adsDay: null, adsCount: 0 },
-    crateMeter: { metres: 0, nextAt: 4000 },
+    crateMeter: { metres: 0, nextAt: 4000 },   // = meta CRATE_METER.first (save may not import meta; pinned by economy.test)
     stats: {
       runs: 0, best: 0, bestDist: 0, bestTime: 0, bestCombo: 0, furthestArea: 'downtown', totalDist: 0, totalTime: 0,
       longestGrind: 0, tricks: {}, areaVisits: {},

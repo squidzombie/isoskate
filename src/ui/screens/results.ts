@@ -1,15 +1,20 @@
 // ui/screens/results.ts: Results (DESIGN §17.2, §14). The card slides up in 250 ms; the score counts up over 0.8 s
 // (tap the card to skip), "NEW BEST!" when you beat it; breakdown Tricks / Distance / Best Combo / Furthest Area and
 // the lost combo struck through; the coin tally (pickups + combos + score coins + warm-up + best) counting up; the XP
-// bar with level-up bursts inline; the rewards strip (the Level 2 crate with "Equip now?", items, unlock banners);
-// Crate Meter and wishlist bars; ONE next-goal line; a huge ROLL AGAIN in the thumb zone that works from the first
-// frame (nothing here ever delays it), and small Locker / Shop / Home. A hidden slot is reserved for the future
+// bar with level-up bursts inline; the rewards strip (items, unlock banners, postcards); Crate Meter and wishlist
+// bars; ONE next-goal line (under the score, so it is never below the fold); a huge ROLL AGAIN in the thumb zone that
+// works from the first frame (nothing here ever delays it), and small Locker / Shop / Home. A crate this run earned
+// (the Level 2 "guaranteed Rare skater") opens as the Rewards modal once the XP bar has filled (DESIGN §14.4, §17.1):
+// 3 taps, the reveal, "Equip now?", Back to Results. A tap on ROLL AGAIN before that skips it; it then waits on
+// the next Title visit. A hidden slot is reserved for the future
 // rewarded offer (DESIGN §20): it only appears if the policy allows it AND the provider has an ad ready, which the
 // v1 NullProvider never does.
 import type { ItemId } from '../../core/ids';
 import type { Reward, RunRewards } from '../../core/meta';
 import type { RunResult } from '../../core/sim';
-import { isMetaExt, isRewardsExt, xpToNext, type MetaExt, type RunRewardsExt } from '../../meta';
+import type { CrateResult } from '../../core/meta';
+import { isMetaExt, isRewardsExt, meterSpan, pendingReveals, PRICE, xpToNext, type MetaExt, type RunRewardsExt } from '../../meta';
+import { TRICK_BOOK } from '../../save';
 import { itemArt } from '../art';
 import { areaName, fmtScore, trickName } from '../format';
 import { h, setText, type Child } from '../h';
@@ -22,6 +27,10 @@ export { RESULTS_ANIM };
 const ease = (u: number) => 1 - (1 - u) ** 3;
 
 export interface ResultsHooks { reveal(): Reveal; onShown(runId: string): void }
+
+/** Is this rolled result still waiting for its reveal (pending or queued)? */
+const stillWaiting = (m: MetaExt, p: CrateResult) =>
+  pendingReveals(m.data).some((q) => q.tier === p.tier && q.item === p.item && q.coins === p.coins && q.rarity === p.rarity);
 
 export function resultsScreen(ctx: ScreenCtx, hooks: ResultsHooks): Screen {
   const head = h('div', { class: 'res-head' }, '');
@@ -43,6 +52,8 @@ export function resultsScreen(ctx: ScreenCtx, hooks: ResultsHooks): Screen {
   const meterRow = h('div', { class: 'res-track' }, h('span', { class: 'crate-ico street mini', 'aria-hidden': 'true' }), h('div', { class: 'trk' }, meterText, meterBar.el));
   const wishRow = h('div', { class: 'res-track' }, icon('heartFull', 'trk-heart'), h('div', { class: 'trk' }, wishText, wishBar.el));
   const goal = h('div', { class: 'res-goal' }, '');
+  const goalText = h('span', null, '');
+  goal.append(h('i', { class: 'goal-arrow', 'aria-hidden': 'true' }, '→'), goalText);
   const offerBtn = btn('', () => void watchOffer(), ctx, 'offer-btn');
   const offer = h('div', { class: 'offer-slot', 'data-placement': 'results_double_coins' }, offerBtn);
   offer.hidden = true;
@@ -51,9 +62,9 @@ export function resultsScreen(ctx: ScreenCtx, hooks: ResultsHooks): Screen {
     btn('✕', () => { install.hidden = true; ext()?.markInstallHint(); }, ctx, 'x', 'Dismiss', 'back'));
   install.hidden = true;
   const card = h('div', { class: 'res-card' },
-    h('div', { class: 'res-top' }, head, score),
+    h('div', { class: 'res-top' }, head, score, goal),
     h('div', { class: 'res-body' },
-      h('div', { class: 'grid' }, cTricks, cDist, cCombo, cArea), lost, coinRow, xpRow, rewards, meterRow, wishRow, goal, offer, install));
+      h('div', { class: 'grid' }, cTricks, cDist, cCombo, cArea), lost, coinRow, xpRow, rewards, meterRow, wishRow, offer, install));
   const roll = btn([h('span', null, 'Roll again')], { k: 'retry' }, ctx, 'primary huge roll');
   const foot = h('div', { class: 'res-foot' }, roll,
     h('div', { class: 'row small-row' }, btn('Locker', () => ctx.go('locker'), ctx, 'small'), btn('Shop', () => ctx.go('shop'), ctx, 'small'),
@@ -63,6 +74,7 @@ export function resultsScreen(ctx: ScreenCtx, hooks: ResultsHooks): Screen {
   const ext = (): MetaExt | null => { const m = ctx.meta(); return isMetaExt(m) ? m : null; };
   let r: RunResult | null = null, w: RunRewards | null = null, wx: RunRewardsExt | null = null;
   let t0 = 0, raf = 0, skipped = false, levelEmitted = 0, inFlip = false;
+  let autoReveal: CrateResult | null = null, autoTimer: ReturnType<typeof setTimeout> | null = null;
   const segs: { level: number; from: number; to: number; toNext: number }[] = [];
 
   const tallyChip = (label: string, n: number, cls = '') => h('span', { class: `chip ${cls}` }, `${label} `, h('b', null, `+${fmtN(n)}`));
@@ -82,7 +94,7 @@ export function resultsScreen(ctx: ScreenCtx, hooks: ResultsHooks): Screen {
       case 'crate': {
         const pending = m?.pendingReveal();
         // The Level 2 crate after its reveal: show what came out of it (with Equip), not the closed crate again.
-        if (rw.forced && wx?.pending?.item && !pending) {
+        if (rw.forced && wx?.pending?.item && m && !stillWaiting(m, wx.pending)) {
           const it = m?.item(wx.pending.item);
           if (it) {
             const img = h('img', { class: 'rw-art', alt: '' }); img.src = itemArt(it);
@@ -111,29 +123,40 @@ export function resultsScreen(ctx: ScreenCtx, hooks: ResultsHooks): Screen {
     b.disabled = on;
     return b;
   };
-  const openPending = () => {
+  const openPending = (auto = false) => {
     const m = ctx.meta();
     const p = m?.pendingReveal();
     if (!p) return;
     const it = p.item ? ext()?.item(p.item) : undefined;
-    hooks.reveal().play(p, { equipLabel: it?.slot === 'skater' ? 'Equip now?' : 'Equip', onClose: () => renderRewards() });
+    hooks.reveal().play(p, { equipLabel: it?.slot === 'skater' ? 'Equip now?' : 'Equip', later: auto, onClose: () => { renderRewards(); renderTracks(); } });
+  };
+  /** The crate this run rolled (wx.pending) opens by itself once, after the XP bar has filled. */
+  const scheduleAutoReveal = () => {
+    if (!autoReveal || autoTimer) return;
+    autoTimer = setTimeout(() => {
+      autoTimer = null;
+      const m = ext(), p = autoReveal;
+      autoReveal = null;
+      if (!m || !p || ctx.current() !== 'results' || ctx.modal.open || !stillWaiting(m, p)) return;
+      openPending(true);
+    }, RESULTS_ANIM.revealDelayMs);
   };
   const banners = (): HTMLElement[] => {
     const m = ext(), out: HTMLElement[] = [];
     if (!wx || !m) return out;
-    const cheapest = 300;
+    const cheapest = PRICE.common;
     for (const u of wx.unlocks) {
-      const text = u === 'shop' ? (m.data.wallet.coins >= cheapest ? 'Shop open — you can afford a board' : 'Shop open — boards from 300 coins')
+      const text = u === 'shop' ? (m.data.wallet.coins >= cheapest ? 'Shop open — you can afford a board' : `Shop open — boards from ${fmtN(cheapest)} coins`)
         : u === 'wishlist' ? 'Wishlist: pin one item in the Shop and watch it fill'
           : u === 'crateMeter' ? `Crate Meter: ${kmLeft(m)} to a free crate`
-            : `Trick Book: ${m.data.trickBook.length}/36 tricks discovered`;
+            : `Trick Book: ${m.data.trickBook.length}/${TRICK_BOOK.length} tricks discovered`;
       const go = u === 'shop' || u === 'wishlist' ? btn('Shop', () => ctx.go('shop'), ctx, 'small') : u === 'trickBook' ? btn('Stats', () => ctx.go('stats'), ctx, 'small') : null;
       out.push(h('div', { class: `reward banner ${u}` }, h('span', { class: 'badge-ico' }, '!'), h('div', { class: 'rw-txt' }, h('b', null, text)), go));
     }
     for (const a of wx.postcards) out.push(h('div', { class: 'reward postcard' }, h('span', { class: 'badge-ico' }, '✉'), h('div', { class: 'rw-txt' }, h('b', null, `Postcard: ${areaName(a)}`), h('span', null, 'In Stats'))));
     if (wx.newTricks.length) {
       const names = wx.newTricks.slice(0, 4).map((t) => trickName(t)).join(', ') + (wx.newTricks.length > 4 ? ` +${wx.newTricks.length - 4}` : '');
-      out.push(h('div', { class: 'reward tricks' }, h('span', { class: 'badge-ico' }, '✓'), h('div', { class: 'rw-txt' }, h('b', null, `New in the Trick Book: ${names}`), h('span', null, `${wx.trickBookCount}/36 discovered`))));
+      out.push(h('div', { class: 'reward tricks' }, h('span', { class: 'badge-ico' }, '✓'), h('div', { class: 'rw-txt' }, h('b', null, `New in the Trick Book: ${names}`), h('span', null, `${wx.trickBookCount}/${TRICK_BOOK.length} discovered`))));
     }
     return out;
   };
@@ -144,8 +167,10 @@ export function resultsScreen(ctx: ScreenCtx, hooks: ResultsHooks): Screen {
     const m = ext();
     const p = m?.pendingReveal();
     if (p && !(w?.rewards ?? []).some((x) => x.kind === 'crate')) {
+      const n = m?.pendingCount() ?? 1;
       rows.unshift(h('div', { class: 'reward crate' }, h('span', { class: `crate-ico ${p.tier}`, 'aria-hidden': 'true' }),
-        h('div', { class: 'rw-txt' }, h('b', null, 'A crate is waiting'), h('span', null, 'Tap to open it')), btn('Open', () => openPending(), ctx, 'primary small open-crate')));
+        h('div', { class: 'rw-txt' }, h('b', null, n > 1 ? `${n} crates are waiting` : 'A crate is waiting'), h('span', null, 'Tap to open it')),
+        btn('Open', () => openPending(), ctx, 'primary small open-crate')));
     }
     rows.push(...banners());
     rewards.replaceChildren(...rows);
@@ -160,7 +185,7 @@ export function resultsScreen(ctx: ScreenCtx, hooks: ResultsHooks): Screen {
     meterRow.style.display = meterOn ? '' : 'none';
     if (meterOn) {
       const cm = m.data.crateMeter;
-      const span = cm.nextAt <= 4000 ? 4000 : 8000;
+      const span = meterSpan(cm.nextAt);
       meterBar.set(1 - (cm.nextAt - cm.metres) / span);
       setText(meterText, `${kmLeft(m)} to a free crate`);
     }
@@ -230,7 +255,9 @@ export function resultsScreen(ctx: ScreenCtx, hooks: ResultsHooks): Screen {
         xpRow.classList.add('leveled');
       }
     }
-    rewards.classList.toggle('on', t >= RESULTS_ANIM.rewardsAt + Math.max(0, segs.length - 1) * RESULTS_ANIM.xpMsPerLevel);
+    const rewardsOn = t >= RESULTS_ANIM.rewardsAt + Math.max(0, segs.length - 1) * RESULTS_ANIM.xpMsPerLevel;
+    rewards.classList.toggle('on', rewardsOn);
+    if (rewardsOn) scheduleAutoReveal();
     const end = RESULTS_ANIM.rewardsAt + segs.length * RESULTS_ANIM.xpMsPerLevel;
     if (t < end) raf = requestAnimationFrame(frame);
   };
@@ -278,8 +305,11 @@ export function resultsScreen(ctx: ScreenCtx, hooks: ResultsHooks): Screen {
       renderRewards();
       rewards.classList.remove('on');
       renderTracks();
-      setText(goal, w?.nextGoal.text ? `Next: ${w.nextGoal.text}` : '');
+      setText(goalText, w?.nextGoal.text ? `Next: ${w.nextGoal.text}` : '');
       goal.style.display = w?.nextGoal.text ? '' : 'none';
+      goal.dataset.kind = w?.nextGoal.kind ?? '';
+      if (autoTimer) { clearTimeout(autoTimer); autoTimer = null; }
+      autoReveal = wx?.pending && m && stillWaiting(m, wx.pending) ? wx.pending : null;
       // One line per idea: the goal line replaces its own tracker bar.
       if (w?.nextGoal.kind === 'wishlist') wishRow.style.display = 'none';
       if (w?.nextGoal.kind === 'crate') meterRow.style.display = 'none';
@@ -292,6 +322,10 @@ export function resultsScreen(ctx: ScreenCtx, hooks: ResultsHooks): Screen {
       raf = requestAnimationFrame(frame);
       if (!r) { skipped = true; }
     },
-    hide() { if (raf) { cancelAnimationFrame(raf); raf = 0; } },
+    hide() {
+      if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      if (autoTimer) { clearTimeout(autoTimer); autoTimer = null; }
+      autoReveal = null;
+    },
   };
 }

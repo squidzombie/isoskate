@@ -8,7 +8,7 @@ import type { CrateTier, ItemId, Rarity, Slot } from '../core/ids';
 import type { CosmeticItem } from '../core/cosmetics';
 import type { CrateResult } from '../core/meta';
 import type { SaveV1 } from '../core/save';
-import { CARDBOARD_COINS, CRATES, DUPLICATE_VALUE, PITY } from './economy.config';
+import { CARDBOARD_COINS, CRATES, DUPLICATE_VALUE, PITY, PRICE } from './economy.config';
 
 export type Pity = SaveV1['crates']['pity'];
 export const RARITY_ORDER: readonly Rarity[] = ['common', 'rare', 'epic', 'legendary'];
@@ -93,3 +93,6 @@ export function crateValue(tier: CrateTier, price: Readonly<Record<Rarity, numbe
   for (const r of RARITY_ORDER) v += (o[r] ?? 0) * price[r];
   return v;
 }
+
+/** What a free crate pays in coins where crates are disabled (DESIGN §20): its expected value at shop prices. */
+export const complianceValue = (tier: CrateTier): number => Math.round(crateValue(tier, PRICE));

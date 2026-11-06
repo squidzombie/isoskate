@@ -4,7 +4,7 @@
 // It never throws: a field that does not fit falls back to its default.
 import type { AreaId, CrateTier, HintId, ItemId, TrickId } from '../core/ids';
 import type { SaveV1 } from '../core/save';
-import { CRATE_TIERS, KNOWN, RARITIES, type KnownIds, type SaveDailyExt } from './schema';
+import { CRATE_TIERS, KNOWN, RARITIES, REVEAL_QUEUE_MAX, type KnownIds, type SaveCratesExt, type SaveDailyExt } from './schema';
 
 type Raw = Record<string, unknown>;
 const isObj = (x: unknown): x is Raw => !!x && typeof x === 'object' && !Array.isArray(x);
@@ -57,12 +57,16 @@ export function sanitize(input: unknown, defaults: SaveV1, known: KnownIds = KNO
   const rngIn = Array.isArray(cr.rng) && cr.rng.length === 4 && cr.rng.every((x) => typeof x === 'number' && Number.isFinite(x))
     ? (cr.rng as number[]).map((x) => x >>> 0) as [number, number, number, number] : null;
   const rng = rngIn && rngIn.some((x) => x !== 0) ? rngIn : [...d.crates.rng] as [number, number, number, number];
-  const p = obj(cr.pending);
-  const pending: SaveV1['crates']['pending'] = isObj(cr.pending) && CRATE_TIERS.includes(p.tier as CrateTier)
-    && (p.rarity === 'coins' || RARITIES.includes(p.rarity as never))
-    && (p.item === null || (typeof p.item === 'string' && item(p.item)))
-    ? { tier: p.tier as CrateTier, rarity: p.rarity as string, item: (p.item as ItemId | null), coins: int(p.coins, 0, 0, 1e7), dup: bool(p.dup, false) }
-    : null;
+  const reveal = (x: unknown): SaveV1['crates']['pending'] => {
+    const p = obj(x);
+    return isObj(x) && CRATE_TIERS.includes(p.tier as CrateTier)
+      && (p.rarity === 'coins' || RARITIES.includes(p.rarity as never))
+      && (p.item === null || (typeof p.item === 'string' && item(p.item)))
+      ? { tier: p.tier as CrateTier, rarity: p.rarity as string, item: (p.item as ItemId | null), coins: int(p.coins, 0, 0, 1e7), dup: bool(p.dup, false) }
+      : null;
+  };
+  const queue = (Array.isArray(cr.queue) ? cr.queue : []).map(reveal).filter((x): x is NonNullable<typeof x> => !!x).slice(0, REVEAL_QUEUE_MAX);
+  const pending = reveal(cr.pending) ?? queue.shift() ?? null;
 
   const learned: Partial<Record<HintId, boolean>> = {};
   for (const [k, v] of Object.entries(obj(ob.learned))) if (known.hints.has(k) && v === true) learned[k as HintId] = true;
@@ -92,6 +96,7 @@ export function sanitize(input: unknown, defaults: SaveV1, known: KnownIds = KNO
     titles: ids<string>(r.titles, (x) => x.length < 40),
     badges: ids<string>(r.badges, (x) => x.length < 40),
     crates: {
+      // Cardboard: the gift + its bonus box (= meta CRATE_HELD_MAX.cardboard; save may not import meta, economy.test pins it).
       held: { cardboard: int(held.cardboard, 0, 0, 2), street: int(held.street, 0, 0, 999), pro: int(held.pro, 0, 0, 999) },
       pity: { streetEpic: int(pity.streetEpic, 0, 0, 1e6), streetLegendary: int(pity.streetLegendary, 0, 0, 1e6),
         proLegendary: int(pity.proLegendary, 0, 0, 1e6) },
@@ -132,6 +137,8 @@ export function sanitize(input: unknown, defaults: SaveV1, known: KnownIds = KNO
   // Local extension (docs/core-requests.md MU): the day the rewarded daily-gift bonus was used.
   const bonusDay = day(dl.giftBonusDay);
   if (bonusDay) (s.daily as SaveV1['daily'] & SaveDailyExt).giftBonusDay = bonusDay;
+  // Local extension (docs/core-requests.md MU): reveals queued behind the pending one.
+  if (queue.length) (s.crates as SaveV1['crates'] & SaveCratesExt).queue = queue;
   // An unopened daily gift is a held Cardboard crate (at most the gift plus the rewarded bonus one are held).
   if (s.daily.giftHeld && s.crates.held.cardboard < 1) s.crates.held.cardboard = 1;
   return s;

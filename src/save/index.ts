@@ -90,4 +90,4 @@ export { makeDefaults, localDay, DEFAULT_SETTINGS } from './defaults';
 export { createStorage, requestPersist, type StorageAdapter, type StorageLike } from './storage';
 export { migrate, MIGRATIONS } from './migrate';
 export { sanitize, SANE_MAX } from './sanitize';
-export { TRICK_BOOK, HINT_IDS, KNOWN, RARITIES, CRATE_TIERS, type SaveDailyExt } from './schema';
+export { TRICK_BOOK, HINT_IDS, KNOWN, RARITIES, CRATE_TIERS, REVEAL_QUEUE_MAX, type SaveDailyExt, type SaveCratesExt } from './schema';

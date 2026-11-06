@@ -117,8 +117,10 @@ export function settingsScreen(ctx: ScreenCtx): Screen {
     const file = () => new Blob([json], { type: 'application/json' });
     const name = `${GAME_NAME.toLowerCase()}-progress-${m.today()}.json`;
     const download = btn('Download', () => {
-      const a = h('a', { href: URL.createObjectURL(file()), download: name });
+      const url = URL.createObjectURL(file());
+      const a = h('a', { href: url, download: name });
       document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);          // after the download has started
     }, ctx, 'small');
     const nav = navigator as Navigator & { canShare?(d: object): boolean };
     const share = btn('Share', () => {

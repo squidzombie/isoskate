@@ -3,6 +3,7 @@
 //            0.6 s. It never takes pointer events, so the retry touch reaches #play and game/app.ts.
 //   Pause  — Resume / Restart / Settings / Home, the key list on desktop, and the "Rotate to portrait" card.
 import { fmtScore } from '../format';
+import { isMetaExt } from '../../meta';
 import { h, setText } from '../h';
 import { btn, finePointer, section, type Screen, type ScreenCtx } from './common';
 
@@ -30,9 +31,18 @@ export function pauseScreen(ctx: ScreenCtx): Screen {
   const title = h('h2', null, 'PAUSED');
   const note = h('div', { class: 'note' }, '');
   const phone = h('div', { class: 'phone', 'aria-hidden': 'true' }, h('i'));
-  const keys = h('div', { class: 'keys' },
-    ...([['A D', 'steer'], ['Space', 'ollie'], ['← → ↑ ↓', 'flip · spin · pick'], ['S', 'manual'], ['Q', 'grab'], ['Esc', 'pause']] as const)
-      .map(([k, v]) => h('div', { class: 'keyrow' }, h('kbd', null, k), h('span', null, v))));
+  const keys = h('div', { class: 'keys' });
+  // The key list of the preset in use (DESIGN §4.6): A = A/D + arrows, B = ←/→ + IJKL/UONM.
+  const KEYS: Readonly<Record<'A' | 'B', readonly (readonly [string, string])[]>> = {
+    A: [['A D', 'steer'], ['Space', 'ollie'], ['← → ↑ ↓', 'flip · spin · pick'], ['S', 'manual'], ['Q', 'grab'], ['Esc', 'pause']],
+    B: [['← →', 'steer'], ['Space', 'ollie'], ['I J K L', 'flip · spin · pick'], ['U O N M', 'diagonals'], ['Shift', 'manual'], ['Q', 'grab'], ['Esc', 'pause']],
+  };
+  let keysFor: 'A' | 'B' | null = null;
+  const fillKeys = (preset: 'A' | 'B') => {
+    if (preset === keysFor) return;
+    keysFor = preset;
+    keys.replaceChildren(...KEYS[preset].map(([k, v]) => h('div', { class: 'keyrow' }, h('kbd', null, k), h('span', null, v))));
+  };
   const resume = btn('Resume', { k: 'resume' }, ctx, 'primary big');
   const card = h('div', { class: 'pause-card' },
     phone, title, note, resume,
@@ -47,6 +57,8 @@ export function pauseScreen(ctx: ScreenCtx): Screen {
       card.classList.toggle('rotate', !!p.rotate);
       phone.style.display = p.rotate ? '' : 'none';
       keys.style.display = finePointer() && !p.rotate ? '' : 'none';
+      const m = ctx.meta();
+      fillKeys(isMetaExt(m) && m.data.settings.keyPreset === 'B' ? 'B' : 'A');
     },
   };
 }

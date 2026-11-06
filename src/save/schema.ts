@@ -1,6 +1,7 @@
 // save/schema.ts: the vocabularies the save is validated against (TECH §10.5 sanitize: "drop unknown item ids").
 // SaveV1 itself is the frozen contract in core/save.ts; this file only lists what may appear inside it.
 import { AREA_ORDER, type AreaId, type CrateTier, type HintId, type ItemId, type Rarity, type TrickId } from '../core/ids';
+import type { SaveV1 } from '../core/save';
 import { CATALOG } from '../content';
 import { TRICKS } from '../tricks';
 
@@ -37,3 +38,10 @@ export const isArea = (a: unknown): a is AreaId => typeof a === 'string' && KNOW
 /** Local extension of SaveV1['daily'] (filed in docs/core-requests.md, MU): the day the rewarded Cardboard bonus
  *  (`daily_gift_bonus`, once per day) was granted. Kept by sanitize; absent in older saves. */
 export interface SaveDailyExt { giftBonusDay?: string | null }
+
+/** Local extension of SaveV1['crates'] (filed in docs/core-requests.md, MU): reveals waiting behind `pending` (a crate
+ *  rolled while another reveal was still unopened, e.g. the Level 2 crate after an abandoned gift reveal). Their
+ *  contents are granted when their reveal opens. Kept by sanitize; absent when empty. */
+export interface SaveCratesExt { queue?: NonNullable<SaveV1['crates']['pending']>[] }
+/** At most this many queued reveals survive sanitize (far beyond honest play). */
+export const REVEAL_QUEUE_MAX = 8;

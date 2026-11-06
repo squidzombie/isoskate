@@ -82,14 +82,17 @@
   text-shadow: 0 2px 0 var(--ink), 0 0 10px rgba(43, 33, 64, 0.35); }
 #hud .hud-popup.bad { text-shadow: 0 2px 0 var(--ink), 0 0 12px rgba(255, 94, 108, 0.6); }
 
-/* First-runs hint: chip ~13% above the bottom (raised over the rest ring on touch), ghost thumb, key caps. */
-#hud .hud-hint { position: fixed; left: 50%; bottom: calc(13% + var(--safe-bottom, 0px)); transform: translate(-50%, 8px) scale(0.92);
-  pointer-events: none; opacity: 0; transition: opacity 180ms ease-out, transform 180ms ease-out, bottom 180ms ease-out; white-space: nowrap;
+/* First-runs hint: chip ~13% above the bottom (raised over the rest ring on touch), ghost thumb, key caps.
+   The raise is a translateY (--lift), never an animated `bottom`, so nothing re-lays out during a run. */
+#hud .hud-hint { --lift: 0px; position: fixed; left: 50%; bottom: calc(13% + var(--safe-bottom, 0px)); transform: translate(-50%, 8px) scale(0.92);
+  pointer-events: none; opacity: 0; transition: opacity 180ms ease-out, transform 180ms ease-out; white-space: nowrap;
   display: flex; align-items: center; gap: 8px; font-family: var(--font-display); font-size: calc(16px * var(--k, 1)); letter-spacing: 0.02em;
   color: var(--ink); background: var(--paper); border: 3px solid var(--ink); border-radius: 999px; padding: 7px 16px 6px;
   box-shadow: 0 4px 0 var(--ink); text-shadow: none; }
-#hud .hud-hint.on { opacity: 1; transform: translate(-50%, 0) scale(1); }
-#hud .hud-hint.raised { bottom: calc(12% + 38px + var(--safe-bottom, 0px)); }
+#hud .hud-hint.on { opacity: 1; transform: translate(-50%, var(--lift)) scale(1); }
+#hud .hud-hint.raised { --lift: calc(1vh - 38px); }          /* bottom edge at 12% + 38 px: just above the ring */
+/* Pause dims the run: the hint and the ring wait under it, hidden. */
+[data-screen='pause'] #hud .hud-hint, [data-screen='pause'] #hud .rest-mark { visibility: hidden; }
 #hud .hud-hint kbd { font: inherit; font-size: 0.82em; min-width: 1.6em; height: 1.6em; line-height: 1.55em; text-align: center; padding: 0 0.3em;
   box-sizing: border-box; display: inline-block; border: 2px solid var(--ink); border-radius: 7px; background: #fff; box-shadow: 0 3px 0 var(--ink);
   margin-right: 4px; transform: translateY(-1px); }
@@ -147,4 +150,13 @@
 @media (prefers-reduced-motion: reduce) {
   #hud .hud-combo { animation: none !important; }
   #hud .ghost-thumb.on { animation-duration: 2.4s !important; }
+}
+
+/* Short phones (iPhone SE class): a smaller ring lower down and a smaller chip, so the raised chip clears the skater. */
+@media (max-height: 640px) {
+  #hud .hud-hint { bottom: calc(11% + var(--safe-bottom, 0px)); font-size: calc(14px * var(--k, 1)); padding: 5px 13px 4px; border-width: 2.5px;
+    box-shadow: 0 3px 0 var(--ink); }
+  #hud .hud-hint.raised { --lift: calc(1vh - 28px); }        /* bottom edge at 10% + 28 px */
+  #hud .rest-mark { bottom: calc(10% + var(--safe-bottom, 0px)); width: 52px; height: 52px; margin: 0 0 -26px -26px; }
+  #hud .ghost-thumb { width: 25px; height: 33px; margin: -20px 0 0 -12.5px; }
 }

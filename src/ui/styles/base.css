@@ -8,7 +8,7 @@
   --font-display: Bungee, 'Arial Black', Impact, system-ui;
   --shadow: 0 4px 0 var(--ink);
   --shadow-sm: 0 3px 0 var(--ink);
-  --menu-bg: linear-gradient(180deg, rgba(255, 222, 186, 0.95) 0%, rgba(255, 190, 158, 0.95) 48%, rgba(214, 150, 190, 0.96) 100%);
+  --menu-bg: linear-gradient(180deg, #ffdeba 0%, #ffbe9e 48%, #d696be 100%);   /* opaque: the grey-box road never shows through */
 }
 #app, #screens, #hud, #toasts { -webkit-font-smoothing: antialiased; }
 #screens { font-family: var(--font-ui); color: var(--ink); font-variant-numeric: tabular-nums; }
