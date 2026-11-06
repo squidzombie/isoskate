@@ -204,13 +204,16 @@ test('the instant-retry reward toast sits in the HUD band and is gone by 3.0 s',
   // Crash, then a fresh touch 0.65 s later (dispatched in-page, so CPU load can't push it past the 1.2 s window).
   await page.evaluate(async () => {
     const k = window.__skate!; k.start({ seed: 1 }); k.manual(true); let s = k.step(60); while (s.alive && s.tick < 900) s = k.step(1);
-    const at = performance.now();
-    while (performance.now() - at < 650) await new Promise((r) => setTimeout(r, 10));
-    k.manual(false);
-    const el = document.getElementById('play')!;
-    const o = { pointerId: 7, pointerType: 'touch', isPrimary: true, clientX: 195, clientY: 420, bubbles: true };
-    el.dispatchEvent(new PointerEvent('pointerdown', o));
-    el.dispatchEvent(new PointerEvent('pointerup', o));
+    // One timer registered right after the crash: due before the App's 1.2 s Results timer even when a slow frame
+    // makes both overdue (a polling loop could be re-armed after it and lose the race).
+    await new Promise<void>((done) => setTimeout(() => {
+      k.manual(false);
+      const el = document.getElementById('play')!;
+      const o = { pointerId: 7, pointerType: 'touch', isPrimary: true, clientX: 195, clientY: 420, bubbles: true };
+      el.dispatchEvent(new PointerEvent('pointerdown', o));
+      el.dispatchEvent(new PointerEvent('pointerup', o));
+      done();
+    }, 650));
   });
   await expect(screenOn(page, 'crash')).not.toHaveClass(/\bon\b/);
   await expect(screenOn(page, 'results')).not.toHaveClass(/\bon\b/);
@@ -293,11 +296,13 @@ test('a live run: no layout reads (dev guard) and HUD text batches ≤ 15 Hz', a
 });
 
 test('offers: hidden with the NullProvider; with ?fakeads=1 only after run 3 and not on the install day', async ({ page }) => {
+  // Three runs and two boots: on a shared CPU, SwiftShader can take seconds per frame right after a page load.
+  test.setTimeout(180_000);
   const errors: string[] = [];
   await boot(page, errors);
   const crashToResults = async () => {
     await page.evaluate(() => { const k = window.__skate!; k.start({ seed: 2 }); k.manual(true); let s = k.step(60); while (s.alive && s.tick < 900) s = k.step(1); });
-    await expect(screenOn(page, 'results')).toHaveClass(/\bon\b/, { timeout: 10_000 });
+    await expect(screenOn(page, 'results')).toHaveClass(/\bon\b/, { timeout: 30_000 });
   };
   const slot = page.locator('#screens .offer-slot');
   await editSave(page, "s.stats.runs = 9; s.installDay = '2020-01-01'; s.created = 0;");
@@ -312,7 +317,7 @@ test('offers: hidden with the NullProvider; with ?fakeads=1 only after run 3 and
   await editSave(page, "s.stats.runs = 9; s.installDay = '2020-01-01'; s.daily.lastWarmupDay = null;");
   const before = (await page.evaluate(() => window.__skate!.save.get().wallet.coins));
   await page.evaluate(() => { const k = window.__skate!; k.start({ seed: 1 }); k.manual(true); k.bot('safe'); k.step(3000); k.bot('off'); let s = k.step(1); while (s.alive && s.tick < 4500) s = k.step(1); });
-  await expect(screenOn(page, 'results')).toHaveClass(/\bon\b/, { timeout: 10_000 });
+  await expect(screenOn(page, 'results')).toHaveClass(/\bon\b/, { timeout: 30_000 });
   const coins = (await page.evaluate(() => window.__skate!.save.get().wallet.coins));
   const earned = coins - before;
   console.log(`fake ad run: ${earned} coins earned`);
