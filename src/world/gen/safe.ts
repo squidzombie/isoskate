@@ -5,9 +5,8 @@
 //  - there is a key at every vertex, every ollie, and at least every KEY_EVERY seconds.
 // Required actions (DESIGN §10.6.4): every ollie (at take-off) and every lateral move of ≥ 0.5 m (at its start).
 import { round1cm } from '../../core/math';
-import { sAt } from '../../core/tuning';
+import { SAFE_LATERAL_FRACTION, V_LAT_MAX, sAt } from '../../core/tuning';
 import type { SafeKey } from '../../core/world';
-import { GEN } from './gen.config';
 
 export const KEY_EVERY = 0.5;
 export const MOVE_MIN = 0.5;
@@ -33,7 +32,7 @@ export class SafeLine {
     return this;
   }
   /** Hold until tStart, then move to x at the safe rate. Returns the arrival time. */
-  moveTo(x: number, tStart: number, rate: number = GEN.safeRate): number {
+  moveTo(x: number, tStart: number, rate: number = SAFE_LATERAL_FRACTION.ground * V_LAT_MAX): number {
     this.hold(tStart);
     const dx = x - this.x;
     if (Math.abs(dx) < 1e-6) return this.t;
