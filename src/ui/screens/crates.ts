@@ -78,7 +78,7 @@ export function cratesScreen(ctx: ScreenCtx, getReveal: () => Reveal): Screen {
       const acts: HTMLElement[] = [];
       if (held > 0 || gift) acts.push(btn(gift ? 'Open gift' : held > 1 ? `Open (${held})` : 'Open', () => open(tier), ctx, 'primary small open'));
       if (tier === 'cardboard' && !gift && m.offerEligible('daily_gift_bonus') && ctx.monetization().isAdReady('daily_gift_bonus')) {
-        const b: HTMLButtonElement = btn('Watch a short ad: +1 box', () => void bonus(b), ctx, 'small offer-btn', 'Optional: watch a short ad for one more Cardboard Box');
+        const b: HTMLButtonElement = btn('Watch an ad: +1 box', () => void bonus(b), ctx, 'small offer-btn', 'Optional: watch a short ad for one more Cardboard Box');
         b.dataset.placement = 'daily_gift_bonus';
         acts.push(b);
         if (!bonusShown) { bonusShown = true; m.track('rewarded_offer_shown', { placement: 'daily_gift_bonus' }); }

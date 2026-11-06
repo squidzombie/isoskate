@@ -99,7 +99,7 @@ export function resultsScreen(ctx: ScreenCtx, hooks: ResultsHooks): Screen {
           if (it) {
             const img = h('img', { class: 'rw-art', alt: '' }); img.src = itemArt(it);
             return h('div', { class: `reward item r-${it.rarity}` }, img,
-              h('div', { class: 'rw-txt' }, h('b', null, it.name), h('span', { class: `rar r-${it.rarity}` }, `${RARITY_LABEL[it.rarity]} · from the Street Crate`)),
+              h('div', { class: 'rw-txt' }, h('b', null, it.name), h('span', { class: `rar r-${it.rarity}` }, `${RARITY_LABEL[it.rarity]} · from your crate`)),
               equipButton(it.id));
           }
         }
@@ -130,16 +130,20 @@ export function resultsScreen(ctx: ScreenCtx, hooks: ResultsHooks): Screen {
     const it = p.item ? ext()?.item(p.item) : undefined;
     hooks.reveal().play(p, { equipLabel: it?.slot === 'skater' ? 'Equip now?' : 'Equip', later: auto, onClose: () => { renderRewards(); renderTracks(); } });
   };
-  /** The crate this run rolled (wx.pending) opens by itself once, after the XP bar has filled. */
-  const scheduleAutoReveal = () => {
-    if (!autoReveal || autoTimer) return;
+  /** The crate this run rolled (wx.pending) opens by itself once, after the XP bar has filled: a wall-clock timer
+   *  set at show (slow frames never hold it back); a tap that skips the tallies brings it forward. */
+  const scheduleAutoReveal = (ms: number) => {
+    if (!autoReveal) return;
+    if (autoTimer) clearTimeout(autoTimer);
     autoTimer = setTimeout(() => {
       autoTimer = null;
       const m = ext(), p = autoReveal;
+      if (ctx.current() === 'results' && ctx.modal.open) { scheduleAutoReveal(RESULTS_ANIM.revealDelayMs); return; }   // after that modal
       autoReveal = null;
-      if (!m || !p || ctx.current() !== 'results' || ctx.modal.open || !stillWaiting(m, p)) return;
+      if (!m || !p || ctx.current() !== 'results' || !stillWaiting(m, p)) return;
+      rewards.classList.add('on');
       openPending(true);
-    }, RESULTS_ANIM.revealDelayMs);
+    }, ms);
   };
   const banners = (): HTMLElement[] => {
     const m = ext(), out: HTMLElement[] = [];
@@ -257,11 +261,13 @@ export function resultsScreen(ctx: ScreenCtx, hooks: ResultsHooks): Screen {
     }
     const rewardsOn = t >= RESULTS_ANIM.rewardsAt + Math.max(0, segs.length - 1) * RESULTS_ANIM.xpMsPerLevel;
     rewards.classList.toggle('on', rewardsOn);
-    if (rewardsOn) scheduleAutoReveal();
     const end = RESULTS_ANIM.rewardsAt + segs.length * RESULTS_ANIM.xpMsPerLevel;
     if (t < end) raf = requestAnimationFrame(frame);
   };
-  card.addEventListener('click', (e) => { if ((e.target as HTMLElement).closest('button')) return; if (!skipped) { skipped = true; if (!raf) frame(); } });
+  card.addEventListener('click', (e) => {
+    if ((e.target as HTMLElement).closest('button')) return;
+    if (!skipped) { skipped = true; if (!raf) frame(); if (autoTimer) scheduleAutoReveal(RESULTS_ANIM.revealDelayMs); }
+  });
 
   return {
     id: 'results', el,
@@ -320,6 +326,7 @@ export function resultsScreen(ctx: ScreenCtx, hooks: ResultsHooks): Screen {
       t0 = performance.now();
       if (raf) cancelAnimationFrame(raf);
       raf = requestAnimationFrame(frame);
+      scheduleAutoReveal(RESULTS_ANIM.rewardsAt + Math.max(0, segs.length - 1) * RESULTS_ANIM.xpMsPerLevel + RESULTS_ANIM.revealDelayMs);
       if (!r) { skipped = true; }
     },
     hide() {

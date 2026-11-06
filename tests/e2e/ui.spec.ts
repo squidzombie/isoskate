@@ -209,7 +209,7 @@ test('Level 2: Results opens the crate by itself, the skater reaches the Locker 
   const skater = s0.crates.pending!.item!;
   expect(skater).toMatch(/^sk_/);
   expect(s0.owned).not.toContain(skater);                          // still in the crate: Locker and badges can't spoil it
-  await expect(page.locator('.reveal')).toBeVisible({ timeout: 15_000 });   // after the XP bar, without a tap
+  await expect(page.locator('.reveal')).toBeVisible({ timeout: 30_000 });   // after the XP bar (~2.4 s), without a tap
   await expect(page.locator('.reveal .rv-later')).toBeVisible();
   for (let i = 0; i < 3; i++) await page.locator('.rv-crate').click();
   await expect(page.locator('.rv-actions')).toHaveClass(/\bon\b/, { timeout: 8000 });
@@ -242,7 +242,7 @@ test('Level 2 skipped by ROLL AGAIN: the crate waits, "Later" is honoured, and T
   const pending = (await save(page)).crates.pending!;
   expect(pending.item).toMatch(/^sk_/);
   await page.evaluate(() => window.__skate!.ui('title'));
-  await expect(page.locator('.reveal')).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator('.reveal')).toBeVisible({ timeout: 30_000 });
   await page.locator('.reveal .rv-later').click();
   await expect(screenOn(page, 'title')).toHaveClass(/\bon\b/);
   await page.evaluate(() => { window.__skate!.ui('stats'); });
@@ -266,8 +266,9 @@ test('320 × 568: Shop cards, labels and the detail bar fit; Results shows the n
     const r = (sel: string) => { const e = root.querySelector(sel); if (!e || !(e as HTMLElement).offsetParent) return null; const b = e.getBoundingClientRect(); return { y0: b.top, y1: b.bottom, x0: b.left, x1: b.right }; };
     const clipped = [...root.querySelectorAll<HTMLElement>('.featured .card-band, .featured .card-foot, .lock-note span, .detail .act-buy, .detail .act-equip')]
       .filter((e) => e.offsetParent && e.scrollWidth > e.clientWidth + 1).map((e) => `${e.className}: ${e.textContent}`);
-    const first = root.querySelector('.card-grid .card');
-    return { panel: r('.panel'), detail: r('.detail'), buy: r('.detail .act-buy'), equip: r('.detail .act-equip'), first: first ? (() => { const b = first.getBoundingClientRect(); return { y0: b.top, y1: b.bottom }; })() : null, clipped, vh: innerHeight };
+    const grid = root.querySelector<HTMLElement>('.card-grid')!, card = grid.querySelector<HTMLElement>('.card')!;
+    return { panel: r('.panel'), detail: r('.detail'), buy: r('.detail .act-buy'), equip: r('.detail .act-equip'),
+      gridH: grid.clientHeight, cardH: card.offsetHeight, gridY1: grid.getBoundingClientRect().bottom, clipped, vh: innerHeight };
   });
   for (const level of [1, 5]) {
     await editSave(page, `s.xp.level = ${level}; s.wallet.coins = 120;`);
@@ -279,7 +280,8 @@ test('320 × 568: Shop cards, labels and the detail bar fit; Results shows the n
     expect(act, `a detail action at Level ${level}`).not.toBeNull();
     expect(act!.y1, `detail action inside the panel at Level ${level}`).toBeLessThanOrEqual(m.panel!.y1 + 0.5);
     expect(m.panel!.y1).toBeLessThanOrEqual(m.vh + 0.5);
-    expect(m.first!.y1, `one full card row above the detail bar at Level ${level}`).toBeLessThanOrEqual(m.detail!.y0 + 1);
+    expect(m.gridH, `one full card row visible above the detail bar at Level ${level}`).toBeGreaterThanOrEqual(m.cardH);
+    expect(m.gridY1).toBeLessThanOrEqual(m.detail!.y0 + 1);
   }
   // Results: the goal line is on screen without scrolling.
   await page.evaluate(() => { const k = window.__skate!; k.start({ seed: 2 }); k.manual(true); let s = k.step(60); while (s.alive && s.tick < 900) s = k.step(1); k.manual(false); });

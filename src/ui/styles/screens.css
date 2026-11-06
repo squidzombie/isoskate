@@ -199,15 +199,17 @@
 #screens .card-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; overflow-y: auto; overscroll-behavior: contain;
   touch-action: pan-y; min-height: 96px; flex: 1 1 auto; padding: 4px 4px 6px; margin: -4px; align-content: start; grid-auto-rows: max-content; }
 /* Today's picks: three compact cards. The band carries the rarity label alone (full width, never covered); the
-   "25% off" lives in the head line; art left, the name (2 lines max) and the price right. Fits 85 px cards at 320. */
+   "25% off" lives in the head line; art and the name (2 lines max) side by side, the price tag under them. Fits the
+   85 px cards at 320 px. */
 #screens .featured { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-#screens .featured .card { display: grid; grid-template-columns: 30px minmax(0, 1fr); grid-template-rows: auto 1fr auto; padding: 0 4px 3px 0; gap: 0 4px;
+#screens .featured .card { display: grid; grid-template-columns: 26px minmax(0, 1fr); grid-template-rows: auto 1fr auto; padding: 0 4px 3px 0; gap: 0 4px;
   text-align: left; border-radius: 12px; }
 #screens .featured .card .card-band { grid-column: 1 / -1; height: 14px; line-height: 14px; font-size: 7.5px; letter-spacing: 0.08em; }
-#screens .featured .card .card-art { grid-row: 2 / 4; width: 30px; margin: 3px 0 0 3px; align-self: center; }
+#screens .featured .card .card-art { grid-row: 2; width: 26px; margin: 3px 0 0 3px; align-self: center; }
 #screens .featured .card .card-name { min-height: 0; font-size: 10px; line-height: 1.1; justify-content: flex-start; padding: 3px 0 0; text-align: left;
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
-#screens .featured .card .card-foot { justify-content: flex-start; font-size: 10.5px; min-height: 15px; gap: 0; white-space: nowrap; }
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: break-word; }
+#screens .featured .card .card-foot { grid-column: 1 / -1; justify-content: flex-start; padding-left: 4px; font-size: 11px; min-height: 15px; gap: 0;
+  white-space: nowrap; }
 #screens .featured .card .card-foot .coin-dot { width: 11px; height: 11px; }
 #screens .featured .card .card-foot s { display: none; }
 #screens .feat-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 12.5px; font-weight: 800; margin-bottom: 4px;
@@ -255,6 +257,7 @@
 #screens .pity.none { color: var(--plum); }
 #screens .cc-acts { grid-area: acts; display: flex; gap: 8px; justify-content: flex-end; }
 #screens .cc-acts button { flex: 1 1 0; max-width: 200px; }
+#screens .cc-acts .offer-btn { font-size: 12px; background: #eaf8ef; padding: 0 8px; }   /* opt-in, calm, never the loudest button */
 #screens .crate-note { font-weight: 700; font-size: 12px; color: var(--paper); text-shadow: 0 1px 0 var(--ink); line-height: 1.35; }
 
 /* ── Menus (crates, stats, settings, rewards) share the sunset backdrop ── */
@@ -321,14 +324,20 @@
   #screens .panel.locked .feat-wrap { display: none !important; }     /* the picks wait for Level 3; the chip says so */
   #screens .panel .seg-tabs .seg-tab { min-height: 48px; }
   #screens .crates-link { min-height: 50px; }
-  #screens .card-grid .card .card-art { width: 62%; }
-  #screens .card-grid .card .card-name { font-size: 11.5px; }
+  #screens .panel { max-height: 66%; }
+  #screens .card-grid .card .card-art { width: 56%; }
+  /* One line per name here (the detail bar shows it whole), so a full card row fits above the detail bar. */
+  #screens .card-grid .card .card-name { font-size: 11.5px; min-height: 0; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    width: 100%; box-sizing: border-box; padding: 1px 4px 0; }
   #screens .detail { padding-top: 6px; }
   #screens .scr-head .back-btn { min-height: 48px; }
 }
 @media (max-width: 359px) {
+  #screens .crate-card { grid-template-columns: 44px 1fr; gap: 6px 8px; }
+  #screens .crate-card .crate-ico { width: 42px; height: 37px; flex-basis: 42px; }
   #screens .odds { gap: 2px 8px; }
-  #screens .odds li { font-size: 11px; }
+  #screens .odds li { font-size: 11px; white-space: nowrap; }
+  #screens .odds li span::before { margin-right: 3px; }
   #screens .card.more .card-foot { font-size: 10px; }
   #screens .crate-card h3 { font-size: 16px; }
 }
