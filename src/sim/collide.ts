@@ -5,6 +5,7 @@
 //    0.05 m rail keeps a body).
 //  - Swept classification at the first contact: the axis that started overlapping last (slab method, prev → cur).
 //      from above (prev board bottom ≥ inset top): landable → lands on the top; crash → badLanding; knock → knock.
+//        After rolling off a top's side (centre outside it), its body pushes the board out sideways instead.
 //      lateral: side bump (push out at SIDE_BUMP_V, wobble 0.3, re-anchor targetX, `bump`); knock → knock.
 //      frontal: knock → knock; crash → slam whenever the board is below the top (crash tops never skim);
 //               landable with top − boardBottom ≤ STEP_UP → skim (y := top, airborne keeps vy ≥ 0, `bump`); else slam.
@@ -74,8 +75,17 @@ export function collide(k: Ctx): void {
       if (so.top === 'knock') { knock(k, ob); break; }
       if (axis === 'y') {
         if (so.top === 'crash') { k.crash('badLanding', ob.id); if (modeOf(c) === 'crashed') return; break; }
-        // Landable top from above: the board lands on it; the centre is nudged onto the supported side.
         const b = so.box;
+        // Rolled off this top's side (the centre left it): slide off, don't re-land. Without this, a slow drift off a
+        // ledge would land on its top again every few ticks (each a land event), nudged back by the rule below.
+        if (c.mode === 'air' && st.air.reason === 'rollOff' && Math.abs(st.air.takeoffY - top) < 1e-6
+          && (c.p.x < b.x0 || c.p.x > b.x1)) {
+          const out = c.p.x < b.x0 ? -1 : 1;
+          c.p.x = out < 0 ? I.x0 - HW - 1e-3 : I.x1 + HW + 1e-3;
+          c.targetX = out < 0 ? Math.min(c.targetX, c.p.x) : Math.max(c.targetX, c.p.x);   // re-anchor: no pull back in
+          continue;
+        }
+        // Landable top from above: the board lands on it; the centre is nudged onto the supported side.
         if (c.p.x < b.x0 + 0.02) c.p.x = b.x0 + 0.02;
         if (c.p.x > b.x1 - 0.02) c.p.x = b.x1 - 0.02;
         c.p.y = top;

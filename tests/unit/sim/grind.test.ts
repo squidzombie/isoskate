@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { GameEvent } from '../../../src/core/events';
 import type { InputFrame } from '../../../src/core/input';
 import type { Sim, SimSnapshot } from '../../../src/core/sim';
-import { DT, GRIND, HITBOX, MAGNET, V_POP, sAt } from '../../../src/core/tuning';
+import { DT, GRIND, GROUND_ALIGN, HITBOX, MAGNET, V_POP, sAt } from '../../../src/core/tuning';
 import type { Obstacle } from '../../../src/core/world';
 import { createSim } from '../../../src/sim';
 import { TRICKS } from '../../../src/tricks';
@@ -55,6 +55,30 @@ describe('air magnet (moves targetX only)', () => {
       : i === POP + 8 ? { steerDx: -0.7, swipe: 'l', swipeDx: -0.7, swipeFast: true } : {}));
     expect(first(ev2, 'flipStart')?.id).toBe('kickflip');
     expect(first(ev2, 'grindStart')).toBeDefined();          // "Kickflip to Boardslide" never cancels itself
+  });
+});
+
+describe('ground align (moves targetX only)', () => {
+  it('on a collision course with a ledge 0.2–1.0 s ahead, eases targetX toward its centreline at ≤ 1.5 m/s', () => {
+    // Ledge body x ∈ [0.7, 1.3] (edges at 0.7 and 1.3), front at s = 10; the hitbox at x = 0.6 clips its inset face.
+    const sim = make([box({ s: 10, x: 1.0, len: 20, wid: 0.6, hgt: 0.45, top: 'landable', edges: ['l', 'r'] })], 0.6);
+    let maxRate = 0, prevT = sim.cur.targetX;
+    run(sim, 200, (_i, s) => {
+      maxRate = Math.max(maxRate, Math.abs(s.cur.targetX - prevT) / DT);
+      prevT = s.cur.targetX;
+      return {};
+    });
+    expect(maxRate).toBeGreaterThan(1.0);
+    expect(maxRate).toBeLessThanOrEqual(GROUND_ALIGN.rateMax + 1e-6);
+    expect(sim.cur.crash?.cause).toBe('slam');               // no ollie: the align only lines it up
+    expect(sim.cur.targetX).toBeCloseTo(1.0, 6);              // the centreline, not the nearer edge (0.7)
+  });
+
+  it('never moves a skater who is not on a collision course', () => {
+    const sim = make([box({ s: 10, x: 1.0, len: 20, wid: 0.6, hgt: 0.45, top: 'landable', edges: ['l', 'r'] })], 0.25);
+    run(sim, 150);
+    expect(sim.cur.crash).toBeNull();
+    expect(sim.cur.targetX).toBe(0.25);
   });
 });
 
@@ -118,6 +142,19 @@ describe('capture and the pick window', () => {
     });
     expect(lockS).toBeLessThan(sR);
     expect(lockS).toBeGreaterThanOrEqual(sR - HITBOX.l / 2 - 1e-9);
+  });
+
+  it('the pick window opens once per approach (no flicker, so the tell chimes once)', () => {
+    const flicker: string[] = [];
+    for (const startT of [0, 160]) for (const x0 of [0, 0.6, 1.2]) for (let k = 70; k <= 100; k++) {
+      const sR = sAt(startT + 2.0);
+      const sim = make([rail({ s: sR, x: 0, len: 8, hgt: 0.4 })], x0, startT);
+      const ev = run(sim, 200, (i) => (i === k ? { tap: true } : {}));
+      const lock = first(ev, 'grindStart');
+      const opens = ev.filter((e) => e.t === 'pickWindow' && e.open && (!lock || e.tick <= lock.tick)).length;
+      if (opens > 1) flicker.push(`startT ${startT} x0 ${x0} k ${k}: ${opens} opens`);
+    }
+    expect(flicker).toEqual([]);
   });
 
   it('a buffered TAP is discarded at capture (no pop out right after the lock)', () => {

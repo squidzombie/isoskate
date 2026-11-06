@@ -23,6 +23,7 @@ export interface AirExt {
 /** Grind pick window (TECH §6.6): picks made while it is open. */
 export interface PickExt {
   open: boolean; edgeId: number; dirs: Dir8[]; tick: number;   // tick of the last pick swipe (−1: none)
+  miss: number;                         // consecutive air ticks the open window's capture was not predicted (hysteresis)
 }
 /** Prediction made each air tick (sim/predict.ts). */
 export interface PredExt {
@@ -89,7 +90,7 @@ export function initState(cfg: RunConfig): SimState {
   const startArea = cfg.startArea ?? 'downtown';
   return {
     cfg, startT, s0: cur.p.s, cur, prev: initSkater(startT), score: initScore(startArea),
-    air: freshAir(), pick: { open: false, edgeId: -1, dirs: [], tick: -1 },
+    air: freshAir(), pick: { open: false, edgeId: -1, dirs: [], tick: -1, miss: 0 },
     pred: { tLand: 0, landY: 0, captureEdge: -1, tCapture: Infinity, magnetEdge: -1, magnetX: 0 },
     flipFrom: { roll: 0, yaw: 0, pitch: 0 }, grindSnap: { dx: 0, dy: 0, entry: -1 }, manualEntry: -1, manualLatch: false,
     landTick: -1, landDrop: 0, slabKind: 'flat', stairStep: -1, groundOb: -1,

@@ -153,6 +153,17 @@ describe('contacts (frozen, TECH §6.4)', () => {
     expect(sim.cur.p.x).toBeLessThanOrEqual(1.1 + FACE_INSET - 0.2 + 1e-6);
   });
 
+  it.each([0.02, 0.05, 1.0])('drifting off a ledge top sideways (steerAxis %d) drops once: one airborne, one landing, no bump', (axis) => {
+    const sim = make([box({ s: -2, x: 0, len: 60, wid: 0.6, hgt: 0.45, top: 'landable' })]);
+    place(sim, { x: 0, y: 0.45 });
+    const ev = run(sim, 300, (i) => (i > 10 ? { steerAxis: axis } : {}));
+    expect(crashOf(ev)).toBeUndefined();
+    expect(ev.filter((e) => e.t === 'airborne').length).toBe(1);
+    expect(ev.filter((e) => e.t === 'land').length).toBe(1);
+    expect(ev.filter((e) => e.t === 'bump').length).toBe(0);
+    expect(sim.cur.p.y).toBe(0);
+  });
+
   it('rolling onto a pit falls (pit level = lip level); an ollie across lands safely past the far edge', () => {
     const roll = make([pit({ s: 14, len: 2.0 })]);
     const ev = run(roll, 200);

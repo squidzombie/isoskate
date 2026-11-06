@@ -6,9 +6,10 @@
 //    range/rate. Cancelled for the rest of the jump by ≥ cancelDragM of net steering away from the edge, counting only
 //    steering that consumed swipes did not remove.
 //  - Ground align: rolling on a collision course with a non-pickOnly grindable 0.2–1.0 s ahead → targetX eases
-//    toward its nearest edge axis at ≤ 1.5 m/s. It never creates a collision course.
+//    toward its centreline (the mean of its grindable edge axes) at ≤ 1.5 m/s. It never creates a collision course.
 //  - Pick window: opens when the predicted capture is ≤ GRIND.pickBefore away and closes GRIND.pickAfter after lock
-//    (or when the capture is no longer predicted). While open, interpret turns every swipe into a pick.
+//    (or when the capture has not been predicted for PICK_MISS_TICKS ticks, or on landing). While open, interpret
+//    turns every swipe into a pick.
 import type { Dir8 } from '../core/ids';
 import { approach, clamp } from '../core/math';
 import { DT, FACE_INSET, GRIND, GROUND_ALIGN, HITBOX, MAGNET, STEP_UP, TARGET_X_MAX } from '../core/tuning';
@@ -45,20 +46,24 @@ export function groundAlign(k: Ctx): void {
       if (hx1 > b.x0 + FACE_INSET && hx0 < b.x1 - FACE_INSET) { course = true; break; }
     }
     if (!course) continue;
-    let near = Infinity;
+    // Its centreline (DESIGN §6.3): the mean of its grindable edges' axes (a rail's own axis, a ledge's middle).
+    let sum = 0, n = 0;
     for (const e of ob.edges) {
       if (e.pickOnly) continue;
-      const ex = edgeX(e, Math.max(c.p.s, e.a.s));
-      if (Math.abs(ex - c.p.x) < Math.abs(near - c.p.x)) near = ex;
+      sum += edgeX(e, Math.max(c.p.s, e.a.s)); n++;
     }
-    if (near === Infinity) continue;
-    best = tHit; axis = near;
+    if (!n) continue;
+    best = tHit; axis = sum / n;
   }
   if (best !== Infinity) c.targetX = clamp(approach(c.targetX, axis, GROUND_ALIGN.rateMax * DT), -TARGET_X_MAX, TARGET_X_MAX);
 }
 
+/** Air ticks an open pick window survives without a predicted capture (0.05 s). */
+export const PICK_MISS_TICKS = 3;
+
 function closeWindow(k: Ctx): void {
   const st = k.st, c = st.cur, pk = st.pick;
+  pk.miss = 0;
   if (!pk.open) return;
   k.ev.push({ t: 'pickWindow', tick: c.tick, edgeId: pk.edgeId, open: false });
   pk.open = false; pk.dirs.length = 0; pk.tick = -1;
@@ -73,7 +78,13 @@ export function updatePickWindow(k: Ctx): void {
   }
   if (c.mode !== 'air') { closeWindow(k); return; }
   const due = pr.captureEdge >= 0 && pr.tCapture <= GRIND.pickBefore + 1e-9;
-  if (!due) { closeWindow(k); return; }
+  if (!due) {
+    // Hysteresis: an open window survives PICK_MISS_TICKS ticks without a predicted capture (the magnet moving x in
+    // and out of reach), so the tell and its chime never flicker; picks made meanwhile are kept.
+    if (pk.open && ++pk.miss <= PICK_MISS_TICKS) return;
+    closeWindow(k); return;
+  }
+  pk.miss = 0;
   if (!pk.open) {
     pk.open = true; pk.edgeId = pr.captureEdge; pk.dirs.length = 0; pk.tick = -1;
     k.ev.push({ t: 'pickWindow', tick: c.tick, edgeId: pk.edgeId, open: true });

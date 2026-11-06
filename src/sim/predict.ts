@@ -25,11 +25,15 @@ export function captureReach(e: GrindEdge, magnet: boolean, transfer: boolean): 
   return transfer ? MAGNET.transferRange : MAGNET.range;
 }
 
+/** Run time of the tick j steps ahead, computed exactly as sim/kinematics.ts advanceTime does (startT + tick·DT), so a
+ *  predicted s matches the sim's own s to the bit (a capture at the band's edge is predicted on the tick it happens). */
+const tAhead = (k: Ctx, j: number): number => k.st.startT + (k.st.cur.tick + j) * DT;
+
 /** First tick offset j (0 = now) at which the arc is inside the edge's capture band, or −1. */
-function captureStep(e: GrindEdge, s0t: number, y0: number, vy0: number, jMax: number, sNow: number): number {
+function captureStep(k: Ctx, e: GrindEdge, y0: number, vy0: number, jMax: number, sNow: number): number {
   for (let j = 0; j <= jMax; j++) {
     const tau = j * DT;
-    const s = j === 0 ? sNow : sAt(s0t + tau);
+    const s = j === 0 ? sNow : sAt(tAhead(k, j));
     if (s < e.a.s - CAPTURE_LEAD) continue;
     if (s > e.b.s) return -1;
     const vy = vy0 - G * tau;
@@ -51,7 +55,7 @@ export function predict(k: Ctx): void {
   for (let j = 1; j <= PREDICT_MAX_STEPS; j++) {
     const tau = j * DT;
     const y = c.p.y + c.vel.y * tau - 0.5 * G * tau * tau;
-    const g = k.world.groundAt(sAt(c.t + tau), c.p.x, yPrev + 1e-6);
+    const g = k.world.groundAt(sAt(tAhead(k, j)), c.p.x, yPrev + 1e-6);
     if (y <= g.y + 1e-9) { tLand = tau; landY = g.y; jLand = j; break; }
     yPrev = y;
   }
@@ -65,12 +69,12 @@ export function predict(k: Ctx): void {
       const sRef = Math.max(c.p.s, e.a.s);
       const dx = Math.abs(edgeX(e, sRef) - c.p.x);
       if (dx > captureReach(e, magnet, c.transferArmed)) continue;
-      const j = captureStep(e, c.t, c.p.y, c.vel.y, jLand, c.p.s);
+      const j = captureStep(k, e, c.p.y, c.vel.y, jLand, c.p.s);
       if (j < 0) continue;
       const tc = j * DT;
       if (tc < pr.tCapture) { pr.tCapture = tc; pr.captureEdge = e.id; }
       if (!e.pickOnly) {
-        if (magnet && dx < bestDx) { bestDx = dx; pr.magnetEdge = e.id; pr.magnetX = edgeX(e, sAt(c.t + tc)); }
+        if (magnet && dx < bestDx) { bestDx = dx; pr.magnetEdge = e.id; pr.magnetX = edgeX(e, sAt(tAhead(k, j))); }
         if ((magnet || dx <= CAPTURE.lat) && tc < tAir) tAir = tc;
       }
     }
