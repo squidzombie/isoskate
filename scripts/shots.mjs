@@ -244,15 +244,25 @@ async function contrastMode() {
     const cases = [...AREAS.map((a) => ({ label: a, area: a, blend: undefined, samples: 14 })),
       ...AREAS.flatMap((a) => BLENDS.map((u) => ({ label: `${a}→${NEXT[a]} ${u}`, area: NEXT[a], blend: u, samples: 4 })))];
     for (const cs of cases) {
-      const r = await page.evaluate(({ area, blend, samples }) => {
+      const { items: r, worst } = await page.evaluate(({ area, blend, samples, gate }) => {
         window.__skate.previewArea(area, blend);
         const items = [];
+        let worst = null, worstRel = Infinity;
         for (let i = 0; i < samples; i++) {
           window.__skate.step(i === 0 ? 20 : 36);
-          for (const it of window.__skate.ext.contrastReport().items) items.push(it);
+          for (const it of window.__skate.ext.contrastReport().items) {
+            items.push(it);
+            const rel = it.ratio / gate[it.cls];
+            if (rel < worstRel) { worstRel = rel; worst = { item: it, tick: window.__skate.snapshot().tick, png: window.__skate.ext.capture().dataUrl }; }
+          }
         }
-        return items;
-      }, cs);
+        return { items, worst };
+      }, { ...cs, gate: GATE });
+      if (worst) {
+        const w = worst.item;
+        writeDataUrl(join(dir, `${cs.label.replace(/[^a-z0-9]+/gi, '-')}-${vp.name}-worst.png`), worst.png);
+        console.log(`    worst: ${w.cls} ${w.kind} #${w.id} ${w.ratio.toFixed(2)} at tick ${worst.tick}, css box ${Math.round(w.at.x0)},${Math.round(w.at.y0)}–${Math.round(w.at.x1)},${Math.round(w.at.y1)} (fg ${w.fg.toFixed(3)} bg ${w.bg.toFixed(3)})`);
+      }
       const hz = r.filter((i) => i.cls === 'hazard'), ed = r.filter((i) => i.cls === 'edge');
       const minOf = (l) => (l.length ? Math.min(...l.map((i) => i.ratio)) : NaN);
       const worstOf = (l) => l.reduce((a, b) => (a && a.ratio <= b.ratio ? a : b), null);

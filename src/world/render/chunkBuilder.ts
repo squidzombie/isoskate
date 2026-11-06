@@ -211,8 +211,9 @@ function obstacle(ob: Obstacle, s0: number, s1: number, z: (s: number) => number
       if (front) w.box(b.x0, b.y1 - 0.18, z(r[0]), b.x1, b.y1 - 0.06, z(r[0]) + 0.012, COLORS.tallAccent);
     }
     if (cls === 'low' && so.top === 'crash' && front && (fullWidth || b.x1 - b.x0 > 6)) {
-      // Full-width hazard: amber / ink safety chevrons on the front face.
-      for (let x = b.x0 + 0.1; x < b.x1 - 0.35; x += 0.9) w.box(x, b.y0 + 0.05, z(r[0]), x + 0.45, b.y1 - 0.05, z(r[0]) + 0.015, COLORS.chevron);
+      // Full-width hazard: a slim band of amber / ink safety chevrons along the top of the front face. Slim on
+      // purpose: the silhouette's mean luminance (accent included) must stay ≥ 2.5:1 darker than the road.
+      for (let x = b.x0 + 0.15; x < b.x1 - 0.3; x += 0.9) w.box(x, b.y1 - 0.13, z(r[0]), x + 0.3, b.y1 - 0.03, z(r[0]) + 0.015, COLORS.chevron);
     }
   }
   for (const e of ob.edges) grindEdge(e, s0, s1, z, w, opts);
