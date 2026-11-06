@@ -41,9 +41,10 @@ export function nearMiss(k: Ctx): void {
   const st = k.st, c = st.cur, n = st.near;
   if (c.mode === 'crashed') return;
   const hs0 = c.p.s - HL, hs1 = c.p.s + HL, hx0 = c.p.x - HW, hx1 = c.p.x + HW, hy0 = c.p.y;
-  const grindOb = c.grind ? c.grind.obstacleId : -1;
+  // Not the edge being ground, nor the obstacle this air left (popping out of a rail clears its top by nothing).
+  const grindOb = c.grind ? c.grind.obstacleId : -1, fromOb = c.mode === 'air' ? st.air.fromOb : -1;
   for (const ob of k.obs) {
-    if (ob.s > hs1 + 0.5 || ob.s + ob.len < hs0 - 0.5 || ob.id === grindOb || st.ghosted.has(ob.id) || st.knocked.has(ob.id)) continue;
+    if (ob.s > hs1 + 0.5 || ob.s + ob.len < hs0 - 0.5 || ob.id === grindOb || ob.id === fromOb || st.ghosted.has(ob.id) || st.knocked.has(ob.id)) continue;
     if (slot(k, ob.id) >= 0) continue;
     let close = false, sEnd = -Infinity, cx = 0;
     for (const so of ob.solids) {
