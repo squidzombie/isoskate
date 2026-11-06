@@ -102,7 +102,8 @@ export class Sky {
     this.glowMat = new ShaderMaterial({
       transparent: true, depthTest: false, depthWrite: false, fog: false,
       uniforms: { uCol: { value: col(0xffd9a0) }, uTop: { value: 0.066 }, uAlpha: { value: 0.25 }, uDesat: u.uDesat },
-      vertexShader: 'varying float vY; void main() { vY = position.y * 0.5 + 0.5; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+      // The quad covers only the band (no full-screen blend): vY runs 1 − uTop … 1 from its bottom edge to the top.
+      vertexShader: 'uniform float uTop; varying float vY; void main() { vY = 1.0 - uTop * (0.5 - 0.5 * position.y); gl_Position = vec4(position.x, vY * 2.0 - 1.0, 0.0, 1.0); }',
       fragmentShader: /* glsl */`
         uniform vec3 uCol; uniform float uTop; uniform float uAlpha; uniform float uDesat;
         varying float vY;

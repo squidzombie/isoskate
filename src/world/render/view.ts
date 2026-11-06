@@ -334,8 +334,13 @@ class WorldViewImpl implements WorldView {
         });
         return [...m.values()];
       },
-      /** Debug: shows / hides every scene object whose name starts with `prefix` (perf triage). */
-      show: (prefix: string, on: boolean) => { let n = 0; this.ctx.scene.traverse((o) => { if (o.name.startsWith(prefix)) { o.visible = on; n++; } }); return n; } };
+      /** Debug: shows / hides every scene object whose name matches `re` (perf triage); 'shadows' toggles the map. */
+      show: (re: string, on: boolean) => {
+        if (re === 'shadows') { this.ctx.renderer.shadowMap.enabled = on; return 1; }
+        let n = 0; const r = new RegExp(re);
+        this.ctx.scene.traverse((o) => { if (r.test(o.name)) { o.visible = on; n++; } });
+        return n;
+      } };
   }
 
   /** Debug / wa.spec: rebuilds the live chunk under `index` (default: the nearest ahead) n times into scratch buffers
