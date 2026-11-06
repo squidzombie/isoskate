@@ -7,6 +7,17 @@
 // when visible. The scheduler ticks every 25 ms and on every rendered frame (audio.roll), 120 ms ahead.
 // Offline: renderOffline builds the SAME AudioCore on an OfflineAudioContext and drives it with a scripted run, the
 // scheduler ticking at the same 25 ms through OfflineAudioContext.suspend(), so a seed always renders the same audio.
+//
+// Map for the next agent:
+//   mix.config.ts      every number (buses, BPMs, progressions, recipes, levels); calibrated by render-check.mjs
+//   clock.ts           pure musical time (swing, lookahead window, quantize)         → tests/unit/audio/clock.test.ts
+//   music/sequencer.ts pure composer: form, layers, patterns, comping, bass, motif   → sequencer.test.ts
+//   music/progressions pure theory: pentatonic, avoid notes, voice leading, pivots   → theory.test.ts
+//   engine.ts          AudioCore: director + scheduler + layers + cues (live and offline) → engine.test.ts (fake ctx)
+//   graph.ts, synth.ts, voices.ts   the mix graph, node helpers, the 32-voice pool    → voices.test.ts
+//   music/{instruments,drums,tape,vinyl}.ts, sfx/{roll,grind,oneshots,ui,ambience,noise}.ts   the sounds
+//   bindings.ts        GameEvent / AppEvent → sound, exhaustive tables                → bindings.test.ts
+// Listening without ears: PORT=5184 node tests/unit/audio/render-check.mjs (WAVs, spectrogram PNGs, report.json).
 import type { AreaId, EdgeMaterial, Surface } from '../core/ids';
 import type { AudioEngine, SfxId } from '../core/audio';
 import type { Bus } from '../core/bus';

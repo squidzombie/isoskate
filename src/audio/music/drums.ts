@@ -35,62 +35,69 @@ function noiseHit(g: Graph, type: 'bandpass' | 'highpass', f: number, q: number,
   }, v);
 }
 
-/** The kit as a list of jobs, one per drum (each a few hundred microseconds of sample math), so kits for the other
+/** The kit as a list of jobs, one per buffer (each a few hundred microseconds of sample math), so kits for the other
  *  areas can be built one job per scheduler tick instead of in one long frame. */
-function kitJobs(g: Graph, a: AreaMusic): [keyof Kit, () => AudioBuffer[]][] {
-  const vs = [0, 1, 2, 3];
-  return [
-    ['kick', () => [buf(g, a.kick.decay + 0.02, (o, sr, nz) => {
-      const hp = biquad('highpass', KICK.clickHp, qdb(0.7), sr);
-      let ph = 0;
+type Job = [keyof Kit, number, () => AudioBuffer];
+function kitJobs(g: Graph, a: AreaMusic): Job[] {
+  const kick = (v: number) => buf(g, a.kick.decay + 0.02, (o, sr, nz) => {
+    const hp = biquad('highpass', KICK.clickHp, qdb(0.7), sr);
+    let ph = 0;
+    for (let i = 0; i < o.length; i++) {
+      const t = i / sr;
+      const f = a.kick.f0 * Math.pow(KICK.f1 / a.kick.f0, Math.min(t, KICK.sweep) / KICK.sweep);
+      ph += (2 * Math.PI * f) / sr;
+      const click = t < 0.006 ? hp(nz(i)) * env(t, 0.0005, KICK.clickMs / 1000) * KICK.clickGain : 0;
+      o[i] = Math.sin(ph) * env(t, KICK.attack, a.kick.decay) * KICK.gain + click;
+    }
+  }, v);
+  const snare = (v: number) => {
+    if (a.snare === 'brush') return noiseHit(g, 'bandpass', BRUSH.bpHz, BRUSH.bpQ, BRUSH.attack, BRUSH.decay, BRUSH.gain * 1.6, v);
+    return buf(g, Math.max(SNARE.decay, METAL_RING.decay) + 0.02, (o, sr, nz) => {
+      const bp = biquad('bandpass', SNARE.bpHz, SNARE.bpQ, sr);
+      let tph = 0;
       for (let i = 0; i < o.length; i++) {
         const t = i / sr;
-        const f = a.kick.f0 * Math.pow(KICK.f1 / a.kick.f0, Math.min(t, KICK.sweep) / KICK.sweep);
-        ph += (2 * Math.PI * f) / sr;
-        const click = t < 0.006 ? hp(nz(i)) * env(t, 0.0005, KICK.clickMs / 1000) * KICK.clickGain : 0;
-        o[i] = Math.sin(ph) * env(t, KICK.attack, a.kick.decay) * KICK.gain + click;
-      }
-    }, 0)]],
-    ['snare', () => vs.map((v) => {
-      if (a.snare === 'brush') return noiseHit(g, 'bandpass', BRUSH.bpHz, BRUSH.bpQ, BRUSH.attack, BRUSH.decay, BRUSH.gain * 1.6, v);
-      return buf(g, Math.max(SNARE.decay, METAL_RING.decay) + 0.02, (o, sr, nz) => {
-        const bp = biquad('bandpass', SNARE.bpHz, SNARE.bpQ, sr);
-        let tph = 0;
-        for (let i = 0; i < o.length; i++) {
-          const t = i / sr;
-          tph += SNARE.toneHz / sr;
-          const tri = 4 * Math.abs(tph - Math.floor(tph + 0.5)) - 1;
-          let x = bp(nz(i)) * env(t, 0.001, SNARE.decay) * SNARE.gain * 1.5 + tri * env(t, 0.001, SNARE.toneDecay) * SNARE.toneGain;
-          if (a.snare === 'metal' && t < METAL_RING.decay * 1.5) {
-            // Metallic ring: band-limited squares at 540 / 800 Hz (odd harmonics below 8 kHz), 60 ms.
-            let sq = 0;
-            for (const f of METAL_RING.f) for (let k = 1; k * f < 8000; k += 2) sq += Math.sin(2 * Math.PI * f * k * t) / k;
-            x += sq * (4 / Math.PI) * env(t, 0.001, METAL_RING.decay) * METAL_RING.gain;
-          }
-          o[i] = x;
+        tph += SNARE.toneHz / sr;
+        const tri = 4 * Math.abs(tph - Math.floor(tph + 0.5)) - 1;
+        let x = bp(nz(i)) * env(t, 0.001, SNARE.decay) * SNARE.gain * 1.5 + tri * env(t, 0.001, SNARE.toneDecay) * SNARE.toneGain;
+        if (a.snare === 'metal' && t < METAL_RING.decay * 1.5) {
+          // Metallic ring: band-limited squares at 540 / 800 Hz (odd harmonics below 8 kHz), 60 ms.
+          let sq = 0;
+          for (const f of METAL_RING.f) for (let k = 1; k * f < 8000; k += 2) sq += Math.sin(2 * Math.PI * f * k * t) / k;
+          x += sq * (4 / Math.PI) * env(t, 0.001, METAL_RING.decay) * METAL_RING.gain;
         }
-      }, v);
-    })],
-    ['rim', () => vs.map((v) => noiseHit(g, 'bandpass', RIM.bpHz, RIM.bpQ, 0.0005, RIM.decay, RIM.gain * 2, v))],
-    ['hatC', () => vs.map((v) => noiseHit(g, 'highpass', a.hats.hpHz, 0.7, 0.0008, a.hats.closed, HATS.gain, v))],
-    ['hatO', () => vs.slice(0, 2).map((v) => noiseHit(g, 'highpass', a.hats.hpHz, 0.7, 0.002, HATS.open, HATS.gain, v))],
-    ['shaker', () => vs.map((v) => noiseHit(g, 'bandpass', SHAKER.bpHz, SHAKER.bpQ, 0.004, SHAKER.decay, SHAKER.gain * 4, v))],
-    ['clap', () => vs.slice(0, 2).map((v) => buf(g, CLAP.spacing * CLAP.bursts + CLAP.tail + 0.02, (o, sr, nz) => {
-      const bp = biquad('bandpass', CLAP.bpHz, CLAP.bpQ, sr);
-      for (let i = 0; i < o.length; i++) {
-        const t = i / sr;
-        let e = 0;
-        for (let k = 0; k < CLAP.bursts; k++) {
-          const tk = t - k * CLAP.spacing;
-          if (tk >= 0) e += (k === CLAP.bursts - 1 ? 1 : 0.7) * env(tk, 0.0008, k === CLAP.bursts - 1 ? CLAP.tail : 0.012);
-        }
-        o[i] = bp(nz(i)) * e * CLAP.gain;
+        o[i] = x;
       }
-    }, v))],
+    }, v);
+  };
+  const clap = (v: number) => buf(g, CLAP.spacing * CLAP.bursts + CLAP.tail + 0.02, (o, sr, nz) => {
+    const bp = biquad('bandpass', CLAP.bpHz, CLAP.bpQ, sr);
+    for (let i = 0; i < o.length; i++) {
+      const t = i / sr;
+      let e = 0;
+      for (let k = 0; k < CLAP.bursts; k++) {
+        const tk = t - k * CLAP.spacing;
+        if (tk >= 0) e += (k === CLAP.bursts - 1 ? 1 : 0.7) * env(tk, 0.0008, k === CLAP.bursts - 1 ? CLAP.tail : 0.012);
+      }
+      o[i] = bp(nz(i)) * e * CLAP.gain;
+    }
+  }, v);
+  const groups: [keyof Kit, number, (v: number) => AudioBuffer][] = [
+    ['kick', 1, kick],
+    ['snare', VARIANTS, snare],
+    ['rim', VARIANTS, (v) => noiseHit(g, 'bandpass', RIM.bpHz, RIM.bpQ, 0.0005, RIM.decay, RIM.gain * 2, v)],
+    ['hatC', VARIANTS, (v) => noiseHit(g, 'highpass', a.hats.hpHz, 0.7, 0.0008, a.hats.closed, HATS.gain, v)],
+    ['hatO', 2, (v) => noiseHit(g, 'highpass', a.hats.hpHz, 0.7, 0.002, HATS.open, HATS.gain, v)],
+    ['shaker', VARIANTS, (v) => noiseHit(g, 'bandpass', SHAKER.bpHz, SHAKER.bpQ, 0.004, SHAKER.decay, SHAKER.gain * 4, v)],
+    ['clap', 2, clap],
   ];
+  // One job per buffer (a few hundred microseconds of sample math each).
+  const jobs: Job[] = [];
+  for (const [field, count, make] of groups) for (let i = 0; i < count; i++) jobs.push([field, i, () => make(i)]);
+  return jobs;
 }
 
-interface KitState { kit: Partial<Kit>; jobs: [keyof Kit, () => AudioBuffer[]][] }
+interface KitState { kit: Partial<Record<keyof Kit, AudioBuffer[]>>; jobs: Job[] }
 function state(g: Graph, area: MusicArea, a: AreaMusic): KitState {
   let m = kits.get(g);
   if (!m) { m = new Map(); kits.set(g, m); }
@@ -101,9 +108,10 @@ function state(g: Graph, area: MusicArea, a: AreaMusic): KitState {
 /** The kit for an area, finishing any jobs still pending. */
 export function kitFor(g: Graph, area: MusicArea, a: AreaMusic): Kit {
   const k = state(g, area, a);
-  for (const [f, job] of k.jobs.splice(0)) k.kit[f] = job();
+  for (const j of k.jobs.splice(0)) run(k, j);
   return k.kit as Kit;
 }
+function run(k: KitState, [f, i, make]: Job): void { (k.kit[f] ??= [])[i] = make(); }
 /** Queues an area's kit to be built in the background (one job per stepKits call). */
 export function prepareKit(g: Graph, area: MusicArea, a: AreaMusic): void { state(g, area, a); }
 /** Runs one pending kit job; false when every queued kit is complete. */
@@ -112,7 +120,7 @@ export function stepKits(g: Graph): boolean {
   if (!m) return false;
   for (const k of m.values()) {
     const j = k.jobs.shift();
-    if (j) { k.kit[j[0]] = j[1](); return true; }
+    if (j) { run(k, j); return true; }
   }
   return false;
 }

@@ -76,3 +76,10 @@ Entry format:
 - Change: `{ t: 'runStart'; tick: number; seed: number; mode: 'lesson' | 'normal'; startArea?: AreaId }`
 - Why: the run song should start in the start area's key when Start District (M5) lands, without waiting for an `areaEnter`.
 - Local workaround meanwhile: runs start in Downtown; an `areaEnter` at tick 1 (debug `startT`, `startArea`) pivots to the right song at the next bar line.
+
+### smoke.spec: renderAudio is no longer null   (status: open, G0)
+- File / symbol: tests/e2e/smoke.spec.ts › "__skate.ui() goes through the app…" (line 204)
+- Change: the stub-era `expect(await renderAudio('downtown', 1)).toBeNull()` becomes, for example,
+  `const r = await page.evaluate(() => window.__skate!.renderAudio!('downtown', 1)); expect(r!.sec).toBeCloseTo(1, 2); expect(r!.peak).toBeGreaterThan(0.01); expect(r!.peak).toBeLessThan(0.9);`
+- Why: AU ships `renderOffline` (TECH §4.13, as the debug.ts doc comment anticipates: "resolves null until AU ships"), so this one assertion fails on pkg/au in both projects; every other smoke test passes with audio on. AU may not edit smoke.spec.
+- Local workaround meanwhile: none (the assertion contradicts the deliverable); tests/unit/audio/render-check.mjs covers renderAudio.
