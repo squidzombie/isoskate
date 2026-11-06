@@ -110,20 +110,22 @@ Only the integrator merges into `main`, at gates.
 12. **Build.** `npm run build` (dist) works and deploys to Pages. (PWA, icons, single-file build and the size check move to M4.)
 
 ### Acceptance criteria (G0)
-- [ ] `npm run dev`: tap to start. Within 10 s you can carve, ollie the 3.5 s chain, grind the ledge at 6 s, kickflip, and crash on a tall blocker. A fresh tap ≥ 0.6 s after the crash restarts in < 1 s.
-- [ ] Keyboard preset A plays the same on desktop.
-- [ ] Unit tests prove:
+- [x] `npm run dev`: tap to start. Within 10 s you can carve, ollie the 3.5 s chain, grind the ledge at 6 s, kickflip, and crash on a tall blocker. A fresh tap ≥ 0.6 s after the crash restarts in < 1 s.
+- [x] Keyboard preset A plays the same on desktop.
+- [x] Unit tests prove:
   - flat ollie airtime 0.600 s ± 1 tick at 7.0 and 10.5 m/s;
   - a 2 m line change ≤ 0.50 s;
   - `speedAt` equals 7.0 at t = 20, 8.99 at t = 90 and 10.5 at t ≥ 150;
   - camera look-ahead ≥ 2.5 s below the HUD band at every listed viewport and speed;
   - a flat ollie never clears a 1.15 m `crash`-top solid, and rolling onto a pit falls.
-- [ ] Replaying a recorded 2-minute input gives identical per-tick hashes, and `snapshot` → `restore` → same hash.
-- [ ] `__skate.start({seed:1}); manual(true); step(600)` returns a sane snapshot, and `events()` contains `ollie` after `gesture('tap')`.
-- [ ] `bots.quick` passes with the SafeKey follower (M0 templates only, 20 seeds × 2 min).
-- [ ] `smoke.spec`, `touch.spec` and `audio.spec` pass. `dist/` is produced and deployed.
-- [ ] Every module folder exists, with its factory matching TECH §4.13. Each later agent can start by replacing its stub.
-- [ ] Tag `m0`.
+- [x] Replaying a recorded 2-minute input gives identical per-tick hashes, and `snapshot` → `restore` → same hash.
+- [x] `__skate.start({seed:1}); manual(true); step(600)` returns a sane snapshot, and `events()` contains `ollie` after `gesture('tap')`.
+- [x] `bots.quick` passes with the SafeKey follower (M0 templates only, 20 seeds × 2 min).
+- [x] `smoke.spec`, `touch.spec` and `audio.spec` pass. `dist/` is produced and deployed.
+- [x] Every module folder exists, with its factory matching TECH §4.13. Each later agent can start by replacing its stub.
+- [x] Tag `m0`.
+
+**G0 result (gate G0).** All items pass. Evidence: real CDP touch at 390×844 and CDP keys at 1280×800 on seed 1 (carve, chain ollie at 3.2 s, 50-50 on the ledge at 5.95 s, pop-out kickflip at 7.4 s, slam into a news box, retry 0.76 s after the crash, first new-run frame 23–290 ms later); unit tests in `tests/unit/sim/basics.test.ts`, `replay.test.ts`, `core/tuning.test.ts`, `render/camera.test.ts`, `integration/labels.test.ts`; `bots.quick`; 48 e2e passed (4 project-specific skips); `dist/` and `dist-single/` build, and the Pages workflow deploys `dist/` when DEV is pushed. One wording note: the first tall blocker of every seed arrives at **10.4 s**, not before 10 s, because the 9 s Roll-out (DESIGN §12.4) has none and the first gate needs a ≥ 3 m lateral shift from the safe line.
 
 ---
 

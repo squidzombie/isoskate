@@ -49,6 +49,9 @@ Entry format:
 - Deferred: `gfx › sharedUniforms` / `uDesat` (SK) to WA, because nothing desaturates the world yet. The board-identity design question (SK) stays with the design owner at G2.
 - Gate decisions: `GEN_FLAGS.trench = true` (the grey-box view draws pits, and now draws the plank above the pit face; seed 1 trench at t ≈ 22.6 s checked on screen). `tests/unit/integration/labels.test.ts` proves the real recognizer's `steer` / `fast` / `fromRest` labels reach the real sim as DESIGN §4.3 intends.
 
+- Integration fixes outside core: the grey-box palette passes the contrast gate with the real generator (asphalt `#79728A`, tall top `#352A4C`, 0.05 m accent band; min hazard 2.61:1, min edge 1.83:1 over 32 presets; WA owns the palette from W2a); a run's first frame builds the chunks on screen, so a retry never shows the fog behind the start.
+- For GP (no change made): on a very slow device (≈ 13 fps) touchmoves are delivered once per frame, so a drag whose first move arrives after 200 ms can read as a HOLD and start a manual inside a combo (harmless, DESIGN §4.4 rule 3). Consider measuring the HOLD from sample time rather than tick time if it shows up on real phones.
+
 ### Hooks added @G0 (later packages can rely on them)
 - **HUD (MU keeps them):** `data-hud="score|dist|combo|trick|coins|pause"` on the HUD pieces and an optional `preview(values | null)` on the HudApi object (`__skate.ext.hud`).
 - **`__skate.ext`** is part of the contract now (core/debug.ts › DebugExt); shots.mjs and the e2e specs use only it and the DebugAPI.
