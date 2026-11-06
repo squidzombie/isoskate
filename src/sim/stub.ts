@@ -120,10 +120,11 @@ export class StubSim implements Sim {
     c.popBleed = Math.max(0, c.popBleed - DT);
     c.wobble = Math.max(0, c.wobble - DT);
 
-    // Gestures (a tiny subset of tricks/interpret.ts).
-    if (!air && (f.tap || f.swipe === 'u')) this.pop(tick, null);
-    else if (!air && (f.swipe === 'ur' || f.swipe === 'ul')) this.pop(tick, f.swipe);
-    else if (air && f.swipe && c.popBleed <= 0) this.airSwipe(tick, f.swipe);
+    // Gestures (a tiny subset of tricks/interpret.ts). Swipes of the steering stroke are treated as steering.
+    const swipe = f.swipe && !f.swipeSteer ? f.swipe : null;
+    if (!air && (f.tap || swipe === 'u')) this.pop(tick, null);
+    else if (!air && (swipe === 'ur' || swipe === 'ul')) this.pop(tick, swipe);
+    else if (air && swipe && c.popBleed <= 0) this.airSwipe(tick, swipe);
 
     // Vertical motion.
     if (c.mode === 'roll') {

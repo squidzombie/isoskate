@@ -78,27 +78,37 @@ test('debug API: start, manual stepping, tap → ollie', async ({ page }) => {
 
 // Timing-sensitive flows run at the low tier: SwiftShader frames at the high tier are slow enough to starve timers.
 // The Roll-out is the same for every seed: going straight slams into the 3.5 s chain at tick ~208.
-async function crashStraight(page: Page, seed: number): Promise<number> {
-  const t0 = await page.evaluate((s) => {
+async function crashStraight(page: Page, seed: number): Promise<void> {
+  const snap = await page.evaluate((s) => {
     window.__skate!.start({ seed: s });
     window.__skate!.manual(true);
-    window.__skate!.step(200);
-    return performance.now();
+    let sn = window.__skate!.step(200);
+    while (sn.alive && sn.tick < 400) sn = window.__skate!.step(1);
+    return sn;
   }, seed);
-  const snap = await page.evaluate(() => window.__skate!.step(30));
   expect(snap.alive).toBe(false);
   expect(snap.crash?.cause).toBe('slam');
-  return t0;
 }
 
-test('crash → overlay → fresh tap after 0.6 s → new run', async ({ page }, info) => {
+/** A fresh tap `afterMs` after the crash, dispatched in-page so CPU load can't push it past the 1.2 s window. */
+async function tapAfterCrash(page: Page, afterMs: number): Promise<void> {
+  await page.evaluate(async (ms) => {
+    const crashAt = performance.now();               // ≥ the app's crash time (it was set during the last step)
+    await new Promise((r) => setTimeout(r, ms));
+    while (performance.now() - crashAt < ms) await new Promise((r) => setTimeout(r, 5));
+    const el = document.getElementById('play')!;
+    const o = { pointerId: 7, pointerType: 'touch', isPrimary: true, clientX: 195, clientY: 420, bubbles: true };
+    el.dispatchEvent(new PointerEvent('pointerdown', o));
+    el.dispatchEvent(new PointerEvent('pointerup', o));
+  }, afterMs);
+}
+
+test('crash → overlay → fresh tap after 0.6 s → new run', async ({ page }) => {
   const errors: string[] = [];
   await boot(page, errors, '&quality=low');
-  const t0 = await crashStraight(page, 1);
+  await crashStraight(page, 1);
   await expect(screenOn(page, 'crash')).toHaveClass(/\bon\b/);
-  await page.waitForFunction((t) => performance.now() - t >= 700, t0);
-  const vp = page.viewportSize()!;
-  await tapScreen(page, !!info.project.use.hasTouch, vp.width / 2, vp.height / 2);
+  await tapAfterCrash(page, 650);
   await expect(screenOn(page, 'crash')).not.toHaveClass(/\bon\b/);
   await expect(screenOn(page, 'results')).not.toHaveClass(/\bon\b/);
   const fresh = await page.evaluate(() => window.__skate!.snapshot());
@@ -107,12 +117,11 @@ test('crash → overlay → fresh tap after 0.6 s → new run', async ({ page },
   expect(errors).toEqual([]);
 });
 
-test('a touch that went down before 0.6 s does not retry', async ({ page }, info) => {
+test('a touch that went down before 0.6 s does not retry', async ({ page }) => {
   const errors: string[] = [];
   await boot(page, errors, '&quality=low');
   await crashStraight(page, 3);
-  const vp = page.viewportSize()!;
-  await tapScreen(page, !!info.project.use.hasTouch, vp.width / 2, vp.height / 2);   // panic tap during the tumble
+  await tapAfterCrash(page, 0);                      // panic tap during the tumble
   await expect(screenOn(page, 'results')).toHaveClass(/\bon\b/, { timeout: 10_000 });
   expect(errors).toEqual([]);
 });
@@ -125,5 +134,30 @@ test('crash → Results after 1.2 s → ROLL AGAIN', async ({ page }) => {
   await page.getByRole('button', { name: /roll again/i }).click();
   await expect(screenOn(page, 'results')).not.toHaveClass(/\bon\b/);
   expect((await page.evaluate(() => window.__skate!.snapshot())).alive).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test('pause: button, Esc and visibility; resume continues the run', async ({ page }, info) => {
+  const errors: string[] = [];
+  await boot(page, errors, '&quality=low');
+  await page.evaluate(() => window.__skate!.start({ seed: 5, god: true }));
+  await expect.poll(() => page.evaluate(() => window.__skate!.snapshot().tick)).toBeGreaterThan(5);
+  await page.getByRole('button', { name: 'Pause' }).click();
+  await expect(screenOn(page, 'pause')).toHaveClass(/\bon\b/);
+  const frozen = await page.evaluate(() => window.__skate!.snapshot().tick);
+  await page.waitForTimeout(300);
+  expect(await page.evaluate(() => window.__skate!.snapshot().tick)).toBe(frozen);
+  await page.getByRole('button', { name: /resume/i }).click();
+  await expect(screenOn(page, 'pause')).not.toHaveClass(/\bon\b/);
+  await expect.poll(() => page.evaluate(() => window.__skate!.snapshot().tick)).toBeGreaterThan(frozen);
+  if (!info.project.use.hasTouch) {
+    await page.keyboard.press('Escape');
+    await expect(screenOn(page, 'pause')).toHaveClass(/\bon\b/);
+    await page.keyboard.press('Escape');
+    await expect(screenOn(page, 'pause')).not.toHaveClass(/\bon\b/);
+  }
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));   // still visible: no pause
+  await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+  await expect(screenOn(page, 'pause')).toHaveClass(/\bon\b/);
   expect(errors).toEqual([]);
 });

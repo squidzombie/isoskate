@@ -4,10 +4,9 @@ import type { QualityTier } from '../core/ids';
 import type { GfxContext, RenderFrame, Vfx } from '../core/view';
 
 export function createVfx(_ctx: GfxContext): Vfx {
-  let quality: QualityTier = _ctx.quality;
   return {
     update(_f: RenderFrame) { /* no-op */ },
-    setQuality(q: QualityTier) { quality = q; void quality; },
+    setQuality(_q: QualityTier) { /* no-op */ },
     clear() { /* no-op */ },
   };
 }

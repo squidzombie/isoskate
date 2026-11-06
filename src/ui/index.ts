@@ -62,13 +62,12 @@ export function createUi(root: HTMLElement): UiApi {
       toastsEl.append(t);
       setTimeout(() => t.remove(), ms);
     },
-    attach(game: Bus<GameEvent>, _app: Bus<AppEvent>, meta: MetaApi) {
+    attach(game: Bus<GameEvent>, _app: Bus<AppEvent>, _meta: MetaApi) {
       const offs = [
         game.on('runStart', () => { lastCause = ''; lastLost = 0; }),
         game.on('crash', (e) => { if (!e.god) { lastCause = crashCause(e); } }),
         game.on('comboLost', (e) => { lastLost = e.total; }),
         game.on('trickScored', (e) => hud.lastTrick(e.id.replace(/([A-Z])/g, ' $1').toUpperCase())),
-        game.on('runEnd', () => { void meta; }),
       ];
       return () => { for (const off of offs) off(); };
     },

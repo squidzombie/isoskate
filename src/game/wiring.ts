@@ -33,6 +33,7 @@ export function wire(root: HTMLElement): Game {
 
   // Platform and persistence.
   const save = createSaveStore();
+  if (flags.reset && window.confirm('Reset all Dusklane progress on this device?')) save.reset();
   const analytics = createAnalytics(save);
   const monetization = createMonetization({ fakeAds: flags.fakeAds });
   void monetization.init();
@@ -47,6 +48,7 @@ export function wire(root: HTMLElement): Game {
   const cameraRig = createCameraRig();
   const vfx = createVfx(gfx);
   const skater = createSkaterView(gfx);
+  gfx.scene.add(skater.object3d);
   let viewport: Viewport = readViewport(gfx.renderer.getPixelRatio());
   const applyViewport = () => {
     viewport = readViewport(gfx.renderer.getPixelRatio());
@@ -140,6 +142,7 @@ export function wire(root: HTMLElement): Game {
   }
 
   app.boot();
+  if (flags.bot && window.__skate) { app.startRun(); window.__skate.bot(flags.bot as Parameters<NonNullable<Window['__skate']>['bot']>[0]); }
   analytics.track('session_start', { installDay: save.data.installDay, runsTotal: save.data.stats.runs, platform: 'web', quality: startTier });
   return { app, loop };
 }

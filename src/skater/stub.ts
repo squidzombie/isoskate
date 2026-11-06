@@ -22,7 +22,8 @@ export class StubSkaterView implements SkaterView {
   };
   private mode: 'run' | 'showcase' = 'run';
 
-  constructor(ctx: GfxContext) {
+  /** game/wiring.ts adds `object3d` to the run scene. */
+  constructor(_ctx: GfxContext) {
     this.object3d.name = 'skater';
     const legs = new Mesh(new CapsuleGeometry(0.13, 0.55, 4, 8), this.mats.legs);
     legs.position.y = 0.48;
@@ -48,7 +49,6 @@ export class StubSkaterView implements SkaterView {
     this.spin.add(this.body, this.board);
     this.object3d.add(this.spin);
     this.object3d.traverse((o) => { if (o instanceof Mesh) { o.castShadow = true; o.receiveShadow = false; } });
-    ctx.scene.add(this.object3d);
   }
 
   setLoadout(l: Loadout): void {

@@ -2,7 +2,7 @@
 // input binning by tick due time and the 60 fps render cap (TECH §6.1).
 import type { Bus } from '../core/bus';
 import type { GameEvent } from '../core/events';
-import { EMPTY_FRAME, type InputFrame, type InputSource } from '../core/input';
+import type { InputFrame, InputSource } from '../core/input';
 import { lerp } from '../core/math';
 import type { Sim } from '../core/sim';
 import { DT } from '../core/tuning';
@@ -150,4 +150,3 @@ export class GameLoop {
   }
 }
 
-export { EMPTY_FRAME };
