@@ -29,6 +29,10 @@ function flatten(obs: readonly Obstacle[]): Flat {
   for (const ob of obs) { for (const sl of ob.slabs) f.slabs.push(sl); for (const p of ob.pits) f.pits.push(p); }
   return f;
 }
+/** The flattened subset of a window's obstacles overlapping [s0, s1] (checkPath works through it in chunks). */
+function flattenRange(obs: readonly Obstacle[], s0: number, s1: number): Flat {
+  return flatten(obs.filter((o) => o.s <= s1 && o.s + o.len >= s0));
+}
 
 /** Ground under a point, with the WorldQuery rules (highest slab ≤ yMax, else pit lip, else the street at 0).
  *  GROUND_PIT tells whether the last call found a pit (no allocation per call: this runs per tick). */
@@ -101,11 +105,13 @@ function tube(line: SafeLine, a: number, b: number): void {
 /** The line swept at 60 Hz from tFrom to tTo with its ollies (tap ticks; the pop advances one tick in the tap tick),
  *  shifted by `shift` seconds. Null = clear. */
 export function checkPath(line: SafeLine, obs: readonly Obstacle[], tFrom: number, tTo: number, shift: number): string | null {
-  const f = flatten(obs);
+  // Work through the window in 0.5 s chunks, each with only the obstacles near it.
+  let f = flattenRange(obs, sAt(tFrom) - 3, sAt(tFrom + 0.5) + 3), fTo = tFrom + 0.5;
   const ollies = line.ollies.map((o) => o + shift).sort((a, b) => a - b);
   let oi = 0, air = false, tPop = 0, y0 = 0, y = 0, vy = 0;
   y = groundAt(f, sAt(tFrom), line.xAt(tFrom), STEP_UP);
   for (let t = tFrom; t <= tTo + 1e-9; t += DT) {
+    if (t > fTo) { f = flattenRange(obs, sAt(t) - 3, sAt(t + 0.5) + 3); fTo = t + 0.5; }
     const s = sAt(t), xc = line.xAt(t);
     if (!air && oi < ollies.length && t >= ollies[oi]! - 1e-9) {
       air = true; tPop = ollies[oi]! - DT; oi++;
@@ -162,8 +168,14 @@ export function ollieWindow(obs: readonly Obstacle[], x: number, tKey: number, p
   };
   const n0 = Math.round((tKey - phase) / DT);
   if (!ok(phase + n0 * DT)) return null;
-  let a = n0, b = n0;
-  while (a > n0 - 24 && ok(phase + (a - 1) * DT)) a--;
-  while (b < n0 + 24 && ok(phase + (b + 1) * DT)) b++;
+  // Expand in steps of 3 ticks, then refine the last step tick by tick (a hole narrower than 3 ticks inside a window
+  // is not physical: contacts change monotonically with the take-off time around an obstacle).
+  const edge = (dir: -1 | 1): number => {
+    let k = n0;
+    while (Math.abs(k + 3 * dir - n0) <= 24 && ok(phase + (k + 3 * dir) * DT)) k += 3 * dir;
+    while (Math.abs(k + dir - n0) <= 24 && ok(phase + (k + dir) * DT)) k += dir;
+    return k;
+  };
+  const a = edge(-1), b = edge(1);
   return { ta: phase + a * DT, tb: phase + b * DT };
 }

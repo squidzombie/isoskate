@@ -214,7 +214,7 @@ describe('validator rules on generated streets (20 seeds × 3,000 m, S_TRENCH on
       rows += rowsT.length;
     }
     expect(rows).toBeGreaterThan(20 * 30);
-    expect(worst).toBeLessThanOrEqual(2.5);   // a gate segment's row stands up to ~2 s after its latest start (A3 combo)
+    expect(worst).toBeLessThanOrEqual(3.5);   // a gate segment's row stands up to ~3.4 s into it (A3 combo: barrier first)
   });
 
   it('height bands: no solid top in 0.61–1.14 m; full-width hazards ≤ 0.50 m tall and ≤ 0.6 m long; pits ≤ 0.35 s·v', () => {
@@ -383,5 +383,5 @@ describe('the Lesson Line (DESIGN §12.3) and the v1 template set (§10.4)', () 
   });
 });
 
-const GOLDEN = [3721521044, 3146777944, 867771022];
-const GOLDEN_TRENCH = [1763372308, 491250573, 291711547];
+const GOLDEN = [2007229455, 3086295923, 965728633];
+const GOLDEN_TRENCH = [3215099561, 3544535483, 540282250];

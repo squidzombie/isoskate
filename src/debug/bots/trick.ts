@@ -132,9 +132,9 @@ export class TrickBot {
         return f;
       }
       if (!c.flip && c.flipsThisAir === 0 && c.airLeft > LATE_FLIP_CUTOFF + 0.05) {
-        // Clean enough: ≥ 85 % of the chain's rotation before touchdown (the sim lands ≥ 80 % clean, ≥ 55 % sketchy).
+        // Clean: the air left at the swipe covers ≥ 80 % of the chain (DESIGN §5.6; ≥ 55 % lands sketchy).
         // One of the three best that fit (variety: doubles, lasers, tres …).
-        const fits = CHAINS.filter((ch) => ch.dur * 0.85 + (ch.inputs.length - 1) * 2 * DT <= c.airLeft).slice(0, 3);
+        const fits = CHAINS.filter((ch) => ch.dur * 0.8 + (ch.inputs.length - 1) * 2 * DT <= c.airLeft).slice(0, 3);
         const fit = fits.length ? fits[Math.min(fits.length - 1, Math.floor(this.rng.float() * fits.length))] : undefined;
         if (fit) {
           this.chain = fit.inputs.slice(1);
