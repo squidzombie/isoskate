@@ -126,6 +126,37 @@ describe('misfire traces (Mobile review)', () => {
     }
   });
 
+  it('a hard flick from a thumb that is already steering is `steer` and `fast` (60 and 120 Hz sampling)', () => {
+    // The steering-stroke rule (DESIGN §4.3) accepts these only when `fast` or `fromRest`: a one-thumb ollie / flip.
+    for (const step of [16.7, 8]) {
+      for (const v of [0.8, 1.0, 1.5, 2.0]) {
+        const up = swipes(run(makeRec(), new Trace(1, 0, 150, CY).flick(0.2, 0, 400, step).flick(v, 90, 80, step).up().samples));
+        expect(up, `↑ ${v} px/ms @ ${step} ms`).toHaveLength(1);
+        expect(up[0], `↑ ${v} px/ms @ ${step} ms`).toMatchObject({ dir: 'u', steer: true, fast: true, fromRest: false });
+      }
+      for (const v of [0.8, 1.0, 1.5]) {
+        const ul = swipes(run(makeRec(), new Trace(1, 0, 150, CY).flick(0.2, 0, 400, step).flick(v, 135, 80, step).up().samples));
+        expect(ul[0], `↖ ${v} px/ms @ ${step} ms`).toMatchObject({ dir: 'ul', steer: true, fast: true });
+        const dn = swipes(run(makeRec(), new Trace(1, 0, 150, 300).flick(0.3, 0, 400, step).flick(v, 270, 80, step).up().samples));
+        expect(dn[0], `↓ ${v} px/ms @ ${step} ms`).toMatchObject({ dir: 'd', steer: true, fast: true });
+      }
+    }
+    // An accelerating flick (speed ramping up to 1.0 px/ms) after steering is fast too.
+    const ramp = new Trace(1, 0, 150, CY).flick(0.2, 0, 400, 16.7);
+    for (let i = 1; i <= 6; i++) ramp.flick(Math.min(1, i / 3), 90, 16.7, 16.7);
+    expect(swipes(run(makeRec(), ramp.up().samples))[0]).toMatchObject({ dir: 'u', steer: true, fast: true });
+  });
+
+  it('a flick that eases into a slower drag fires once (the dip never rises again), also on lift', () => {
+    for (const [v1, ms1, v2, ms2] of [[1.0, 60, 0.45, 250], [1.2, 50, 0.5, 200], [1.4, 40, 0.6, 300]] as const) {
+      const s = swipes(run(makeRec(), new Trace(1, 0, 330, CY).flick(v1, 180, ms1).flick(v2, 180, ms2).up().samples));
+      expect(s.map((x) => x.dir), `${v1} → ${v2}`).toEqual(['l']);
+    }
+    // A deliberate second flick out of the slow drag (it rises again) still fires: a double.
+    const dbl = new Trace(1, 0, 360, CY).flick(1.0, 180, 60).flick(0.45, 180, 60).flick(1.2, 180, 50).up();
+    expect(swipes(run(makeRec(), dbl.samples)).map((x) => x.dir)).toEqual(['l', 'l']);
+  });
+
   it('a parked-then-flicked thumb is `fromRest` (also with ±2 px tremor)', () => {
     for (const tremor of [0, 2]) {
       const tr = new Trace(1, 0, 150, CY).flick(0.3, 0, 300).rest(110, tremor).flick(1.2, 180, 60).up();

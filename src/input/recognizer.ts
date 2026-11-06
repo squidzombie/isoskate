@@ -8,11 +8,15 @@
 //     When the owner lifts or cancels, the next touch that becomes a DRAG takes ownership.
 //   - press: level for every non-DRAG touch; dropped when the touch becomes a DRAG.
 // Swipes (inside a DRAG): ≥ 32·k px within the 80 ms window, or on lift with ≥ 24·k px in the last 80 ms. Labels:
-//   fast (≥ 0.75·k px/ms over the flick), fromRest (parked < 0.15·k px/ms for ≥ 60 ms right before the flick),
-//   steer (the steering owner, older than 150 ms). Direction: arc compensation then 8 sectors (cardinals ±30°,
-//   diagonals ±15°; Simple tricks snaps diagonals to cardinals). After a fire: a 150 ms recoil mask (motion within
-//   ±60° of the opposite direction is invisible to swipe detection; steering stays live), re-fire only after 90 ms,
-//   32·k px from the fire point and a speed dip below 50% of the flick's peak, and no lift-off swipe for 150 ms.
+//   fast (≥ 0.75·k px/ms: the flick's speed since it started moving, or the thumb's speed right now, whichever is
+//   higher, so a hard flick from a thumb that is already steering reads fast even though the 80 ms window still
+//   holds slow steering), fromRest (parked < 0.15·k px/ms for ≥ 60 ms right before the flick), steer (the steering
+//   owner, older than 150 ms). Direction: arc compensation then 8 sectors (cardinals ±30°, diagonals ±15°; Simple
+//   tricks snaps diagonals to cardinals). After a fire: a 150 ms recoil mask (motion within ±60° of the opposite
+//   direction is invisible to swipe detection; steering stays live), re-fire only after 90 ms, 32·k px from the fire
+//   point and a speed dip below 50% of the flick's peak followed by a new rise (back to ≥ twice the trough and at
+//   least the lift-off swipe speed), and no lift-off swipe for 150 ms. The rise is what makes the dip a "dip": a flick
+//   that eases into a slower drag dips but never rises, so it fires once (a deliberate flick-flick fires twice).
 // `dxPx` of a swipe is the steering that stroke contributed: 0 for a non-owner touch; for the owner, the window's dx,
 // or all dx since touch-down when the stroke is ≤ 150 ms old.
 import type { Dir8 } from '../core/ids';
@@ -105,7 +109,7 @@ interface Touch {
   steerX: number;
   // swipe bookkeeping
   fires: number; lastFireMs: number; fireFx: number; fireFy: number; fireUx: number; fireUy: number;
-  peak: number; dipped: boolean;
+  peak: number; dipped: boolean; trough: number; rose: boolean;
   // rest bookkeeping (fromRest): parked while the filtered speed stays under restSpeed
   moving: boolean; restStart: number; lastRestLen: number; motionStart: number;
 }
@@ -179,17 +183,23 @@ export function createRecognizerImpl(partial?: Partial<RecognizerConfigExt>): Re
     if (t - flickStart < 1) flickStart = ws;
     const [qx, qy] = at(tc.trail, flickStart, true);
     const flickSpeed = Math.hypot(tc.fx - qx, tc.fy - qy) / Math.max(1, t - flickStart);
+    // A thumb that was already steering keeps `moving`, so the flick above spans the whole window (slow steering
+    // included): the speed right now is what tells a hard flick from a corrective drag.
+    const vNow = speed(tc, RECOGNIZER_INTERNALS.speedWinMs);
     const len = Math.hypot(dx, dy);
     out.push({
       k: 'swipe', tMs: t, dir: directionOf(dx, dy, sx, config), dxPx,
-      fast: flickSpeed >= (config.fastMinPx * k) / config.swipeWindowMs,
+      fast: Math.max(flickSpeed, vNow) >= (config.fastMinPx * k) / config.swipeWindowMs,
       fromRest: (tc.moving ? tc.lastRestLen : tc.t - tc.restStart) >= config.restMs,
       steer: isOwner && t - tc.downMs > config.steerStrokeMs,
     });
     tc.fires++; tc.lastFireMs = t; tc.fireFx = tc.fx; tc.fireFy = tc.fy;
     tc.fireUx = dx / (len || 1); tc.fireUy = dy / (len || 1);
-    tc.peak = speed(tc, RECOGNIZER_INTERNALS.speedWinMs); tc.dipped = false;
+    tc.peak = vNow; tc.dipped = false; tc.trough = Infinity; tc.rose = false;
   }
+
+  /** Re-fire (and lift-off after a fire) needs the dip and then a new rise (see the header). */
+  const rearmed = (tc: Touch) => tc.dipped && tc.rose;
 
   /** A position sample for an existing touch: recoil filter, slop, steering, rest and peak bookkeeping, swipes. */
   function move(tc: Touch, s: PointerSample, out: Gesture[]): void {
@@ -225,11 +235,16 @@ export function createRecognizerImpl(partial?: Partial<RecognizerConfigExt>): Re
     } else if (!tc.moving) {
       tc.moving = true; tc.lastRestLen = prevT - tc.restStart; tc.motionStart = prevT;
     }
-    // Peak and dip of the last flick (re-fire rule).
-    if (tc.fires > 0 && !tc.dipped) {
+    // Peak, dip and new rise after the last flick (re-fire rule).
+    if (tc.fires > 0 && !tc.rose) {
       const v = speed(tc, RECOGNIZER_INTERNALS.speedWinMs);
-      tc.peak = Math.max(tc.peak, v);
-      if (v < config.refireDip * tc.peak) tc.dipped = true;
+      if (!tc.dipped) {
+        tc.peak = Math.max(tc.peak, v);
+        if (v < config.refireDip * tc.peak) { tc.dipped = true; tc.trough = v; }
+      } else {
+        tc.trough = Math.min(tc.trough, v);
+        if (v >= Math.max(tc.trough / config.refireDip, (config.liftSwipeMinPx * k) / config.swipeWindowMs)) tc.rose = true;
+      }
     }
 
     if (tc.state !== 'drag') return;
@@ -238,7 +253,7 @@ export function createRecognizerImpl(partial?: Partial<RecognizerConfigExt>): Re
     if (tc.fires > 0) {
       if (t - tc.lastFireMs < config.refireMs) return;
       if (Math.hypot(tc.fx - tc.fireFx, tc.fy - tc.fireFy) < config.swipeMinPx * k) return;
-      if (!tc.dipped || inRecoil(tc, t, wx, wy)) return;
+      if (!rearmed(tc) || inRecoil(tc, t, wx, wy)) return;
     }
     fire(tc, t, wx, wy, ws, out);
   }
@@ -263,7 +278,7 @@ export function createRecognizerImpl(partial?: Partial<RecognizerConfigExt>): Re
         touches.set(s.id, {
           id: s.id, downMs: s.tMs, x0: s.x, y0: s.y, t: s.tMs, x: s.x, y: s.y, fx: s.x, fy: s.y,
           state: 'pending', press: true, trail: [{ t: s.tMs, x: s.x, y: s.y, fx: s.x, fy: s.y }], steerX: s.x,
-          fires: 0, lastFireMs: -Infinity, fireFx: s.x, fireFy: s.y, fireUx: 0, fireUy: 0, peak: 0, dipped: false,
+          fires: 0, lastFireMs: -Infinity, fireFx: s.x, fireFy: s.y, fireUx: 0, fireUy: 0, peak: 0, dipped: false, trough: Infinity, rose: false,
           moving: false, restStart: s.tMs, lastRestLen: 0, motionStart: s.tMs,
         });
         out.push({ k: 'press', tMs: s.tMs, down: true });
@@ -278,7 +293,7 @@ export function createRecognizerImpl(partial?: Partial<RecognizerConfigExt>): Re
       // up: tap, lift-off swipe, then the end of hold / press / ownership.
       const t = Math.max(tc.t, s.tMs);
       if (tc.state !== 'drag' && t - tc.downMs <= config.tapMaxMs) out.push({ k: 'tap', tMs: t });
-      if (tc.state === 'drag' && (tc.fires === 0 || (t - tc.lastFireMs >= config.liftSuppressMs && tc.dipped))) {
+      if (tc.state === 'drag' && (tc.fires === 0 || (t - tc.lastFireMs >= config.liftSuppressMs && rearmed(tc)))) {
         const [wx, wy, ws] = windowDisp(tc, t);
         if (Math.hypot(wx, wy) >= config.liftSwipeMinPx * config.k && !inRecoil(tc, t, wx, wy)) fire(tc, t, wx, wy, ws, out);
       }

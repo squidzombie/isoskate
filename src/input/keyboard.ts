@@ -7,11 +7,12 @@
 //     Shift → press + manualKey, Q → grab.
 // Key repeat (`repeat`) never produces edges. Esc, Enter and R belong to the app (game/app.ts).
 import type { Dir8 } from '../core/ids';
+import { KEY_DIAG_AMEND } from '../core/tuning';
 import type { KeyEdge, KeyLevels } from './frames';
 
 export type KeyPreset = 'A' | 'B';
-/** The diagonal amend window of preset A (DESIGN §4.6; the sim side is KEY_DIAG_AMEND in core/tuning.ts). */
-export const KEY_AMEND_MS = 80;
+/** The diagonal amend window of preset A (DESIGN §4.6): the same number the sim uses (core/tuning KEY_DIAG_AMEND). */
+export const KEY_AMEND_MS = KEY_DIAG_AMEND.ms;
 
 const ARROWS: Readonly<Record<string, Dir8>> = { ArrowUp: 'u', ArrowDown: 'd', ArrowLeft: 'l', ArrowRight: 'r' };
 const PRESET_B_DIRS: Readonly<Record<string, Dir8>> = {
