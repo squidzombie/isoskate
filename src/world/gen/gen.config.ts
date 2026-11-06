@@ -41,7 +41,9 @@ export const GEN = {
   /** Safe line arrives at a gap this long before the hitbox front meets it. */
   arriveMargin: 0.35,
   /** Coins (DESIGN §10.8). */
-  coins: { stringSec: 0.12, stringMin: 5, stringMax: 8, edgeUp: 0.35, arcUp: 0.25, groundY: 0.5, breatherAmp: 1.4 },
+  coins: { stringSec: 0.12, stringMin: 5, stringMax: 8, edgeUp: 0.35, arcUp: 0.25, groundY: 0.5, breatherAmp: 1.4, waveCount: 5 },
+  /** Chance that a freely drawn S_OPEN carries a flat bar (trick line) instead of a breather wave. */
+  openFlatbar: 0.6,
   /** No required action in the first / last seconds of a template (DESIGN §10.5). */
   noActionHead: 0.6, noActionTail: 0.4,
   /** First required action after a startT spawn (seconds). */

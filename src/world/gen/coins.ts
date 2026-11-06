@@ -33,7 +33,7 @@ export class CoinWriter {
   }
   /** A free wave string (breathers, gateways): x = centre + amp·sin. */
   wave(t0: number, t1: number, xc: number, amp: number, phase: number): void {
-    const n = Math.max(GEN.coins.stringMin, Math.min(GEN.coins.stringMax, Math.floor((t1 - t0) / 0.3)));
+    const n = GEN.coins.waveCount;
     for (let k = 0; k < n; k++) {
       const t = t0 + ((k + 0.5) / n) * (t1 - t0);
       const x = Math.max(-2.8, Math.min(2.8, xc + amp * Math.sin(phase + k * 0.9)));

@@ -24,7 +24,7 @@ export const S_OPEN: Template = {
     const dur = c.dur ?? c.rng.range(GEN.open.dur[0], GEN.open.dur[1]);
     const t1 = Math.min(c.t0 + dur, c.maxT1);
     const x = c.line.x, v = c.v;
-    if (c.dur === undefined && t1 - c.t0 >= 2.8 && c.rng.chance(0.45)) {
+    if (c.dur === undefined && t1 - c.t0 >= 2.8 && c.rng.chance(GEN.openFlatbar)) {
       // Optional flat bar (trick line), ≥ 1.8 m off the safe line on the road.
       let bx = x + (c.rng.chance(0.5) ? 1 : -1) * c.rng.range(1.8, 2.6);
       if (Math.abs(bx) > 2.6) bx = x - Math.sign(bx - x) * Math.abs(bx - x);
