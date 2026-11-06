@@ -173,6 +173,39 @@ The first block is the frozen behaviour later packages (GP, WG, WA, the bots) ca
 
 ## SK: Skater and cosmetics (W2b)
 
+### Shared crash-desaturation uniform for the skater materials   (status: open)
+- File / symbol: gfx/index.ts (INT/WA) › a shared `{ uDesat: IUniform<number> }` (DESIGN §18.8 "40% desaturate through a shared material uniform").
+- Change: `export function sharedUniforms(ctx: GfxContext): { uDesat: IUniform<number> }` (one object per context).
+- Why: the skater's toon materials patch their shaders (skater/materials.ts); with the shared uniform they would desaturate with the world during the crash slow-mo instead of staying fully saturated.
+- Local workaround meanwhile: none (the skater stays saturated during a crash).
+
+### Vfx emitter for the legendary effects   (status: open, M5 stretch)
+- File / symbol: core/view.ts › Vfx
+- Change: `emit?(kind: 'steam' | 'leaves' | 'petals' | 'glyphs' | 'lightTrail', p: { s: number; x: number; y: number }, n?: number): void`
+- Why: TECH §8.5 routes legendary particles through vfx/ (Kettle's steam puffs on landings, Gus's leaf trail, Sunflower's petal shed, Holo Visor's glyph trail, Golden Hour's light trail). The skater knows when and where; vfx/ owns the particle pool.
+- Local workaround meanwhile: static fallbacks (DESIGN §15 v1 scope): Gus's leaf pin print, glowing light-trail wheels, glowing glyph band; Kettle's screen face does change on every trick and the Fishbowl's goldfish do orbit (both inside skater/).
+
+### Notes for the gate (behaviour other packages can rely on; no contract change)
+- **Showcase framing (WA's Locker camera).** In `setMode('showcase')` the skater stays at its run position (`skater.object3d` world position, origin-rebased like the run) and, at turntable 0, faces world **+z** (toward the run camera's side of the street), the board broadside; goofy riders are turned so they face +z too. A Locker camera at `object3d` + (0, 1.3, 3.4) looking at y ≈ 0.95 frames the whole rider (that is what `tests/unit/skater/sheet.ts?sheet=showcase` does). The preview loop hops ≤ 0.32 m every 5.5 s (kickflip, pop shove-it, heelflip, BS 180, Indy).
+- **What the view reads from `SkaterPose` (for GP's `Sim.pose()`).** `heading`, `lean` (rad, clamped to ±22°), `latAccel` (world +x; the view derives toeside / heelside from the rider's stance), `board` (deg; flips and shove-its; a manual pitch here is used instead of the table's ±12°, never added twice), `spinYaw` (deg, BS +; mirrored for goofy), `fakie` (a 180 landing snaps, the revert pivots), `grindId` / `manualKind` (pose tables in skater/poses.ts; `bodyYaw` is not read yet: slides take their yaw from the grind table), `height` (crash ground), `landImpulse` and `land` events (absorb dip, Gus's wave on Perfect, Lark's coat hem), `crash` (the sim stops stepping after a crash, so the view advances the tumble with `RenderFrame.dt`, crash slow-mo included).
+- **Dusk-driven glows** (Vesper's reflective strips 0.2 → 1.2, the Paper Lantern 0.2 → 1.0) follow `RenderFrame.area` / `blend` along `AREA_ORDER` (Downtown 0 → Neon 1), independent of the palette module.
+- **Exposure.** `skater.config.ts › SHADE.albedo` (0xd6d6d6) keeps light cloth hues out of the ACES shoulder under the M0 golden lights (`LIGHT_SCALE` = π). Retune it (one number) at G2 if WA's palette changes the light levels.
+- **Extras on the concrete view** (`skater/index.ts › SkaterViewImpl`): `stats()` (draw calls, triangles incl. outline twins, last switch ms), `snap()`, `setShowcaseTime(t)`, `meshes()`. `content/index.ts` adds `itemById`, `itemsOfSlot`, `loadoutOf`.
+- **Contact sheets:** `PORT=5183 node tests/unit/skater/sheet.mjs` (Vite on $PORT) writes `artifacts/sheets/*.png`; `scripts/shots.mjs --cosmetics` (M0-io) can drive the same items in-game through `__skate.ui('locker', { preview, yaw })`.
+
+### Design question: board identity in the run at 31 px   (status: open, for the design owner at G2)
+- DESIGN §15.2 gives every board the same grip (`#2E2A33`) and a natural ply edge, and the run camera (35° down, from behind) sees only the grip under the shoes. So in a run a board shows its graphic only during flips (bottom up from about 90° to 270° of roll). It also shows in the Locker / Shop board display and on the card art (below).
+- Proposal: a palette-coloured grip cut at the tail kick (the graphic shows through), or a thin palette-coloured grip border. Either would be one tunable in `skater.config.ts`. Not implemented, because DESIGN fixes the grip.
+
+### Notes for the gate, after the review (appended; no contract change)
+- **Board display (Locker / Shop).** A board change while in `setMode('showcase')` makes the rider step off and hold the deck upright beside them, graphic toward the camera, for `SHOWCASE.display.dur` (2.6 s). They then hop back on and kickflip. `app.ts` already calls `setMode('showcase')` before the preview `setLoadout`; keep that order. `SkaterViewImpl.showBoard(sec?)` triggers the display directly.
+- **Card art for MU:** `drawBoardThumb(c, look, x, y, w, h)` (exported from `skater/`) draws the deck graphic in its outline, portrait or landscape, into any 2D context. Sample sheet: `artifacts/sheets/thumbs.png`.
+- **Crash direction:** the view reads `RenderFrame.cur.crash.cause`, falling back to the `crash` event's `cause`. A `slam` bounces back off the obstacle and lands the rider on their back in front of it. Bad landings and falls tumble forward. GP's sim must keep `SkaterState.crash.cause` set while crashed.
+- **Blue hour:** as the dusk factor goes from 0.67 (Docks) to 1 (Neon), the outline lifts from ink toward a pale lilac (`OUTLINE.nightColor`) and the rim turns to the cool moon fill. WA's contrast gate will see this on the skater.
+- **No shader compile on a switch:** all view materials and canvases live as long as the view. Each view has one canvas per slot (`sk-atlas:<n>`, `sk-board:<n>`, `sk-decal:<n>`), drawn by callbacks that read the current look, so `redrawCanvasTextures` after a context restore redraws what is on screen. The Fishbowl glass program is compiled at construction (`renderer.compile(object3d, camera, ctx.scene)`).
+- **Switch cost on SwiftShader:** the first frame after a switch uploads one redrawn canvas, and SwiftShader rasterises the 2D canvas in software at upload time (board ≫ skater ≈ helmet). `sheet.mjs` (`items60`) gates on an unchanged shader program count and on a typical switch (set p95 + first-frame p50 ≤ 30 ms), and reports the p95. Check the real-device cost with `__skate.perf()` on a phone at G2/M5.
+- **More extras:** `SkaterViewImpl.materials()`, `showBoard()`, `anim.displayBlend`; `CATALOG` and `DEFAULT_LOADOUT` are deep-frozen.
+
 ## MU: Meta and UI (W3a)
 
 ## AU: Audio (W3b)
