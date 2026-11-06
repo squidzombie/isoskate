@@ -161,3 +161,46 @@ test('pause: button, Esc and visibility; resume continues the run', async ({ pag
   await expect(screenOn(page, 'pause')).toHaveClass(/\bon\b/);
   expect(errors).toEqual([]);
 });
+
+test.describe('landscape phone', () => {
+  test.use({ viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+
+  test('a run started in landscape pauses on the rotate card until the phone is portrait', async ({ page }, info) => {
+    test.skip(info.project.name !== 'mobile', 'one project is enough for the viewport override');
+    const errors: string[] = [];
+    await boot(page, errors, '&quality=low');
+    await page.touchscreen.tap(422, 180);
+    const pause = screenOn(page, 'pause');
+    await expect(pause).toHaveClass(/\bon\b/);
+    await expect(pause).toContainText('ROTATE TO PORTRAIT');
+    const frozen = await page.evaluate(() => window.__skate!.snapshot().tick);
+    await page.getByRole('button', { name: /resume/i }).click();      // still landscape: stays on the card
+    await expect(pause).toHaveClass(/\bon\b/);
+    await expect(pause).toContainText('ROTATE TO PORTRAIT');
+    expect(await page.evaluate(() => window.__skate!.snapshot().tick)).toBe(frozen);
+    await page.setViewportSize({ width: 390, height: 844 });           // rotate back: normal Pause, no auto-resume
+    await expect(pause).toContainText('PAUSED');
+    expect(await page.evaluate(() => window.__skate!.snapshot().tick)).toBe(frozen);
+    await page.getByRole('button', { name: /resume/i }).click();
+    await expect(pause).not.toHaveClass(/\bon\b/);
+    await expect.poll(() => page.evaluate(() => window.__skate!.snapshot().tick)).toBeGreaterThan(frozen);
+    expect((await page.evaluate(() => window.__skate!.camera())).yawDeg).toBe(0);
+    expect(errors).toEqual([]);
+  });
+});
+
+test('__skate.ui() goes through the app: Locker shows the turntable, Home restores the run camera', async ({ page }) => {
+  const errors: string[] = [];
+  await boot(page, errors, '&quality=low');
+  await page.evaluate(() => window.__skate!.ui('locker', { preview: 'bd_plain_maple', yaw: 30 }));
+  await expect(screenOn(page, 'locker')).toHaveClass(/\bon\b/);
+  await page.getByRole('button', { name: /back/i }).click();
+  await expect(screenOn(page, 'title')).toHaveClass(/\bon\b/);
+  await page.evaluate(() => window.__skate!.ui('results'));
+  await expect(screenOn(page, 'results')).toHaveClass(/\bon\b/);
+  await page.getByRole('button', { name: /roll again/i }).click();
+  await expect(screenOn(page, 'results')).not.toHaveClass(/\bon\b/);
+  await expect.poll(() => page.evaluate(() => window.__skate!.snapshot().tick)).toBeGreaterThan(3);
+  expect(await page.evaluate(async () => (window.__skate!.renderAudio ? await window.__skate!.renderAudio('downtown', 1) : 'missing'))).toBeNull();
+  expect(errors).toEqual([]);
+});

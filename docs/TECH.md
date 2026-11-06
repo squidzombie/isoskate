@@ -36,7 +36,7 @@
 | `@fontsource/bungee` | **5.3.0** | devDependency. Only `files/bungee-latin-400-normal.woff2` is used. |
 | `@fontsource/nunito` | **5.3.0** | devDependency. Only `files/nunito-latin-{700,800,900}-normal.woff2` are used. |
 | `@types/node` | **22.20.5** | devDependency (INT, M0): types for `vite.config.ts`, `playwright.config.ts` and Node scripts. Not part of the bundle. |
-| *(no ESLint)* | — | The global ESLint 10 can't parse TypeScript without extra plugins, so **`scripts/lint.mjs`** (about 80 lines, no dependencies) enforces two kinds of rule. **Determinism bans** (regex over the stripped source): `Math.random`, `Date.now`, `performance`, `window`, `document`, `requestAnimationFrame` and any `three` import in `src/sim/`, `src/tricks/`, `src/world/gen/` and `src/core/` (`core/view.ts` may use `import type` from three). **Import boundaries:** `sim/`, `tricks/` and `world/gen/` may not import `content/`, `skater/`, `ui/`, `audio/` or `meta/`; no module may import another module's internals, only its `index.ts` or `core/`. |
+| *(no ESLint)* | — | The global ESLint 10 can't parse TypeScript without extra plugins, so **`scripts/lint.mjs`** (about 80 lines, no dependencies) enforces two kinds of rule. **Determinism bans** (regex over the stripped source): `Math.random`, `Date`, `performance`, `window`, `document`, `self`, `globalThis`, `navigator`, storage, `crypto`, timers, `requestAnimationFrame`, `queueMicrotask`, `eval`, `Function`, any use of `Math` other than `Math.<member>`, and any `three` import in `src/sim/`, `src/tricks/`, `src/world/gen/` and `src/core/` (`core/view.ts` may use `import type` from three). **Import boundaries:** `sim/`, `tricks/` and `world/gen/` may not import `content/`, `skater/`, `ui/`, `audio/` or `meta/`; no module may import another module's internals, only its `index.ts` or `core/`. |
 
 **Rules**
 - Node 22 (local has v22.23.4). `package.json` sets `"type": "module"` and `"engines": { "node": ">=20" }`.
@@ -61,7 +61,7 @@
 ```
 isoskate/
   index.html  package.json  package-lock.json  tsconfig.json  vite.config.ts
-  vitest.config.ts  playwright.config.ts  .github/workflows/pages.yml                       INT
+  vitest.config.ts  vitest.bots.config.ts  playwright.config.ts  .github/workflows/pages.yml   INT
   public/  manifest.webmanifest  icons/{180,192,512,512-maskable}.png      (added in M4)        INT
   src/
     main.ts                                                                    INT
@@ -106,7 +106,7 @@ isoskate/
     unit/<module>/*.test.ts      (owned by the module owner)
     bots/*.test.ts               (WG)
     e2e/*.spec.ts                (INT; each agent may add one spec file named after its package)
-  scripts/  lint.mjs  gen-icons.mjs  shots.mjs  bot-report.mjs  size-check.mjs              INT
+  scripts/  lint.mjs  gen-icons.mjs  shots.mjs  test-bots.mjs  bot-report.mjs  size-check.mjs  INT
             (shots.mjs ships in M0 with every mode, §11.4; gen-icons and size-check arrive in M4)
   docs/     DESIGN.md TECH.md ROADMAP.md
 ```
@@ -447,6 +447,7 @@ export interface InputSource {
   setSensitivity(mult: number): void;                      // 0.6..1.6
   setPreset(p: 'A' | 'B'): void;
   onAnyInput(f: () => void): () => void;                   // fires on pointerup/touchend/click/keydown (user activation): audio unlock
+  setSimpleTricks?(on: boolean): void;                     // Settings "Simple tricks" → RecognizerConfig.simpleTricks (added @m0-core)
   dispose(): void;
 }
 ```
@@ -605,6 +606,7 @@ export interface SkaterView {
   setLoadout(l: Loadout): void;
   update(f: RenderFrame): void;
   setMode(m: 'run' | 'showcase'): void;   // showcase = Locker/Shop turntable
+  setTurntable?(yawDeg: number): void;    // showcase yaw, deg (Locker drag via UiIntent 'turntable', shots) (added @m0-core)
   rebuildGPU(): void;
 }
 export type CameraMode = 'run' | 'title' | 'locker';   // 'title' = static diorama (live attract run is M5 stretch)
@@ -976,6 +978,9 @@ export interface DebugAPI {
   save: { get(): SaveV1; set(s: SaveV1): void; reset(): void };
   ui(screen: ScreenId, params?: object): void;
   audio(): { unlocked: boolean; voices: number; scene: string; intensity: number };
+  /** shots --audio: `sec` seconds of `area` rendered offline, as a 16-bit stereo WAV in base64 plus its peak (0..1).
+   *  Resolves null until AU ships audio/index.ts `renderOffline` (added @m0-core). */
+  renderAudio?(area: AreaId, sec: number): Promise<{ wavBase64: string; peak: number; sampleRate: number; sec: number } | null>;
 }
 declare global { interface Window { __skate?: DebugAPI } }
 ```
@@ -1032,12 +1037,14 @@ export function createUi(root: HTMLElement): UiApi;                             
 export function createMonetization(flags: { fakeAds: boolean }): MonetizationProvider;            // platform
 export function createHaptics(): Haptics;                                                          // platform
 export function installDebugApi(deps: object): void;                                              // debug
+export function renderOffline(area: AreaId, sec: number): Promise<AudioBuffer | null>;          // audio (added @m0-core: shots --audio)
 ```
 
 ### 4.14 `core/decor.ts`: decor vocabulary (added in M0, SCHEDULE.md)
 - `export const DECOR_KINDS` is the single vocabulary of `Decor.kind` values: each entry has a `zone` (`ground`, `side`, `backdrop`, `overhead`, `ambient`), the areas/gateways that may use it, a default `castShadow`, a doc string and a doc string per `Decor.params` key. `DecorKind = keyof typeof DECOR_KINDS`, `isDecorKind(k)`.
 - `DECOR_LIMITS` holds the placement rules (side band |x| ≥ 4.6, signs |x| ≥ 4.9, backdrop |x| ≥ 5, overhead y ≥ 3.2 m and ≤ 0.3 m thick, maglev at 7 m). `DECOR_BRANDS` (DESIGN §18.6) and `NEON_SIGN_WORDS` (the reviewed Japanese list) are what `brand` / `word` params index into.
 - WG emits only these kinds (`world/gen/decor.ts` uses it, never redefines it); WA renders every kind in every listed area skin. `Decor.kind` stays `string` in `core/world.ts` for compatibility.
+- A gateway id in `areas` means "inside that gateway's 4 s segment". The generic street kinds (decals, lamps, sign posts, wires, verge, shadow casters, end walls) list every area **and** every gateway.
 
 ---
 
@@ -1571,6 +1578,11 @@ frames.ts: queue of timestamped gestures → InputFrame per tick:
   - `--hud`: HUD layouts at 320 / 360 / 390 px;
   - `--audio`: 20 s `OfflineAudioContext` renders per area to `artifacts/audio/*.wav` with a peak check.
 - Viewports: 390×844, 390×664 (Safari toolbars) and 1280×800. Output goes to `artifacts/shots/`.
+- **Hooks (frozen at m0-core).** Everything goes through `window.__skate`:
+  - `previewArea(area, blend?)`, `renderNow()`, `camera()`, `contrast()` (M0-io implements it with `host.cameraRig.project` and pixel reads).
+  - `ui(screen, params)` goes through `App.open` (game/app.ts), so App and UI never disagree. `'title'` goes Home, `'run'` starts a run, anything else leaves the run. Params: `result`, `rewards`, `rotate`, and for `locker` / `shop` the turntable: `loadout?: Partial<Loadout>` (merged over the equipped one: the 6 loadouts), `preview?: ItemId` (try one item on: the 40-item contact sheet) and `yaw?: number` (deg, `SkaterView.setTurntable`). Entering Locker / Shop sets `skater.setMode('showcase')` and `cameraRig.setMode('locker')`; leaving restores `run` and the equipped loadout.
+  - `renderAudio(area, sec)` → `{ wavBase64, peak, sampleRate, sec } | null` (16-bit stereo WAV). It wraps `renderOffline` from `audio/index.ts` (AU); `--audio` writes `artifacts/audio/<area>.wav` and fails on a null result, a peak ≥ 1.0 or silence.
+  - `debug/api.ts` gets a `DebugHost` from `game/wiring.ts` with the live `sim`, `loop`, `input`, `cameraRig`, `skater`, `vfx`, `meta`, `gfx`, `worldView`, `save`, `ui`, `audio`, both buses, `app` and `renderAudio`, so M0-io never edits `game/`.
 - Agents must look at these to judge visuals (readability checklist: DESIGN §18.4).
 
 ### 11.5 Debug tooling (INT)
@@ -1605,7 +1617,7 @@ frames.ts: queue of timestamped gestures → InputFrame per tick:
 | `build` | `vite build` → `dist/` (`base: './'`, manifest + generated `sw.js` + icons) |
 | `build:single` | (M4) `vite build --mode single` → `dist-single/index.html` (`viteSingleFile()`, `assetsInlineLimit: Infinity`, `cssCodeSplit: false`, fonts inlined; SW and manifest link disabled via `import.meta.env.MODE === 'single'`) |
 | `preview` | `vite preview --port 4173` |
-| `test` / `test:bots` | `vitest run` / `vitest run tests/bots --pool threads` |
+| `test` / `test:bots` | `vitest run` (unit + `tests/bots/quick*.test.ts`) / `node scripts/test-bots.mjs` (`vitest.bots.config.ts`: all of `tests/bots/`, threads; `--release` → env `BOTS_RELEASE=1`) |
 | `e2e` | `npm run build && playwright test` (from M4: `npm run build && npm run build:single && playwright test`) |
 | `icons` / `shots` / `size` | `node scripts/gen-icons.mjs` / `node scripts/shots.mjs` / `node scripts/size-check.mjs` |
 

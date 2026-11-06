@@ -4,7 +4,7 @@ import { expect, it } from 'vitest';
 import type { AudioEngine } from '../../../src/core/audio';
 import type { CosmeticItem } from '../../../src/core/cosmetics';
 import type { GestureRecognizer, InputSource, RecognizerConfig } from '../../../src/core/input';
-import type { QualityTier } from '../../../src/core/ids';
+import type { AreaId, QualityTier } from '../../../src/core/ids';
 import type { MetaApi } from '../../../src/core/meta';
 import type { Analytics, Haptics, MonetizationProvider } from '../../../src/core/platform';
 import type { SaveStore } from '../../../src/core/save';
@@ -41,6 +41,12 @@ export const FACTORY_SIGNATURES: [
   Equals<typeof import('../../../src/debug')['installDebugApi'], (deps: object) => void>,
 ] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true];
 
+/** Hooks added at m0-core (TECH §4.13 / §11.4) that game/wiring.ts relies on. */
+export const HOOK_SIGNATURES: [
+  Equals<typeof import('../../../src/audio')['renderOffline'], (area: AreaId, sec: number) => Promise<AudioBuffer | null>>,
+] = [true];
+
 it('factory signatures match TECH §4.13 (enforced by tsc)', () => {
   expect(FACTORY_SIGNATURES.every(Boolean)).toBe(true);
+  expect(HOOK_SIGNATURES.every(Boolean)).toBe(true);
 });

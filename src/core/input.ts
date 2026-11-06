@@ -55,5 +55,6 @@ export interface InputSource {
   setSensitivity(mult: number): void;                      // 0.6..1.6
   setPreset(p: 'A' | 'B'): void;
   onAnyInput(f: () => void): () => void;                   // fires on pointerup/touchend/click/keydown (user activation): audio unlock
+  setSimpleTricks?(on: boolean): void;                     // Settings "Simple tricks" → RecognizerConfig.simpleTricks (added @m0-core)
   dispose(): void;
 }

@@ -244,14 +244,17 @@ export class StubWorldGen implements WorldGen {
 
   private decor(out: Out, s0: number, s1: number, rng: Sfc32): void {
     // Buildings both sides (backdrop and shadow casters) and street lamps on the sidewalk band.
+    // The sun is behind-left (DESIGN §18.3), so the −x row casts across the street: there it gets shorter blocks with
+    // cross-street gaps, so its shadows stripe the street instead of covering it (TODO(WG): the §18.5 recipe).
     for (const side of [-1, 1] as const) {
+      const sunSide = side < 0;
       let s = s0;
       while (s < s1) {
-        const d = round1cm(rng.range(8, 16));
-        const h = round1cm(rng.range(8, 22));
+        const d = round1cm(sunSide ? rng.range(6, 12) : rng.range(8, 16));
+        const h = round1cm(sunSide ? rng.range(6, 16) : rng.range(8, 22));
         out.decor.push({ kind: 'building', s: round1cm(s), x: side * 5.2, y: 0.15, rotY: 0, scale: 1, variant: rng.int(0, 7),
-          castShadow: true, params: { w: round1cm(rng.range(6, 10)), d: Math.min(d, round1cm(s1 - s)), h } });
-        s += d + round1cm(rng.range(0, 3));
+          castShadow: true, params: { w: round1cm(sunSide ? rng.range(5, 8) : rng.range(6, 10)), d: Math.min(d, round1cm(s1 - s)), h } });
+        s += d + round1cm(sunSide ? rng.range(8, 14) : rng.range(0, 3));
       }
       for (let s2 = Math.ceil(s0 / 14) * 14; s2 < s1; s2 += 14) {
         out.decor.push({ kind: 'street_lamp', s: s2, x: side * 4.75, y: 0.15, rotY: 0, scale: 1, variant: 0, castShadow: true, params: { h: 5 } });

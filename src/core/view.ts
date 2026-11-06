@@ -60,6 +60,7 @@ export interface SkaterView {
   setLoadout(l: Loadout): void;
   update(f: RenderFrame): void;
   setMode(m: 'run' | 'showcase'): void;   // showcase = Locker/Shop turntable
+  setTurntable?(yawDeg: number): void;    // showcase yaw, deg (Locker drag via UiIntent 'turntable', shots) (added @m0-core)
   rebuildGPU(): void;
 }
 export type CameraMode = 'run' | 'title' | 'locker';   // 'title' = static diorama (live attract run is M5 stretch)

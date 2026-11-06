@@ -14,7 +14,10 @@ const SRC = join(ROOT, 'src');
 const DETERMINISTIC = ['sim', 'tricks', 'world/gen', 'core'];
 const DET_ALLOWED_DEPS = new Set(['core', 'sim', 'tricks', 'world/gen']);
 const BANNED = ['Math.random', 'Date', 'performance', 'window', 'document', 'requestAnimationFrame', 'navigator',
-  'localStorage', 'sessionStorage', 'setTimeout', 'setInterval', 'globalThis', 'crypto'];
+  'localStorage', 'sessionStorage', 'setTimeout', 'setInterval', 'globalThis', 'crypto', 'self', 'eval', 'Function',
+  'queueMicrotask'];
+// Math is allowed only as `Math.<member>` (blocks Math['random'], `const { random } = Math`, `const M = Math`).
+const MATH_ALIAS = /(?<![\w$.])Math(?!\s*\.\s*[A-Za-z_$])/g;
 const ALLOWED_BARE = new Set(['three', 'three/addons/utils/BufferGeometryUtils.js']);
 
 const files = [];
@@ -64,10 +67,17 @@ for (const f of files) {
 
   if (det) {
     for (const b of BANNED) {
-      // Not a property access (x.window) nor a member name (window: number).
-      const re = new RegExp(`(?<![\\w$.])${b.replace('.', '\\s*\\.\\s*')}(?![\\w$]|\\s*\\??:)`, 'g');
-      for (const m of code.matchAll(re)) err(f, lineOf(code, m.index), `determinism: '${b}' is banned in ${DETERMINISTIC.join(', ')}`);
+      // Not a property access (x.window) nor a member name (`window: number`, `{ window?: … }`). A name after a
+      // ternary `?` is a value even when a `:` follows (`x ? document : y`).
+      const re = new RegExp(`(?<![\\w$.])${b.replace('.', '\\s*\\.\\s*')}(?![\\w$])`, 'g');
+      for (const m of code.matchAll(re)) {
+        const after = code.slice(m.index + m[0].length);
+        const before = code.slice(Math.max(0, m.index - 200), m.index);
+        if (/^\s*\??:/.test(after) && !/\?\s*$/.test(before)) continue;
+        err(f, lineOf(code, m.index), `determinism: '${b}' is banned in ${DETERMINISTIC.join(', ')}`);
+      }
     }
+    for (const m of code.matchAll(MATH_ALIAS)) err(f, lineOf(code, m.index), 'determinism: use Math only as Math.<member> (no aliasing, destructuring or Math[…])');
   }
 
   const importRe = /(?:^|[;\s}])(?:import|export)\s+(type\s+)?(?:[\w*${}\s,]+?\s+from\s+)?(['"])([^'"]+)\2|import\s*\(\s*(['"])([^'"]+)\4\s*\)/g;

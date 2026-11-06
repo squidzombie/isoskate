@@ -20,6 +20,16 @@ describe('DECOR_KINDS vocabulary', () => {
       expect(isDecorKind(k), k).toBe(true);
     expect(isDecorKind('toString')).toBe(false);
   });
+  it('lets every gateway segment use the generic street kinds, and has the §18.4/§18.6 side-band extras', () => {
+    const generic = ['lane_dash', 'crack', 'patch', 'drain', 'manhole', 'puddle', 'verge', 'street_lamp', 'sign_post',
+      'overhead_wire', 'shadow_caster', 'end_wall'] as const;
+    for (const k of generic) {
+      for (const g of ['greenway', 'levelCrossing', 'harborBridge', 'underpass'])
+        expect((DECOR_KINDS[k].areas as readonly string[]).includes(g), `${k} in ${g}`).toBe(true);
+    }
+    expect(DECOR_KINDS.food_cart.areas).toContain('neon');
+    expect(DECOR_KINDS.bin_pair.areas).toContain('suburbs');
+  });
   it('exposes placement limits, brands and the reviewed sign words', () => {
     expect(DECOR_LIMITS.overheadMinY).toBe(3.2);
     expect(DECOR_LIMITS.signInnerMinX).toBe(4.9);

@@ -78,6 +78,16 @@ describe('camera rig', () => {
       lastH = rig.last.H;
     }
   });
+  it('eases on game time: large manual steps rendered with dt = 0 keep the look-ahead guarantee', () => {
+    // __skate.step(n) renders once through renderNow (dt 0) after n ticks; real time barely passes.
+    for (const v of [vp(390, 844), vp(390, 664), vp(1280, 800, 0, 0, false)]) {
+      const rig = createCameraRig() as ReturnType<typeof createCameraRig> & { last: { H: number; lookAheadSec: number } };
+      for (const tick of [1, 120, 600, 1800, 3600, 5400, 7200, 9000, 12600]) {
+        rig.update(frame(tick / 60, tick, v, 0));
+        expect(rig.last.lookAheadSec, `${v.wCss}×${v.hCss} tick ${tick}`).toBeGreaterThanOrEqual(LOOKAHEAD_MIN);
+      }
+    }
+  });
   it('projects the skater ground point to 74% from the top, centred in portrait', () => {
     const rig = createCameraRig();
     const v = vp(390, 844);

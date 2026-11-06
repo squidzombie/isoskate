@@ -39,5 +39,8 @@ export interface DebugAPI {
   save: { get(): SaveV1; set(s: SaveV1): void; reset(): void };
   ui(screen: ScreenId, params?: object): void;
   audio(): { unlocked: boolean; voices: number; scene: string; intensity: number };
+  /** shots --audio: `sec` seconds of `area` rendered offline, as a 16-bit stereo WAV in base64 plus its peak (0..1).
+   *  Resolves null until AU ships audio/index.ts `renderOffline` (added @m0-core). */
+  renderAudio?(area: AreaId, sec: number): Promise<{ wavBase64: string; peak: number; sampleRate: number; sec: number } | null>;
 }
 declare global { interface Window { __skate?: DebugAPI } }

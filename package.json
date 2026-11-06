@@ -15,7 +15,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "node scripts/lint.mjs",
     "test": "vitest run",
-    "test:bots": "vitest run tests/bots --pool threads --passWithNoTests",
+    "test:bots": "node scripts/test-bots.mjs",
     "test:e2e": "playwright test",
     "e2e": "playwright test",
     "shots": "node scripts/shots.mjs"

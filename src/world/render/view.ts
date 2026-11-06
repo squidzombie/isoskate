@@ -20,6 +20,7 @@ export const COLORS = {
   asphalt: 0x6b6478, concrete: 0xd9c3ae, curbTop: 0xe8d6c2, granite: 0xb9a9a0, paint: 0xede3d3, verge: 0xcdb8a3,
   bump: 0xcfc3b8, lowLandable: 0xa99cc0, lowCrash: 0x2b2140, chevron: 0xf2b630, knock: 0xff8a5b,
   forbidden: 0xff00ff, tall: 0x2b2140, tallTop: 0x4a3b6b, tallAccent: 0xd9765a, edgeCream: 0xfff1d6, ink: 0x2b2140, coin: 0xffc94a,
+  lampHead: 0xffd39a,                                  // decor never uses the cream grind-edge colour (DESIGN §18.4)
   building: [0xd9765a, 0xc9a15a, 0xf3e3c3, 0x3e8e8a, 0xb5645a, 0xe8b38f, 0x9c7bb0, 0xc4473d],
 } as const;
 
@@ -160,7 +161,9 @@ class GreyboxWorldView implements WorldView {
     parts.push(colorBox(-16, -0.3, z(s0 + ch.len), -4.5, 0.15, z(s0), COLORS.verge));
     parts.push(colorBox(4.5, -0.3, z(s0 + ch.len), 16, 0.15, z(s0), COLORS.verge));
     for (const ob of ch.obstacles) this.obstacleParts(ob, ch, z, parts);
-    const near: BufferGeometry[] = [];                 // buildings on the +x side (the camera side when ψ > 0)
+    // Tall decor on the +x side (the camera side when ψ > 0) goes into `near`: drawn normally in portrait, shadow-only
+    // when ψ > 0, where it would cross over the corridor (DESIGN §8: no opaque structure over the corridor).
+    const near: BufferGeometry[] = [];
     for (const d of ch.decor) {
       if (d.kind === 'building') {
         const w = d.params?.w ?? 8, dd = d.params?.d ?? 12, h = d.params?.h ?? 12;
@@ -168,9 +171,9 @@ class GreyboxWorldView implements WorldView {
         (d.x > 0 ? near : parts).push(colorBox(Math.min(xIn, xOut), d.y, z(d.s + dd), Math.max(xIn, xOut), d.y + h, z(d.s),
           COLORS.building[d.variant % COLORS.building.length]!));
       } else if (d.kind === 'street_lamp') {
-        const h = d.params?.h ?? 5;
-        parts.push(colorBox(d.x - 0.06, d.y, z(d.s) - 0.06, d.x + 0.06, d.y + h, z(d.s) + 0.06, COLORS.ink));
-        parts.push(colorBox(d.x - 0.18, d.y + h - 0.2, z(d.s) - 0.18, d.x + 0.18, d.y + h + 0.05, z(d.s) + 0.18, COLORS.edgeCream));
+        const h = d.params?.h ?? 5, into = d.x > 0 ? near : parts;
+        into.push(colorBox(d.x - 0.06, d.y, z(d.s) - 0.06, d.x + 0.06, d.y + h, z(d.s) + 0.06, COLORS.ink));
+        into.push(colorBox(d.x - 0.18, d.y + h - 0.2, z(d.s) - 0.18, d.x + 0.18, d.y + h + 0.05, z(d.s) + 0.18, COLORS.lampHead));
       }
       // Other DECOR_KINDS render as nothing in M0 (TODO(WA)).
     }

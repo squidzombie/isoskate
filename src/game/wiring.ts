@@ -4,9 +4,9 @@ import { createBus } from '../core/bus';
 import type { AppEvent, GameEvent } from '../core/events';
 import type { QualityTier } from '../core/ids';
 import { clamp } from '../core/math';
-import { CHUNK_LEN, GEN_AHEAD_SEC, sAt } from '../core/tuning';
+import { CHUNK_LEN, GEN_AHEAD_SEC, sAt, V_MAX } from '../core/tuning';
 import type { RenderFrame, Viewport } from '../core/view';
-import { createAudio } from '../audio';
+import { createAudio, renderOffline } from '../audio';
 import { CATALOG } from '../content';
 import { installDebugApi, type DebugHost } from '../debug';
 import { createGfx, onViewportChange, readViewport, redrawCanvasTextures, setGfxQuality } from '../gfx';
@@ -41,8 +41,10 @@ export function wire(root: HTMLElement): Game {
   haptics.enabled = save.data.settings.haptics !== 'off';
   installTouchHygiene(play);
 
-  // Rendering.
-  const startTier: QualityTier = flags.quality ?? (isTouchDevice() ? 'med' : 'high');
+  // Rendering. Tier: ?quality flag, else the saved setting, else by device (auto-adjust is TODO(WA), TECH §8.9).
+  const savedQ = save.data.settings.quality;
+  const autoTier: QualityTier = isTouchDevice() ? 'med' : 'high';
+  const startTier: QualityTier = flags.quality ?? (savedQ === 'auto' ? autoTier : savedQ);
   const gfx = createGfx(canvas, startTier);
   const worldView = createWorldView(gfx);
   const cameraRig = createCameraRig();
@@ -60,10 +62,7 @@ export function wire(root: HTMLElement): Game {
   // Simulation, input, audio, meta, UI.
   const sim = createSim(TRICKS);
   const input = createInput(play, { screenW: () => viewport.wCss, safeBottom: () => viewport.safeBottom });
-  input.setSensitivity(save.data.settings.steerSensitivity);
-  input.setPreset(save.data.settings.keyPreset);
   const audio = createAudio();
-  audio.setVolumes({ music: save.data.settings.music, sfx: save.data.settings.sfx });
   input.onAnyInput(() => { if (!audio.unlocked) void audio.unlock(); });   // retried on every gesture until running
   const meta = createMeta(save, CATALOG);
   const ui = createUi(root);
@@ -86,6 +85,11 @@ export function wire(root: HTMLElement): Game {
     }
     skater.update(f);
     vfx.update(f);
+    // Continuous audio layers, every frame (TECH §4.10). speed01 = speed / V_MAX; silent off-run and after a crash.
+    const c = f.cur, g = c.grind, live = app.current === 'run' && c.mode !== 'crashed';
+    audio.roll(live ? clamp(f.speed / V_MAX, 0, 1) : 0, c.surface, c.mode === 'air', c.mode === 'manual');
+    audio.grind(live && !!g, g ? sim.world.edge(g.edgeId)?.material ?? null : null,
+      !!g && !!TRICKS.grinds.find((d) => d.id === g.id)?.slide);
     cameraRig.update(f);
     gfx.renderer.render(gfx.scene, cameraRig.camera);
     if (app.current === 'run' || app.current === 'crash') ui.hud.update(f.score, f.cur, f.dt, cameraRig.project(f.cur.p));
@@ -99,10 +103,33 @@ export function wire(root: HTMLElement): Game {
       sim.gen.release(Math.floor(sim.cur.p.s / CHUNK_LEN) - 2);
     },
   });
-  loop.batterySaver = save.data.settings.batterySaver;
+
+  const setQuality = (tier: QualityTier) => {
+    setGfxQuality(gfx, tier);
+    worldView.setQuality(tier);
+    vfx.setQuality(tier);
+    applyViewport();
+    appBus.emit({ t: 'quality', tier });
+  };
+  /** save.data.settings → modules. Called at boot and after every Settings intent (game/app.ts). */
+  let tier = startTier;
+  const applySettings = () => {
+    const st = save.data.settings;
+    input.setSensitivity(st.steerSensitivity);
+    input.setPreset(st.keyPreset);
+    input.setSimpleTricks?.(st.simpleTricks);
+    audio.setVolumes({ music: st.music, sfx: st.sfx });
+    haptics.enabled = st.haptics !== 'off';
+    loop.batterySaver = st.batterySaver;
+    cameraRig.setReducedMotion(st.reducedMotion || !st.shake);
+    analytics.setOptOut(st.analyticsOptOut);
+    const want: QualityTier = flags.quality ?? (st.quality === 'auto' ? autoTier : st.quality);
+    if (want !== tier) { tier = want; setQuality(want); }
+  };
+  applySettings();
 
   const app = new App({ root, play, sim, loop, input, ui, meta, save, audio, analytics, worldView, skater, cameraRig, vfx,
-    gameBus, appBus, session, viewport: () => viewport });
+    gameBus, appBus, session, viewport: () => viewport, applySettings });
 
   onViewportChange(() => { applyViewport(); app.checkRotate(sim.cur.vel.s); });
   canvas.addEventListener('webglcontextlost', (e) => {
@@ -128,15 +155,10 @@ export function wire(root: HTMLElement): Game {
           ?? cameraRig.solve(sim.cur.vel.s, viewport);
         return { H: f.H, yawDeg: f.yawDeg, lookAheadSec: f.lookAheadSec, aspect: viewport.aspect };
       },
-      gfx, worldView, save, ui, audio, gameBus,
-      setQuality: (q) => {
-        const tier: QualityTier = q === 'auto' ? startTier : q;
-        setGfxQuality(gfx, tier);
-        worldView.setQuality(tier);
-        vfx.setQuality(tier);
-        applyViewport();
-        appBus.emit({ t: 'quality', tier });
-      },
+      gfx, worldView, save, ui, audio, gameBus, appBus,
+      input, cameraRig, skater, vfx, meta, app,
+      renderAudio: renderOffline,
+      setQuality: (q) => { tier = q === 'auto' ? autoTier : q; setQuality(tier); },
     };
     installDebugApi(host);
   }

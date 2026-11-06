@@ -10,6 +10,13 @@ import type { AppEvent, GameEvent } from '../core/events';
 
 type AudioCtor = typeof AudioContext;
 
+/** shots --audio hook (TECH §11.4): renders `sec` seconds of `area` (music + roll bed at plateau speed) in an
+ *  OfflineAudioContext, independent of any live engine. `__skate.renderAudio` encodes the result as WAV.
+ *  M0 stub: null (nothing to render). TODO(AU): the real offline render. */
+export function renderOffline(_area: AreaId, _sec: number): Promise<AudioBuffer | null> {
+  return Promise.resolve(null);
+}
+
 export function createAudio(): AudioEngine {
   let ctx: AudioContext | null = null;
   let scene: 'menu' | 'run' | 'paused' | 'results' = 'menu';

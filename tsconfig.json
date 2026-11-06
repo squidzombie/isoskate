@@ -17,5 +17,5 @@
     "noEmit": true,
     "useDefineForClassFields": true
   },
-  "include": ["src", "tests", "vite.config.ts", "vitest.config.ts", "playwright.config.ts"]
+  "include": ["src", "tests", "vite.config.ts", "vitest.config.ts", "vitest.bots.config.ts", "playwright.config.ts"]
 }

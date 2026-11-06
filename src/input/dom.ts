@@ -1,6 +1,6 @@
 // input/dom.ts: DOM binding: pointer events on the play layer → recognizer → frames; keyboard preset A.
 // M0 stub: basic tap/drag/swipe through the stub recognizer, keyboard preset A without the 80 ms amend.
-// TODO(M0-io): coalesced events, preset B, the amend rule, gamepad, Simple tricks, full §7.3 key handling.
+// TODO(M0-io): coalesced events, preset B, the amend rule, gamepad, full §7.3 key handling.
 import type { Dir8 } from '../core/ids';
 import type { GestureRecognizer, InputFrame, InputSource } from '../core/input';
 import { FrameBuilder } from './frames';
@@ -76,6 +76,7 @@ export function createDomInput(el: HTMLElement, opts: { screenW: () => number; s
     },
     setSensitivity(mult: number) { frames.sensitivity = Math.min(1.6, Math.max(0.6, mult)); },
     setPreset(p: 'A' | 'B') { preset = p; },
+    setSimpleTricks(on: boolean) { rec.config.simpleTricks = on; },
     onAnyInput(f: () => void) { anyListeners.add(f); return () => { anyListeners.delete(f); }; },
     dispose() {
       el.removeEventListener('pointerdown', onDown);

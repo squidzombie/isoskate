@@ -3,7 +3,7 @@
 // (shake/punch from events, menu cameras); the solver maths and its guarantees are frozen with the test table.
 import { OrthographicCamera, PerspectiveCamera, Vector3 } from 'three';
 import { clamp, lerp } from '../../core/math';
-import { CAMERA, CORRIDOR_HALF, LOOKAHEAD_TARGET, speedAt } from '../../core/tuning';
+import { CAMERA, CORRIDOR_HALF, DT, LOOKAHEAD_TARGET, speedAt } from '../../core/tuning';
 import type { CameraMode, CameraRig, RenderFrame, Viewport } from '../../core/view';
 import { originOf } from '../../gfx';
 
@@ -66,7 +66,9 @@ export function solveFraming(speed: number, vp: Viewport): Framing {
 }
 
 /** The run camera rig. Forward follow is rigid; vertical follows the ground height (τ 0.3 s); lateral follows 15%
- *  only when ψ > 0; H eases with τ = 2 s toward the framing for the speed 2 s ahead and never shrinks within a run. */
+ *  only when ψ > 0; H eases with τ = 2 s toward the framing for the speed 2 s ahead and never shrinks within a run.
+ *  The follow easings run on game time (sim ticks elapsed, or the frame dt if larger), so manual stepping
+ *  (`__skate.step(3600)`) frames exactly like real-time play. Shake and punch run on the frame dt. */
 export class RunCameraRig implements CameraRig {
   readonly camera = new OrthographicCamera(-1, 1, 1, -1, 1, 200);
   readonly menuCamera = new PerspectiveCamera(35, 1, 0.1, 400);
@@ -105,6 +107,8 @@ export class RunCameraRig implements CameraRig {
     const lead = Math.max(f.speed, speedAt(f.cur.t + CAMERA.zoomTau));
     const want = solveFraming(lead, vp);
     const reset = key !== this.vpKey || f.cur.tick < this.lastTick || this.lastTick < 0;
+    // Game time since the last update: debug steps can advance thousands of ticks between two renders.
+    const dtE = reset ? 0 : Math.max(dt, (f.cur.tick - this.lastTick) * DT);
     this.vpKey = key;
     this.lastTick = f.cur.tick;
     const gy = lerp(f.prev.groundY, f.cur.groundY, f.alpha);
@@ -114,10 +118,10 @@ export class RunCameraRig implements CameraRig {
       this.groundY = gy;
       this.lat = want.yawDeg > 0 ? CAMERA.latFollow * px : 0;
     } else {
-      this.H = Math.max(this.H, this.H + (want.H - this.H) * (1 - Math.exp(-dt / CAMERA.zoomTau)));
-      this.groundY += (gy - this.groundY) * (1 - Math.exp(-dt / CAMERA.vertTau));
+      this.H = Math.max(this.H, this.H + (want.H - this.H) * (1 - Math.exp(-dtE / CAMERA.zoomTau)));
+      this.groundY += (gy - this.groundY) * (1 - Math.exp(-dtE / CAMERA.vertTau));
       const latWant = want.yawDeg > 0 ? CAMERA.latFollow * px : 0;
-      this.lat += (latWant - this.lat) * (1 - Math.exp(-dt / 0.4));
+      this.lat += (latWant - this.lat) * (1 - Math.exp(-dtE / 0.4));
     }
     this.yawDeg = want.yawDeg;
     this.xCentre = want.xCentre;

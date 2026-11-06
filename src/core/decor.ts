@@ -47,6 +47,8 @@ export const DECOR_LIMITS = {
 } as const;
 
 const ALL: readonly AreaId[] = ['downtown', 'suburbs', 'docks', 'neon'];
+/** Generic street furniture and decals: every area and every gateway segment (DESIGN §12.2 gateways keep the street). */
+const ANY: readonly (AreaId | GatewayId)[] = [...ALL, 'greenway', 'levelCrossing', 'harborBridge', 'underpass'];
 
 /** Invented brands per area (DESIGN §18.6). `brand` params index into these (−1 = no brand). */
 export const DECOR_BRANDS: Readonly<Record<AreaId, readonly string[]>> = {
@@ -114,7 +116,7 @@ export const DECOR_KINDS = {
     },
   },
   shadow_caster: {
-    zone: 'backdrop', areas: ALL, castShadow: true,
+    zone: 'backdrop', areas: ANY, castShadow: true,
     doc: 'Shadow-only silhouette: rendered into the shadow map but not the main pass, for off-screen buildings, '
       + 'trees and crane arms at |x| 9–14 whose shadows stripe the street (DESIGN §18.2).',
     params: {
@@ -139,7 +141,7 @@ export const DECOR_KINDS = {
     },
   },
   end_wall: {
-    zone: 'backdrop', areas: ALL, castShadow: true,
+    zone: 'backdrop', areas: ANY, castShadow: true,
     doc: 'Cross-street end wall every 8–12 s (DESIGN §18.4): beyond a side street, the next block shows a corner '
       + 'shopfront or shutters facing the camera. Inner edge at |x| ≥ 4.6 (beside the corridor, never across it).',
     params: {
@@ -183,7 +185,7 @@ export const DECOR_KINDS = {
 
   // ─── Side band: street furniture just outside the corridor (DESIGN §18.4 "1–2 m sidewalk-dressing band") ───────
   street_lamp: {
-    zone: 'side', areas: ALL, castShadow: true,
+    zone: 'side', areas: ANY, castShadow: true,
     doc: 'Street lamp. Variant skins per area: DT brass ornate, SB simple, Docks floodlight mast, Neon lantern-topped.',
     params: {
       h: 'pole height, m (3.5–8, default 5)', arm: 'arm reach toward the street, m (0–1.2; head stays at |x| ≥ 4.6)',
@@ -260,6 +262,13 @@ export const DECOR_KINDS = {
     doc: 'Vending machines outside the corridor with lit fronts facing the camera (the in-corridor vending_bank is an obstacle).',
     params: { count: 'machines side by side along s (1–4, default 2)', hue: 'front panel colour seed 0..1' },
   },
+  food_cart: {
+    zone: 'side', areas: ['neon'], castShadow: true,
+    doc: 'Yatai-style food cart on the sidewalk band, its lit counter and noren facing the camera (DESIGN §18.4; '
+      + 'the in-corridor food_cart is an obstacle). Brand from DECOR_BRANDS.neon or a NEON_SIGN_WORDS word.',
+    params: { brand: 'brand index (−1 none, default −1)', word: 'NEON_SIGN_WORDS index (−1 Latin brand, default −1)',
+      glow: 'counter emissive 0..2 (default 1)' },
+  },
   paper_lantern: {
     zone: 'side', areas: ['neon'], castShadow: false,
     doc: 'Standing paper lantern (#FF5A3C / #FFD39A, emissive) on the sidewalk band.',
@@ -273,7 +282,7 @@ export const DECOR_KINDS = {
   hydrant: { zone: 'side', areas: ['downtown', 'suburbs'], castShadow: true, doc: 'Fire hydrant.', params: {} },
   parking_meter: { zone: 'side', areas: ['downtown'], castShadow: true, doc: 'Parking meter on the curb band.', params: {} },
   sign_post: {
-    zone: 'side', areas: ALL, castShadow: true,
+    zone: 'side', areas: ANY, castShadow: true,
     doc: 'Street-name or traffic sign on a post (invented street names; generic pictogram signs).',
     params: { h: 'post height, m (2–3.5, default 2.6)', kind: '0 street name, 1 round pictogram, 2 arrow, 3 bus stop' },
   },
@@ -301,6 +310,11 @@ export const DECOR_KINDS = {
     zone: 'side', areas: ['suburbs'], castShadow: true,
     doc: 'Front-yard mailbox on a post outside the corridor (the in-corridor mailbox is an obstacle).',
     params: { color: 'colour index into Suburbs accents (0–4)' },
+  },
+  bin_pair: {
+    zone: 'side', areas: ['suburbs'], castShadow: true,
+    doc: 'Wheelie bins put out at the kerb on the sidewalk band (DESIGN §18.6; the in-corridor wheelie_bins are obstacles).',
+    params: { count: 'bins side by side along s (1–3, default 2)', color: 'lid colour index into Suburbs accents (0–4)' },
   },
   hoop: {
     zone: 'side', areas: ['suburbs'], castShadow: true,
@@ -349,7 +363,7 @@ export const DECOR_KINDS = {
     },
   },
   overhead_wire: {
-    zone: 'overhead', areas: ALL, castShadow: true,
+    zone: 'overhead', areas: ANY, castShadow: true,
     doc: 'Overhead power or tram wires across or along the street (thin dark lines, cast thin shadows).',
     params: { x0: 'left anchor x, m', x1: 'right anchor x, m', sag: 'sag, m (0–0.8, default 0.3)', count: 'parallel wires (1–4, default 2)' },
   },
@@ -367,7 +381,7 @@ export const DECOR_KINDS = {
     params: { len: 'length along s, m (2–5, default 3)', w: 'lateral span, m (default 6)', scramble: '0/1 diagonal scramble (Neon)' },
   },
   lane_dash: {
-    zone: 'ground', areas: ALL, castShadow: false,
+    zone: 'ground', areas: ANY, castShadow: false,
     doc: 'Painted lane line along s at x (dashed or solid).',
     params: { len: 'length along s, m', dash: 'dash length, m (0 = solid, default 3)', gap: 'gap length, m (default 3)', color: '0 paint white, 1 yellow' },
   },
@@ -381,17 +395,17 @@ export const DECOR_KINDS = {
     doc: 'Painted road arrow or word marking (generic, no text in Neon except the reviewed list).',
     params: { kind: '0 straight, 1 left, 2 right, 3 "SLOW"/stripe block' },
   },
-  crack: { zone: 'ground', areas: ALL, castShadow: false, doc: 'Asphalt or concrete crack decal.', params: { len: 'length, m (0.5–3)' } },
-  patch: { zone: 'ground', areas: ALL, castShadow: false, doc: 'Repair patch decal.', params: { len: 'length along s, m (0.5–3)', w: 'width, m (0.5–2)' } },
+  crack: { zone: 'ground', areas: ANY, castShadow: false, doc: 'Asphalt or concrete crack decal.', params: { len: 'length, m (0.5–3)' } },
+  patch: { zone: 'ground', areas: ANY, castShadow: false, doc: 'Repair patch decal.', params: { len: 'length along s, m (0.5–3)', w: 'width, m (0.5–2)' } },
   oil_stain: { zone: 'ground', areas: ['downtown', 'docks', 'neon'], castShadow: false, doc: 'Oil stain decal.', params: { r: 'radius, m (0.3–1)' } },
-  drain: { zone: 'ground', areas: ALL, castShadow: false, doc: 'Storm drain grate at the curb line.', params: {} },
+  drain: { zone: 'ground', areas: ANY, castShadow: false, doc: 'Storm drain grate at the curb line.', params: {} },
   manhole: {
-    zone: 'ground', areas: ALL, castShadow: false,
+    zone: 'ground', areas: ANY, castShadow: false,
     doc: 'Manhole cover; motif per area (DESIGN §18.7): grid (Downtown), plain (Suburbs), anchor (Docks), original flower (Neon).',
     params: { r: 'radius, m (default 0.35)' },
   },
   puddle: {
-    zone: 'ground', areas: ALL, castShadow: false,
+    zone: 'ground', areas: ANY, castShadow: false,
     doc: 'Puddle decal with the sky-horizon gradient, vertically stretched smears of nearby sign colours and a UV ripple '
       + '(no real reflection). Gold at golden hour; magenta/cyan in Neon.',
     params: { len: 'length along s, m (0.5–3, default 1.4)', w: 'width, m (0.4–2, default 0.9)', tint: '0 sky (palette), 1 neon magenta, 2 neon cyan' },
@@ -409,7 +423,7 @@ export const DECOR_KINDS = {
     params: { len: 'length along s, m', w: 'path width, m (default 3)' },
   },
   verge: {
-    zone: 'ground', areas: ALL, castShadow: false,
+    zone: 'ground', areas: ANY, castShadow: false,
     doc: 'Ground strip outside the corridor continuing the area surface toward the backdrop (sidewalk, lawn, apron).',
     params: { len: 'length along s, m', w: 'lateral width, m', surface: 'index into DECOR_SURFACES' },
   },

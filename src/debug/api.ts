@@ -5,12 +5,13 @@ import { BUILD, type AreaId, type QualityTier, type ScreenId } from '../core/ids
 import type { AudioEngine } from '../core/audio';
 import type { Bus } from '../core/bus';
 import type { DebugAPI, DebugSnapshot } from '../core/debug';
-import type { GameEvent } from '../core/events';
-import { EMPTY_FRAME, type InputFrame } from '../core/input';
+import type { AppEvent, GameEvent } from '../core/events';
+import { EMPTY_FRAME, type InputFrame, type InputSource } from '../core/input';
+import type { MetaApi } from '../core/meta';
 import type { SaveStore, SaveV1 } from '../core/save';
 import type { Sim } from '../core/sim';
 import type { UiApi } from '../core/ui';
-import type { GfxContext, WorldView } from '../core/view';
+import type { CameraRig, GfxContext, SkaterView, Vfx, WorldView } from '../core/view';
 import type { Dir8 } from '../core/ids';
 import { BOTS, type Bot, type BotKind } from './bots';
 
@@ -32,9 +33,44 @@ export interface DebugHost {
     perf(): { fps: number; p50: number; p95: number; simMs: number };
   };
   startRun(o: StartOptions): void;
+  /** The eased framing actually used this frame (falls back to the solver). */
   camera(): { H: number; yawDeg: number; lookAheadSec: number; aspect: number };
-  gfx: GfxContext; worldView: WorldView; save: SaveStore; ui: UiApi; audio: AudioEngine; gameBus: Bus<GameEvent>;
+  gfx: GfxContext; worldView: WorldView; save: SaveStore; ui: UiApi; audio: AudioEngine;
+  gameBus: Bus<GameEvent>; appBus: Bus<AppEvent>;
+  // The live modules (read them; drive the flow through `app`). cameraRig.project → contrast() and the overlay.
+  input: InputSource; cameraRig: CameraRig; skater: SkaterView; vfx: Vfx; meta: MetaApi;
+  /** The screen state machine (game/app.ts). `open(screen, params)`: 'title' goes Home, 'run' starts a run, anything
+   *  else leaves the run. Params: { result?, rewards?, rotate?, loadout?: Partial<Loadout>, preview?: ItemId, yaw? }
+   *  (loadout / preview / yaw drive the Locker / Shop turntable: shots --cosmetics). */
+  app: { readonly current: ScreenId; open(screen: ScreenId, params?: object): void };
+  /** shots --audio: audio/index.ts renderOffline (null until AU ships it). */
+  renderAudio(area: AreaId, sec: number): Promise<AudioBuffer | null>;
   setQuality(q: QualityTier | 'auto'): void;
+}
+
+/** 16-bit PCM WAV (stereo; mono buffers are duplicated) as base64, plus the absolute peak. */
+export function encodeWav(buf: { numberOfChannels: number; length: number; sampleRate: number; getChannelData(c: number): Float32Array }):
+  { wavBase64: string; peak: number } {
+  const n = buf.length, ch = [buf.getChannelData(0), buf.getChannelData(Math.min(1, buf.numberOfChannels - 1))];
+  const bytes = new Uint8Array(44 + n * 4);
+  const v = new DataView(bytes.buffer);
+  const str = (o: number, t: string) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+  str(0, 'RIFF'); v.setUint32(4, 36 + n * 4, true); str(8, 'WAVE'); str(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 2, true); v.setUint32(24, buf.sampleRate, true);
+  v.setUint32(28, buf.sampleRate * 4, true); v.setUint16(32, 4, true); v.setUint16(34, 16, true);
+  str(36, 'data'); v.setUint32(40, n * 4, true);
+  let peak = 0;
+  for (let i = 0, o = 44; i < n; i++) {
+    for (const c of ch) {
+      const x = c[i]!;
+      peak = Math.max(peak, Math.abs(x));
+      const q = Math.max(-1, Math.min(1, x));
+      v.setInt16(o, q < 0 ? q * 0x8000 : q * 0x7fff, true); o += 2;
+    }
+  }
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return { wavBase64: btoa(bin), peak };
 }
 
 /** Run time at which each area is first reached (DESIGN §12.1), for previewArea. */
@@ -134,8 +170,12 @@ export function installDebugApiImpl(host: DebugHost): DebugAPI {
       set: (s) => { host.save.import(JSON.stringify(s)); },
       reset: () => host.save.reset(),
     },
-    ui(screen: ScreenId, params?: object) { host.ui.show(screen, params as Parameters<UiApi['show']>[1]); },
+    ui(screen: ScreenId, params?: object) { host.app.open(screen, params ?? {}); },
     audio() { const s = host.audio.stats(); return { unlocked: host.audio.unlocked, voices: s.voices, scene: s.scene, intensity: s.intensity }; },
+    async renderAudio(area, sec) {
+      const buf = await host.renderAudio(area, sec);
+      return buf ? { ...encodeWav(buf), sampleRate: buf.sampleRate, sec: buf.length / buf.sampleRate } : null;
+    },
   };
   return api;
 }
