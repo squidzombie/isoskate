@@ -198,7 +198,7 @@ for (const [w, h] of [[320, 568], [360, 640], [390, 844]] as const) {
 }
 
 test('Level 2: Results opens the crate by itself, the skater reaches the Locker only at the reveal, "Equip now?" works', async ({ page }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
   const errors: string[] = [];
   await boot(page, errors);
   await editSave(page, 's.xp.intoLevel = 149;');                   // any run 1 now ends at Level 2 (the forced crate)
@@ -209,7 +209,8 @@ test('Level 2: Results opens the crate by itself, the skater reaches the Locker 
   const skater = s0.crates.pending!.item!;
   expect(skater).toMatch(/^sk_/);
   expect(s0.owned).not.toContain(skater);                          // still in the crate: Locker and badges can't spoil it
-  await expect(page.locator('.reveal')).toBeVisible({ timeout: 30_000 });   // after the XP bar (~2.4 s), without a tap
+  // After the XP bar (~2.4 s), without a tap. A loaded SwiftShader machine can stall the page for tens of seconds.
+  await expect(page.locator('.reveal')).toBeVisible({ timeout: 60_000 });
   await expect(page.locator('.reveal .rv-later')).toBeVisible();
   for (let i = 0; i < 3; i++) await page.locator('.rv-crate').click();
   await expect(page.locator('.rv-actions')).toHaveClass(/\bon\b/, { timeout: 8000 });
@@ -230,7 +231,7 @@ test('Level 2: Results opens the crate by itself, the skater reaches the Locker 
 });
 
 test('Level 2 skipped by ROLL AGAIN: the crate waits, "Later" is honoured, and Title opens it once', async ({ page }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
   const errors: string[] = [];
   await boot(page, errors);
   await editSave(page, 's.xp.intoLevel = 149;');
@@ -242,7 +243,7 @@ test('Level 2 skipped by ROLL AGAIN: the crate waits, "Later" is honoured, and T
   const pending = (await save(page)).crates.pending!;
   expect(pending.item).toMatch(/^sk_/);
   await page.evaluate(() => window.__skate!.ui('title'));
-  await expect(page.locator('.reveal')).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('.reveal')).toBeVisible({ timeout: 60_000 });
   await page.locator('.reveal .rv-later').click();
   await expect(screenOn(page, 'title')).toHaveClass(/\bon\b/);
   await page.evaluate(() => { window.__skate!.ui('stats'); });
