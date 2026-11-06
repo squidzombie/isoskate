@@ -48,6 +48,10 @@ export const GEN = {
   a3: { opening: [12, 16], other: [8, 12] } as Record<'opening' | 'other', readonly [number, number]>,
   /** A3 is due when less than this much A-time is left to its maximum (a gate may go first, then the hazard). */
   a3Lead: 6.5,
+  /** The line enters a gateway within ±this x (its corridor; gateways are T0). */
+  gwEntry: 2.5,
+  /** Long templates that may not slip the gate deadline (they rarely validate without the gate's room). */
+  noSlip: ['DT_RUSH'] as readonly string[],
   /** S_GATE (DESIGN §10.4): openings 2.5 / 2.2 / 2.0 m by tier, ≥ 3 m (≤ 3.6 m) from the last wander's safe x. */
   gate: { width: { 0: 2.5, 1: 2.5, 2: 2.5, 3: 2.2, 4: 2.0 } as Record<Tier, number>, maxC: 3.3, shift: [2.8, 4.0] as readonly [number, number],
     second: { 2: 0.6, 3: 0.3 } as Partial<Record<Tier, number>>, secondOff: [3.6, 6.6] as readonly [number, number], lead: 2.3,

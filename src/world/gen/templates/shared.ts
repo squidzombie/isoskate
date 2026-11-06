@@ -199,7 +199,7 @@ export const S_GATE: Template = {
       put(c, buildBarrier(round1cm(sAt(tTake + 0.3) - 0.3), hgt, speedAt(tTake), c.props));
       moveFrom = tTake + Math.max(rMinAt(tTake), 0.9) + 0.05;
     }
-    const tRow = atLine ? contentFrom(c) + 0.9 + c.rng.range(0, 0.15)
+    const tRow = atLine ? contentFrom(c) + (c.lastGateX.length ? 1.4 : 0.9) + c.rng.range(0, 0.15)
       : Math.max(moveFrom + T_SHIFT(Math.abs(pick - c.safeX)) + 0.3, c.t0 + 1.7) + c.rng.range(0, 0.15);
     const sRow = sOf(tRow);
     // The approach carries a trick line beyond the opening (away from the entry, off the move path): a bench or a
@@ -244,8 +244,9 @@ export const S_STAIRS: Template = {
     // A terrace drops the datum: only with room to pay it back before the visit ends (DESIGN §10.5), else a side set.
     const canDrop = c.maxT1 - c.t0 >= GEN.datum.dropRoomSec && c.datum - stairDrop(5) >= GEN.datum.min - 1e-6 && c.area !== 'docks';
     if (c.tier <= 1 || !canDrop) {
-      // A 3-stair side set: a 0.51 m platform (pop up onto it) on one side, its stairs back down to the street.
-      const sd = side(c);
+      // A 3-stair side set: a 0.51 m platform (pop up onto it) on one side, its stairs back down to the street (in the
+      // Docks on the left: the lip body runs along the right edge).
+      const sd = c.area === 'docks' ? -1 : side(c);
       const x0 = sd > 0 ? 1.8 : -4.5, x1 = sd > 0 ? 4.5 : -1.8;
       if (Math.abs(c.safeX) > 1.5 && Math.sign(c.safeX) === sd && c.attempt < 2) return null;
       const tA = contentFrom(c) + 0.4;

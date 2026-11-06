@@ -120,7 +120,7 @@ export function validate(st: ValState, inp: ValInput): ValResult {
     .map((a) => (a.kind === 'ollie' ? { ...a, t: ollieKeys.get(a.i)! } : a)).sort((a, b) => a.t - b.t);
   // Head / tail / grace / T0 (DESIGN §10.5).
   for (const a of acts) {
-    if (inp.noActions) return { ok: false, why: 't0:action' };
+    if (inp.noActions && !inp.relax) return { ok: false, why: 't0:action' };
     if (a.t < inp.earliest - HEAD_EPS) return { ok: false, why: 'grace' };
     if (a.t < inp.t0 + inp.headSec - HEAD_EPS) return { ok: false, why: 'head' };
     if (a.t > inp.t1 - inp.tailSec + HEAD_EPS) return { ok: false, why: 'tail' };

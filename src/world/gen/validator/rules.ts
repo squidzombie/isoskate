@@ -85,7 +85,9 @@ function checkEdge(e: GrindEdge, own: Obstacle, obs: readonly Obstacle[], r: Ras
       const ownHere = o2.id === own.id && bx.s0 < e.b.s - 0.01;
       if (!continues && !ownHere && bx.s1 > ez0 && bx.s0 < ez1 && bx.x1 > zx0 && bx.x0 < zx1 && isCrashFace(so, e.b.y)) return 'edge:exit';
       // Rail end pointing into a tall blocker within 1.0 s.
-      if (!continues && so.tall && o2.id !== own.id && bx.s0 >= e.b.s - 0.01 && bx.s0 < e.b.s + railEnd && bx.x1 > e.b.x - 0.5 && bx.x0 < e.b.x + 0.5) return 'edge:railEnd';
+      // (A landable top at or below the edge is a landing, not a blocker: a grind off a deck onto the next one's slope.)
+      const landing = so.top === 'landable' && bx.y1 <= e.b.y + STEP_UP;
+      if (!continues && so.tall && !landing && o2.id !== own.id && bx.s0 >= e.b.s - 0.01 && bx.s0 < e.b.s + railEnd && bx.x1 > e.b.x - 0.5 && bx.x0 < e.b.x + 0.5) return 'edge:railEnd';
       // Grind sweep: the hitbox along the edge (own obstacle excluded).
       if (o2.id === own.id || so.top === 'knock') continue;
       const is = insetOf(bx.s1 - bx.s0), ix = insetOf(bx.x1 - bx.x0), iy = insetOf(bx.y1 - bx.y0);

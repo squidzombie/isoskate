@@ -99,13 +99,15 @@ export const IN_GAUNTLET: Template = {
     const d1 = put(c, buildDeck({ kind: 'loading_dock', s: sOf(tA), inclineLen: 12, deckLen: round1cm(v * 0.8), x0: -4.5, x1: -2.0, h: 1.2,
       body: 'solid', rails: 'none', openEdge: 1, variant: 1 }, c.props));
     const sGap = d1.s + d1.len;
-    const d2 = put(c, buildDeck({ kind: 'loading_dock', s: round1cm(sGap + v * 0.05), inclineLen: round1cm(v * 0.3 + 2), deckLen: round1cm(v * 0.7),
+    // (d2's incline outlasts d1's drop-off zone, 0.6 s·v: its deck face never stands where a d1 rider lands)
+    const d2 = put(c, buildDeck({ kind: 'loading_dock', s: round1cm(sGap + v * 0.05), inclineLen: round1cm(v * 0.65 + 1.0), deckLen: round1cm(v * 0.7),
       x0: -4.5, x1: -2.0, h: 1.2, body: 'solid', rails: 'none', openEdge: 1, variant: 2 }, c.props));
     d2.gap = { name: 'Dock Gap', pts: 300, fromObstacle: d1.id };
     c.coins.gold(sGap + v * 0.15, -3.25, c.datum + 1.2 + 1.0);
     let sd = 1;
     for (let t = tA + 0.9; t < tAt(d2.s + d2.len) - 0.6; t += 0.8) {
-      put(c, buildDrums(sOf(t), round1cm(sd > 0 ? c.rng.range(1.9, 2.6) : c.rng.range(-0.6, 0.1)), c.rng.int(2, 3), c.props, c.rng.int(0, 3)));
+      // (clear of the docks' drop-off zones: ≥ 1.6 m beside their open edge at x = −2.0)
+      put(c, buildDrums(sOf(t), round1cm(sd > 0 ? c.rng.range(1.9, 2.6) : c.rng.range(-0.2, 0.4)), c.rng.int(2, 3), c.props, c.rng.int(0, 3)));
       sd = -sd;
     }
     void sAt;

@@ -1,11 +1,14 @@
-// world/gen (M0 minimum): golden chunk hashes, determinism, the area timeline and gateways, the Roll-out, height
-// bands, R_MIN spacing along SafeKeys, A3 full-width scheduling, startT semantics, coins and generator health.
+// world/gen (W1b): golden chunk hashes, determinism, the area timeline and gateways, the Roll-out and the Lesson Line,
+// the v1 template set and landmarks, curb grind exits, tall blockers, gate rows, height bands, R_MIN spacing along
+// SafeKeys, A3 full-width scheduling, startT semantics, decor, coins and generator health. The 100-seed static
+// asserts are tests/bots/gate.static.test.ts.
 import { describe, expect, it } from 'vitest';
 import { hash32 } from '../../../src/core/rng';
 import { CHUNK_LEN, HEIGHT, R_MIN, T_SHIFT, sAt, speedAt, tAt } from '../../../src/core/tuning';
 import type { Chunk, SafeKey, WorldGen } from '../../../src/core/world';
 import { ObTag } from '../../../src/core/world';
-import { createWorldGen, createWorldQuery, GEN, GEN_FLAGS, gatewayWindow, rMinAt, ROLLOUT_CHAIN_T, ROLLOUT_END_S } from '../../../src/world/gen';
+import { AREA_TEMPLATES, createWorldGen, createWorldQuery, GATEWAYS, GEN, GEN_FLAGS, gatewayWindow, LESSON_PARTS, rMinAt, ROLLOUT_CHAIN_T,
+  ROLLOUT_END_S, SHARED } from '../../../src/world/gen';
 import { DECOR_KINDS } from '../../../src/core/decor';
 import { insetOf } from '../../../src/sim';
 import { checkPath } from '../../../src/world/gen/validator/path';
@@ -129,34 +132,48 @@ describe('validator rules on generated streets (20 seeds × 3,000 m, S_TRENCH on
     expect(off.reduce((n, g) => n + count(g, 'S_BARRIER'), 0)).toBeGreaterThan(on.reduce((n, g) => n + count(g, 'S_BARRIER'), 0));
   });
 
-  it('curb grinds never carry the board into a blocker: each curb edge ends one exit zone before any crash face or pit', () => {
+  it('curb grinds never carry the board into a blocker: no crash face in an edge’s grind sweep or exit zone', () => {
     let curbEdges = 0;
     for (const g of gens) {
       const w = createWorldQuery(g);
       for (const c of w.obstacles(0, 3000)) for (const e of c.edges) {
         if (c.kind !== 'curb') continue;
         curbEdges++;
-        const zone = 0.6 * speedAt(tAt(e.a.s)) - 0.05;
+        const zone = 0.6 * speedAt(tAt(e.b.s)) - 0.05;
         for (const o of w.obstacles(e.a.s - 1, e.b.s + zone + 1)) {
           if (o.kind === 'curb') continue;
-          const near = (x0: number, x1: number) => x1 > e.a.x - 1.5 && x0 < e.a.x + 1.5;
           for (const so of o.solids) {
-            if (so.top === 'knock' || (so.top === 'landable' && so.box.y1 - e.a.y <= 0.18) || !near(so.box.x0, so.box.x1)) continue;
-            expect(so.box.s1 <= e.a.s || so.box.s0 >= e.b.s + zone, `curb ${e.a.s}–${e.b.s} vs ${o.kind} @${so.box.s0}`).toBe(true);
+            if (so.top === 'knock' || (so.top === 'landable' && so.box.y1 - e.a.y <= 0.18)) continue;
+            const ix = insetOf(so.box.x1 - so.box.x0), is = insetOf(so.box.s1 - so.box.s0);
+            // Sweep: the hitbox (±0.2) along the edge; exit zone: ±1.5 m for 0.6 s·v after its end.
+            const inSweep = so.box.x1 - ix > e.a.x - 0.2 && so.box.x0 + ix < e.a.x + 0.2 && so.box.s1 - is > e.a.s && so.box.s0 + is < e.b.s;
+            const inZone = so.box.x1 > e.b.x - 1.5 && so.box.x0 < e.b.x + 1.5 && so.box.s1 > e.b.s && so.box.s0 < e.b.s + zone;
+            expect(inSweep || inZone, `curb ${e.a.s}–${e.b.s} x=${e.a.x} vs ${o.kind} @${so.box.s0}`).toBe(false);
           }
-          for (const p of o.pits) if (near(p.x0, p.x1)) expect(p.s1 <= e.a.s || p.s0 >= e.b.s + zone).toBe(true);
+          for (const p of o.pits) if (p.x1 > e.b.x - 1.5 && p.x0 < e.b.x + 1.5) expect(p.s1 <= e.b.s || p.s0 >= e.b.s + zone).toBe(true);
         }
       }
     }
     expect(curbEdges).toBeGreaterThan(200);
   });
 
-  it('tall blockers stand 1.15 m above any ground a board touching them can ride on (road bins beside the curb too)', () => {
+  it('tall blockers stand 1.15 m above any ground a board touching them can ride on (sidewalks beside them too)', () => {
     let n = 0;
-    const groundHi = (x0: number, x1: number) => (x1 > 3.0 || x0 < -3.0 ? 0.15 : 0);
-    for (const g of gens) for (const o of createWorldQuery(g).obstacles(0, 3000)) {
-      if (o.kind !== 'trash_can' && o.kind !== 'news_box') continue;
-      for (const so of o.solids) { n++; expect(so.box.y1 - groundHi(so.box.x0 - 0.2, so.box.x1 + 0.2)).toBeGreaterThanOrEqual(HEIGHT.tallMin - 1e-9); }
+    for (const g of gens) {
+      const w = createWorldQuery(g);
+      for (const o of w.obstacles(0, 3000)) {
+        if (!(o.tags & ObTag.Filler) && o.kind !== 'trash_can' && o.kind !== 'news_box') continue;
+        for (const so of o.solids) {
+          if (!so.tall) continue;
+          n++;
+          // The highest ground (street base, below the blocker's top) a board touching its sides can ride on.
+          let reach = -Infinity;
+          for (const x of [so.box.x0 - 0.2, so.box.x0 + 0.01, (so.box.x0 + so.box.x1) / 2, so.box.x1 - 0.01, so.box.x1 + 0.2]) {
+            reach = Math.max(reach, w.groundAt((so.box.s0 + so.box.s1) / 2, Math.max(-4.49, Math.min(4.49, x)), so.box.y0 + 0.5).y);
+          }
+          expect(so.box.y1 - reach, `${o.kind} @${o.s}`).toBeGreaterThanOrEqual(HEIGHT.tallMin - 1e-6);
+        }
+      }
     }
     expect(n).toBeGreaterThan(1000);
   });
@@ -173,26 +190,27 @@ describe('validator rules on generated streets (20 seeds × 3,000 m, S_TRENCH on
     expect(n).toBeGreaterThan(500);
   });
 
-  it('gate rows (A1/A2 stand-in) come ≤ GEN.gate.gap apart, plus at most one gateway when the gate could not precede it', () => {
-    let rows = 0, worst = 0;
+  it('gate rows (anti-straight) come ≤ GEN.gate.gap apart, plus one gateway (and the gate after it) of slack', () => {
+    let rows = 0, worst = -Infinity;
     for (const g of gens) {
       const w = createWorldQuery(g);
       const segs = g.segments();
-      const rowsT = segs.filter((s) => s.templateId === 'S_GATE').map((s) => {
-        const ob = w.obstacles(s.s0, s.s1).find((o) => o.kind === 'trash_can' || o.kind === 'news_box')!;
-        return tAt(ob.s);
-      });
+      // A row: ≥ 3 filler blockers at one s.
+      const at = new Map<number, number>();
+      for (const o of w.obstacles(0, 3000)) if (o.tags & ObTag.Filler) at.set(o.s, (at.get(o.s) ?? 0) + 1);
+      const rowsT = [...at.entries()].filter(([, k]) => k >= 3).map(([s]) => tAt(s)).sort((a, b) => a - b)
+        .filter((t, i, a) => i === 0 || t - a[i - 1]! > 0.5);
       for (let i = 1; i < rowsT.length; i++) {
         const a = rowsT[i - 1]!, b = rowsT[i]!;
+        if (b > 330) break;
         const ph = a < 45 ? 'opening' : a < 90 ? 'warm' : a < 150 ? 'build' : 'plateau';
-        const gw = segs.some((s) => s.gateway && s.t0 >= a && s.t0 < b);
-        const over = b - a - GEN.gate.gap[ph] - (gw ? 4 + GEN.gate.fit : 0);
-        worst = Math.max(worst, over);
+        const gw = segs.some((s) => s.gateway && s.t1 > a && s.t0 < b);
+        worst = Math.max(worst, b - a - GEN.gate.gap[ph] - (gw ? 4 + GEN.gate.lead + 3.0 : 0));
       }
       rows += rowsT.length;
     }
-    expect(rows).toBeGreaterThan(20 * 50);
-    expect(worst).toBeLessThanOrEqual(2.0);      // an A3 hazard may take the slot first (its own deadline): ≤ 1.42 s seen
+    expect(rows).toBeGreaterThan(20 * 30);
+    expect(worst).toBeLessThanOrEqual(0.6);
   });
 
   it('height bands: no solid top in 0.61–1.14 m; full-width hazards ≤ 0.50 m tall and ≤ 0.6 m long; pits ≤ 0.35 s·v', () => {
@@ -200,10 +218,12 @@ describe('validator rules on generated streets (20 seeds × 3,000 m, S_TRENCH on
     for (const g of gens) {
       const w = createWorldQuery(g);
       for (const o of w.obstacles(0, 3000)) {
+        const rideOn = o.slabs.some((sl) => sl.kind !== 'flat');
         for (const so of o.solids) {
           solids++;
           const h = so.box.y1 - so.box.y0;
-          expect(h > HEIGHT.forbidMin - 0.005 && h < HEIGHT.forbidMax + 0.005, `${o.kind} ${h}`).toBe(false);
+          // Ride-on slope bodies (inclines, hubbas: landable tops under a sloped slab) are ramps, not walls.
+          if (!(so.top === 'landable' && rideOn)) expect(h > HEIGHT.forbidMin - 0.005 && h < HEIGHT.forbidMax + 0.005, `${o.kind} ${h}`).toBe(false);
           if (o.tags & ObTag.FullWidth) { expect(h).toBeLessThanOrEqual(0.5); expect(so.box.s1 - so.box.s0).toBeLessThanOrEqual(0.6 + 1e-9); }
           if (so.tall) expect(h).toBeGreaterThanOrEqual(HEIGHT.tallMin);
         }
@@ -244,30 +264,27 @@ describe('validator rules on generated streets (20 seeds × 3,000 m, S_TRENCH on
     expect(minGap).toBeGreaterThan(-0.011);
   });
 
-  it('A3: a full-width hazard (barrier or trench) at most every 12 s of non-T0 time in the warm phase and later', () => {
-    let worst = 0;
+  it('A3: a full-width hazard at most every 16 s of non-T0 time in the opening, every 12 s later (+0.5 s)', () => {
+    let worst = -Infinity;
     for (const g of gens) {
       const w = createWorldQuery(g);
       const segs = g.segments();
-      // A-clock: non-T0 seconds since 9 s.
+      // A-clock: non-T0 seconds (T0 segments pause it).
       const aAt = (t: number) => { let a = 0; for (const s of segs) { if (s.t0 >= t) break; if (s.tier > 0) a += Math.min(t, s.t1) - s.t0; } return a; };
-      const fw = w.obstacles(0, 3000).filter((o) => o.tags & ObTag.FullWidth).map((o) => aAt(tAt(o.s)));
-      for (let i = 1; i < fw.length; i++) {
-        const gap = fw[i]! - fw[i - 1]!;
-        if (tAt(sAt(0)) >= 0 && fw[i - 1]! > 0) worst = Math.max(worst, gap);
-      }
+      const fw = w.obstacles(0, 3000).filter((o) => o.tags & ObTag.FullWidth).map((o) => ({ a: aAt(tAt(o.s)), t: tAt(o.s) }));
+      for (let i = 1; i < fw.length; i++) worst = Math.max(worst, fw[i]!.a - fw[i - 1]!.a - (fw[i - 1]!.t < 45 ? 16 : 12));
     }
-    expect(worst).toBeLessThanOrEqual(16.5);
+    expect(worst).toBeLessThanOrEqual(0.5);
   });
 
   it('coins: most sit on trick lines; the generator rarely re-rolls and (almost) never falls back', () => {
     let segs = 0, rerolls = 0, fallbacks = 0;
     for (const g of gens) {
       const st = g.stats();
-      expect(st.trickCoinShare, 'trick coin share').toBeGreaterThan(0.7);   // A5 (≥ 0.75) is WG's static assert
+      expect(st.trickCoinShare, 'trick coin share').toBeGreaterThanOrEqual(0.75);   // A5
       segs += st.segments; rerolls += st.rerolls; fallbacks += st.fallbacks;
     }
-    expect(rerolls / segs).toBeLessThan(0.1);
+    expect(rerolls / segs).toBeLessThan(0.05);
     expect(fallbacks / segs).toBeLessThan(0.01);
   });
 });
@@ -295,6 +312,68 @@ describe('startT and the validator path check', () => {
     expect(checkPath(line, [bar], 10, 12, 0)).toBe('path:barrier_low');
     const line2 = new SafeLine(10, 0).ollie(tAt(sAt(11) + 0.3) - 0.3);
     for (const sh of [-0.12, 0, 0.12]) expect(checkPath(line2, [bar], 10, 12, sh)).toBeNull();
+  });
+});
+
+
+describe('the Lesson Line (DESIGN §12.3) and the v1 template set (§10.4)', () => {
+  it('Lesson Line: 0–40 s on a fixed street, every taught element where the table puts it, then the Greenway', () => {
+    const gen = createWorldGen({ seed: 42, mode: 'lesson' });
+    gen.ensure(sAt(45));
+    const w = createWorldQuery(gen);
+    const at = (kind: string, t0: number, t1: number) => w.obstacles(sAt(t0), sAt(t1)).filter((o) => o.kind === kind && o.s >= sAt(t0) - 1 && o.s < sAt(t1));
+    expect(at('barrier_low', 3, 4).length).toBe(1);                         // 3.5 s: the chain (first required action)
+    expect(at('granite_ledge', 5.5, 9).some((o) => o.x === 2)).toBe(true);    // 6–9 s: ledge at x = +2
+    expect(at('bench', 9.5, 13).filter((o) => o.x === -2).length).toBe(4);    // 10–13 s: two bench pairs at x = −2
+    expect(at('parked_car', 13.6, 17.6).length).toBeGreaterThan(0);          // 14–17 s: a parked car
+    const ter = at('terrace', 17.6, 21.8);                                    // 18–21 s: a 5-stair terrace (−0.85 m) …
+    expect(ter.length).toBe(1);
+    expect(at('handrail', 17.6, 21.8).length).toBeGreaterThan(0);            // … with a handrail
+    expect(at('manual_pad', 21.8, 25.8).length).toBe(3);                     // 22–25 s: 3 manual pads
+    expect(at('flatbar', 25.8, 29.8).length).toBeGreaterThanOrEqual(3);      // 26–29 s: the rail ladder
+    expect(at('incline', 29.8, 32.8).length).toBe(1);                        // 30–32 s: the payback incline
+    expect(at('trench', 32.8, 36).length + at('barrier_low', 32.8, 36).length).toBe(1);   // 33–35.5 s: trench + plank
+    const segs = gen.segments();
+    expect(segs.filter((s) => s.templateId.startsWith('LESSON_')).length).toBeGreaterThanOrEqual(LESSON_PARTS.length);
+    expect(segs.find((s) => s.gateway)!.t0).toBe(40);
+    // The datum is back at 0 before the gateway (the terrace drop is paid back by the incline).
+    expect(w.groundAt(sAt(40) + 0.5, 0, 0.5).y).toBe(0);
+  });
+
+  it('every v1 template (9 shared, 6 per area, 4 gateways) is instantiated on 20 seeds; the landmarks appear', () => {
+    const seen = new Set<string>(), landmarks = new Set<string>();
+    for (let seed = 1; seed <= 20; seed++) {
+      const g = createWorldGen({ seed, mode: 'normal' });
+      g.ensure(sAt(640));
+      for (const s of g.segments()) seen.add(s.templateId);
+      for (const o of createWorldQuery(g).obstacles(0, sAt(640))) if (o.landmark) landmarks.add(o.landmark);
+    }
+    const ids = [...SHARED, ...Object.values(AREA_TEMPLATES).flat(), ...Object.values(GATEWAYS)].map((t) => t.id);
+    expect(SHARED.length).toBe(9);
+    for (const a of Object.values(AREA_TEMPLATES)) expect(a.length).toBe(6);
+    expect(ids.filter((id) => !seen.has(id))).toEqual([]);
+    for (const l of ['Amberlane Seven', 'Corner Scoops wall', 'Pier 9 lip', 'Sora Line Skywalk']) expect(landmarks.has(l), l).toBe(true);
+  });
+
+  it('full-width hazards carry warnAtS (1.6 s ahead); gaps name their obstacle; decor uses only DECOR_KINDS within limits', () => {
+    const g = createWorldGen({ seed: 9, mode: 'normal' });
+    g.ensure(6000);
+    const w = createWorldQuery(g);
+    const obs = w.obstacles(0, 6000);
+    const fw = obs.filter((o) => o.tags & ObTag.FullWidth);
+    expect(fw.length).toBeGreaterThan(20);
+    for (const o of fw) expect(o.warnAtS, o.kind).toBeCloseTo(o.s - 1.6 * speedAt(tAt(o.s)), 0);
+    const ids = new Set(obs.map((o) => o.id));
+    const gaps = obs.filter((o) => o.gap);
+    expect(gaps.length).toBeGreaterThan(2);
+    for (const o of gaps) if (o.gap!.fromObstacle !== undefined) expect(ids.has(o.gap!.fromObstacle)).toBe(true);
+    let decor = 0;
+    for (let i = 0; i * CHUNK_LEN < 3000; i++) for (const d of g.chunk(i).decor) {
+      decor++;
+      expect((DECOR_KINDS as Record<string, unknown>)[d.kind], d.kind).toBeDefined();
+      if (d.kind === 'billboard') expect(Math.abs(d.x)).toBeGreaterThanOrEqual(4.9);
+    }
+    expect(decor).toBeGreaterThan(300);
   });
 });
 

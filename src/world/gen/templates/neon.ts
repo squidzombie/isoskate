@@ -41,14 +41,14 @@ export const NE_VENDING: Template = {
   id: 'NE_VENDING', area: 'neon', tiers: [2], durMax: 3.6, mirror: true,
   build(c: TemplateCtx): TemplateOut {
     // Vending banks on both sidewalks (fronts to the camera), staggered; two benches on the road edges.
-    const tA = contentFrom(c) + 0.4;
+    // Each bench sits on the side of the bank before it, so its exit zone (±1.5 m, 0.6 s) never meets the next bank.
+    const tA = contentFrom(c) + 0.4, f = side(c);
     for (const [k, sd] of [[0, -1], [1, 1], [2, -1]] as const) {
       const m = c.rng.int(1, 2);
-      put(c, buildVending(sOf(tA + k * 0.7), round1cm(sd * (4.5 - m / 2)), m, c.props, c.rng.int(0, 5)));
+      put(c, buildVending(sOf(tA + k * 0.7), round1cm(f * sd * (4.5 - m / 2)), m, c.props, c.rng.int(0, 5)));
     }
-    const bs = side(c);
     for (let k = 0; k < 2; k++) {
-      const b = put(c, buildBench(sOf(tA + 0.3 + k * 0.9), round1cm((k ? -bs : bs) * c.rng.range(1.7, 2.3)), c.props));
+      const b = put(c, buildBench(sOf(tA + 0.3 + k * 0.9), round1cm(f * (k ? 1 : -1) * c.rng.range(1.5, 2.1)), c.props));
       edgeCoins(c, b);
     }
     return { t1: endAfter(c, 0.6) };

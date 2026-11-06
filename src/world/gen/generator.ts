@@ -22,7 +22,7 @@ import { GEN, GEN_FLAGS, type PhaseId, type Tier } from './gen.config';
 import { LESSON_PARTS, ROLLOUT, ROLLOUT_DECOR_SEED } from './lesson';
 import type { PropCtx } from './props/common';
 import { buildFiller, fillerKinds } from './props/shared';
-import { LAYOUTS, bandRange, buildLipBody, buildLipEdges, buildStreet, type StreetLayout } from './props/street';
+import { LAYOUTS, LIP, bandRange, buildLipBody, buildLipEdges, buildStreet, type StreetLayout } from './props/street';
 import type { SafeLine } from './safe';
 import { a3Range, gatewayWindow, nextFullWidthDue, phaseAt, planSegment, type Plan } from './schedule';
 import { GATEWAYS, TEMPLATES, type Template, type TemplateCtx, type TemplateOut } from './templates';
@@ -230,8 +230,12 @@ export class Generator implements WorldGen {
 
   private makeProps(index: number, area: AreaId, layout: StreetLayout, datum: number): PropCtx {
     const c = this.cur;
+    // The Docks lip (a 0.30 m body beside the outer band) counts as ground a board can ride beside a blocker.
     return { ids: c.ids, segment: index, area, datum,
-      ground: (x0: number, x1: number) => bandRange(layout, x0, x1) };
+      ground: (x0: number, x1: number) => {
+        const r = bandRange(layout, x0, x1);
+        return layout.lip && x1 > LIP.x0 ? { lo: r.lo, hi: Math.max(r.hi, LIP.h) } : r;
+      } };
   }
 
   private tryBuild(plan: Plan, index: number, area: AreaId, gateway: GatewayId | null, rng: Sfc32, coinRng: Sfc32, maxT1: number,
@@ -313,7 +317,11 @@ export class Generator implements WorldGen {
       for (const st of datumAt) if (s >= st.s - 0.5) d = st.datum;
       return Math.max(d, c.datum) + bandRange(layout, x0, x1).hi;
     };
-    const exit = out.exit ?? [[-4.5, 4.5]];
+    // The segment before a gateway ends in its central corridor (gateways are T0: no required move inside them).
+    const gwNextStart = gatewayWindow(t0, this.startArea).start;
+    const intoGw = !gateway && Math.abs(t1 - gwNextStart) < 1e-6;
+    const exit = intoGw ? (out.exit ?? [[-4.5, 4.5]]).map(([a, b]) => [Math.max(a, -GEN.gwEntry), Math.min(b, GEN.gwEntry)] as [number, number]).filter(([a, b]) => b > a)
+      : out.exit ?? [[-4.5, 4.5]];
     // No base edge may end in the 2.2 s before a gate row: its exit zone would face the row far from the openings.
     const rowBan = (tr: number): [number, number, number] => [round1cm(sAt(tr - GEN.gate.edgeBan)), round1cm(sAt(tr) + 0.3), Number.NaN];
     if (out.gateT !== undefined) noEdges.push(rowBan(out.gateT));
@@ -349,7 +357,7 @@ export class Generator implements WorldGen {
     // Gate row (A1 / A2 / straight-bot guarantee) due inside this template: overlay one at the deadline. It goes into
     // the last template that can hold it before the deadline (the next one could not host it in time).
     let gateX: number[] | undefined = out.gateX, gateT: number | undefined = out.gateT;
-    const wantRow = clocks && tpl.id !== 'S_GATE' && t1 > c.gateDueT - (GEN.gate.lead + 1.4);
+    const wantRow = clocks && tpl.id !== 'S_GATE' && !plan.slip && t1 > c.gateDueT - (GEN.gate.lead + 1.4);
     let got: ValResult | null = null;
     // Row slots: times in the deadline window where the row can stand (beside the template's obstacles, never across
     // pits, slopes, or a grind edge's end: exit zone, rail-end rule).
@@ -460,9 +468,8 @@ export class Generator implements WorldGen {
     const gw = gatewayWindow(t, this.startArea);
     const startBy = c.gateDueT - GEN.gate.lead;
     if (startBy >= gw.end || startBy <= gw.start - GEN.gate.fit) return startBy;
-    // The deadline falls in (or just before) a gateway: the gate comes right after it (one gateway of slack, the
-    // straight-bot guarantee is met by the rows before), rather than a second gate squeezed in front of it.
-    return gw.end;
+    // The deadline falls in (or just before) a gateway: the gate comes before it.
+    return gw.start - GEN.gate.fit;
   }
 
   /** The latest time ≤ tLatest a wander wall can stand (head window, spacing from the line's previous action). */

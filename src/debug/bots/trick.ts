@@ -108,7 +108,7 @@ export class TrickBot {
     }
     if (c.mode === 'air') {
       // Spin upgrade (180 → 360) while < 60 % done, if the 360 completes before touchdown.
-      if (c.spin && this.spinUp) {
+      if (c.spin && this.spinUp && c.popBleed <= 0) {
         const up = SPINS.find((s) => s.upgradeOf === c.spin!.id);
         if (up && c.spin.t / c.spin.dur < SPIN_UPGRADE_MAX_PROGRESS - 0.1 && c.spin.t + c.airLeft >= up.dur + 0.03) { this.spinUp = null; return { ...f, ...swipe(up.input) }; }
         if (c.spin.t / c.spin.dur >= SPIN_UPGRADE_MAX_PROGRESS) this.spinUp = null;
@@ -125,7 +125,8 @@ export class TrickBot {
         return f;
       }
       if (!c.flip && c.flipsThisAir === 0 && c.airLeft > LATE_FLIP_CUTOFF + 0.05) {
-        const fit = CHAINS.find((ch) => ch.dur + 0.04 + (ch.inputs.length - 1) * 2 * DT <= c.airLeft);
+        // Clean enough: ≥ 85 % of the chain's rotation before touchdown (the sim lands ≥ 80 % clean, ≥ 55 % sketchy).
+        const fit = CHAINS.find((ch) => ch.dur * 0.85 + (ch.inputs.length - 1) * 2 * DT <= c.airLeft);
         if (fit) {
           this.chain = fit.inputs.slice(1);
           this.nextSwipe = tNow + 2 * DT;

@@ -41,7 +41,9 @@ export function drawTier(phase: PhaseId, rng: Sfc32, lastTier: Tier): Tier {
 
 export type PlanReason = 'rollout' | 'lesson' | 'gateway' | 'filler' | 'payback' | 'a3' | 'wander' | 'breather' | 'draw';
 /** a3: the gate segment also carries the A3 full-width hazard (both deadlines at once). */
-export interface Plan { tpl: Template; tier: Tier; dur?: number; reason: PlanReason; a3?: boolean }
+/** a3: the gate segment also carries the A3 full-width hazard (both deadlines at once). slip: a long template drawn
+ *  when the gate is not yet due: no row overlay, the gate segment follows it (the deadline slips by ≤ its length). */
+export interface Plan { tpl: Template; tier: Tier; dur?: number; reason: PlanReason; a3?: boolean; slip?: boolean }
 
 /** The A3 hazard: S_TRENCH (when enabled) or S_BARRIER (area skins). */
 export function a3Plan(rng: Sfc32, tier: Tier, trench: boolean): Plan {
@@ -72,7 +74,9 @@ export function planSegment(c: GenCursor, env: PlanEnv, rng: Sfc32): Plan {
   const gate = TEMPLATES.S_GATE!;
   // The gate row (A1 / A2 / straight-bot guarantee) by its deadline; an A3 hazard first when its own clock is tighter.
   // Rows overlay the templates at their deadline; a gate segment only when the deadline is (almost) now.
-  const gateNow = env.force === 'wander' || env.gateRoom < 0.6;
+  // The first segment of a run (after the Roll-out, or at a startT) is a gate: its row opens at the line, so it stands
+  // inside the spawn grace, and the next row (a forced shift) follows well within the straight-bot window.
+  const gateNow = env.force === 'wander' || env.gateRoom < 0.6 || (clocks && c.lastGateX.length === 0 && c.history.length < 40 && env.t < c.clockFromT + 0.5);
   const a3MaxLeft = c.lastFwA + a3Range(phase)[1] - c.aClock;
   // A3 is due early enough that a gate segment (≈ 3 s) may still go first and the hazard (≈ 1.2 s into its own
   // template) lands by the A3 maximum.
@@ -83,7 +87,8 @@ export function planSegment(c: GenCursor, env: PlanEnv, rng: Sfc32): Plan {
   if (a3Due && env.gateRoom >= 2.4) return a3Plan(rng, tier, env.trench);
   if (clocks && (gateNow || a3Due) && left >= gate.durMax) {
     // Both due: the gate segment carries the hazard in its approach when there is room for both.
-    const both = a3Due && left >= gate.durMax + 1.2;
+    // (Not in a run's first 12 s: its first rows must stand on time for the straight-bot guarantee.)
+    const both = a3Due && left >= gate.durMax + 1.2 && env.t >= c.clockFromT + 12;
     return { tpl: gate, tier: Math.max(2, tier) as Tier, reason: 'wander', ...(both ? { a3: true } : {}) };
   }
   if (a3Due) return a3Plan(rng, tier, env.trench);
@@ -96,7 +101,13 @@ export function planSegment(c: GenCursor, env: PlanEnv, rng: Sfc32): Plan {
   const allowFw = c.aClock + 1.0 >= c.lastFwA + a3Range(phase)[0];
   const a3Max = c.lastFwA + a3Range(phase)[1] - c.aClock;
   const room = left;
-  const fits = (t: Template) => t.durMax <= room && (t.fullWidth ? allowFw : t.durMax + 1.6 <= a3Max || !clocks)
+  // A template longer than the room before the gate must start hosts no row: it may slip the gate deadline (after
+  // the opening phase and the first 12 s of a run, whose first rows the straight-bot guarantee needs on time) when
+  // the gate is not due yet.
+  const slip = (t: Template) => clocks && t.durMax > env.gateRoom + 0.3;
+  const slipOK = (t: Template) => phase !== 'opening' && env.t >= c.clockFromT + 12 && env.gateRoom >= 0.6
+    && left >= t.durMax + 2.0 && !GEN.noSlip.includes(t.id);
+  const fits = (t: Template) => t.durMax <= room && (!slip(t) || slipOK(t)) && (t.fullWidth ? allowFw : t.durMax + 1.6 <= a3Max || !clocks)
     && (t.fromT === undefined || env.t >= t.fromT)
     && (!t.drop || (c.datum - t.drop >= GEN.datum.min - 1e-6 && left >= GEN.datum.dropRoomSec));
   const pick = (list: readonly Template[]): Template | null => {
@@ -113,5 +124,5 @@ export function planSegment(c: GenCursor, env: PlanEnv, rng: Sfc32): Plan {
   }
   if (!tpl.tiers.includes(tTier)) tTier = tpl.tiers.reduce((a, b) => (Math.abs(b - tier) < Math.abs(a - tier) ? b : a));
   void AREA_TEMPLATES; void GEN_FLAGS;
-  return { tpl, tier: tTier, reason: 'draw' };
+  return { tpl, tier: tTier, reason: 'draw', ...(slip(tpl) ? { slip: true } : {}) };
 }
