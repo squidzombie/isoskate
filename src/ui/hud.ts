@@ -115,7 +115,7 @@ export function createHud(root: HTMLElement, o: HudOptions): HudExt {
   let lastLinks = -1, bumpFlip = false, lastTier = '', comboOn = false, ringWarn = false, ringScale = -1;
   let floatText: string | null = null, stampText: string | null = null, cardText: [string, string] | null = null, rewardText: string | null = null;
   const flip: Record<string, boolean> = {};
-  let rewardT = Infinity;
+  let rewardUntil = Infinity;                     // wall clock: "gone by 3.0 s" is real time, even on slow frames
   /** Restarts a CSS animation without a layout read: alternate between two identical keyframe classes. */
   const restart = (el: HTMLElement, cls: string) => {
     flip[cls] = !flip[cls];
@@ -167,7 +167,7 @@ export function createHud(root: HTMLElement, o: HudOptions): HudExt {
     if (floatText !== null) { write(floatEl, floatText); floatText = null; restart(floatEl, 'fl'); }
     if (stampText !== null) { write(stamp, stampText); stampText = null; restart(stamp, 'st'); }
     if (cardText !== null) { write(cardTitle, cardText[0]); write(cardSub, cardText[1]); cardText = null; restart(card, 'cd'); }
-    if (rewardText !== null) { write(reward, rewardText); rewardText = null; reward.classList.add('on'); band.classList.add('rewarding'); rewardT = 0; }
+    if (rewardText !== null) { write(reward, rewardText); rewardText = null; reward.classList.add('on'); band.classList.add('rewarding'); rewardUntil = t + HUD_TIMING.rewardSec * 1000; }
   };
 
   const resetRun = () => {
@@ -182,7 +182,7 @@ export function createHud(root: HTMLElement, o: HudOptions): HudExt {
     hints,
     show(on: boolean) {
       root.classList.toggle('on', on);
-      if (!on) { popups.clear(); hints.hide(); reward.classList.remove('on'); band.classList.remove('rewarding'); rewardT = Infinity; }
+      if (!on) { popups.clear(); hints.hide(); reward.classList.remove('on'); band.classList.remove('rewarding'); rewardUntil = Infinity; }
       else force = true;
     },
     update(sc, cur: Readonly<SkaterState>, dt, anchor) {
@@ -195,12 +195,9 @@ export function createHud(root: HTMLElement, o: HudOptions): HudExt {
       if (q !== ringScale) { ringScale = q; ring.style.transform = `scaleX(${q})`; }
       const warn = live && sc.combo.bankIn < HUD_TIMING.bankWarnSec;
       if (warn !== ringWarn) { ringWarn = warn; combo.classList.toggle('warn', warn); }
-      if (rewardT < Infinity) {
-        rewardT += dt;
-        if (rewardT >= HUD_TIMING.rewardSec) { rewardT = Infinity; reward.classList.remove('on'); band.classList.remove('rewarding'); }
-      }
       // Text: one batch at most 15 times a second (wall clock).
       const t = now();
+      if (t >= rewardUntil) { rewardUntil = Infinity; reward.classList.remove('on'); band.classList.remove('rewarding'); }
       const gap = t - lastBatch;
       if (!force && gap < 1000 / HUD_TIMING.textHz - 0.5) return;
       if (!force && batches > 0) minGap = Math.min(minGap, gap);
