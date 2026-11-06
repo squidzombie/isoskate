@@ -3,16 +3,16 @@ import { describe, expect, it } from 'vitest';
 import type { GameEvent } from '../../../src/core/events';
 import type { InputFrame } from '../../../src/core/input';
 import type { Sim, SimSnapshot } from '../../../src/core/sim';
-import { DT, GRIND, MAGNET, V_POP } from '../../../src/core/tuning';
+import { DT, GRIND, HITBOX, MAGNET, V_POP, sAt } from '../../../src/core/tuning';
 import type { Obstacle } from '../../../src/core/world';
 import { createSim } from '../../../src/sim';
 import { TRICKS } from '../../../src/tricks';
-import { box, fixtureWorld, frame, runCfg, slab } from './fixtures';
+import { box, fixtureWorld, frame, rail, runCfg, slab } from './fixtures';
 
 const ledge = (x: number) => box({ s: 10, x, len: 20, wid: 0.6, hgt: 0.45, top: 'landable', edges: ['l', 'r'] });
-function make(obs: Obstacle[], x0: number): Sim {
+function make(obs: Obstacle[], x0: number, startT = 0): Sim {
   const sim = createSim(TRICKS, fixtureWorld(obs));
-  sim.reset(runCfg());
+  sim.reset(runCfg({ startT }));
   const s = sim.snapshot() as unknown as { cur: { p: { x: number }; targetX: number }; prev: { p: { x: number }; targetX: number } };
   for (const st of [s.cur, s.prev]) { st.p.x = x0; st.targetX = x0; }
   sim.restore(s as unknown as SimSnapshot);
@@ -91,6 +91,49 @@ describe('capture and the pick window', () => {
     expect(first(ev, 'grindStart')?.id).toBe(id);
     const open = first(ev, 'pickWindow')!, lock = first(ev, 'grindStart')!;
     expect((lock.tick - open.tick) * DT).toBeLessThanOrEqual(GRIND.pickBefore + DT + 1e-9);
+  });
+
+  it.each([[0, 7.0], [160, 10.5]])('a board coming down on the first 0.35 m of a rail grinds, never bails (startT %d, %d m/s)', (startT) => {
+    // Sweep every take-off tick from "slams the rail's front" to "grinds": the boundary is slam → grind with no
+    // badLanding in between, and some captures happen with the board centre still before the edge start.
+    const sR = sAt(startT + 2.0);
+    let grinds = 0;
+    const out: string[] = [];
+    for (let k = 70; k <= 100; k++) {
+      const sim = make([rail({ s: sR, x: 0, len: 8, hgt: 0.4 })], 0, startT);
+      const ev = run(sim, 200, (i) => (i === k ? { tap: true } : {}));
+      const crash = first(ev, 'crash'), g = first(ev, 'grindStart');
+      out.push(crash ? crash.cause : g ? 'grind' : 'none');
+      if (g) grinds++;
+    }
+    expect(out).not.toContain('badLanding');
+    expect(grinds).toBeGreaterThan(10);
+    // Lock with the centre before the start: u = 0, the board rides on from the edge start.
+    const sim = make([rail({ s: sR, x: 0, len: 8, hgt: 0.4 })], 0, startT);
+    const k0 = out.indexOf('grind') + 70;
+    let lockS = NaN;
+    run(sim, 200, (i, s, last) => {
+      if (Number.isNaN(lockS) && last.some((e) => e.t === 'grindStart')) lockS = s.cur.p.s;
+      return i === k0 ? { tap: true } : {};
+    });
+    expect(lockS).toBeLessThan(sR);
+    expect(lockS).toBeGreaterThanOrEqual(sR - HITBOX.l / 2 - 1e-9);
+  });
+
+  it('a buffered TAP is discarded at capture (no pop out right after the lock)', () => {
+    const lockTick = (() => { const s = make([ledge(0)], 0); return first(run(s, 200, (i) => (i === POP ? { tap: true } : {})), 'grindStart')!.tick; })();
+    const sim = make([ledge(0)], 0);
+    let buffered = false;
+    const ev = run(sim, lockTick + 30, (i, s) => {
+      if (s.cur.jumpBuffer > 0) buffered = true;
+      return i === POP || s.cur.tick + 1 === lockTick - 4 ? { tap: true } : {};
+    });
+    expect(buffered).toBe(true);
+    expect(first(ev, 'grindStart')!.tick).toBe(lockTick);
+    expect(sim.cur.jumpBuffer).toBe(0);
+    expect(ev.filter((e) => e.t === 'ollie').length).toBe(1);
+    expect(first(ev, 'grindEnd')).toBeUndefined();
+    expect(sim.cur.mode).toBe('grind');
   });
 
   it('Perfect Lock: a pick within ±0.08 s of lock', () => {

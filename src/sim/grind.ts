@@ -1,15 +1,16 @@
 // sim/grind.ts: capture, riding an edge and the exits (TECH §6.6; DESIGN §6.2, §6.3). Capture conditions FROZEN in M0.
-// Capture (air only): |dx| ≤ CAPTURE.lat (curb-class pickOnly edges: ≤ latPickOnly and only with a pick made in their
+// Capture (air only): board centre s ∈ [a.s − CAPTURE_LEAD, b.s] (the board's front half reaches the edge start; u
+// clamps to 0), |dx| ≤ CAPTURE.lat (curb-class pickOnly edges: ≤ latPickOnly and only with a pick made in their
 // window), board bottom ∈ [top − below, top + above] and vy ≤ vyMax. The snap onto the edge eases over snapT. Flip and
 // spin progress are judged as a landing. Grind id: the pick swipes (table lookup), else 50-50. Perfect Lock: the last
 // pick within ±GRIND.perfectLock of lock. Exit at the edge end with an auto-hop (endHopVy), or pop out (TAP / ↑ = full
 // pop, +50 Pop-out; ↗ ↖ = 180 Out). Steering is ignored while grinding.
 import type { GrindId } from '../core/ids';
 import type { GrindEdge } from '../core/world';
-import { CAPTURE, DT, GRIND } from '../core/tuning';
+import { CAPTURE, DT, GRIND, LAND } from '../core/tuning';
 import { SCORE, addBonus, addLink, addTrick, bank, finishTrick, pauseWindow, refreshHeat } from '../tricks';
 import { modeOf, type Ctx } from './state';
-import { edgeU, edgeX, edgeY } from './predict';
+import { CAPTURE_LEAD, edgeU, edgeX, edgeY } from './predict';
 import { judge, scoreAir } from './landing';
 import { pop, takeOff } from './air';
 
@@ -32,7 +33,7 @@ export function tryCapture(k: Ctx): boolean {
   for (const ob of k.obs) {
     if (st.ghosted.has(ob.id)) continue;
     for (const e of ob.edges) {
-      if (c.p.s < e.a.s || c.p.s > e.b.s) continue;
+      if (c.p.s < e.a.s - CAPTURE_LEAD || c.p.s > e.b.s) continue;
       const dx = Math.abs(edgeX(e, c.p.s) - c.p.x);
       if (dx > (e.pickOnly ? CAPTURE.latPickOnly : CAPTURE.lat)) continue;
       const ey = edgeY(e, c.p.s);
@@ -52,7 +53,7 @@ function lock(k: Ctx, e: GrindEdge): void {
   if (j.quality === 'bail') { k.crash('badLanding', null); if (c.mode === 'crashed') return; }
   const q = j.quality === 'bail' ? 'clean' : j.quality;
   scoreAir(k, q);
-  if (q === 'sketchy') { bank(sc, k.ev, c.tick, 'sketchy'); c.wobble = Math.max(c.wobble, 0.3); }
+  if (q === 'sketchy') { bank(sc, k.ev, c.tick, 'sketchy'); c.wobble = Math.max(c.wobble, LAND.sketchyWobble); }
   const picked = grindForPicks(k, st.pick.dirs);
   const id: GrindId = picked ?? 'fiftyFifty';
   const perfect = !!picked && st.pick.tick >= 0 && Math.abs(c.tick - st.pick.tick) * DT <= GRIND.perfectLock + 1e-9;
@@ -65,6 +66,7 @@ function lock(k: Ctx, e: GrindEdge): void {
   c.targetX = ex;                                          // re-anchor: the sim takes lateral control
   c.flip = null; c.spin = null; c.flipsThisAir = 0; c.airTricks.length = 0; c.airT = 0; c.airLeft = 0;
   c.magnetEdge = null; c.transferArmed = false;
+  c.jumpBuffer = 0;                                        // a buffered TAP is discarded at capture (DESIGN §6.3)
   const def = k.tables.grinds.find((d) => d.id === id)!;
   refreshHeat(sc);
   const entry = addTrick(sc, k.ev, c.tick, 'grind', id, def.entry, { link: true, mod: perfect ? SCORE.mod.perfectLock : 1, emit: false });

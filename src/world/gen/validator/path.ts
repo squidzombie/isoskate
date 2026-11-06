@@ -92,12 +92,14 @@ export function checkPath(line: SafeLine, obs: readonly Obstacle[], tFrom: numbe
       if (!covered) return 'path:pit';
     }
     // Never captured by a grind edge while airborne.
+    // The sim captures from s ≥ a.s − HITBOX.l/2 (sim/predict.ts CAPTURE_LEAD), with u clamped to 0.
     if (air) {
       for (const ob of obs) for (const e of ob.edges) {
-        if (e.pickOnly || s < e.a.s || s > e.b.s) continue;
-        const ex = e.a.x + (e.b.x - e.a.x) * ((s - e.a.s) / Math.max(1e-6, e.b.s - e.a.s));
+        if (e.pickOnly || s < e.a.s - halfL || s > e.b.s) continue;
+        const u = Math.min(1, Math.max(0, (s - e.a.s) / Math.max(1e-6, e.b.s - e.a.s)));
+        const ex = e.a.x + (e.b.x - e.a.x) * u;
         if (ex < lo - CAPTURE.lat - 0.2 || ex > hi + CAPTURE.lat + 0.2) continue;
-        const ey = e.a.y + (e.b.y - e.a.y) * ((s - e.a.s) / Math.max(1e-6, e.b.s - e.a.s));
+        const ey = e.a.y + (e.b.y - e.a.y) * u;
         if (y <= ey + CAPTURE.above + 0.05 && y >= ey - CAPTURE.below - 0.05) return 'path:capture';
       }
     }

@@ -4,10 +4,14 @@
 // the HUD's predicted-landing tint. Lateral position is held at the current x (the magnet and steering may still
 // move it; the prediction is refreshed every tick).
 import type { GrindEdge } from '../core/world';
-import { CAPTURE, DT, G, MAGNET, sAt } from '../core/tuning';
+import { CAPTURE, DT, G, HITBOX, MAGNET, sAt } from '../core/tuning';
 import type { Ctx } from './state';
 
 export const PREDICT_MAX_STEPS = 90;
+/** Capture starts when the front half of the board reaches the edge start: centre s ≥ a.s − HITBOX.l/2 (u clamps to 0).
+ *  Without it, a board coming down onto the first 0.35 m of a rail would touch its top from above (badLanding)
+ *  before its centre reached the edge. The validator's capture check (world/gen validator/path.ts) mirrors it. */
+export const CAPTURE_LEAD = HITBOX.l / 2;
 
 export const edgeU = (e: GrindEdge, s: number): number => (e.b.s - e.a.s > 1e-9 ? Math.min(1, Math.max(0, (s - e.a.s) / (e.b.s - e.a.s))) : 0);
 export const edgeX = (e: GrindEdge, s: number): number => e.a.x + (e.b.x - e.a.x) * edgeU(e, s);
@@ -26,7 +30,7 @@ function captureStep(e: GrindEdge, s0t: number, y0: number, vy0: number, jMax: n
   for (let j = 0; j <= jMax; j++) {
     const tau = j * DT;
     const s = j === 0 ? sNow : sAt(s0t + tau);
-    if (s < e.a.s) continue;
+    if (s < e.a.s - CAPTURE_LEAD) continue;
     if (s > e.b.s) return -1;
     const vy = vy0 - G * tau;
     if (vy > CAPTURE.vyMax) continue;
