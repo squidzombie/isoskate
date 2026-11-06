@@ -58,7 +58,7 @@ export function nearestIn(pool: readonly number[], m: number): number {
 
 /** Re-voices pitch classes `pcs` (one per voice) as the chord nearest `prev` (sum of |movement| on sorted voices),
  *  inside [lo, hi], with no unison and no minor second below E3 (mud). */
-export function voiceLead(prev: readonly number[], pcs: readonly number[], lo = VOICING_RANGE.lo, hi = VOICING_RANGE.hi): number[] {
+export function voiceLead(prev: readonly number[], pcs: readonly number[], lo = VOICING_RANGE.lo, hi = VOICING_RANGE.hi, center?: number): number[] {
   const cands = pcs.map((pc) => {
     const out: number[] = [];
     for (let m = lo; m <= hi; m++) if (mod12(m) === mod12(pc)) out.push(m);
@@ -77,6 +77,7 @@ export function voiceLead(prev: readonly number[], pcs: readonly number[], lo = 
       let cost = 0;
       for (let k = 0; k < v.length; k++) cost += Math.abs(v[k]! - (p[k] ?? v[k]!));
       cost += Math.max(0, v[v.length - 1]! - v[0]! - 14) * 2;          // keep it compact (≤ a 9th spread)
+      if (center !== undefined) cost += 1.5 * Math.abs(v.reduce((x, y) => x + y, 0) / v.length - center);   // no register drift
       if (cost < bestCost) { bestCost = cost; best = v; }
       return;
     }
@@ -86,19 +87,23 @@ export function voiceLead(prev: readonly number[], pcs: readonly number[], lo = 
   return best ?? [...prev];
 }
 
-/** The alternate voicing set: chord 1 moved up a fourth (nearest inversion), then each chord voice-led from the last.
- *  Two passes so the loop back to chord 1 is smooth too. */
+/** The alternate voicing set: chord 1 moved up a fourth (nearest inversion), then each chord voice-led from the last,
+ *  anchored near the register of the DESIGN voicing (+2 semitones, out of the mud) so it never drifts; repeated
+ *  until the loop is stable, so the change back to chord 1 is as smooth as the others. */
 export function altBars(bars: readonly (readonly ChordSpec[])[]): ChordSpec[][] {
   const flat = bars.flat();
-  const first = flat[0]!;
-  let prev = voiceLead(first.voicing.map((v) => v + 5), first.voicing);
-  const out: number[][] = [];
-  for (let pass = 0; pass < 2; pass++) {
+  const centre = (c: ChordSpec) => c.voicing.reduce((x, y) => x + y, 0) / c.voicing.length + 2;
+  let prev = voiceLead(flat[0]!.voicing.map((v) => v + 5), flat[0]!.voicing, VOICING_RANGE.lo, VOICING_RANGE.hi, centre(flat[0]!) + 3);
+  let out: number[][] = [];
+  for (let pass = 0; pass < 6; pass++) {
+    const cur: number[][] = [];
     for (let i = 0; i < flat.length; i++) {
-      const ch = flat[i]!;
-      prev = i === 0 && pass === 0 ? prev : voiceLead(prev, ch.voicing);
-      if (pass === 1) out.push(prev);
+      if (pass > 0 || i > 0) prev = voiceLead(prev, flat[i]!.voicing, VOICING_RANGE.lo, VOICING_RANGE.hi, centre(flat[i]!));
+      cur.push(prev);
     }
+    const stable = out.length > 0 && cur.every((v, i) => v.every((m, j) => m === out[i]![j]));
+    out = cur;
+    if (stable) break;
   }
   let k = 0;
   return bars.map((bar) => bar.map((ch) => ({ ...ch, voicing: out[k++]! })));

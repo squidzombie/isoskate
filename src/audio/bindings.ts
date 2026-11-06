@@ -117,7 +117,10 @@ export const APP_BINDINGS: AppBindings = {
   itemGranted: silent('the crate reveal or level-up stinger carries it'),
   coinsChanged: silent('pickups and purchases have their own sounds'),
   crateShake: { cues: ['crateShake'], doc: 'cardboard thump, +2 semitones per tap', on: (e, s) => s.cue('crateShake', { n: e.n }) },
-  crateReveal: { cues: ['revealCommon', 'revealRare', 'revealEpic', 'revealLegendary'], doc: 'stinger by rarity', on: (e, s) => s.cue(REVEAL[e.rarity]) },
+  crateReveal: {
+    cues: ['crateOpen', 'revealCommon', 'revealRare', 'revealEpic', 'revealLegendary'], doc: 'tape-rip open, then the stinger by rarity 0.28 s later',
+    on: (e, s) => { s.cue('crateOpen'); s.cue(REVEAL[e.rarity], {}, s.now() + 0.28); },
+  },
   purchase: { cues: ['purchase'], doc: 'three coin chimes', on: (_e, s) => s.cue('purchase') },
   settings: silent('the toggle or slider raised its own ui event'),
   ui: { cues: ['uiTap', 'uiBack', 'uiToggle', 'uiError'], doc: 'UI blips', on: (e, s) => s.cue(UI[e.sfx]) },
