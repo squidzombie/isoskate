@@ -220,7 +220,10 @@ behaviour and is behind a flag.
 - **e2e under load (INT, info):** with the machine at load average 10–12 (four agents), the real-time touch / keyboard
   tests time out on wall-clock waits (liveRun saw < 20 ticks in 5 s; "Enter / R are ignored" saw no tick in 200 ms),
   and a CDP `touch.tap` (start and end back to back) arrived with pointerdown → pointerup 550–860 ms apart, so it was
-  not a tap at all. They pass in isolation and at normal load; the synthetic-trace tests never flake.
+  not a tap at all. They pass in isolation and at normal load; the synthetic-trace tests never flake. Re-measured
+  after the GP review at load ≈ 11: six back-to-back CDP taps arrived 30, 1,095, 528, 885, 337 and 1,092 ms long
+  (only the 30 and 337 ms ones ollied) and the loop ran at ≈ 0.3× real time; the desktop "tap ollies", "swipe left
+  kickflips" and keyboard-A tests fail exactly then. Rerun touch.spec at the gate on a quiet machine.
 - Local workaround meanwhile: `tricks › InputFrameExt`, `input › HoldEndExt`, `RecognizerConfigExt.longTapMaxMs`.
   Bots and tools that build InputFrames from gestures themselves (WG's thumb bot) should use input's `InputPipeline` /
   `FrameBuilder`, or set `longTap` the same way.
