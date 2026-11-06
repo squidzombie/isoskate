@@ -42,7 +42,9 @@ function rig() {
   until(500);
   base = clock;
   const play = (...ts: Trace[]) => { for (const t of ts) pipe.schedule(t.samples, base); };
-  return { sim, events, swipes, until, play };
+  /** A key press at `ms` (edges only; levels follow keyDown / keyUp immediately). */
+  const key = (code: string, ms: number) => pipe.keyDown(code, base + ms);
+  return { sim, events, swipes, until, play, key, pipe };
 }
 const flips = (ev: readonly GameEvent[]) => ev.filter((e): e is Extract<GameEvent, { t: 'flipStart' }> => e.t === 'flipStart').map((e) => e.id);
 const ollies = (ev: readonly GameEvent[]) => ev.filter((e) => e.t === 'ollie');
@@ -191,6 +193,35 @@ describe('recognizer labels → sim (DESIGN §4.3 steering-stroke rule)', () => 
     parked.until(1200);
     expect(flips(parked.events)).toEqual(['kickflip']);
     expect(parked.sim.cur.targetX).toBeGreaterThan(steer.sim.cur.targetX + 1.0);   // the flick's dx was given back
+  });
+
+  it('keyboard preset A amend through the real mapper and frames: ↑ then → 60 ms later is a FS 180 ollie; ← then ↓ a Varial', () => {
+    const a = rig();
+    a.key('ArrowUp', 0); a.key('ArrowRight', 60);
+    a.until(900);
+    expect(ollies(a.events)).toHaveLength(1);
+    expect(a.events.filter((e) => e.t === 'spinStart').map((e) => (e as { id: string }).id)).toEqual(['fs180']);
+    const b = rig();
+    b.key('Space', 0); b.key('ArrowLeft', 200); b.key('ArrowDown', 260);
+    b.until(900);
+    expect(flips(b.events)).toEqual(['kickflip']);
+    expect(b.events.filter((e) => e.t === 'flipUpgrade').map((e) => (e as { to: string }).to)).toEqual(['varialKickflip']);
+    const c = rig();                                                  // 100 ms apart: two separate swipes
+    c.key('Space', 0); c.key('ArrowLeft', 200); c.key('ArrowDown', 300);
+    c.until(900);
+    expect(c.events.some((e) => e.t === 'flipUpgrade')).toBe(false);
+  });
+
+  it('keyboard preset B: O on the ground is a FS 180 ollie, N in the air a Varial Kickflip, Shift held manuals', () => {
+    const r = rig();
+    r.pipe.keys.preset = 'B';
+    r.key('KeyO', 0); r.key('KeyN', 200);
+    r.until(900);
+    expect(r.events.filter((e) => e.t === 'spinStart').map((e) => (e as { id: string }).id)).toEqual(['fs180']);
+    expect(flips(r.events)).toEqual(['varialKickflip']);
+    r.pipe.keyDown('ShiftLeft', 0, false, false);
+    r.until(1200);
+    expect(r.events.some((e) => e.t === 'manualStart')).toBe(true);
   });
 });
 
