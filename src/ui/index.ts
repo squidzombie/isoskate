@@ -21,7 +21,8 @@ import type { UiApi, UiIntent } from '../core/ui';
 import { isMetaExt, type MetaExt } from '../meta';
 import { createMonetization, readFlags } from '../platform';
 import { clearMeasureCache } from './fit';
-import { crashCause, fmtShort } from './format';
+import { TRICKS } from '../tricks';
+import { crashCause, fmtShort, trickName } from './format';
 import { createLayoutGuard, type LayoutGuard } from './guard';
 import { h } from './h';
 import { createHud, type HudExt } from './hud';
@@ -36,6 +37,14 @@ import {
 /** Menu screens the App opens only from Title / Results (game/app.ts onIntent 'open'). */
 const MENUS: ReadonlySet<ScreenId> = new Set<ScreenId>(['locker', 'shop', 'crates', 'stats', 'settings', 'rewards']);
 const DT = 1 / 60;
+const ARROW: Readonly<Record<string, string>> = { u: '↑', d: '↓', l: '←', r: '→', ul: '↖', ur: '↗', dl: '↙', dr: '↘' };
+/** The swipe that makes each trick ("↙ VARIAL KICKFLIP — new!"); grinds show their pick, spins their diagonal. */
+const TRICK_GLYPH = new Map<string, string>([
+  ...TRICKS.flips.map((d) => [d.id, d.input.map((x) => ARROW[x] ?? '').join('')] as [string, string]),
+  ...TRICKS.spins.filter((d) => !d.upgradeOf).map((d) => [d.id, ARROW[d.input] ?? ''] as [string, string]),
+  ...TRICKS.spins.filter((d) => d.upgradeOf).map((d) => [d.id, `${ARROW[d.input] ?? ''}${ARROW[d.input] ?? ''}`] as [string, string]),
+  ...TRICKS.grinds.map((d) => [d.id, d.input.map((x) => ARROW[x] ?? '').join('')] as [string, string]),
+]);
 
 export interface UiExt extends UiApi {
   readonly hud: HudExt;
@@ -92,7 +101,7 @@ export function createUiImpl(root: HTMLElement): UiExt {
     modal, toast, lofi, monetization: () => monetization, coarse,
   };
 
-  const shownResults = new Set<string>(), toasted = new Set<string>();
+  const shownResults = new Set<string>(), toasted = new Set<string>(), discovered = new Set<string>();
   const screens = new Map<ScreenId, Screen>();
   for (const s of [bootScreen(), titleScreen(ctx), crashScreen(), resultsScreen(ctx, { reveal: getReveal, onShown: (id) => shownResults.add(id) }),
     pauseScreen(ctx), showcaseScreen(ctx, 'locker'), showcaseScreen(ctx, 'shop'), settingsScreen(ctx), statsScreen(ctx),
@@ -154,6 +163,7 @@ export function createUiImpl(root: HTMLElement): UiExt {
         game.on('runStart', () => {
           lastCause = ''; lastLost = 0;
           Object.assign(run, { banks: 0, bankMax: 0, bankSum: 0, maxLinks: 0, area: 'downtown', tracked: false });
+          discovered.clear();
           lofi.set({ neon: false });
           const d = ext()?.data;
           hud.setFirstRuns(!!d && d.onboarding.runsStarted <= 3);
@@ -174,6 +184,14 @@ export function createUiImpl(root: HTMLElement): UiExt {
           if (!run.tracked) { run.tracked = true; track('combo_banked', { count: run.banks, max: run.bankMax, sum: run.bankSum, max_links: run.maxLinks }); }
         }),
         game.on('comboLost', (e) => { lastLost = e.total; }),
+        // Trick discovery (DESIGN §12.5): the first landing of a Trick Book entry names its input, once.
+        game.on('trickScored', (e) => {
+          const d = ext()?.data;
+          if (!d || e.id === 'ollie' || d.trickBook.includes(e.id) || discovered.has(e.id)) return;
+          discovered.add(e.id);
+          const glyph = TRICK_GLYPH.get(e.id);
+          toast(`${glyph ? `${glyph} ` : ''}${trickName(e.id).toUpperCase()} — new!`, 1400);
+        }),
         game.on('comboBanked', (e) => { run.banks++; run.bankMax = Math.max(run.bankMax, e.total); run.bankSum += e.total; run.maxLinks = Math.max(run.maxLinks, e.links); }),
         game.on('areaEnter', (e) => {
           run.area = e.area;
