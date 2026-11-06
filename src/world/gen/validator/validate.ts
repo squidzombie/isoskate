@@ -53,7 +53,7 @@ const HEAD_EPS = 1e-6;
 
 /** Rule (h) tolerance in slices (0.1 s): the grid's air reach (35 %) and slice-interval dilation make it pessimistic, so
  *  a measured 2.07 s is a real pocket of < 2.0 s; the static asserts report the measured maximum. */
-export const DEAD_END_TOL = 3;
+export const DEAD_END_TOL = 1;
 /** Development switch: attach ground-plane dumps to some rejections. */
 export const VAL_DEBUG = { dump: false, calls: 0 };
 

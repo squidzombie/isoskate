@@ -46,6 +46,8 @@ export interface TemplateCtx {
   colLeft(x: number): number;
   /** The last gate row's opening centres (the next row keeps its openings ≥ GEN.gate.apart away from them). */
   readonly lastGateX: readonly number[];
+  /** S_GATE: also carry the A3 full-width hazard in the approach (both deadlines due at once). */
+  readonly a3?: boolean;
   /** Earliest time a required action may start (spacing from the previous one, spawn grace). */
   readonly earliest: number;
   /** Re-roll index (0 = first try); ≥ GEN.easyFrom: the "drop the hardest element" retries. */

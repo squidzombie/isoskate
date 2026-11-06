@@ -320,6 +320,8 @@ const vgOK = (i: number, c: number): boolean => (c < 32 ? (VG[i * 2]! >>> c) & 1
 /** Per (slice, cell): the first later slice with an ollie-able block (low solid or pit) in that cell, and per slice
  *  whether any capture edge is near (ollieMacro's capture test is skipped elsewhere). Filled by prepareMacros(). */
 const NEXT_SOFT = new Int32Array(MAX_SLICES * NC);
+/** Longest pit run (slices, conservative interval) a required ollie may clear with a ≥ 0.25 s window. */
+export const PIT_OLLIE_MAX = 10;
 const CAP_NEAR = new Uint8Array(MAX_SLICES);
 function prepareMacros(r: Raster): void {
   const n = r.n;
@@ -341,7 +343,14 @@ function prepareMacros(r: Raster): void {
  *  viable or inside a capture zone (the safe line never ollies where the magnet could take it). */
 export function ollieMacro(r: Raster, i: number, c: number): number {
   // Useful only with an ollie-able block (low solid or pit) ahead in this cell.
-  if (NEXT_SOFT[i * NC + c]! - i > 25) return -1;
+  const ns = NEXT_SOFT[i * NC + c]!;
+  if (ns - i > 25) return -1;
+  // A pit longer than PIT_OLLIE_MAX slices in this cell leaves no 0.25 s take-off window: plank or other lane only.
+  if (bitTest(r.pit[ns * 2]!, r.pit[ns * 2 + 1]!, c)) {
+    let run = 0;
+    for (let k = ns; k < r.n && bitTest(r.pit[k * 2]!, r.pit[k * 2 + 1]!, c); k++) run++;
+    if (run > PIT_OLLIE_MAX) return -1;
+  }
   const h = classOfCell(r, i, c);
   if (h < 0) return -1;
   const km = r.kMax[h]!;

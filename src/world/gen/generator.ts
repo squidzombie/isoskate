@@ -258,7 +258,7 @@ export class Generator implements WorldGen {
       X: (x: number) => round1cm(m * x), maxT1, ...(plan.dur !== undefined ? { dur: plan.dur } : {}),
       safeX: c.safeX, wanderFrom: (c.wander.lo + c.wander.hi) / 2, earliest, attempt: bare ? GEN.easyFrom : attempt,
       colLeft: (x: number) => { const k = Math.max(0, Math.min(COLS - 1, Math.floor((x + 4.5) / GEN.a1.colW))); return c.lastTall[k]! + a1Period(phase) - c.aClock; },
-      lastGateX: c.lastGateX,
+      lastGateX: c.lastGateX, ...(plan.a3 ? { a3: true } : {}),
       props, propsAt: (d: number) => this.makeProps(index, area, layout, d), coins, obstacles, cuts, driveways, datumAt,
       hint: (ob: Obstacle, h: HintId) => { ob.hint = h; return ob; },
     };

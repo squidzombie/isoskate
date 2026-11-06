@@ -40,7 +40,8 @@ export function drawTier(phase: PhaseId, rng: Sfc32, lastTier: Tier): Tier {
 }
 
 export type PlanReason = 'rollout' | 'lesson' | 'gateway' | 'filler' | 'payback' | 'a3' | 'wander' | 'breather' | 'draw';
-export interface Plan { tpl: Template; tier: Tier; dur?: number; reason: PlanReason }
+/** a3: the gate segment also carries the A3 full-width hazard (both deadlines at once). */
+export interface Plan { tpl: Template; tier: Tier; dur?: number; reason: PlanReason; a3?: boolean }
 
 /** The A3 hazard: S_TRENCH (when enabled) or S_BARRIER (area skins). */
 export function a3Plan(rng: Sfc32, tier: Tier, trench: boolean): Plan {
@@ -73,9 +74,18 @@ export function planSegment(c: GenCursor, env: PlanEnv, rng: Sfc32): Plan {
   // Rows overlay the templates at their deadline; a gate segment only when the deadline is (almost) now.
   const gateNow = env.force === 'wander' || env.gateRoom < 0.6;
   const a3MaxLeft = c.lastFwA + a3Range(phase)[1] - c.aClock;
-  const a3Due = clocks && (env.force === 'a3' || c.aClock + 0.5 >= c.fwDueA || a3MaxLeft < 4.6) && left >= 2.4;
-  if (a3Due && (!gateNow || a3MaxLeft < env.gateRoom) && env.gateRoom >= 2.4) return a3Plan(rng, tier, env.trench);
-  if (clocks && gateNow && left >= gate.durMax) return { tpl: gate, tier: Math.max(2, tier) as Tier, reason: 'wander' };
+  // A3 is due early enough that a gate segment (≈ 3 s) may still go first and the hazard (≈ 1.2 s into its own
+  // template) lands by the A3 maximum.
+  // Before a gateway (T0: the A-clock pauses) the last slot that fits a hazard takes it when the A3 maximum would
+  // otherwise fall soon after the gateway.
+  const preGw = left < 9.0 && a3MaxLeft < left + GEN.a3Lead;
+  const a3Due = clocks && (env.force === 'a3' || c.aClock + 0.5 >= c.fwDueA || a3MaxLeft < GEN.a3Lead || preGw) && left >= 2.4;
+  if (a3Due && env.gateRoom >= 2.4) return a3Plan(rng, tier, env.trench);
+  if (clocks && (gateNow || a3Due) && left >= gate.durMax) {
+    // Both due: the gate segment carries the hazard in its approach when there is room for both.
+    const both = a3Due && left >= gate.durMax + 1.2;
+    return { tpl: gate, tier: Math.max(2, tier) as Tier, reason: 'wander', ...(both ? { a3: true } : {}) };
+  }
   if (a3Due) return a3Plan(rng, tier, env.trench);
   const br = GEN.breather[phase];
   if (br && env.t >= c.breatherDueT && br.dur + 0.5 <= left) {

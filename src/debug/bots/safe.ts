@@ -132,7 +132,8 @@ export class SafeBot {
     // Taps decided in an earlier window (jitter may have moved them past it) stay decided.
     this.pending = this.pending.filter((q) => q.planned < from);
     for (const tp of this.taps) {
-      if (tp.t < from) continue;
+      // A tap the new plan moved just before this window (re-plans jitter by a tick) is sent at the earliest tick.
+      if (tp.t < from - 0.1) continue;
       if (tp.t > until) break;
       if ([...this.sent, ...this.pending].some((q) => Math.abs(q.planned - tp.t) < 0.2)) continue;
       const j = Math.round(((this.rng.float() * 2 - 1) * this.jitter) / DT) * DT;
