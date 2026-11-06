@@ -51,16 +51,20 @@ export const SPRING = { omega: 18, omegaFast: 30, fakiePivot: 26 } as const;
 
 /** DESIGN §18.5 pose table values, plus the view-side oscillators. */
 export const POSE = {
+  /** armAbd 32° (DESIGN 20°): with the shoulders open toward the nose the run camera sees both arms off the torso at
+   *  31 px (DESIGN §18.5 "readable arms"); 20° tucks them into the silhouette. */
   roll: { knee: 15, hipDrop: 0.04, armAbd: 32, armFlex: 24, headTurn: 80, spineTwist: 14, chestTwist: 46, bobHz: 0.6, bobAmp: 0.015 },
   carve: { leanMax: 22, toeKnee: 30, heelHipBack: 0.06, armCounter: 15 },
-  pop: { backKnee: 8, frontKnee: 70, boardPitch: 25, stretch: 1.06, frontLift: 0.08 },
+  /** The front foot lifts until the IK bends the front knee to frontKnee (poses.ts derives the lift). */
+  pop: { backKnee: 8, frontKnee: 70, boardPitch: 25, stretch: 1.06 },
   tuck: { knee: 85, footLift: 0.22, armAbd: 45 },
   flip: { shoulderTwist: 15, catchAt: 0.8, catchLift: 0.06 },
   grab: { knee: 95 },
   land: { dip: 0.15, dipIn: 0.08, dipOut: 0.22, knee: 55, squash: 0.94 },
   manual: { pitch: 12, swayHz: 1.2, swayDeg: 20 },
   grind: { knee: 25, armAbd: 60 },
-  sketchy: { windmillHz: 2, dur: 0.3 },
+  /** Arm windmill 2 Hz for 0.3 s from the sketchy landing: arms raised to `abd`, swinging ±flex, elbows ±elbow. */
+  sketchy: { windmillHz: 2, dur: 0.3, abd: 80, flex: 50, elbow: 25 },
   idle: { knee: 8, armAbd: 10, breatheHz: 0.25, swayDeg: 3 },
   /** Gus's `upright` style: knees and bends scaled by this factor. */
   upright: 0.35,
@@ -75,19 +79,34 @@ export const CRASH = {
   board: { up: 2.6, fwdFactor: 0.75, side: 1.6, spinMin: 9, spinMax: 15, r: 0.05 },
   step: 1 / 120,           // view-side integration step (deterministic from the crash time)
   maxT: 4,
+  centreUp: 0.32,          // hips → tumble centre (mid torso), hips-local
+  blendIn: 0.06,           // s: the limbs ease from the riding pose into the flail (time constant)
+  /** Settling: the body lies at the next 90° + n·180° of tumble angle ahead, unless it is within this many rad past one. */
+  lieBack: 0.35,
+  /** A slam (wall, car, barrier): the body bounces back off the obstacle and up, tipping backward so it lands on its
+   *  back in front of the obstacle (never through it); the board kicks back toward the camera. */
+  slam: { back: 0.2, backMin: 0.9, backMax: 2, up: 2.6, lieFrac: 0.8, rateMin: 1, rateMax: 4.5, board: { back: 0.3, backMax: 3 } },
 } as const;
 
 /** Outline twins (DESIGN §18.4: inverted hull, ink, 0.025 m), widened to a minimum on-screen width so the skater
  *  keeps its ink line at top speed (31 px tall), capped so tiny parts never balloon. */
-export const OUTLINE = { color: 0x2b2140, width: 0.025, minPx: 0.85, maxWidth: 0.05 } as const;
+export const OUTLINE = {
+  color: 0x2b2140, width: 0.025, minPx: 0.85, maxWidth: 0.05,
+  /** Blue hour (Neon's dark wet asphalt #352F55): an ink line vanishes, so it lifts toward a pale lilac as the dusk
+   *  factor goes from `nightFrom` (Docks) to 1 (Neon), the way Neon hazards invert their value (DESIGN §18.4). */
+  nightColor: 0xb4a2ee, nightFrom: 0.67,
+} as const;
 
 /** Toon ramp (DESIGN §18.2) and the rim light that lifts the skater off the mid-value street. */
 export const SHADE = {
   ramp: [0.35, 0.7, 1.0] as const,
   rimColor: 0xffe2b8, rimStrength: 0.45, rimPower: 2.6,
+  /** At blue hour the rim turns to the cool moon fill and doubles, so dark outfits keep an edge on the dark road. */
+  nightRimColor: 0xa8b4ff, nightRimStrength: 1.0,
   /** Albedo multiplier (sRGB hex): keeps light, saturated cloth out of the ACES shoulder so hues survive. */
   albedo: 0xd6d6d6,
-  glossSpec: 0.35,
+  /** Gloss finish: peak alpha of the specular sprite on the helmet decal (DESIGN §18.5). */
+  glossSpec: 0.85,
 } as const;
 
 /** Blink every 3–6 s (DESIGN §18.5). */
@@ -100,7 +119,9 @@ export const FX = {
   lanternMin: 0.2, lanternMax: 1.0,                    // Paper Lantern helmet, toward blue hour
   boardGlow: 0.8,                                      // emissive board finishes (Lantern Row's lanterns)
   waveDur: 0.9,                                        // Gus waves at the camera on Perfect landings
-  hemKick: 14, hemOmega: 9,                            // Lark's coat hem sway on landings (deg, rad/s)
+  wave: { abd: 150, flex: 20, elbow: 70, wag: 30, wagRate: 22 },   // the waving arm (deg; wag rad/s)
+  hemKick: 14, hemOmega: 9, hemDamp: 0.35,             // Lark's coat hem sway on landings (deg, rad/s, damping ratio)
+  // M5 stretch, not applied yet (static fallbacks, DESIGN §15): Cat Ears' flick and Sunflower's petal bob.
   earFlickDur: 0.35, petalBobDur: 0.4,
   fishOrbitHz: 0.25,
   sunLoop: 6,                                          // Glide Ring's sun rises and sets on a 6 s loop
@@ -110,8 +131,14 @@ export const FX = {
 export const SHOWCASE = {
   facingDeg: -90,          // root yaw that turns the body toward +z (the locker camera) at turntable 0
   loop: 5.5,               // seconds between trick previews
+  popAt: 3.4, popDur: 0.06, landDur: 0.28, fakieHold: 0.6,   // preview timing within the loop (s)
   hop: 0.32, air: 0.62,    // preview hop apex (m) and airtime (s), small enough to stay in frame
   idleSpin: 0,             // deg/s automatic turntable (0: the Locker drag owns it)
+  /** Board display: when the board changes in the Locker / Shop, the rider steps off and holds the deck upright at
+   *  their side, graphic toward the camera, for `dur` seconds, then hops back on and kickflips (`afterT` is the loop
+   *  time to resume at). The deck stands at root z (beside the back hand), lifted `lift` off the ground, leaning
+   *  `leanDeg` toward the rider. */
+  display: { dur: 2.6, omega: 14, z: 0.46, x: 0.1, lift: 0.17, leanDeg: 10, feet: 0.13, footYaw: 10, afterT: 2.9 },
 } as const;
 
 /** Budgets (ROADMAP W2b acceptance, TECH §8.4): skater + board + helmet including outline twins. */

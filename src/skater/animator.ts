@@ -4,16 +4,19 @@
 //  - the board rotation from pose.board, spins from pose.spinYaw, the fakie pivot, grind and manual offsets;
 //  - the land absorb dip, rolling bob, manual arm sway, sketchy windmill, Gus's wave, Lark's coat hem;
 //  - the crash: a view-side rigid tumble (seeded spin axis), flailing limbs and the board flying off with its own
-//    spin, bouncing with restitution 0.3. The helmet stays on (it rides the head bone).
+//    spin, bouncing with restitution 0.3. A slam bounces back off the obstacle (it never tumbles through it); a bad
+//    landing or a fall tumbles forward. The helmet stays on (it rides the head bone);
+//  - showcase board display: the rider steps off and holds the deck upright, graphic toward the camera.
 // Allocation-free per frame. Deterministic for a given sequence of (dt, pose) inputs.
-import { Euler, Matrix4, Quaternion, Vector3 } from 'three';
+import { type Bone, Euler, Matrix4, Quaternion, Vector3 } from 'three';
+import type { CrashCause } from '../core/ids';
 import { clamp } from '../core/math';
 import { Sfc32 } from '../core/rng';
 import type { PoseId, SkaterPose } from '../core/view';
 import { frameAlong, reachForFlex, solveTwoBone } from './ik';
-import { CHANNELS, NEUTRAL, boardFlatness, resolvePose, type PoseChannels, type PoseTarget } from './poses';
+import { CHANNELS, NEUTRAL, boardFlatness, resolvePose, type PoseChannels, type PoseContext, type PoseTarget } from './poses';
 import type { Rig, RigDims } from './rig';
-import { BOARD, CRASH, FX, POSE, SPRING } from './skater.config';
+import { BOARD, CRASH, FX, POSE, SHOWCASE, SPRING } from './skater.config';
 
 const DEG = Math.PI / 180;
 const N = CHANNELS.length;
@@ -40,6 +43,10 @@ export interface AnimInput {
   landed: number;
   /** A Perfect landing this frame (Gus's wave). */
   perfect: boolean;
+  /** Why the run ended, while `pose.crash` is set (SkaterState.crash.cause): a slam bounces back off the obstacle. */
+  crashCause: CrashCause | null;
+  /** Showcase board display target: 1 = off the board, holding the deck graphic-out; 0 = riding. */
+  display: number;
 }
 
 /** Critically damped spring, exact for any dt. Returns the new value; writes the velocity into v[i]. */
@@ -56,6 +63,8 @@ const noise = (t: number, a: number, b: number) => 0.62 * Math.sin(2 * Math.PI *
 interface CrashSim {
   key: string; t: number; ground: number;
   c: Vector3; cv: Vector3; q0: Quaternion; axis: Vector3; rate: number; angle: number; grounded: boolean; settleT: number;
+  /** The lying angle the body settles to, chosen once at the first ground contact. */
+  lie: number;
   bp: Vector3; bv: Vector3; bq: Quaternion; baxis: Vector3; brate: number; bgrounded: boolean;
   phase: Float64Array;
 }
@@ -68,7 +77,9 @@ const vTarget = new Vector3(), vPole = new Vector3(), vHipsP = new Vector3(), vB
 const e3 = new Euler(0, 0, 0, 'YXZ');
 const AX = new Vector3(1, 0, 0), AY = new Vector3(0, 1, 0), AZ = new Vector3(0, 0, 1);
 const mA = new Matrix4(), mB = new Matrix4(), vS = new Vector3();
-const C_OFF = new Vector3(0, 0.32, 0);           // hips → tumble centre (mid torso), hips-local
+const C_OFF = new Vector3(0, CRASH.centreUp, 0);  // hips → tumble centre (mid torso), hips-local
+const vDisp = new Vector3(), qDisp = new Quaternion(), qRideFoot = new Quaternion(), vX = new Vector3(), vY = new Vector3(), vZ = new Vector3();
+const DSP = SHOWCASE.display;
 
 const rotY = (q: Quaternion, deg: number) => q.setFromAxisAngle(AY, deg * DEG);
 const rotX = (q: Quaternion, deg: number) => q.setFromAxisAngle(AX, deg * DEG);
@@ -91,9 +102,16 @@ export class Animator {
   private waveT = 99;
   private crash: CrashSim | null = null;
   private snapNext = true;
+  private sketchyAge = 0;
+  /** Showcase board display blend (0 riding … 1 holding the deck) and its spring velocity. */
+  private dsp = 0; private dspV = 0;
+  private readonly pctx: PoseContext = { stance: 'regular', upright: false, boardFlat: 1, flipAge: 0 };
 
   /** The next update jumps straight to its target (new run, loadout switch, contact sheets). */
   snap(): void { this.snapNext = true; this.crash = null; this.dipT = 99; this.waveT = 99; }
+
+  /** The current board display blend (0..1), for tests and tools. */
+  get displayBlend(): number { return this.dsp; }
 
   /** True while the crash tumble owns the rig. */
   get crashing(): boolean { return this.crash !== null; }
@@ -108,7 +126,12 @@ export class Animator {
     // Pose target and springs.
     if (p.pose === 'flip') this.flipAge = this.lastPose === 'flip' ? this.flipAge + dt : 0;
     this.lastPose = p.pose;
-    const tg = resolvePose(p, { stance: st.stance, upright: st.upright, boardFlat: boardFlatness(p.board), flipAge: this.flipAge }, this.target);
+    const pc = this.pctx;
+    pc.stance = st.stance; pc.upright = st.upright; pc.boardFlat = boardFlatness(p.board); pc.flipAge = this.flipAge;
+    const tg = resolvePose(p, pc, this.target);
+    // Sketchy: the windmill lasts POSE.sketchy.dur from the sketchy landing, however long the sim holds the pose.
+    if (p.pose === 'sketchy') { if (this.sketchyAge > POSE.sketchy.dur) tg.windmill = 0; this.sketchyAge += dt; }
+    else this.sketchyAge = 0;
     const snap = this.snapNext;
     for (let i = 0; i < N; i++) {
       const goal = tg[CHANNELS[i]!];
@@ -122,13 +145,20 @@ export class Animator {
       this.fakie = fGoal + (y + c * dt) * e; this.fakieV = (this.fakieV - SPRING.fakiePivot * c * dt) * e;
     }
     this.prevFakie = p.fakie; this.prevSpin = p.spinYaw;
+    // Showcase board display (its own critically damped spring).
+    const dGoal = clamp(inp.display, 0, 1);
+    if (snap) { this.dsp = dGoal; this.dspV = 0; }
+    else {
+      const y = this.dsp - dGoal, e = Math.exp(-DSP.omega * dt), c = this.dspV + DSP.omega * y;
+      this.dsp = dGoal + (y + c * dt) * e; this.dspV = (this.dspV - DSP.omega * c * dt) * e;
+    }
     // Landing dip, Gus's wave, the coat hem.
     if (inp.landed > 0) { this.dipT = 0; this.dipAmp = clamp(inp.landed, 0.4, 1.5); if (st.hemSway) this.hemV += FX.hemKick * 12 * this.dipAmp; }
     else this.dipT += dt;
     if (inp.perfect && st.waves) this.waveT = 0; else this.waveT += dt;
     {
       const y = this.hem + this.x[IDX.lean]! * 0.4, w = FX.hemOmega;
-      const a = -2 * 0.35 * w * this.hemV - w * w * y;          // under-damped: the hem swings and settles
+      const a = -2 * FX.hemDamp * w * this.hemV - w * w * y;    // under-damped: the hem swings and settles
       this.hemV += a * dt; this.hem += this.hemV * dt;
       if (snap) { this.hem = 0; this.hemV = 0; }
     }
@@ -172,6 +202,17 @@ export class Animator {
     if (air) e3.set(ch('bPitch') * DEG, -sx * ch('bYaw') * DEG, sx * ch('bRoll') * DEG, 'YXZ');
     qFootFrame.setFromEuler(e3);
     vBoardP.set(0, BOARD.deckY + lift, 0);
+    // Showcase board display: the deck stands beside the back hand (root +z for both stances), nose up, its graphic
+    // facing the camera (the body's front, sx · +x), leaning toward the rider.
+    const dsp = smooth(this.dsp);
+    if (dsp > 0.001) {
+      vX.set(0, 0, sx); vY.set(-sx, 0, 0); vZ.set(0, -1, 0);           // board x → across, y → away from the camera, z → down
+      mA.makeBasis(vX, vY, vZ);
+      qDisp.setFromRotationMatrix(mA).premultiply(qa.setFromAxisAngle(AX, -DSP.leanDeg * DEG));
+      vDisp.set(sx * DSP.x, DSP.lift + BOARD.len / 2, DSP.z);
+      b.board.position.lerp(vDisp, dsp);
+      b.board.quaternion.slerp(qDisp, dsp);
+    }
 
     // Hips: height from the reference leg's knee flexion, weight shifts, stance yaw (goofy faces −x).
     const liftF = ch('liftF'), liftB = ch('liftB');
@@ -183,6 +224,13 @@ export class Animator {
       - ch('hipDrop') - this.dip() + breathe;
     const midZ = (BOARD.frontZ + BOARD.backZ) / 2;
     b.hips.position.set(sx * (ch('hipX') - BOARD.heelShift * 0.4), hipsY, midZ - ch('hipZ'));
+    if (dsp > 0.001) {
+      // Standing on the ground beside the board: feet ±DSP.feet under the hips.
+      const gs = Math.abs(DSP.feet - d.hipHalf);
+      const gY = d.ankleUp + Math.sqrt(Math.max(0.04, reach * reach - gs * gs)) + d.hipDown - this.dip() + breathe;
+      vDisp.set(0, gY, -ch('hipZ'));
+      b.hips.position.lerp(vDisp, dsp);
+    }
     rotY(qHips, sx > 0 ? 0 : 180);
     b.hips.quaternion.copy(qHips);
     vHipsP.copy(b.hips.position);
@@ -205,25 +253,36 @@ export class Animator {
     let fAbd = ch('fAbd') + sway, fFlex = ch('fFlex'), fElb = ch('fElbow');
     let bAbd = ch('bAbd') - sway, bFlex = ch('bFlex'), bElb = ch('bElbow');
     if (wm > 0.001) {
-      fAbd += (80 - fAbd) * wm; bAbd += (80 - bAbd) * wm;
-      fFlex += wm * 50 * Math.sin(wmA); bFlex += wm * 50 * Math.sin(wmA + Math.PI);
-      fElb += wm * 25 * Math.cos(wmA); bElb += wm * 25 * Math.cos(wmA + Math.PI);
+      const W = POSE.sketchy;
+      fAbd += (W.abd - fAbd) * wm; bAbd += (W.abd - bAbd) * wm;
+      fFlex += wm * W.flex * Math.sin(wmA); bFlex += wm * W.flex * Math.sin(wmA + Math.PI);
+      fElb += wm * W.elbow * Math.cos(wmA); bElb += wm * W.elbow * Math.cos(wmA + Math.PI);
     }
     if (this.waveT < FX.waveDur) {          // a cheerful wave with the back arm
-      const u = Math.sin(Math.PI * Math.min(1, this.waveT / FX.waveDur));
-      bAbd += (150 - bAbd) * u; bFlex += (20 - bFlex) * u; bElb = bElb + (70 + 30 * Math.sin(this.waveT * 22) - bElb) * u;
+      const u = Math.sin(Math.PI * Math.min(1, this.waveT / FX.waveDur)), Wv = FX.wave;
+      bAbd += (Wv.abd - bAbd) * u; bFlex += (Wv.flex - bFlex) * u;
+      bElb = bElb + (Wv.elbow + Wv.wag * Math.sin(this.waveT * Wv.wagRate) - bElb) * u;
     }
     this.arm(rig, front, fAbd, fFlex, fElb);
     this.arm(rig, back, bAbd, bFlex, bElb);
     if (st.hemSway) rotZ(b.hem.quaternion, this.hem); else b.hem.quaternion.identity();
 
     // Legs: 2-bone IK toward the deck targets (front bolts / tail), feet across the deck.
-    this.leg(rig, st, front === 'L' ? 'L' : 'R', BOARD.frontZ, liftF, BOARD.footYawFront, sx);
-    this.leg(rig, st, front === 'L' ? 'R' : 'L', BOARD.backZ, liftB, BOARD.footYawBack, sx);
+    this.leg(rig, st, front === 'L' ? 'L' : 'R', BOARD.frontZ, liftF, BOARD.footYawFront, sx, -DSP.feet, DSP.footYaw, dsp);
+    this.leg(rig, st, front === 'L' ? 'R' : 'L', BOARD.backZ, liftB, BOARD.footYawBack, sx, DSP.feet, -DSP.footYaw, dsp);
 
     // Indy grab: the back hand reaches the toeside edge between the feet (blended in by the `grab` channel).
     const g = clamp(ch('grab'), 0, 1);
-    if (g > 0.02) this.grabHand(rig, st, back, g, sx);
+    if (g > 0.02) {
+      vTarget.set(sx * (BOARD.width / 2 + 0.01), BOARD.depth / 2 + 0.03, (BOARD.frontZ + BOARD.backZ) / 2 + 0.02)
+        .applyQuaternion(qFootFrame).add(vBoardP);
+      this.reachHand(rig, st, back, g, -1, 0.6);
+    }
+    // Board display: the back hand holds the nose (just above the top end of the upright deck).
+    if (dsp > 0.02) {
+      vTarget.set(0, BOARD.depth / 2 + 0.05, -(BOARD.len / 2 - 0.03)).applyQuaternion(b.board.quaternion).add(b.board.position);
+      this.reachHand(rig, st, back, dsp, -1, 0.35);
+    }
   }
 
   private arm(rig: Rig, side: 'L' | 'R', abd: number, flex: number, elbow: number): void {
@@ -234,13 +293,16 @@ export class Animator {
     (side === 'L' ? b.handL : b.handR).quaternion.identity();
   }
 
-  private leg(rig: Rig, st: AnimStyle, side: 'L' | 'R', z: number, lift: number, footYaw: number, sx: number): void {
+  /** One leg's IK. `gz`, `gYaw` and `gw`: the standing-on-the-ground target (board display) and its blend weight. */
+  private leg(rig: Rig, st: AnimStyle, side: 'L' | 'R', z: number, lift: number, footYaw: number, sx: number,
+    gz: number, gYaw: number, gw: number): void {
     const b = rig.bone, d = st.dims;
     const hip = side === 'L' ? b.hipL : b.hipR, knee = side === 'L' ? b.kneeL : b.kneeR, ankle = side === 'L' ? b.ankleL : b.ankleR;
     // Hip joint in the root frame.
     vHip.copy(hip.position).applyQuaternion(qHips).add(vHipsP);
     // Ankle target on the (virtual) deck.
     vTarget.set(-sx * BOARD.heelShift, BOARD.depth / 2 + d.ankleUp + lift, z).applyQuaternion(qFootFrame).add(vBoardP);
+    if (gw > 0.001) vTarget.lerp(vb.set(0, d.ankleUp, gz), gw);
     // Knees point toward the toes and slightly out over their own foot.
     vPole.set(1, 0.05, (side === 'L' ? -1 : 1) * 0.18).applyQuaternion(qHips);
     solveTwoBone(vHip, vTarget, vPole, d.thigh, d.shin, vKnee, vAnkle);
@@ -250,10 +312,12 @@ export class Animator {
     knee.quaternion.copy(qInv.copy(qThigh).invert()).multiply(qShin);
     rotY(qa, (sx > 0 ? 0 : 180) + sx * footYaw);
     qFoot.copy(qFootFrame).multiply(qa);
+    if (gw > 0.001) qFoot.slerp(rotY(qRideFoot, (sx > 0 ? 0 : 180) + sx * gYaw), gw);
     ankle.quaternion.copy(qInv.copy(qShin).invert()).multiply(qFoot);
   }
 
-  private grabHand(rig: Rig, st: AnimStyle, side: 'L' | 'R', g: number, sx: number): void {
+  /** Two-bone IK of one arm toward vTarget (root frame), blended in by `g`; the elbow points back (poleX) and out. */
+  private reachHand(rig: Rig, st: AnimStyle, side: 'L' | 'R', g: number, poleX: number, poleOut: number): void {
     const b = rig.bone, d = st.dims;
     const shoulder = side === 'L' ? b.shoulderL : b.shoulderR, elbow = side === 'L' ? b.elbowL : b.elbowR;
     // Shoulder in the root frame: hips → spine → chest → shoulder.
@@ -262,9 +326,7 @@ export class Animator {
     mB.compose(b.chest.position, b.chest.quaternion, vS); mA.multiply(mB);
     const chestQ = qc.setFromRotationMatrix(mA);
     vHip.copy(shoulder.position).applyMatrix4(mA);
-    vTarget.set(sx * (BOARD.width / 2 + 0.01), BOARD.depth / 2 + 0.03, (BOARD.frontZ + BOARD.backZ) / 2 + 0.02)
-      .applyQuaternion(qFootFrame).add(vBoardP);
-    vPole.set(-1, 0, side === 'L' ? -0.6 : 0.6).applyQuaternion(qHips);        // the elbow points back and out
+    vPole.set(poleX, 0, side === 'L' ? -poleOut : poleOut).applyQuaternion(qHips);
     solveTwoBone(vHip, vTarget, vPole, d.upperArm, d.foreArm, vKnee, vAnkle);
     frameAlong(va.subVectors(vKnee, vHip), vb.copy(vPole).multiplyScalar(-1), qThigh);
     frameAlong(va.subVectors(vAnkle, vKnee), vb, qShin);
@@ -284,7 +346,7 @@ export class Animator {
     const tWant = Math.min(CRASH.maxT, Math.max(c.t, k.t + dt));
     const h = CRASH.step;
     while (k.t + h <= tWant) { this.stepCrash(k, h); k.t += h; }
-    this.applyCrash(rig, st, k);
+    this.applyCrash(rig, st, k, dt);
     this.snapNext = false;
   }
 
@@ -298,18 +360,35 @@ export class Animator {
     mB.compose(b.board.position, b.board.quaternion, vS.set(1, 1, 1)).premultiply(mA);
     const bpos = new Vector3(), bq = new Quaternion();
     mB.decompose(bpos, bq, vS);
-    const fwd = clamp(inp.speed * CRASH.fwdFactor, 0, CRASH.fwdMax);
+    const speed = Math.max(0, Number.isFinite(inp.speed) ? inp.speed : 0);
     const ground = -Math.max(0, inp.pose.height);
-    const axis = new Vector3(rng.range(-1, 1), rng.range(-0.35, 0.35), rng.range(-1, -0.25)).normalize();
+    const slam = inp.crashCause === 'slam', S = CRASH.slam;
+    // Object frame: −z is the travel direction. Rotating about +x tips the top backward (+z).
+    const axis = slam
+      ? new Vector3(rng.range(0.6, 1), rng.range(-0.3, 0.3), rng.range(-0.55, 0.55)).normalize()
+      : new Vector3(rng.range(-1, 1), rng.range(-0.35, 0.35), rng.range(-1, -0.25)).normalize();
     const baxis = new Vector3(rng.range(-0.3, 0.3), rng.range(-1, 1), rng.range(-1, 1)).normalize();
     const phase = new Float64Array(16);
     for (let i = 0; i < phase.length; i++) phase[i] = rng.range(0, Math.PI * 2);
+    const c = hipsP.clone().add(va.copy(C_OFF).applyQuaternion(q0));
+    const side = rng.range(-0.6, 0.6), bside = rng.range(-1, 1) * CRASH.board.side, rate = rng.range(CRASH.spinMin, CRASH.spinMax);
+    const brate = rng.range(CRASH.board.spinMin, CRASH.board.spinMax);
+    let cv: Vector3, bv: Vector3, spin = rate;
+    if (slam) {
+      // Bounce back off the obstacle and up; the spin is timed so the body reaches the ground just short of lying
+      // flat on its back (it then settles at 90°, head away from the obstacle).
+      cv = new Vector3(side, S.up, clamp(speed * S.back, S.backMin, S.backMax));
+      const h0 = Math.max(0, c.y - (ground + CRASH.bodyR)), g = CRASH.gravity;
+      const tAir = (S.up + Math.sqrt(S.up * S.up + 2 * g * h0)) / g;
+      spin = clamp((S.lieFrac * Math.PI) / 2 / Math.max(0.05, tAir), S.rateMin, S.rateMax);
+      bv = new Vector3(bside, CRASH.board.up, clamp(speed * S.board.back, 0.4, S.board.backMax));
+    } else {
+      cv = new Vector3(side, CRASH.up, -clamp(speed * CRASH.fwdFactor, 0, CRASH.fwdMax));
+      bv = new Vector3(bside, CRASH.board.up, -clamp(speed * CRASH.board.fwdFactor, 0, 7));
+    }
     const sim: CrashSim = {
-      key, t: 0, ground,
-      c: hipsP.clone().add(va.copy(C_OFF).applyQuaternion(q0)), cv: new Vector3(rng.range(-0.6, 0.6), CRASH.up, -fwd),
-      q0, axis, rate: rng.range(CRASH.spinMin, CRASH.spinMax), angle: 0, grounded: false, settleT: -1,
-      bp: bpos, bv: new Vector3(rng.range(-1, 1) * CRASH.board.side, CRASH.board.up, -clamp(inp.speed * CRASH.board.fwdFactor, 0, 7)),
-      bq, baxis, brate: rng.range(CRASH.board.spinMin, CRASH.board.spinMax), bgrounded: false, phase,
+      key, t: 0, ground, c, cv, q0, axis, rate: spin, angle: 0, grounded: false, settleT: -1, lie: Math.PI / 2,
+      bp: bpos, bv, bq, baxis, brate, bgrounded: false, phase,
     };
     b.root.quaternion.identity(); b.root.position.set(0, 0, 0); b.root.scale.set(1, 1, 1);
     return sim;
@@ -327,10 +406,14 @@ export class Animator {
       if (k.cv.y < 0) k.cv.y = -k.cv.y * CRASH.restitution;
       if (k.cv.y < 0.4) k.cv.y = 0;
       k.cv.x *= CRASH.friction; k.cv.z *= CRASH.friction;
-      if (!k.grounded) { k.grounded = true; k.rate *= 0.6; }
+      if (!k.grounded) {
+        k.grounded = true; k.rate *= 0.6;
+        // Lie at the next 90° + n·180° ahead, unless the body is only just past one (then it falls back onto it).
+        k.lie = Math.PI / 2 + Math.ceil((k.angle - Math.PI / 2 - CRASH.lieBack) / Math.PI) * Math.PI;
+      }
     }
     if (k.grounded) {
-      const lie = Math.PI / 2 + Math.ceil((k.angle - Math.PI / 2) / Math.PI) * Math.PI;
+      const lie = k.lie;
       k.rate *= Math.exp(-h / CRASH.settleTau);
       k.angle += (lie - k.angle) * (1 - Math.exp(-h / CRASH.settleTau)) + k.rate * h * 0.3;
       k.cv.x *= Math.exp(-h * 3); k.cv.z *= Math.exp(-h * 3);
@@ -366,8 +449,12 @@ export class Animator {
     }
   }
 
-  private applyCrash(rig: Rig, _st: AnimStyle, k: CrashSim): void {
+  private applyCrash(rig: Rig, _st: AnimStyle, k: CrashSim, dt: number): void {
     const b = rig.bone, t = k.t, ph = k.phase;
+    // The limbs blend from the riding pose into the flail (no pop on the impact frame).
+    const limbs = limbBones(rig);
+    const blend = k.t >= CRASH.blendIn * 4 ? 1 : 1 - Math.exp(-dt / CRASH.blendIn);
+    if (blend < 1) for (let i = 0; i < limbs.length; i++) qSaved[i]!.copy(limbs[i]!.quaternion);
     // Body: rotation about the seeded axis on top of its orientation at the moment of the crash.
     qa.setFromAxisAngle(k.axis, k.angle);
     qHips.copy(qa).multiply(k.q0);
@@ -375,9 +462,9 @@ export class Animator {
     b.hips.position.copy(k.c).sub(va.copy(C_OFF).applyQuaternion(qHips));
     b.board.position.copy(k.bp);
     b.board.quaternion.copy(k.bq);
-    // Limbs flail with 4 Hz noise ±40°, fading once the body has settled.
+    // Limbs flail with 4 Hz noise ±40° (the noise's main partial runs at flailHz), fading once the body has settled.
     const env = k.settleT < 0 ? 1 : Math.exp(-(t - k.settleT) / 0.5);
-    const fl = (i: number) => CRASH.flailDeg * env * noise(t * CRASH.flailHz / 2, ph[i]!, ph[i + 1]!);
+    const fl = (i: number) => CRASH.flailDeg * env * noise(t * CRASH.flailHz, ph[i]!, ph[i + 1]!);
     rotY(b.spine.quaternion, fl(0) * 0.3);
     rotZ(b.chest.quaternion, -12 + fl(1) * 0.3);
     rotZ(b.neck.quaternion, fl(2) * 0.3);
@@ -392,7 +479,18 @@ export class Animator {
       ankle.quaternion.identity();
     }
     b.hem.quaternion.identity();
+    if (blend < 1) for (let i = 0; i < limbs.length; i++) limbs[i]!.quaternion.slerpQuaternions(qSaved[i]!, limbs[i]!.quaternion, blend);
   }
+}
+
+const LIMB_NAMES = ['spine', 'chest', 'neck', 'head', 'shoulderL', 'elbowL', 'handL', 'shoulderR', 'elbowR', 'handR',
+  'hipL', 'kneeL', 'ankleL', 'hipR', 'kneeR', 'ankleR'] as const;
+const qSaved = LIMB_NAMES.map(() => new Quaternion());
+const limbCache = new WeakMap<Rig, Bone[]>();
+function limbBones(rig: Rig): Bone[] {
+  let l = limbCache.get(rig);
+  if (!l) { l = LIMB_NAMES.map((n) => rig.bone[n]); limbCache.set(rig, l); }
+  return l;
 }
 
 function smooth(u: number): number { const c = clamp(u, 0, 1); return c * c * (3 - 2 * c); }

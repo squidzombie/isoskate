@@ -3,7 +3,8 @@
 //  - aEmit: per-vertex self-glow (albedo × weight × uEmitGain) and fx glow (uFxColor × weight), so emissive
 //    finishes, reflective strips, light seams and glowing wheels need no extra texture or draw call;
 //  - a warm rim light that lifts the skater off the mid-value street (value contrast at 31 px);
-//  - holo: a view-angle hue shift (Holo Shift's finish);
+//  - holo: a view-angle hue shift (Holo Shift's finish), switched by the uHolo uniform so every board shares one
+//    program (a loadout switch never compiles a shader);
 //  - the outline pushes vertices along aOutline by uOutlineW (set per frame from the camera so the ink line never
 //    drops under OUTLINE.minPx on screen), before skinning.
 import {
@@ -29,27 +30,29 @@ export interface SkaterUniforms {
   uRimColor: IUniform<Color>;
   uRimStrength: IUniform<number>;
   uTime: IUniform<number>;
+  /** 1 = Holo Shift's view-angle hue shift, 0 = off. */
+  uHolo: IUniform<number>;
 }
 export const newUniforms = (): SkaterUniforms => ({
   uEmitGain: { value: 1 }, uFxColor: { value: new Color(0x000000) }, uRimColor: { value: new Color(SHADE.rimColor) },
-  uRimStrength: { value: SHADE.rimStrength }, uTime: { value: 0 },
+  uRimStrength: { value: SHADE.rimStrength }, uTime: { value: 0 }, uHolo: { value: 0 },
 });
 
 export interface ToonOptions {
   map: Texture | null;
-  holo?: boolean;
   transparent?: boolean;
   opacity?: number;
   color?: number;
 }
 
-/** A skater toon material (vertex colours × atlas, the shared ramp, glow, rim). */
+/** A skater toon material (vertex colours × atlas, the shared ramp, glow, rim). Every option that changes the shader
+ *  program (map or not, transparent or not) is fixed per material for the life of a view; looks only swap uniforms,
+ *  textures and geometry. */
 export function toonMaterial(u: SkaterUniforms, o: ToonOptions): MeshToonMaterial {
   const m = new MeshToonMaterial({
     color: o.color ?? SHADE.albedo, map: o.map, gradientMap: toonRamp(), vertexColors: true,
     transparent: !!o.transparent, opacity: o.opacity ?? 1, depthWrite: !o.transparent, side: FrontSide,
   });
-  const holo = !!o.holo;
   m.onBeforeCompile = (sh: WebGLProgramParametersWithUniforms) => {
     Object.assign(sh.uniforms, u);
     sh.vertexShader = sh.vertexShader
@@ -59,13 +62,14 @@ export function toonMaterial(u: SkaterUniforms, o: ToonOptions): MeshToonMateria
       .replace('#include <common>', `#include <common>
 varying vec2 vEmit;
 uniform float uEmitGain; uniform vec3 uFxColor; uniform vec3 uRimColor; uniform float uRimStrength; uniform float uTime;
+uniform float uHolo;
 vec3 skHue(vec3 c, float a) {
   const vec3 k = vec3(0.57735);
   float ca = cos(a);
   return c * ca + cross(k, c) * sin(a) + k * dot(k, c) * (1.0 - ca);
 }`)
       .replace('#include <color_fragment>', `#include <color_fragment>
-${holo ? 'diffuseColor.rgb = clamp(skHue(diffuseColor.rgb, dot(normalize(vNormal), vec3(0.0, 0.0, 1.0)) * 5.0 + uTime * 0.6), 0.0, 1.0);' : ''}`)
+if (uHolo > 0.5) diffuseColor.rgb = clamp(skHue(diffuseColor.rgb, dot(normalize(vNormal), vec3(0.0, 0.0, 1.0)) * 5.0 + uTime * 0.6), 0.0, 1.0);`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
 totalEmissiveRadiance += diffuseColor.rgb * vEmit.x * uEmitGain + uFxColor * vEmit.y;`)
       .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
@@ -74,7 +78,7 @@ totalEmissiveRadiance += diffuseColor.rgb * vEmit.x * uEmitGain + uFxColor * vEm
   reflectedLight.directDiffuse += uRimColor * fres * uRimStrength * (0.35 + 0.65 * diffuseColor.rgb);
 }`);
   };
-  m.customProgramCacheKey = () => (holo ? 'sk-toon-holo' : 'sk-toon');
+  m.customProgramCacheKey = () => 'sk-toon';
   return m;
 }
 

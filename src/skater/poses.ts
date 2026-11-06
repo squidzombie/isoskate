@@ -5,7 +5,8 @@
 // back arm); the animator mirrors them for goofy. Angles in degrees, lengths in metres.
 import type { GrindId, ManualId } from '../core/ids';
 import type { PoseId, SkaterPose } from '../core/view';
-import { POSE, SPRING } from './skater.config';
+import { reachForFlex } from './ik';
+import { BODY, POSE, SPRING } from './skater.config';
 
 /** Spring-blended channels (all numbers). */
 export interface PoseChannels {
@@ -56,10 +57,14 @@ const P = POSE;
 /** Rolling stance shared by the ground poses. The shoulders open toward the nose (a real cruising stance, and the
  *  run camera behind the skater then sees a back and two arms instead of a thin profile). */
 const ROLL: Partial2 = {
-  knee: P.roll.knee, hipDrop: 0, spineBend: 10, spineTwist: P.roll.spineTwist, chestTwist: P.roll.chestTwist,
+  knee: P.roll.knee, hipDrop: P.roll.hipDrop, spineBend: 10, spineTwist: P.roll.spineTwist, chestTwist: P.roll.chestTwist,
   headTurn: P.roll.headTurn, headNod: 8,
   fAbd: P.roll.armAbd, fFlex: P.roll.armFlex, fElbow: 22, bAbd: P.roll.armAbd, bFlex: -P.roll.armFlex, bElbow: 20, bobAmp: P.roll.bobAmp,
 };
+
+/** Pop: the back leg extends (backKnee) and the front foot rises until its knee is at frontKnee (DESIGN §18.5). The
+ *  lift is the difference of the two legs' reach (regular proportions; the IK bends the knee from it). */
+const POP_FRONT_LIFT = reachForFlex(BODY.thigh, BODY.shin, P.pop.backKnee) - reachForFlex(BODY.thigh, BODY.shin, P.pop.frontKnee);
 
 /** One entry per PoseId (TS checks the table is complete). 'carve', 'grind' and 'manual' are refined below. */
 export const POSE_TABLE: Readonly<Record<PoseId, Partial2 & { omega?: number }>> = {
@@ -68,7 +73,7 @@ export const POSE_TABLE: Readonly<Record<PoseId, Partial2 & { omega?: number }>>
   roll: ROLL,
   carve: ROLL,
   pop: {
-    ...ROLL, knee: P.pop.backKnee, liftF: P.pop.frontLift, bPitch: P.pop.boardPitch, stretch: P.pop.stretch,
+    ...ROLL, knee: P.pop.backKnee, liftF: POP_FRONT_LIFT, bPitch: P.pop.boardPitch, stretch: P.pop.stretch,
     spineBend: 6, fAbd: 38, fFlex: 25, bAbd: 34, bFlex: -10, bobAmp: 0, omega: SPRING.omegaFast,
   },
   tuck: {
@@ -126,6 +131,16 @@ export interface PoseContext {
   flipAge: number;
 }
 
+// Entry names are constant strings (no allocation per frame).
+const GRIND_ENTRY = Object.fromEntries(Object.keys(GRIND_POSES).map((g) => [g, `grind:${g}`])) as Record<GrindId, string>;
+const MANUAL_ENTRY: Readonly<Record<ManualId, string>> = { manual: 'manual:manual', noseManual: 'manual:noseManual' };
+const UPRIGHT_ENTRY = new Map<string, string>();
+const uprightEntry = (e: string): string => {
+  let u = UPRIGHT_ENTRY.get(e);
+  if (u === undefined) { u = `${e}:upright`; UPRIGHT_ENTRY.set(e, u); }
+  return u;
+};
+
 const tmpTarget = (): PoseTarget => ({ ...NEUTRAL, omega: SPRING.omega, entry: 'idle' });
 
 function assign(out: PoseTarget, src: Partial2): void {
@@ -162,7 +177,7 @@ export function resolvePose(p: Readonly<SkaterPose>, ctx: PoseContext, out: Pose
       const g = p.grindId ?? 'fiftyFifty';
       assign(out, GRIND_POSES[g] ?? GRIND_POSES.fiftyFifty);
       out.bobAmp = 0;
-      out.entry = `grind:${g}`;
+      out.entry = GRIND_ENTRY[g] ?? 'grind:fiftyFifty';
       break;
     }
     case 'manual': case 'noseManual': {
@@ -171,7 +186,7 @@ export function resolvePose(p: Readonly<SkaterPose>, ctx: PoseContext, out: Pose
       out.bobAmp = 0;
       // The sim may already carry the manual pitch in pose.board; then the table pitch is not added twice.
       if (Math.abs(p.board.pitch) > 1) out.bPitch = 0;
-      out.entry = `manual:${m}`;
+      out.entry = MANUAL_ENTRY[m] ?? 'manual:manual';
       break;
     }
     case 'flip': {
@@ -193,7 +208,7 @@ export function resolvePose(p: Readonly<SkaterPose>, ctx: PoseContext, out: Pose
     out.knee = 4 + (out.knee - 4) * u;
     out.spineBend *= u; out.headNod *= u; out.chestTwist *= u;
     out.fAbd *= 0.6; out.bAbd *= 0.6; out.hipX *= u; out.bobAmp *= 0.5;
-    out.entry += ':upright';
+    out.entry = uprightEntry(out.entry);
   }
   return out;
 }

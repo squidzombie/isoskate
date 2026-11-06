@@ -3,13 +3,13 @@
 // their own entry; the legs reach the deck through IK.
 import { Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
-import type { GrindId, ManualId } from '../../../src/core/ids';
+import type { CrashCause, GrindId, ManualId } from '../../../src/core/ids';
 import type { PoseId, SkaterPose } from '../../../src/core/view';
 import { Animator, type AnimStyle } from '../../../src/skater/animator';
 import { CHANNELS, GRIND_POSES, MANUAL_POSES, NEUTRAL, POSE_TABLE, boardFlatness, resolvePose } from '../../../src/skater/poses';
 import { createRig, applyRest, rigDims } from '../../../src/skater/rig';
 import { basePose } from '../../../src/skater/showcase';
-import { BOARD } from '../../../src/skater/skater.config';
+import { BOARD, POSE } from '../../../src/skater/skater.config';
 
 const POSE_IDS = ['roll', 'carve', 'pop', 'tuck', 'flip', 'grab', 'land', 'manual', 'noseManual', 'grind', 'sketchy',
   'crash', 'idle', 'showcase'] as const satisfies readonly PoseId[];
@@ -104,7 +104,7 @@ describe('animator', () => {
       const a = new Animator();
       const bad: string[] = [];
       for (const p of combos()) {
-        a.update(rig, st, { dt: 1 / 60, pose: p, speed: 7, landed: p.pose === 'land' ? 1 : 0, perfect: p.pose === 'land' });
+        a.update(rig, st, { dt: 1 / 60, pose: p, speed: 7, landed: p.pose === 'land' ? 1 : 0, perfect: p.pose === 'land', crashCause: null, display: 0 });
         for (const b of rig.bones) {
           if (!Number.isFinite(b.position.x + b.position.y + b.position.z) || Math.abs(b.quaternion.length() - 1) > 1e-4) {
             bad.push(`${stance} ${p.pose}/${p.grindId}/${p.manualKind}/${p.spinYaw} ${b.name}`);
@@ -119,7 +119,7 @@ describe('animator', () => {
       const rig = createRig(), st = style(stance), a = new Animator();
       applyRest(rig, st.dims);
       a.snap();
-      a.update(rig, st, { dt: 1 / 60, pose: basePose({ pose, mode: pose === 'grind' ? 'grind' : 'roll', grindId: 'fiftyFifty' }), speed: 7, landed: 0, perfect: false });
+      a.update(rig, st, { dt: 1 / 60, pose: basePose({ pose, mode: pose === 'grind' ? 'grind' : 'roll', grindId: 'fiftyFifty' }), speed: 7, landed: 0, perfect: false, crashCause: null, display: 0 });
       rig.bone.root.updateMatrixWorld(true);
       const root = rig.bone.root.matrixWorld.clone().invert();
       const at = (n: 'ankleL' | 'ankleR') => new Vector3().setFromMatrixPosition(rig.bone[n].matrixWorld).applyMatrix4(root);
@@ -137,7 +137,7 @@ describe('animator', () => {
     const rig = createRig(), st = style('regular'), a = new Animator();
     applyRest(rig, st.dims);
     a.snap();
-    a.update(rig, st, { dt: 1 / 60, pose: basePose({ pose: 'flip', mode: 'air', board: { roll: 180, yaw: 0, pitch: 0 } }), speed: 7, landed: 0, perfect: false });
+    a.update(rig, st, { dt: 1 / 60, pose: basePose({ pose: 'flip', mode: 'air', board: { roll: 180, yaw: 0, pitch: 0 } }), speed: 7, landed: 0, perfect: false, crashCause: null, display: 0 });
     const up = new Vector3(0, 1, 0).applyQuaternion(rig.bone.board.quaternion);
     expect(up.y).toBeLessThan(-0.99);                                    // upside down mid-kickflip
     rig.bone.root.updateMatrixWorld(true);
@@ -156,7 +156,7 @@ describe('animator', () => {
     for (let i = 0; i < 40; i++) seq.push([0, false]);          // revert pivot
     let maxStep = 0;
     for (const [spinYaw, fakie] of seq) {
-      a.update(rig, st, { dt: 1 / 60, pose: basePose({ spinYaw, fakie, mode: spinYaw > 0 && spinYaw < 180 ? 'air' : 'roll', pose: spinYaw > 0 && spinYaw < 180 ? 'tuck' : 'roll' }), speed: 7, landed: 0, perfect: false });
+      a.update(rig, st, { dt: 1 / 60, pose: basePose({ spinYaw, fakie, mode: spinYaw > 0 && spinYaw < 180 ? 'air' : 'roll', pose: spinYaw > 0 && spinYaw < 180 ? 'tuck' : 'roll' }), speed: 7, landed: 0, perfect: false, crashCause: null, display: 0 });
       const y = yaw();
       if (prev !== null) { let d = Math.abs(y - prev); d = Math.min(d, 2 * Math.PI - d); maxStep = Math.max(maxStep, d); }
       prev = y;
@@ -169,10 +169,10 @@ describe('animator', () => {
       const rig = createRig(), st = style('regular'), a = new Animator();
       applyRest(rig, st.dims);
       a.snap();
-      a.update(rig, st, { dt: 1 / 60, pose: basePose(), speed: 9, landed: 0, perfect: false });
+      a.update(rig, st, { dt: 1 / 60, pose: basePose(), speed: 9, landed: 0, perfect: false, crashCause: null, display: 0 });
       const out: number[][] = [];
       for (let i = 0; i < 180; i++) {
-        a.update(rig, st, { dt: 1 / 60, pose: basePose({ mode: 'crashed', pose: 'crash', crash: { t: 0, seed } }), speed: 9, landed: 0, perfect: false });
+        a.update(rig, st, { dt: 1 / 60, pose: basePose({ mode: 'crashed', pose: 'crash', crash: { t: 0, seed } }), speed: 9, landed: 0, perfect: false, crashCause: null, display: 0 });
         out.push([...rig.bone.hips.position.toArray(), ...rig.bone.board.position.toArray(), ...rig.bone.hips.quaternion.toArray()]);
       }
       return { out, rig };
@@ -186,5 +186,79 @@ describe('animator', () => {
     expect(end[1]!).toBeLessThan(0.6);                              // lying down by 3 s
     expect(Math.hypot(end[3]! - 0, end[5]! - 0)).toBeGreaterThan(1); // the board flew off
     expect(end[4]!).toBeGreaterThanOrEqual(0);                      // the board rests on the ground
+  });
+  it('a slam bounces back off the obstacle and lies on its back in front of it; a bad landing tumbles forward', () => {
+    const run = (seed: number, speed: number, crashCause: CrashCause) => {
+      const rig = createRig(), st = style(seed % 2 ? 'goofy' : 'regular'), a = new Animator();
+      applyRest(rig, st.dims);
+      a.snap();
+      a.update(rig, st, { dt: 1 / 60, pose: basePose(), speed, landed: 0, perfect: false, crashCause: null, display: 0 });
+      rig.bone.root.updateMatrixWorld(true);
+      const CORE = ['hips', 'chest', 'head', 'helmet'] as const, LIMBS = ['handL', 'handR', 'ankleL', 'ankleR'] as const;
+      const zOf = (n: (typeof CORE)[number] | (typeof LIMBS)[number]) => new Vector3().setFromMatrixPosition(rig.bone[n].matrixWorld).z;
+      // The obstacle's face is about at the board's nose when the crash starts (travel is −z).
+      const zFace = rig.bone.board.position.z - BOARD.len / 2, z0 = zOf('chest');
+      let maxFwd = -Infinity, limbFwd = -Infinity, boardFwd = -Infinity;
+      for (let i = 0; i < 240; i++) {
+        a.update(rig, st, { dt: 1 / 60, pose: basePose({ mode: 'crashed', pose: 'crash', crash: { t: 0, seed } }), speed, landed: 0, perfect: false, crashCause, display: 0 });
+        rig.bone.root.updateMatrixWorld(true);
+        maxFwd = Math.max(maxFwd, zFace - Math.min(...CORE.map(zOf)) + 0.17);        // + the head / helmet radius
+        limbFwd = Math.max(limbFwd, zFace - Math.min(...LIMBS.map(zOf)));
+        boardFwd = Math.max(boardFwd, zFace - (rig.bone.board.position.z - BOARD.len / 2));
+      }
+      const head = new Vector3().setFromMatrixPosition(rig.bone.head.matrixWorld), hips = new Vector3().setFromMatrixPosition(rig.bone.hips.matrixWorld);
+      const chest = new Vector3().setFromMatrixPosition(rig.bone.chest.matrixWorld);
+      return { maxFwd, limbFwd, boardFwd, headBack: head.z - hips.z, endFwd: z0 - chest.z, endY: chest.y };
+    };
+    for (let seed = 1; seed <= 12; seed++) for (const speed of [7, 10.5]) {
+      const s = run(seed, speed, 'slam');
+      // The torso, head and board never pass the obstacle's face; a flung hand or foot reaches it at most.
+      expect(s.maxFwd, `slam seed ${seed} @${speed}`).toBeLessThan(0);
+      expect(s.boardFwd, `slam board seed ${seed} @${speed}`).toBeLessThan(0.02);
+      expect(s.limbFwd, `slam limbs seed ${seed} @${speed}`).toBeLessThan(0.05);
+      expect(s.headBack, `slam head away from the obstacle, seed ${seed}`).toBeGreaterThan(0.2);
+      expect(s.endY, `slam lying, seed ${seed}`).toBeLessThan(0.5);
+      const f = run(seed, speed, 'badLanding');
+      expect(f.endFwd, `bad landing tumbles forward, seed ${seed}`).toBeGreaterThan(1);
+    }
+  });
+  it('the sketchy windmill lasts POSE.sketchy.dur, however long the pose is held', () => {
+    const rig = createRig(), st = style('regular'), a = new Animator();
+    applyRest(rig, st.dims);
+    a.snap();
+    const wm = CHANNELS.indexOf('windmill');
+    let peak = 0;
+    for (let i = 0; i < 60; i++) {
+      a.update(rig, st, { dt: 1 / 60, pose: basePose({ pose: 'sketchy', wobble: 1 }), speed: 7, landed: 0, perfect: false, crashCause: null, display: 0 });
+      if (i < 18) peak = Math.max(peak, a.x[wm]!);
+    }
+    expect(peak).toBeGreaterThan(0.8);
+    expect(a.x[wm]!).toBeLessThan(0.05);                             // gone 1 s later
+    expect(POSE.sketchy.dur).toBeCloseTo(0.3, 6);
+  });
+  it('the showcase board display stands the rider on the ground and holds the deck graphic-out', () => {
+    for (const stance of ['regular', 'goofy'] as const) {
+      const rig = createRig(), st = style(stance), a = new Animator();
+      applyRest(rig, st.dims);
+      a.snap();
+      a.update(rig, st, { dt: 1 / 60, pose: basePose({ pose: 'showcase' }), speed: 0, landed: 0, perfect: false, crashCause: null, display: 1 });
+      expect(a.displayBlend).toBe(1);
+      rig.bone.root.updateMatrixWorld(true);
+      const sx = stance === 'regular' ? 1 : -1;
+      // Feet on the ground; the deck upright beside the rider with its graphic (−y) toward the camera (sx · +x).
+      for (const n of ['ankleL', 'ankleR'] as const) expect(new Vector3().setFromMatrixPosition(rig.bone[n].matrixWorld).y).toBeCloseTo(st.dims.ankleUp, 2);
+      const along = new Vector3(0, 0, -1).applyQuaternion(rig.bone.board.quaternion), bottom = new Vector3(0, -1, 0).applyQuaternion(rig.bone.board.quaternion);
+      expect(along.y).toBeGreaterThan(0.95);                         // nose up
+      expect(bottom.x * sx).toBeGreaterThan(0.95);                    // graphic toward the camera
+      expect(rig.bone.board.position.y - (BOARD.len / 2) * along.y).toBeGreaterThan(0);   // off the ground
+      // The back hand holds the nose.
+      const hand = new Vector3().setFromMatrixPosition(rig.bone[stance === 'regular' ? 'handR' : 'handL'].matrixWorld);
+      const nose = new Vector3(0, 0, -BOARD.len / 2).applyQuaternion(rig.bone.board.quaternion).add(rig.bone.board.position);
+      expect(hand.distanceTo(nose)).toBeLessThan(0.12);
+      // Riding again: the springs hop back on the deck.
+      for (let i = 0; i < 90; i++) a.update(rig, st, { dt: 1 / 60, pose: basePose({ pose: 'showcase' }), speed: 0, landed: 0, perfect: false, crashCause: null, display: 0 });
+      expect(a.displayBlend).toBeLessThan(0.01);
+      expect(new Vector3(0, 1, 0).applyQuaternion(rig.bone.board.quaternion).y).toBeGreaterThan(0.99);
+    }
   });
 });

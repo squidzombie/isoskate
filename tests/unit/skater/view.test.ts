@@ -3,18 +3,23 @@
 // modes, and the import boundary (sim/, tricks/, world/gen/ never import content/ or skater/).
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { BackSide, Scene, Texture, type Mesh, type Material } from 'three';
+import { BackSide, Scene, Texture, Vector3, type Mesh, type Material } from 'three';
 import { describe, expect, it } from 'vitest';
 import { CATALOG, DEFAULT_LOADOUT, itemsOfSlot } from '../../../src/content';
 import type { Loadout } from '../../../src/core/cosmetics';
 import type { ScoreState, SkaterState } from '../../../src/core/sim';
-import type { GfxContext, RenderFrame, SkaterPose } from '../../../src/core/view';
-import { GOLDEN } from '../../../src/gfx';
+import type { GfxContext, PaletteSample, RenderFrame, SkaterPose } from '../../../src/core/view';
 import { BUDGET, SkaterViewImpl, basePose, createSkaterView, showcasePose } from '../../../src/skater';
 
+/** DESIGN §18.1 Golden (a literal: the view never reads the palette, and gfx/ may change). */
+const PALETTE: PaletteSample = {
+  zenith: 0x8e7cc3, mid: 0xf2a37b, horizon: 0xffd9a0, sun: 0xfff1c9, sunGlow: 0xffc27a, fog: 0xf4c49a,
+  hemiSky: 0xffd7b0, hemiGround: 0x6b4e8c, sunColor: 0xffc48a, sunIntensity: 2.4, sunElevDeg: 22,
+  exposure: 1.05, windowLit: 0.2, neonGlow: 0,
+};
 /** A node GfxContext: canvas textures are plain textures (no DOM); draw callbacks are not run. */
 const ctx = (): GfxContext => ({
-  renderer: {} as GfxContext['renderer'], scene: new Scene(), quality: 'med', palette: () => GOLDEN,
+  renderer: {} as GfxContext['renderer'], scene: new Scene(), quality: 'med', palette: () => PALETTE,
   canvasTexture: () => new Texture(),
 });
 const withItem = (slot: 'skater' | 'board' | 'helmet', look: Loadout[typeof slot]): Loadout => ({ ...DEFAULT_LOADOUT, [slot]: look } as Loadout);
@@ -74,6 +79,34 @@ describe('budgets', () => {
   });
 });
 
+describe('no shader compile on a switch', () => {
+  it('every material and texture lives as long as the view: a switch only swaps geometry', () => {
+    const v = new SkaterViewImpl(ctx());
+    const mats = v.materials() as Material[];
+    const maps = mats.map((m) => (m as Material & { map?: Texture | null }).map ?? null);
+    const key = (m: Material) => [m.type, m.transparent, m.side, (m as Material & { vertexColors?: boolean }).vertexColors,
+      !!(m as Material & { map?: Texture | null }).map, m.customProgramCacheKey()].join('|');
+    const keys = mats.map(key);
+    let disposed = 0;
+    for (const m of mats) m.addEventListener('dispose', () => { disposed++; });
+    const texDisposed: Texture[] = [];
+    for (const t of maps) t?.addEventListener('dispose', () => { texDisposed.push(t); });
+    for (const rep of [0, 1]) for (const it of CATALOG) {
+      v.setLoadout(withItem(it.slot, it.look as never));
+      if (rep) v.setLoadout(DEFAULT_LOADOUT);
+      for (const m of v.meshes()) expect(mats, `${it.id} ${m.name}`).toContain(m.material);
+    }
+    expect(disposed).toBe(0);
+    expect(texDisposed).toEqual([]);
+    expect(v.materials()).toEqual(mats);
+    expect(mats.map(key)).toEqual(keys);
+    expect(mats.map((m) => (m as Material & { map?: Texture | null }).map ?? null)).toEqual(maps);
+    // Holo Shift is a uniform on the shared board program.
+    v.setLoadout(withItem('board', CATALOG.find((c) => c.id === 'bd_holo_shift')!.look as never));
+    expect(v.materials()).toEqual(mats);
+  });
+});
+
 describe('structure', () => {
   it('a rigid-skinned body with an outline twin sharing the skeleton; board and helmet on their bones', () => {
     const v = new SkaterViewImpl(ctx());
@@ -126,6 +159,26 @@ describe('run and showcase', () => {
     v.setMode('run');
     v.update(frame(basePose()));
     expect(v.turn.rotation.y).toBe(0);
+  });
+  it('a board change in the Locker shows the deck graphic-out, then the rider hops back on', () => {
+    const v = new SkaterViewImpl(ctx());
+    v.setLoadout(withItem('board', CATALOG.find((c) => c.id === 'bd_koi_current')!.look as never));
+    v.update(frame(basePose()));
+    expect(v.anim.displayBlend).toBe(0);                              // runs never display
+    v.setMode('showcase');
+    v.update(frame(basePose()));
+    expect(v.anim.displayBlend).toBe(0);                              // entering the Locker keeps the rider on the deck
+    v.setLoadout(withItem('board', CATALOG.find((c) => c.id === 'bd_palm_shadow')!.look as never));
+    v.update(frame(basePose()));
+    expect(v.anim.displayBlend).toBe(1);
+    const down = new Vector3(0, -1, 0).applyQuaternion(v.rig.bone.board.quaternion);
+    expect(down.x).toBeGreaterThan(0.95);                             // graphic toward the camera (rig +x faces it)
+    // A skater or helmet change keeps the display going; it ends after SHOWCASE.display.dur.
+    v.setLoadout({ ...withItem('board', CATALOG.find((c) => c.id === 'bd_palm_shadow')!.look as never), helmet: CATALOG.find((c) => c.id === 'hm_plaid')!.look as Loadout['helmet'] });
+    v.update(frame(basePose()));
+    expect(v.anim.displayBlend).toBe(1);
+    for (let i = 0; i < 60 * 4; i++) v.update(frame(basePose()));
+    expect(v.anim.displayBlend).toBeLessThan(0.01);
   });
   it('stays finite through every pose, events and long frames', () => {
     const v = new SkaterViewImpl(ctx());
