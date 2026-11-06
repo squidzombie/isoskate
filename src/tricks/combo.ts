@@ -43,6 +43,9 @@ export interface TrickOpts {
   minFactor?: number;
   /** Emit trickScored now (grinds and manuals emit when they end, via finishTrick). */
   emit?: boolean;
+  /** The rest of a grind / manual that a gateway bank cut (sim/grind.ts, sim/manual.ts carryTimed): it keeps this
+   *  decay factor and is not counted again (no repetition-window entry, no trick count). */
+  carryFactor?: number;
 }
 
 /** Score one trick into the combo (starting one if needed). Returns the entry (grinds/manuals update it later). */
@@ -50,19 +53,27 @@ export function addTrick(sc: ScoreState, ev: GameEvent[], tick: number, mode: Sk
   o: TrickOpts): ComboEntry {
   begin(sc, tick);
   const c = sc.combo;
-  const factor = decayFactor(sc.recent, id, o.minFactor ?? 0);
+  const carry = o.carryFactor !== undefined;
+  const factor = carry ? o.carryFactor! : decayFactor(sc.recent, id, o.minFactor ?? 0);
   const mod = o.mod ?? 1;
   const link = o.link && factor >= SCORE.decay.noLinkBelow;
   const entry: ComboEntry = { id, pts: trickPoints(base, mod, factor), factor, mod, link };
   c.entries.push(entry);
   if (link) c.links++;
-  sc.recent.push(id);
-  if (sc.recent.length > SCORE.decay.window) sc.recent.shift();
-  sc.tricks[id] = (sc.tricks[id] ?? 0) + 1;
+  if (!carry) {
+    sc.recent.push(id);
+    if (sc.recent.length > SCORE.decay.window) sc.recent.shift();
+    sc.tricks[id] = (sc.tricks[id] ?? 0) + 1;
+  }
   recompute(sc, mode);
   if (o.emit !== false) emitScored(sc, ev, tick, entry);
   return entry;
 }
+
+/** Running points of a timed trick (grind / manual) while it is ridden: the combo's pending value counts up every tick
+ *  (tickCombo recomputes it), and a gateway bank mid-trick banks the part ridden so far. trickScored waits for the
+ *  end (finishTrick). */
+export function liveTrick(entry: ComboEntry, base: number): void { entry.pts = trickPoints(base, entry.mod, entry.factor); }
 
 /** Final points of a timed trick (grind / manual) once its duration is known. */
 export function finishTrick(sc: ScoreState, ev: GameEvent[], tick: number, mode: SkaterMode, entry: ComboEntry, base: number): void {
@@ -129,11 +140,13 @@ export function refreshWindow(sc: ScoreState): void { if (sc.combo.active && sc.
 /** Air, grind, manual: the window is paused. */
 export function pauseWindow(sc: ScoreState): void { if (sc.combo.active) sc.combo.window = -1; }
 
-/** One tick of combo time. Heat runs while rolling or airborne; the window only while rolling. */
-export function tickCombo(sc: ScoreState, ev: GameEvent[], tick: number, mode: SkaterMode): void {
+/** One tick of combo time. Heat runs while rolling or airborne (and in a manual when `manualHeat`: a back-to-back
+ *  manual, RULES.backToBackManualPausesHeat); the window only while rolling. Heat that runs out in a grind or a manual
+ *  banks the combo when it ends. */
+export function tickCombo(sc: ScoreState, ev: GameEvent[], tick: number, mode: SkaterMode, manualHeat = false): void {
   const c = sc.combo;
   if (!c.active) return;
-  if (mode === 'roll' || mode === 'air') c.heat -= DT;
+  if (mode === 'roll' || mode === 'air' || (mode === 'manual' && manualHeat)) c.heat = Math.max(0, c.heat - DT);
   if (mode === 'roll' && c.window >= 0) c.window = Math.max(0, c.window - DT);
   if (mode === 'roll' && c.window === 0) bank(sc, ev, tick, 'window');
   else if (c.heat <= 1e-9 && mode !== 'grind' && mode !== 'manual') bank(sc, ev, tick, 'heat');

@@ -8,8 +8,8 @@ import { createSim } from '../../../src/sim';
 import { TRICKS, type InputFrameExt } from '../../../src/tricks';
 import { fixtureWorld, frame, runCfg } from './fixtures';
 
-export function make(obs: Obstacle[], o: Partial<RunConfig> = {}): Sim {
-  const sim = createSim(TRICKS, fixtureWorld(obs));
+export function make(obs: Obstacle[], o: Partial<RunConfig> = {}, w: { gatewayS?: number } = {}): Sim {
+  const sim = createSim(TRICKS, fixtureWorld(obs, [], w));
   sim.reset(runCfg(o));
   return sim;
 }

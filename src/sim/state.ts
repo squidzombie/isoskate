@@ -13,6 +13,7 @@ import { emptyCombo } from '../tricks';
 /** Per-air bookkeeping (reset at every take-off). */
 export interface AirExt {
   reason: 'pop' | 'rollOff' | 'grindEnd';
+  takeoffTick: number;                  // tick of the take-off (a grab HOLD must have gone down after it)
   takeoffY: number;                     // board bottom at take-off (dropH)
   takeoffS: number; takeoffX: number;   // where the air started (gaps)
   fromOb: number;                       // obstacle the board left (its slab top or its edge), −1: the street (gaps)
@@ -60,7 +61,10 @@ export interface SimState {
   manualEntry: number;                  // combo entry index of the running manual (−1)
   manualLatch: boolean;                 // the hold / key that started a manual is still down: no restart until released
   manualSrc: 'hold' | 'key' | 'prePress' | 'grab' | null;   // what started the running manual
-  manualNoseT0: number;                 // manual time at the switch to a Nose Manual
+  manualPartT0: number;                 // manual time when the running part began (0, the Nose Manual switch, a gateway cut)
+  manualsSinceAir: number;              // manuals started since the last take-off (back-to-back manuals keep the heat)
+  manualHeat: boolean;                  // the running manual keeps the combo heat running (RULES.backToBackManualPausesHeat)
+  timedCarry: boolean;                  // the running grind / manual part is the rest of one a gateway bank cut (no entry pts)
   lastStart: StartExt | null;           // keyboard amend
   sw: { tick: number; dir: Dir8 | null };   // the last grind switch on this edge
   pressDown: boolean;                   // the press level of the previous frame (pressRiseTick edge)
@@ -126,7 +130,7 @@ export function initScore(startArea: AreaId): ScoreState {
   };
 }
 
-export const freshAir = (): AirExt => ({ reason: 'pop', takeoffY: 0, takeoffS: 0, takeoffX: 0, fromOb: -1, doneFlips: [],
+export const freshAir = (): AirExt => ({ reason: 'pop', takeoffTick: -1, takeoffY: 0, takeoffS: 0, takeoffX: 0, fromOb: -1, doneFlips: [],
   flipDoubleUp: false, lastDoneTick: -1, steerAway: 0, steerNet: 0, fromEdgeOb: -1, popEdge: -1, popOb: -1, popX: 0,
   spinOut: false, grabbed: false, grabDur: 0, grabHeldToLand: false, spinYaw0: 0, spinT0: 0 });
 
@@ -141,7 +145,7 @@ export function initState(cfg: RunConfig): SimState {
     air: freshAir(), pick: { open: false, edgeId: -1, dirs: [], tick: -1, miss: 0 },
     pred: { tLand: 0, landY: 0, captureEdge: -1, tCapture: Infinity, magnetEdge: -1, magnetX: 0 },
     flipFrom: { roll: 0, yaw: 0, pitch: 0 }, grindSnap: { dx: 0, dy: 0, entry: -1 }, grindPartT0: 0, manualEntry: -1, manualLatch: false,
-    manualSrc: null, manualNoseT0: 0, lastStart: null, sw: { tick: -1, dir: null }, pressDown: false, near: freshNear(),
+    manualSrc: null, manualPartT0: 0, manualsSinceAir: 0, manualHeat: false, timedCarry: false, lastStart: null, sw: { tick: -1, dir: null }, pressDown: false, near: freshNear(),
     gapped: new Set(), landmarksPaid: [], rewindsLeft: Math.max(0, Math.min(REWIND.max, Math.floor(cfg.rewinds ?? 0))),
     revertTick: -1, shadowY: 0, wallSide: 0,
     landTick: -1, landDrop: 0, slabKind: 'flat', stairStep: -1, groundOb: -1,

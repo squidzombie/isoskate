@@ -8,7 +8,7 @@ export { FLIPS, SPINS, GRINDS, MANUALS, GRABS } from './defs';
 export { POINTS, RULES, SCORE } from './score.config';
 export { emptyView, interpret, swipeCounts, type AmendView, type InputFrameExt, type Intent, type InterpretView } from './interpret';
 export {
-  addBonus, addLink, addTrick, bank, emptyCombo, finishTrick, lose, openWindow, pauseWindow, recompute, refreshHeat,
+  addBonus, addLink, addTrick, bank, emptyCombo, finishTrick, liveTrick, lose, openWindow, pauseWindow, recompute, refreshHeat,
   refreshWindow, retarget,
   tickCombo, type BankReason, type TrickOpts,
 } from './combo';

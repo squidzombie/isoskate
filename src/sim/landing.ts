@@ -108,8 +108,10 @@ export function touchdown(k: Ctx, g: GroundHit): void {
   st.landTick = c.tick; st.landDrop = Math.max(0, dropH);
   k.ev.push({ t: 'land', tick: c.tick, airT, dropH, quality, surface: g.surface });
   if (quality === 'sketchy') c.wobble = Math.max(c.wobble, LAND.sketchyWobble);
+  const entries0 = st.score.combo.entries.length;
   scoreAir(k, quality);
   airEndsOn(k, st.groundOb, g.y, false);
+  const tricked = st.score.combo.entries.length > entries0;          // this air scored a flip, spin or grab
   // Revert: a 180 lands fakie and pivots back on the ground (+50, and +1 link if the spin itself linked). A 180 that
   // had not quite finished snaps round first.
   if (c.spin && c.spin.t < c.spin.dur - EPS && isHalfSpin(k, c.spin.id)) c.fakie = !c.fakie;
@@ -126,8 +128,11 @@ export function touchdown(k: Ctx, g: GroundHit): void {
   c.flip = null; c.spin = null; c.grab = null; c.flipsThisAir = 0; c.airTricks.length = 0;
   c.airT = 0; c.airLeft = 0; c.dropH = 0;
   c.magnetEdge = null; c.magnetCancelled = false; c.transferArmed = false;
+  // The link window (re)starts at a touchdown. A plain roll-off (a step down, a curb) keeps the window that was
+  // running, so rolling down steps cannot stretch it; but a trick in that air, or a combo whose window is not running
+  // (the combo began in this air: a flip or a drop gap), opens it like any landing.
   if (quality === 'sketchy') bank(st.score, k.ev, c.tick, 'sketchy');
-  else if (!rollOff) openWindow(st.score);
+  else if (!rollOff || tricked || st.score.combo.window < 0) openWindow(st.score);
   if (c.jumpBuffer > 0) { c.jumpBuffer = 0; pop(k, 'roll', null); return; }   // buffered tap: ollie on touchdown
   // Pre-press manual: the press went down 0.30–0.10 s before touchdown and is still a press; or a grab held through.
   const age = c.pressRiseTick >= 0 ? (c.tick - c.pressRiseTick) * DT : -1;

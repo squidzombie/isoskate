@@ -27,6 +27,8 @@ export function beginAir(k: Ctx, reason: 'pop' | 'rollOff' | 'grindEnd'): void {
   c.flip = null; c.spin = null; c.grab = null; c.flipsThisAir = 0; c.airTricks.length = 0;
   st.air = freshAir();
   st.air.reason = reason;
+  st.air.takeoffTick = c.tick;
+  st.manualsSinceAir = 0;
   st.air.takeoffY = c.p.y; st.air.takeoffS = c.p.s; st.air.takeoffX = c.p.x;
   st.air.fromOb = fromOb;
 }

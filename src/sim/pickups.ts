@@ -1,9 +1,12 @@
 // sim/pickups.ts: coins and the run markers (TECH §6.3 step 8): hazard warnings (warnAtS), area and gateway entry
-// (a gateway entry banks the combo; arriving in a new area pays New Ground), the BEST line and speed tiers.
+// (a gateway entry banks the combo, the part of a grind / manual ridden so far included, and the rest of it scores into
+// a new combo; arriving in a new area pays New Ground), the BEST line and speed tiers.
 import { SPEED_TIERS } from '../core/tuning';
 import { SCORE, addBonus, bank } from '../tricks';
 import { COIN_CHAIN_TICKS, COIN_VOLUME } from './consts';
 import type { Ctx } from './state';
+import { carryGrind, grindEntryNow } from './grind';
+import { carryManual, manualEntryNow } from './manual';
 
 const PRUNE_EVERY = 600;
 
@@ -50,7 +53,10 @@ export function markers(k: Ctx): void {
     st.gateway = a.gateway;
     if (a.gateway) {
       k.ev.push({ t: 'gatewayEnter', tick: c.tick, gateway: a.gateway });
+      const g = grindEntryNow(k), m = manualEntryNow(k);
       bank(sc, k.ev, c.tick, 'gateway');
+      if (g) carryGrind(k, g);
+      else if (m) carryManual(k, m);
     }
   }
   if (a.area !== st.area) {

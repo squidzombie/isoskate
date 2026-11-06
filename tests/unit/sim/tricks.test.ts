@@ -4,10 +4,11 @@
 import { describe, expect, it } from 'vitest';
 import type { GameEvent } from '../../../src/core/events';
 import type { Dir8 } from '../../../src/core/ids';
+import type { InputFrame } from '../../../src/core/input';
 import type { Sim } from '../../../src/core/sim';
 import { DT, GRIND, MAGNET, sAt } from '../../../src/core/tuning';
-import { RULES, SCORE } from '../../../src/tricks';
-import { box, rail, slab } from './fixtures';
+import { RULES, SCORE, type InputFrameExt } from '../../../src/tricks';
+import { box, frame, rail, slab } from './fixtures';
 import { all, first, make, place, run, scored } from './drive';
 
 const POP = 60;                        // take-off frame: centre at s ≈ 7, 3 m before the edge start at s = 10
@@ -41,12 +42,24 @@ describe('pick window (DESIGN §6.3)', () => {
     }
   });
   it('←← in the window gives Lipslide, ↑ gives Nosegrind, ↑↑ Nosebluntslide, ↗↗ Overcrook; nothing flips', () => {
-    for (const [dirs, id] of [[['l', 'l'], 'lipslide'], [['u'], 'nosegrind'], [['u', 'u'], 'noseBluntslide'],
+    for (const [dirs, id] of [[['l', 'l'], 'lipslide'], [['l', 'l', 'l'], 'lipslide'], [['u'], 'nosegrind'], [['u', 'u'], 'noseBluntslide'],
       [['ur', 'ur'], 'overcrook'], [['dl'], 'tailslide'], [['d', 'd'], 'bluntslide'], [['r'], 'feeble']] as const) {
       const { ev } = pickRun([...dirs]);
       expect(first(ev, 'flipStart'), id).toBeUndefined();
       expect(first(ev, 'grindStart')?.id, id).toBe(id);
     }
+  });
+  it('a pick in the 0.12 s after lock re-picks the grind: a `late` grindSwitch, no switch counted', () => {
+    const sim = make([ledge()]);
+    let lock = -1;
+    const ev = run(sim, 120, (i, _s, last) => {
+      if (lock < 0 && last.some((e) => e.t === 'grindStart')) lock = i;
+      if (i === POP) return { tap: true };
+      return i === lock + 2 ? fast('l') : {};
+    });
+    expect(first(ev, 'grindStart')?.id).toBe('fiftyFifty');
+    expect(first(ev, 'grindSwitch')).toMatchObject({ from: 'fiftyFifty', to: 'boardslide', late: true });
+    expect(sim.cur.grind).toMatchObject({ id: 'boardslide', switches: 0 });
   });
   it('a steering-thumb ← that is not fromRest is no pick (a dodge stays a dodge), a fromRest one is', () => {
     const steer = make([ledge()]);
@@ -57,6 +70,52 @@ describe('pick window (DESIGN §6.3)', () => {
       return i === opened ? { swipe: 'l', swipeSteer: true, swipeFast: true } : {};
     });
     expect(first(ev, 'grindStart')?.id).toBe('fiftyFifty');
+  });
+});
+
+describe('the combo counts up while you ride (immediate feedback)', () => {
+  /** Step frame by frame, recording the mode and the combo's pending value after each tick. */
+  const trace = (sim: Sim, n: number, drive: (i: number) => Partial<InputFrameExt>) => {
+    const rows: { mode: string; pending: number; ev: GameEvent[] }[] = [];
+    for (let i = 0; i < n; i++) {
+      const ev = sim.step(frame(drive(i) as Partial<InputFrame>)).slice();
+      rows.push({ mode: sim.cur.mode, pending: sim.score.combo.pending, ev });
+    }
+    return rows;
+  };
+  const rising = (xs: number[]) => xs.every((x, i) => i === 0 || x > xs[i - 1]!);
+  it('a 50-50 and a manual raise the pending value every tick; their trickScored matches what was shown', () => {
+    const g = trace(make([ledge()]), 260, (i) => (i === POP ? { tap: true } : {}));
+    const grinding = g.filter((r) => r.mode === 'grind').map((r) => r.pending);
+    expect(grinding.length).toBeGreaterThan(60);
+    expect(rising(grinding)).toBe(true);
+    const end = g.findIndex((r) => r.ev.some((e) => e.t === 'grindEnd'));
+    const sc = g[end]!.ev.find((e): e is Extract<GameEvent, { t: 'trickScored' }> => e.t === 'trickScored' && e.id === 'fiftyFifty')!;
+    expect(sc.comboPts).toBe(g[end]!.pending);
+    expect(sc.comboPts - grinding.at(-1)!).toBeLessThanOrEqual(3);    // one more tick of 150/s at most
+    const m = trace(make([]), 200, (i) => (i === 10 ? { tap: true } : i >= 46 && i < 160 ? { manualKey: true, press: true } : {}));
+    const manualling = m.filter((r) => r.mode === 'manual').map((r) => r.pending);
+    expect(manualling.length).toBeGreaterThan(100);
+    expect(rising(manualling)).toBe(true);
+  });
+  it('a gateway mid-grind banks the part ridden so far; the rest scores into a new combo (no entry points again)', () => {
+    const rows = trace(make([ledge()], {}, { gatewayS: 20 }), 300, (i) => (i === POP ? { tap: true } : {}));
+    const bi = rows.findIndex((r) => r.ev.some((e) => e.t === 'comboBanked'));
+    const bank = rows[bi]!.ev.find((e): e is Extract<GameEvent, { t: 'comboBanked' }> => e.t === 'comboBanked')!;
+    expect(bank.reason).toBe('gateway');
+    expect(rows[bi]!.mode).toBe('grind');
+    const lockAt = rows.findIndex((r) => r.ev.some((e) => e.t === 'grindStart'));
+    const ridden = (bi - lockAt) * DT;
+    expect(bank.total).toBe(50 + Math.round(100 + 150 * ridden));       // ×1: the 50-50 is the one link, 2 names
+    const after = rows.slice(bi + 1).filter((r) => r.mode === 'grind').map((r) => r.pending);
+    expect(after.length).toBeGreaterThan(30);
+    expect(rising(after)).toBe(true);
+    const ei = rows.findIndex((r) => r.ev.some((e) => e.t === 'grindEnd'));
+    const rest = rows[ei]!.ev.find((e): e is Extract<GameEvent, { t: 'trickScored' }> => e.t === 'trickScored')!;
+    expect(rest).toMatchObject({ id: 'fiftyFifty', link: false });
+    expect(rest.pts).toBe(Math.round(150 * (ei - bi) * DT));
+    const grindEnd = rows[ei]!.ev.find((e): e is Extract<GameEvent, { t: 'grindEnd' }> => e.t === 'grindEnd')!;
+    expect(grindEnd.dur).toBeCloseTo((ei - lockAt) * DT, 6);
   });
 });
 
@@ -84,17 +143,70 @@ describe('manual (DESIGN §6.4)', () => {
     expect(lastScored.links).toBe(7);
   });
 
-  it('a resting thumb outside a combo starts nothing (5 s), on a pad it does', () => {
+  it('a resting thumb outside a combo starts nothing (5 s); on a pad it manuals and starts a combo (DESIGN §12.3)', () => {
     const rest = make([]);
     const ev = run(rest, 300, () => ({ hold: true, press: true }));
     expect(first(ev, 'manualStart')).toBeUndefined();
     expect(first(ev, 'ollie')).toBeUndefined();
+    expect(rest.score.combo.active).toBe(false);
     const pad = make([slab({ s: -2, len: 40, x0: -1, x1: 1, y: 0.15 })]);
     place(pad, { y: 0.15 });
-    const ev2 = run(pad, 120, () => ({ hold: true, press: true }));
+    const ev2 = run(pad, 260, () => ({ hold: true, press: true }));
     const st = first(ev2, 'manualStart')!;
     expect(st.tick * DT).toBeCloseTo(RULES.manualHoldSec + DT, 6);
-    expect(first(ev2, 'trickScored')).toBeUndefined();                  // unscored outside a combo
+    // "Hold = manual. The combo counter and bank arc appear": the manual is the combo's one link, 75 + 100/s.
+    const end = first(ev2, 'manualEnd')!;
+    expect(end).toMatchObject({ reason: 'budget' });
+    expect(end.dur).toBeCloseTo(3.0, 6);
+    expect(all(ev2, 'trickScored').map((e) => `${e.id}:${e.pts}:${e.link}`)).toEqual(['manual:375:true']);
+    expect(first(ev2, 'comboBanked')).toMatchObject({ reason: 'window', links: 1, total: 375 });
+  });
+
+  it('the manual key on flat ground outside a combo rides unscored (a resting thumb there does nothing)', () => {
+    const sim = make([]);
+    const ev = run(sim, 240, (i) => (i >= 10 && i < 200 ? { manualKey: true, press: true } : {}));
+    expect(first(ev, 'manualStart')).toBeDefined();
+    expect(first(ev, 'manualEnd')).toMatchObject({ reason: 'budget' });
+    expect(first(ev, 'trickScored')).toBeUndefined();
+    expect(first(ev, 'comboBanked')).toBeUndefined();
+    expect(sim.score.combo.active).toBe(false);
+  });
+
+  it('back-to-back manuals (manual → roll → manual) keep the heat running: pulsing the key cannot hold a combo', () => {
+    expect(RULES.backToBackManualPausesHeat).toBe(false);
+    const sim = make([]);
+    let off = -1;
+    const ev = run(sim, 60 * 20, (i, _s, last) => {
+      if (i === 10) return { tap: true };
+      if (i === 20) return fast('l');                                   // one real trick
+      if (i < 46) return {};
+      if (last.some((e) => e.t === 'manualEnd')) off = i;               // release the key one tick, press again
+      return i === off ? {} : { manualKey: true, press: true };
+    });
+    const bank = first(ev, 'comboBanked')!;
+    expect(bank.reason).toBe('heat');
+    // 3.0 s (the linked manual: heat reset and paused), 2.2 s (heat runs), 1.6 s (it runs out): banked at its end.
+    const ends = all(ev, 'manualEnd').filter((e) => e.tick <= bank.tick);
+    expect(ends.map((e) => Math.round(e.dur * 10) / 10)).toEqual([3.0, 2.2, 1.6]);
+    expect(bank.tick).toBe(ends.at(-1)!.tick);
+    const pts = all(ev, 'trickScored').filter((e) => e.tick <= bank.tick);
+    expect(pts.filter((e) => e.id === 'manual').map((e) => e.pts)).toEqual([375, 295, 235]);
+    // Banked = Σ × 2 links (kickflip, the one linked manual) × 1.05 (3 names): the last manual's points are in.
+    expect(bank.total).toBe(Math.round(pts.reduce((a, e) => a + e.pts, 0) * 2 * 1.05));
+    // The same pulses touch-style (release, re-press, a HOLD after 0.30 s) are just as bounded.
+    const touch = make([]);
+    let up = -1;
+    const ev2 = run(touch, 60 * 30, (i, _s, last) => {
+      if (i === 10) return { tap: true };
+      if (i === 20) return fast('l');
+      if (i < 40) return {};
+      if (last.some((e) => e.t === 'manualEnd')) up = i;
+      const down = i - up - 3;                                            // lifted 3 ticks, then a still thumb
+      return up < 0 || down >= 0 ? { press: true, hold: up < 0 ? i >= 52 : down >= 12 } : {};
+    });
+    const bank2 = first(ev2, 'comboBanked')!;
+    expect(bank2.reason).toBe('heat');
+    expect(bank2.durSec).toBeLessThan(10);
   });
 
   it('in the link window a resting thumb manuals only after 0.30 s of stillness (G0: 0.20 was too eager)', () => {
@@ -188,6 +300,12 @@ describe('Indy grab (DESIGN §6.1a)', () => {
     expect(gs.tick).toBe(9);
     // Still holding at touchdown: straight into a manual.
     expect(first(ev, 'manualStart')?.tick).toBe(land.tick);
+  });
+  it('a thumb resting since the ground never grabs when another finger pops (no grab, no grab-manual)', () => {
+    const ev = run(make([]), 60, (i) => ({ press: true, hold: i >= 12, tap: i === 20 }));
+    expect(first(ev, 'ollie')).toBeDefined();
+    expect(first(ev, 'grabStart')).toBeUndefined();
+    expect(all(ev, 'trickScored').map((e) => e.id)).toEqual(['ollie']);
   });
   it('a HOLD with < 0.25 s of air left does not grab; Q grabs like a HOLD; the manual key never grabs', () => {
     const late = run(make([]), 60, (i) => (i === 5 ? { tap: true } : i >= 28 ? { hold: true, press: true } : {}));
@@ -324,3 +442,64 @@ describe('events at the right tick (immediate feedback)', () => {
 
 /** Make TypeScript see the helper types are used. */
 export type _E = GameEvent; export type _S = Sim; void sAt;
+
+describe('landing rules (DESIGN §7, §13.2)', () => {
+  it('a roll-off drop with a trick opens the 0.75 s link window like any landing (a resting thumb can manual)', () => {
+    const drop = () => make([box({ s: sAt(0) - 5, x: 0, len: 9, wid: 3, hgt: 2.0, top: 'landable' })]);
+    for (const thumb of [false, true]) {
+      const sim = drop();
+      place(sim, { y: 2.0 });
+      let off = -1, land = -1;
+      const ev = run(sim, 200, (i, s, last) => {
+        if (off < 0 && last.some((e) => e.t === 'airborne' && e.reason === 'rollOff')) off = i;
+        if (land < 0 && last.some((e) => e.t === 'land')) land = i;
+        if (off >= 0 && i === off + 4) return fast('l');
+        return thumb && land >= 0 ? { press: true, hold: true } : {};
+      });
+      expect(first(ev, 'land')!.dropH).toBeCloseTo(2.0, 6);
+      expect(all(ev, 'trickScored').map((e) => e.id)).toContain('kickflip');
+      if (!thumb) {
+        const bank = first(ev, 'comboBanked')!;
+        expect(bank.reason).toBe('window');
+        expect((bank.tick + 1 - first(ev, 'land')!.tick) * DT).toBeCloseTo(SCORE.linkWindow, 6);   // landing tick included
+      } else {
+        // A thumb resting from the touchdown: the window is open, so it manuals after RULES.manualHoldSec.
+        const m = first(ev, 'manualStart')!;
+        expect((m.tick - first(ev, 'land')!.tick) * DT).toBeCloseTo(RULES.manualHoldSec, 1);
+      }
+    }
+  });
+
+  it('a plain roll-off (no trick) keeps the window that was running: rolling down steps cannot stretch it', () => {
+    const sim = make([box({ s: sAt(0) - 5, x: 0, len: 20, wid: 3, hgt: 0.5, top: 'landable' })]);
+    place(sim, { y: 0.5 });
+    const ev = run(sim, 200, (i) => (i === 70 ? { tap: true } : {}));
+    // The ollie lands on the top, the window runs, the board rolls off the end and lands 0.5 m lower: same window.
+    const lands = all(ev, 'land');
+    expect(lands.length).toBe(2);
+    const bank = first(ev, 'comboBanked')!;
+    expect(bank.reason).toBe('window');
+    expect(bank.tick).toBeGreaterThan(lands[1]!.tick);
+    expect((bank.tick + 1 - lands[0]!.tick) * DT).toBeCloseTo(SCORE.linkWindow, 6);
+  });
+
+  it('first runs: the bail floor is 0.40 (a hardflip at p ≈ 0.45 is sketchy there, a bail otherwise)', () => {
+    const at = (swipe: number, firstRuns: boolean) => {
+      const sim = make([], { firstRuns, god: false });
+      const ev = run(sim, 80, (i) => (i === 5 ? { tap: true } : i === swipe ? fast('ul') : {}));
+      return { start: first(ev, 'flipStart'), land: first(ev, 'land'), crash: first(ev, 'crash') };
+    };
+    const seen: string[] = [];
+    for (let swipe = 24; swipe <= 34; swipe++) {
+      const normal = at(swipe, false), fr = at(swipe, true);
+      if (!normal.start) continue;                                     // too late: ignored (rule 5)
+      const p = normal.crash?.flipProgress ?? 1;
+      if (p >= 0.55) continue;
+      seen.push(p.toFixed(2));
+      expect(normal.crash, `swipe ${swipe}`).toMatchObject({ cause: 'badLanding' });
+      if (p >= 0.40) expect(fr.land, `swipe ${swipe} p ${p}`).toMatchObject({ quality: 'sketchy' });
+      else expect(fr.crash, `swipe ${swipe} p ${p}`).toMatchObject({ cause: 'badLanding' });
+    }
+    expect(seen.some((p) => Number(p) >= 0.40)).toBe(true);
+  });
+});

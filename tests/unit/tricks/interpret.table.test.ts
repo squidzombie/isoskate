@@ -77,7 +77,8 @@ const manual = (m: InterpretView['manual'], name: string): Case => ({ name, v: {
 } });
 
 type AirV = Partial<InterpretView> & { airLeft: number };
-const air = (v: AirV, name: string): Case => ({ name, v: { mode: 'air', ...v }, oracle(g) {
+// The HOLD went down in this air unless the case says otherwise (a thumb resting since the ground never grabs).
+const air = (v: AirV, name: string): Case => ({ name, v: { mode: 'air', pressInAir: true, ...v }, oracle(g) {
   const out: string[] = [];
   const sw = g.k === 'swipe' && counts('air', g.dir, g.l) ? g.dir : null;
   const tapped = g.k === 'tap' || (g.k === 'longTap' && !v.grab && !v.grabbed);
@@ -91,9 +92,10 @@ const air = (v: AirV, name: string): Case => ({ name, v: { mode: 'air', ...v }, 
     }
   }
   const held = g.k === 'hold' || g.k === 'grabKey';
+  const grabs = g.k === 'grabKey' || (g.k === 'hold' && v.pressInAir !== false);   // a HOLD begun in this air, or Q
   const flipping = !!v.flip && v.flip.t < v.flip.dur;
   if (v.grab && !held) out.push('grabEnd');
-  else if (!v.grab && held && !v.grabbed && !flipping && v.airLeft >= 0.25) out.push('grabStart');
+  else if (!v.grab && grabs && !v.grabbed && !flipping && v.airLeft >= 0.25) out.push('grabStart');
   if (buffer) out.push('bufferOllie');
   if (!sw) return out;
   if ((v.popBleed ?? 0) > 0) return out;                                                      // rule 4
@@ -151,6 +153,7 @@ const CASES: Case[] = [
   manual({ kind: 'manual', switched: false, fromHold: true }, 'manual from a HOLD'),
   manual({ kind: 'noseManual', switched: true, fromHold: false }, 'nose manual (switched), from a pre-press'),
   air({ airLeft: 0.42 }, 'air, flat ollie at +0.18 s'),
+  air({ airLeft: 0.42, pressInAir: false }, 'air, flat ollie, a thumb resting since the ground (no grab)'),
   air({ airLeft: 0.42, popBleed: 0.03 }, 'air, pop bleed'),
   air({ airLeft: 0.1 }, 'air, last 0.1 s'),
   air({ airLeft: 0.2 }, 'air, 0.2 s left (no grab)'),

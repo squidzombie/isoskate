@@ -91,11 +91,13 @@ export function updatePickWindow(k: Ctx): void {
   c.pickWindow = { edgeId: pk.edgeId, tCapture: c.t + pr.tCapture };
 }
 
-/** A swipe inside the window: a repeat of the same direction makes a double (←← Lipslide); a new one replaces it.
- *  A keyboard amend (`amend`) replaces the last pick with the diagonal (← then ↓ = ↙ Tailslide). */
+/** A swipe inside the window: a repeat of the same direction makes a double (←← Lipslide), and more repeats keep the
+ *  double (←←← is still Lipslide, not back to Boardslide); a new direction replaces it. A keyboard amend (`amend`)
+ *  replaces the last pick with the diagonal (← then ↓ = ↙ Tailslide). */
 export function addPick(k: Ctx, dir: Dir8, amend = false): void {
   const pk = k.st.pick;
-  if (!amend && pk.dirs.length > 0 && pk.dirs[0] === dir && pk.dirs.length < 2) pk.dirs.push(dir);
+  const repeat = !amend && pk.dirs.length > 0 && pk.dirs[0] === dir;
+  if (repeat) { if (pk.dirs.length < 2) pk.dirs.push(dir); }
   else { pk.dirs.length = 0; pk.dirs.push(dir); }
   if (!amend || pk.tick < 0) pk.tick = k.st.cur.tick;
 }

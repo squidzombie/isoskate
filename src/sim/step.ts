@@ -190,9 +190,10 @@ export class SimImpl implements Sim, Ctx {
     // 8. Pickups and markers.
     pickups(this);
     markers(this);
-    // 9. Scoring: combo clocks (a roll-off drop keeps the rolling window running), distance, total.
+    // 9. Scoring: combo clocks (a roll-off drop keeps the rolling window running; a back-to-back manual keeps the
+    // heat running), distance, total.
     const comboMode: SkaterMode = c.mode === 'air' && st.air.reason === 'rollOff' ? 'roll' : c.mode;
-    tickCombo(sc, ev, c.tick, comboMode);
+    tickCombo(sc, ev, c.tick, comboMode, c.mode === 'manual' && st.manualHeat);
     sc.distancePts = Math.floor((c.p.s - st.s0) * SCORE.distancePerM);
     sc.total = sc.distancePts + sc.trickPts + sc.bonusPts;
     sc.maxSpeed = Math.max(sc.maxSpeed, c.vel.s);
@@ -203,6 +204,7 @@ export class SimImpl implements Sim, Ctx {
     const st = this.st, c = st.cur, sc = st.score, v = this.view;
     v.mode = c.mode; v.airLeft = c.airLeft; v.popBleed = c.popBleed; v.coyote = c.coyote; v.flip = c.flip; v.spin = c.spin;
     v.grab = !!c.grab; v.grabbed = c.mode === 'air' && st.air.grabbed;
+    v.pressInAir = c.mode === 'air' && c.pressRiseTick > st.air.takeoffTick;
     v.pickOpen = st.pick.open; v.comboWindow = sc.combo.active ? sc.combo.window : -1;
     v.onTop = (f.hold || f.manualKey) && c.mode === 'roll' ? onTop(this) : false;
     v.manualLatched = st.manualLatch;

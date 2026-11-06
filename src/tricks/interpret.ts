@@ -62,6 +62,7 @@ export interface InterpretView {
   spin: { id: SpinId; t: number; dur: number } | null;
   grab: boolean;                   // an Indy grab is held
   grabbed: boolean;                // a grab already happened in this air (one per air)
+  pressInAir: boolean;             // the touch now down went down after this air's take-off (a grab HOLD must)
   pickOpen: boolean;               // grind pick window (also the 0.12 s after lock)
   comboWindow: number;             // link window seconds left (−1 paused / no combo)
   onTop: boolean;                  // rolling on a manual pad or a raised landable top
@@ -73,7 +74,7 @@ export interface InterpretView {
 }
 
 export const emptyView = (): InterpretView => ({ mode: 'roll', airLeft: 0, popBleed: 0, coyote: 0, flip: null, spin: null,
-  grab: false, grabbed: false, pickOpen: false, comboWindow: -1, onTop: false, manual: null, manualLatched: false,
+  grab: false, grabbed: false, pressInAir: false, pickOpen: false, comboWindow: -1, onTop: false, manual: null, manualLatched: false,
   pressAge: -1, grind: null, amend: null });
 
 const POP_DIRS: readonly Dir8[] = ['u', 'ur', 'ul'];
@@ -167,12 +168,14 @@ function air(v: Readonly<InterpretView>, f: Readonly<InputFrameExt>, t: TrickTab
     if (tapped) { out.push({ k: 'ollie', air: false }); return out; }
     if (sw && swipeCounts('roll', f) && pops(sw, out)) return out;
   }
-  // Grab: a HOLD (or Q) with ≥ 0.25 s of air left, once per air, not while a flip is rotating. The manual key never
-  // grabs (it only arms the pre-press manual). Releasing ends it (the sim also auto-releases before touchdown).
+  // Grab: a HOLD (or Q) with ≥ 0.25 s of air left, once per air, not while a flip is rotating. The HOLD must have
+  // gone down in this air: a thumb resting since the ground (a second finger popped) never grabs, or every ollie
+  // would grab and then manual. The manual key never grabs (it only arms the pre-press manual). Releasing ends it
+  // (the sim also auto-releases before touchdown).
   const held = f.hold || f.grab;
   const flipping = !!v.flip && v.flip.t < v.flip.dur - EPS;
   if (v.grab && !held) out.push({ k: 'grabEnd', air: false });
-  else if (!v.grab && held && !v.grabbed && !flipping && v.airLeft >= GRAB.minAirLeft - EPS) out.push({ k: 'grabStart', air: false });
+  else if (!v.grab && ((f.hold && v.pressInAir) || f.grab) && !v.grabbed && !flipping && v.airLeft >= GRAB.minAirLeft - EPS) out.push({ k: 'grabStart', air: false });
   // Jump buffer: a tap in the last 0.15 s of air ollies on touchdown.
   if (tapped && v.airLeft <= JUMP_BUFFER + EPS) out.push({ k: 'bufferOllie', air: false });
   if (!sw) return out;

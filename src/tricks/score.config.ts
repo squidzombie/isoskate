@@ -57,6 +57,13 @@ export const RULES = {
    *  MAGNET.cancelDragM this jump. Rails keep re-capture under the board, because their tops are crash tops.
    *  Filed in docs/core-requests.md (GP): the magnet and capture are frozen since M0; false restores M0. */
   popOutSkipsOwnEdge: true,
+  /** DESIGN §6.4 pauses the heat in every manual. A manual started without leaving the ground since the previous
+   *  manual (manual → roll → manual: release and re-press, or pulse the manual key) keeps the heat running instead,
+   *  unless it is the combo's one linked manual: otherwise back-to-back 1.0 s manuals hold a combo for a whole area
+   *  visit without a real trick (DESIGN §13.2). If the heat runs out in it, the combo banks when the manual ends.
+   *  The first manual after every touchdown still pauses it, so the 3.0 / 2.2 / 1.6 … budgets stay usable between
+   *  real tricks. Filed for the design owner in docs/core-requests.md (GP 7); true restores DESIGN §6.4 exactly. */
+  backToBackManualPausesHeat: false,
   /** Pose: ticks a revert keeps `fakie` visible after the touchdown, so the view sees the 180 land fakie and pivot. */
   revertPoseTicks: 3,
   /** Pose: ticks after a touchdown that read as the 'land' pose. */
