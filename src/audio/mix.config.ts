@@ -216,7 +216,7 @@ export const GRIND_MATERIAL: Readonly<Record<EdgeMaterial, 'metal' | 'concrete' 
 // ── One-shot levels (relative, before the SFX bus; calibrated so every one-shot sits under the music) ─────────────
 export const SFX_LEVEL = {
   pop: 0.55, whoosh: 1.3, catch: 0.6, land: 0.6, sketchy: 0.45, perfect: 0.42, perfectLock: 0.22, stair: 0.7,
-  bump: 0.7, knock: 0.55, nearMiss: 1.1, hazardTick: 0.9, crash: 0.4, grindEntry: 0.45, grindExit: 0.8,
+  bump: 0.7, knock: 0.55, nearMiss: 1.1, hazardTick: 0.9, crash: 0.34, grindEntry: 0.45, grindExit: 0.8,
   spin: 1.6, revert: 1.5, pickChime: 0.22, rewind: 0.55, needle: 0.45, newBest: 0.22, newArea: 0.18,
   ui: 1.8, purchase: 1.1, crate: 0.5, crateOpen: 0.9, reveal: 0.26, levelUp: 0.3,
 } as const;

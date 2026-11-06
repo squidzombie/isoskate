@@ -13,6 +13,7 @@
 // Writes artifacts/audio/report.json and exits non-zero on any failure.
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { deflateSync } from 'node:zlib';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -303,6 +304,38 @@ function levels(a, from = 0.6) {
     dc: +Math.max(Math.abs(dcL), Math.abs(dcR)).toFixed(6) / a.L.length, zeroRun: zmax, silenceSec: +maxRun.toFixed(2) };
 }
 
+// ── Spectrogram PNG (log frequency 30 Hz – 16 kHz, 80 dB range), so a render can be looked at ───────────────────────
+function crc32(buf) {
+  let c, crc = 0xffffffff;
+  for (let n = 0; n < buf.length; n++) { c = (crc ^ buf[n]) & 0xff; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; crc = (crc >>> 8) ^ c; }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+function png(path, w, h, rgb) {
+  const chunk = (type, data) => { const len = Buffer.alloc(4); len.writeUInt32BE(data.length); const td = Buffer.concat([Buffer.from(type), data]); const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(td)); return Buffer.concat([len, td, crc]); };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 2; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
+  const raw = Buffer.alloc((w * 3 + 1) * h);
+  for (let y = 0; y < h; y++) { raw[y * (w * 3 + 1)] = 0; rgb.copy(raw, y * (w * 3 + 1) + 1, y * w * 3, (y + 1) * w * 3); }
+  writeFileSync(path, Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]));
+}
+function spectrogram(path, a, H = 240) {
+  const N = 2048, hop = Math.round(a.sr * 0.02), frames = Math.floor((a.L.length - N) / hop);
+  const hann = new Float64Array(N); for (let i = 0; i < N; i++) hann[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / N);
+  const img = Buffer.alloc(frames * H * 3);
+  const f0 = 30, f1 = 16000;
+  for (let x = 0; x < frames; x++) {
+    const re = new Float64Array(N), im = new Float64Array(N);
+    for (let i = 0; i < N; i++) re[i] = ((a.L[x * hop + i] + a.R[x * hop + i]) / 2) * hann[i];
+    fft(re, im);
+    for (let y = 0; y < H; y++) {
+      const f = f0 * Math.pow(f1 / f0, 1 - y / (H - 1)), k = Math.min(N / 2 - 1, Math.round(f / (a.sr / N)));
+      const d = Math.max(0, Math.min(1, (pdb(re[k] * re[k] + im[k] * im[k]) + 20) / 80));
+      const o = (y * frames + x) * 3;
+      img[o] = Math.round(255 * Math.min(1, d * 1.6)); img[o + 1] = Math.round(255 * Math.max(0, d * 1.6 - 0.6)); img[o + 2] = Math.round(255 * Math.max(0, 0.5 - d) * (d > 0.05 ? 1 : 0));
+    }
+  }
+  png(path, frames, H, img);
+}
+
 // ── Run ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 const report = { sec: SEC, areas: {}, sfx: null, failures: [] };
 const fail = (where, msg) => { report.failures.push(`${where}: ${msg}`); };
@@ -337,6 +370,7 @@ try {
     const music = area === 'menu' ? a : await scene({ area, sec: SEC, script: 'music' });
     const dry = await scene({ area, sec: SEC, script: 'music', stems: { vinyl: false }, ...(area === 'menu' ? { level: 0 } : {}) });
     if (area === 'menu') writeWav(join(OUT, 'menu.wav'), a); else writeWav(join(OUT, `${area}-music.wav`), music);
+    spectrogram(join(OUT, `${area}.png`), a);
     const lv = levels(a), loud = integrated(a), sp = spectral(music), on = onsets(dry), bpm = tempo(on), sw = area === 'menu' ? { swingBeats: NaN } : swing(onsets(dry, 0.6, 5000), BPM[area]);
     const res = { ...lv, lufs: +loud.toFixed(2), bpm: +bpm.toFixed(2), expectBpm: BPM[area], ...sw, spectral: sp, renderMs: Date.now() - t0 };
     if (!(lv.peakDb < LIMITS.peakDb)) fail(area, `peak ${lv.peakDb} dBFS ≥ ${LIMITS.peakDb}`);
@@ -366,6 +400,7 @@ try {
   const refP90 = pct(refShort, 0.9), refInt = integrated(ref);
   const tour = await scene({ area: 'downtown', sec: 40, script: 'sfxTour' });
   writeWav(join(OUT, 'sfx-tour.wav'), tour);
+  spectrogram(join(OUT, 'sfx-tour.png'), tour);
   const sfx = {};
   tour.marks.forEach((m, i) => {
     const next = tour.marks[i + 1]?.t ?? m.t + 1;

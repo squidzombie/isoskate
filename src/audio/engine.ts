@@ -110,6 +110,7 @@ export class AudioCore {
     // after 4 bars); unlocked anywhere else: the menu song.
     if (this.scene === 'run') this.resumeMusic(now, this.runArea, this.opts.offline ? START_A : 0);
     else this.resumeMusic(now, 'menu', 0);
+    this.amb.setArea(this.scene === 'run' ? this.runArea : 'menu', now);
     if (!this.opts.offline) for (const area of Object.keys(AREA_MUSIC) as MusicArea[]) prepareKit(g, area, AREA_MUSIC[area]);
   }
 
@@ -346,6 +347,7 @@ export class AudioCore {
   /** Gateway: one bar of the new key's V7 at the next bar line, then the new song at the following one. */
   setArea(area: AreaId, _gatewaySec: number): void {
     this.runArea = area;
+    if (this.g && this.scene === 'run') this.amb?.setArea(area, this.g.ctx.currentTime);   // ambience crossfades over the gateway
     if (!this.g || !this.playing || !this.song || this.scene !== 'run') return;
     if (this.song.area === area || this.pending?.to === area || this.song.pivotTo === area) return;
     this.pending = { to: area, stage: 'pivot', startBar: START_A };
@@ -475,6 +477,7 @@ export class AudioCore {
     this.setComboFilter(1);
     const g = this.g;
     if (!g || this.scene !== 'run') return;
+    this.amb?.setArea(this.runArea, g.ctx.currentTime);
     if (this.stopped) this.resumeMusic(g.ctx.currentTime, this.runArea, START_A);
     else if (this.song && this.song.area !== this.runArea && this.song.area !== 'menu') this.cutAtBeat(this.runArea, START_A);
   }
