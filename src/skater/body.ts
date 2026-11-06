@@ -262,7 +262,7 @@ function hair(pb: PartBuilder, look: SkaterLook, d: RigDims, opt: BodyOptions): 
       pb.add(curtainGeo(r * 1.16, r * 1.08, -0.42, -0.1, front + 105 * DEG, 150 * DEG), { color: col, bone, outline: 0.8 }, place(0, hc, 0));
       break;
     case 'curlyMop': {
-      const pts: [number, number, number][] = [[-0.12, -0.02, 0.1], [-0.15, -0.03, 0], [-0.12, -0.02, -0.1], [-0.02, -0.04, 0.16], [-0.02, -0.04, -0.16], [0.11, 0.05, 0.08], [0.11, 0.05, -0.08], [-0.06, -0.08, 0.07]];
+      const pts: [number, number, number][] = [[-0.12, -0.03, 0.1], [-0.16, -0.04, 0], [-0.12, -0.03, -0.1], [-0.02, -0.05, 0.165], [-0.02, -0.05, -0.165], [0.06, -0.02, 0.17], [0.06, -0.02, -0.17], [-0.07, -0.09, 0.07], [-0.07, -0.09, -0.07]];
       for (const [x, y, z] of pts) pb.add(ball(0.06, 5, 4), { color: col, bone, outline: 0.7 }, place(x, hc + y, z));
       cap();
       break;

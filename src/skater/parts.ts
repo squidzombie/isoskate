@@ -34,7 +34,7 @@ export interface PartOpts {
 
 interface Part { g: BufferGeometry; o: PartOpts }
 
-const tmpC = new Color(), tmpV = new Vector3(), tmpN = new Vector3();
+const tmpC = new Color(), tmpV = new Vector3(), tmpN = new Vector3(), ROT = new Matrix4();
 
 /** Collects parts and merges them (outlined parts first). */
 export class PartBuilder {
@@ -67,18 +67,23 @@ export class PartBuilder {
     // Smoothed inflate directions (normals averaged over coincident positions), before placement.
     const out = new Float32Array(n * 3), f = o.outline ?? 1;
     if (f > 0) {
-      const nrm = geo.getAttribute('normal') as BufferAttribute;
-      const acc = new Map<string, [number, number, number]>();
-      const key = (i: number) => `${Math.round(pos.getX(i) * 1e4)},${Math.round(pos.getY(i) * 1e4)},${Math.round(pos.getZ(i) * 1e4)}`;
+      // Group coincident vertices by quantized position (0.1 mm), numeric keys, then average their normals.
+      const nrm = (geo.getAttribute('normal') as BufferAttribute).array as Float32Array, P = pos.array as Float32Array;
+      const group = new Int32Array(n), acc: number[] = [], seen = new Map<number, number[]>();
       for (let i = 0; i < n; i++) {
-        const k = key(i), a = acc.get(k) ?? [0, 0, 0];
-        a[0] += nrm.getX(i); a[1] += nrm.getY(i); a[2] += nrm.getZ(i);
-        acc.set(k, a);
+        const qx = Math.round(P[i * 3]! * 1e4), qy = Math.round(P[i * 3 + 1]! * 1e4), qz = Math.round(P[i * 3 + 2]! * 1e4);
+        const h = ((qx * 73856093) ^ (qy * 19349663) ^ (qz * 83492791)) | 0;
+        let gi = -1;
+        const bucket = seen.get(h);
+        if (bucket) for (const g of bucket) { if (acc[g * 6 + 3] === qx && acc[g * 6 + 4] === qy && acc[g * 6 + 5] === qz) { gi = g; break; } }
+        if (gi < 0) { gi = acc.length / 6; acc.push(0, 0, 0, qx, qy, qz); if (bucket) bucket.push(gi); else seen.set(h, [gi]); }
+        acc[gi * 6] = acc[gi * 6]! + nrm[i * 3]!; acc[gi * 6 + 1] = acc[gi * 6 + 1]! + nrm[i * 3 + 1]!; acc[gi * 6 + 2] = acc[gi * 6 + 2]! + nrm[i * 3 + 2]!;
+        group[i] = gi;
       }
       for (let i = 0; i < n; i++) {
-        const a = acc.get(key(i))!;
-        tmpN.set(a[0], a[1], a[2]);
-        if (tmpN.lengthSq() < 1e-12) tmpN.set(nrm.getX(i), nrm.getY(i), nrm.getZ(i));
+        const g = group[i]! * 6;
+        tmpN.set(acc[g]!, acc[g + 1]!, acc[g + 2]!);
+        if (tmpN.lengthSq() < 1e-12) tmpN.set(nrm[i * 3]!, nrm[i * 3 + 1]!, nrm[i * 3 + 2]!);
         tmpN.normalize().multiplyScalar(f);
         out[i * 3] = tmpN.x; out[i * 3 + 1] = tmpN.y; out[i * 3 + 2] = tmpN.z;
       }
@@ -90,7 +95,7 @@ export class PartBuilder {
     if (m) {
       geo.applyMatrix4(m);
       // aOutline is a direction: rotate it with the placement (no translation; scale is uniform-ish).
-      const r = new Matrix4().extractRotation(m), a = geo.getAttribute('aOutline') as BufferAttribute;
+      const r = ROT.extractRotation(m), a = geo.getAttribute('aOutline') as BufferAttribute;
       for (let i = 0; i < n; i++) {
         tmpN.fromBufferAttribute(a, i);
         const len = tmpN.length();

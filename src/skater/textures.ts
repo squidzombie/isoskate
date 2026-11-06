@@ -334,11 +334,14 @@ export const PATTERNS: Readonly<Record<BoardPattern, PatternFn>> = {
     const g = c.createLinearGradient(0, 0, w, 0); g.addColorStop(0, css(p[0])); g.addColorStop(1, css(p[1]));
     c.fillStyle = g; c.fillRect(0, 0, w, h);
     c.fillStyle = css(p[2]); c.strokeStyle = css(p[2]);
-    for (let i = 0; i < 4; i++) {
-      const bx = 70 + i * 120 + rng.range(-15, 15), top = rng.range(16, 34);
-      c.lineWidth = 5; c.beginPath(); c.moveTo(bx, h); c.quadraticCurveTo(bx + 12, (h + top) / 2, bx + 6, top); c.stroke();
-      for (let k = 0; k < 7; k++) {
-        const a = -Math.PI + (k / 6) * Math.PI + rng.range(-0.15, 0.15), L = rng.range(26, 36);
+    // A low sun and three big palm silhouettes in the third colour.
+    c.fillStyle = css(mix(p[0], 0xffffff, 0.45)); c.beginPath(); c.arc(w * 0.62, h * 0.55, h * 0.32, 0, Math.PI * 2); c.fill();
+    c.fillStyle = css(p[2]); c.strokeStyle = css(p[2]);
+    for (let i = 0; i < 3; i++) {
+      const bx = 90 + i * 160 + rng.range(-15, 15), top = rng.range(14, 24);
+      c.lineWidth = 9; c.beginPath(); c.moveTo(bx - 10, h); c.quadraticCurveTo(bx + 18, (h + top) / 2, bx + 6, top); c.stroke();
+      for (let k = 0; k < 8; k++) {
+        const a = -Math.PI * 1.05 + (k / 7) * Math.PI * 1.1 + rng.range(-0.12, 0.12), L = rng.range(44, 60);
         c.beginPath(); c.moveTo(bx + 6, top);
         c.quadraticCurveTo(bx + 6 + Math.cos(a) * L * 0.6, top + Math.sin(a) * L * 0.6 - 8, bx + 6 + Math.cos(a) * L, top + Math.sin(a) * L * 0.5 + 10);
         c.quadraticCurveTo(bx + 6 + Math.cos(a) * L * 0.5, top + Math.sin(a) * L * 0.3, bx + 6, top); c.fill();
@@ -346,9 +349,9 @@ export const PATTERNS: Readonly<Record<BoardPattern, PatternFn>> = {
     }
   },
   waveLines(c, w, h, p, _r, s) {
-    c.fillStyle = css(p[0]); c.fillRect(0, 0, w, h);
-    for (let i = 0, y = 8; y < h + 10; y += 13 * s, i++) {
-      c.strokeStyle = css(i % 2 ? p[1] : p[2]); c.lineWidth = 5 * s;
+    c.fillStyle = css(shade(p[0], 0.82)); c.fillRect(0, 0, w, h);
+    for (let i = 0, y = 8; y < h + 10; y += 15 * s, i++) {
+      c.strokeStyle = css(i % 2 ? shade(p[1], 0.86) : p[2]); c.lineWidth = 7 * s;
       c.beginPath(); for (let x = 0; x <= w; x += 6) c.lineTo(x, y + 5 * Math.sin(x * 0.045 + i * 0.9)); c.stroke();
     }
   },
@@ -477,7 +480,8 @@ export const PATTERNS: Readonly<Record<BoardPattern, PatternFn>> = {
     }
   },
   goldLeaf(c, w, h, p, rng) {
-    const g = c.createLinearGradient(0, 0, w, h); g.addColorStop(0, css(p[0])); g.addColorStop(0.5, css(p[1])); g.addColorStop(1, css(p[0]));
+    const g = c.createLinearGradient(0, 0, w, h); g.addColorStop(0, css(p[2])); g.addColorStop(0.3, css(p[0])); g.addColorStop(0.5, css(p[1]));
+    g.addColorStop(0.7, css(p[0])); g.addColorStop(1, css(p[2]));
     c.fillStyle = g; c.fillRect(0, 0, w, h);
     for (let i = 0; i < 70; i++) {
       c.fillStyle = css(i % 2 ? p[1] : shade(p[0], 1.12), 0.8);
@@ -551,12 +555,9 @@ export function drawBoardAtlas(c: Ctx, look: BoardLook, sunPhase = 0.5): void {
   // Grip: dark noise (the 128² grip tile, tiled along the deck), plus Golden Hour's glowing edge.
   const [gx0, gy0] = [0, 128];
   c.fillStyle = css(look.grip); c.fillRect(gx0, gy0, W, 64);
-  const gr = new Sfc32(0x9e1d);
-  for (let i = 0; i < 2600; i++) {
-    const v = gr.float();
-    c.fillStyle = v < 0.5 ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.22)';
-    c.fillRect(gx0 + gr.range(0, W), gy0 + gr.range(0, 64), 1.5, 1.5);
-  }
+  const tile = gripTile(c);
+  if (tile) for (let x = 0; x < W; x += TEX.grip) c.drawImage(tile, 0, 0, TEX.grip, 64, gx0 + x, gy0, TEX.grip, 64);
+  else drawGripNoise(c, gx0, gy0, W, 64);
   if (look.gripGlow !== undefined) {
     c.strokeStyle = css(look.gripGlow); c.lineWidth = 5; c.strokeRect(gx0 + 6, gy0 + 6, W - 12, 52);
   }
@@ -564,6 +565,27 @@ export function drawBoardAtlas(c: Ctx, look: BoardLook, sunPhase = 0.5): void {
   const plies = [0xe8c9a0, 0xc9a27a, 0xe8c9a0, look.palette[1], 0xe8c9a0, 0xc9a27a, 0xe8c9a0];
   for (let i = 0; i < 7; i++) { c.fillStyle = css(plies[i]!); c.fillRect(0, 192 + i * (32 / 7), W, 32 / 7 + 0.5); }
   c.fillStyle = '#ffffff'; c.fillRect(0, 224, W, 32);
+}
+
+/** The 128² grip noise tile (speckles only, drawn once and reused over every grip colour). */
+let gripCanvas: HTMLCanvasElement | null | undefined;
+function gripTile(c: Ctx): HTMLCanvasElement | null {
+  if (gripCanvas !== undefined) return gripCanvas;
+  const doc = (c.canvas as HTMLCanvasElement | undefined)?.ownerDocument;
+  if (!doc) return (gripCanvas = null);
+  const t = doc.createElement('canvas');
+  t.width = TEX.grip; t.height = TEX.grip;
+  const g = t.getContext('2d');
+  if (!g) return (gripCanvas = null);
+  drawGripNoise(g, 0, 0, TEX.grip, TEX.grip);
+  return (gripCanvas = t);
+}
+function drawGripNoise(c: Ctx, x0: number, y0: number, w: number, h: number): void {
+  const gr = new Sfc32(0x9e1d), n = Math.round((w * h) / 12.6);
+  for (let i = 0; i < n; i++) {
+    c.fillStyle = gr.float() < 0.5 ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.22)';
+    c.fillRect(x0 + gr.range(0, w), y0 + gr.range(0, h), 1.5, 1.5);
+  }
 }
 
 /** Glide Ring's animated canvas: the retro sun at a phase of its 6 s rise-and-set loop (0..1). */
@@ -643,9 +665,12 @@ export function drawHelmetDecal(c: Ctx, look: HelmetLook, sky: readonly [Hex, He
   switch (look.decal) {
     case 'stickers': {
       const cols = [0xff8a5b, 0x7ee0b5, 0xa88beb, 0xffc94a, 0xff5e6c, 0x5eb8ff, INK, look.decalColor, 0x9ccfb3];
-      for (let i = 0; i < 14; i++) {
-        c.save(); c.translate(rng.range(8, W - 8), rng.range(12, SH - 8)); c.rotate(rng.range(-0.7, 0.7));
-        sticker(c, i % 9, rng.range(7, 12), css(cols[i % cols.length]!)); c.restore();
+      // Procedural scatter of the 9 sticker shapes, big and saturated so the bomb reads as confetti at run scale.
+      // A jittered 10 × 4 grid: every view of the shell shows a dozen stickers.
+      for (let i = 0; i < 40; i++) {
+        const gx = i % 10, gy = Math.floor(i / 10);
+        c.save(); c.translate(gx * 25.6 + 12 + rng.range(-7, 7), 16 + gy * 24 + rng.range(-6, 6)); c.rotate(rng.range(-0.7, 0.7));
+        sticker(c, (i * 4 + gy) % 9, rng.range(10, 14), css(cols[(i * 5 + gy) % cols.length]!)); c.restore();
       }
       break;
     }

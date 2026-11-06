@@ -59,8 +59,8 @@ export function buildHelmet(look: HelmetLook): HelmetBuild {
         // Sunflower: a ring of 12 petals around the brown seed dome.
         for (let i = 0; i < 12; i++) {
           const a = (i / 12) * 360;
-          pb.add(spike(0.034, 0.1, 4), { color: i % 2 ? look.decalColor : shade(look.decalColor, 0.92), outline: 0.5 },
-            place(0, 0.035, 0, 0, a, 0).multiply(place(0, 0, r * 0.86, 78, 0, 0, 1, 1, 0.35)));
+          pb.add(spike(0.05, 0.11, 4), { color: i % 2 ? look.decalColor : shade(look.decalColor, 0.9), outline: 0.5 },
+            place(0, 0.045, 0, 0, a, 0).multiply(place(0, 0, r * 0.84, 74, 0, 0, 1, 1, 0.3)));
         }
       }
       if (look.shell === 'wrapVisor') {
@@ -92,12 +92,12 @@ export function buildHelmet(look: HelmetLook): HelmetBuild {
     }
     case 'lantern': {
       // Paper Lantern: a ribbed glowing body sitting on the head, dark caps, a little handle on top.
-      pb.add(new SphereGeometry(HR * 1.25, 8, 6, 0, Math.PI * 2, 0, Math.PI * 0.64), { color: shellCol, uv: SHELL, emit: [1, 0] },
-        place(-0.01, 0.035, 0, 0, 0, 6, 1, 1.25, 1));
-      pb.add(tubeY(0.085, 0.07, 0.29, 0.325, 8), { color: 0x2b2140 });
-      pb.add(new CylinderGeometry(HR * 1.22, HR * 1.22, 0.03, 8, 1, true), { color: 0x2b2140, outline: 0 }, place(-0.005, -0.06, 0, 0, 0, 6));
-      pb.add(beam([0, 0.32, -0.04], [0, 0.37, 0], 0.012), { color: 0xc9a15a, outline: 0 });
-      pb.add(beam([0, 0.37, 0], [0, 0.32, 0.04], 0.012), { color: 0xc9a15a, outline: 0 });
+      pb.add(new SphereGeometry(HR * 1.25, 8, 6, 0, Math.PI * 2, 0, Math.PI * 0.6), { color: shellCol, uv: SHELL, emit: [1, 0] },
+        place(-0.012, 0.07, 0, 0, 0, 14, 1, 1.2, 1));
+      pb.add(tubeY(0.085, 0.07, 0.31, 0.345, 8), { color: 0x2b2140 });
+      pb.add(new CylinderGeometry(HR * 1.2, HR * 1.2, 0.03, 8, 1, true), { color: 0x2b2140, outline: 0 }, place(-0.012, -0.005, 0, 0, 0, 14));
+      pb.add(beam([0, 0.34, -0.04], [0, 0.39, 0], 0.012), { color: 0xc9a15a, outline: 0 });
+      pb.add(beam([0, 0.39, 0], [0, 0.34, 0.04], 0.012), { color: 0xc9a15a, outline: 0 });
       break;
     }
     case 'bubble': {

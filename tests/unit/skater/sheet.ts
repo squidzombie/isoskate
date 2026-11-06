@@ -78,10 +78,20 @@ const showcase = (): Cell[] => {
   return looks.map(([label, l], i) => ({ label, loadout: l, pose: basePose({ pose: 'showcase' }), showcase: { t: 1 + i * 0.37, yaw: yawDeg + (i % 2 ? 25 : -20) } }));
 };
 
-const cells = sheet === 'poses' ? poses() : sheet === 'showcase' ? showcase() : items();
-const cols = Number(q.get('cols') ?? (sheet === 'items' ? 8 : sheet === 'showcase' ? 4 : 11));
-const cellW = Number(q.get('cw') ?? Math.round(sheet === 'showcase' ? 240 : Math.max(46, px * 1.55)));
-const cellH = Number(q.get('ch') ?? Math.round(sheet === 'showcase' ? 300 : px * 2.0 + 14));
+// Close-ups for review: every board's graphic face-on, every helmet (and skater head) from the front three-quarter.
+const boards = (): Cell[] => CATALOG.filter((c) => c.slot === 'board').map((it) => ({
+  label: it.name, loadout: { ...DEFAULT_LOADOUT, board: it.look } as Loadout,
+  pose: basePose({ mode: 'air', pose: 'flip', board: { roll: 180 - 55 + (yawDeg ? 180 : 0), yaw: 90, pitch: 0 }, height: 0.55 }),
+}));
+const heads = (): Cell[] => CATALOG.filter((c) => c.slot === 'helmet' || c.slot === 'skater').map((it) => ({
+  label: it.name, loadout: { ...DEFAULT_LOADOUT, [it.slot]: it.look } as Loadout, pose: basePose({ pose: 'showcase' }),
+  showcase: { t: 1.2, yaw: yawDeg - 25 },
+}));
+const close = sheet === 'boards' || sheet === 'heads';
+const cells = sheet === 'poses' ? poses() : sheet === 'showcase' ? showcase() : sheet === 'boards' ? boards() : sheet === 'heads' ? heads() : items();
+const cols = Number(q.get('cols') ?? (sheet === 'items' ? 8 : sheet === 'showcase' ? 4 : sheet === 'boards' ? 4 : sheet === 'heads' ? 6 : 11));
+const cellW = Number(q.get('cw') ?? Math.round(sheet === 'showcase' ? 240 : sheet === 'boards' ? 300 : sheet === 'heads' ? 180 : Math.max(46, px * 1.55)));
+const cellH = Number(q.get('ch') ?? Math.round(sheet === 'showcase' ? 300 : sheet === 'boards' ? 130 : sheet === 'heads' ? 200 : px * 2.0 + 14));
 const rows = Math.ceil(cells.length / cols);
 const W = cols * cellW, H = rows * cellH + 18;
 
@@ -137,6 +147,18 @@ const target = new Vector3();
 function frameCell(i: number): Camera {
   const v = views[i]!;
   v.object3d.getWorldPosition(target);
+  if (close) {
+    const bone = sheet === 'boards' ? v.rig.bone.board : v.rig.bone.helmet;
+    v.object3d.updateMatrixWorld(true);
+    bone.getWorldPosition(target);
+    persp.aspect = cellW / cellH; persp.fov = 30; persp.updateProjectionMatrix();
+    const d = sheet === 'boards' ? 1.75 : 1.15;
+    persp.position.set(target.x, target.y + (sheet === 'boards' ? 0.25 : 0.12), target.z + d);
+    persp.lookAt(target.x, target.y - (sheet === 'heads' ? 0.12 : 0), target.z);
+    // Boards: hide the rider so the deck reads alone.
+    if (sheet === 'boards') v.object3d.traverse((o) => { if (o.name.startsWith('skater-body') || o.name.startsWith('skater-helmet') || o.name.startsWith('helmet-')) o.visible = false; });
+    return persp;
+  }
   if (sheet === 'showcase') {
     persp.aspect = cellW / cellH; persp.updateProjectionMatrix();
     persp.position.set(target.x, 1.3, target.z + 3.4);
@@ -188,6 +210,7 @@ for (let i = 0; i < cells.length; i++) {
 
 const st = views.map((v) => v.stats());
 const info = r.info;
+(window as unknown as { __views: unknown }).__views = views;
 (window as unknown as { __sheet: object }).__sheet = {
   done: true, cells: cells.length, width: W * ZOOM, height: H * ZOOM,
   maxCalls: Math.max(...st.map((s) => s.drawCalls)), maxTris: Math.max(...st.map((s) => s.tris)),

@@ -86,7 +86,7 @@ export const SHADE = {
   ramp: [0.35, 0.7, 1.0] as const,
   rimColor: 0xffe2b8, rimStrength: 0.45, rimPower: 2.6,
   /** Albedo multiplier (sRGB hex): keeps light, saturated cloth out of the ACES shoulder so hues survive. */
-  albedo: 0xe4e4e4,
+  albedo: 0xd6d6d6,
   glossSpec: 0.35,
 } as const;
 

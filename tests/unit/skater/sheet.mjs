@@ -29,6 +29,9 @@ const SHEETS = [
   { name: 'poses', q: 'sheet=poses&px=90&cols=11' },
   { name: 'poses60', q: 'sheet=poses&px=60&cols=11' },
   { name: 'showcase', q: 'sheet=showcase' },
+  { name: 'boards', q: 'sheet=boards' },
+  { name: 'heads', q: 'sheet=heads' },
+  { name: 'heads-back', q: 'sheet=heads&yaw=180' },
   { name: 'showcase-back', q: 'sheet=showcase&yaw=180' },
 ].filter((s) => !only.length || only.includes(s.name));
 

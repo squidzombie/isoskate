@@ -133,7 +133,9 @@ export class SkaterViewImpl implements SkaterView {
       const prevT = this.showT;
       this.showT += dt;
       const sp = showcasePose(this.showT, prevT);
-      this.turn.rotation.set(0, (SHOWCASE.facingDeg + this.yawDeg + SHOWCASE.idleSpin * this.showT) * DEG, 0);
+      // Goofy riders stand turned 180° on the board: turn the rig so every rider faces the menu camera at yaw 0.
+      const goofy = this.style.stance === 'goofy' ? 180 : 0;
+      this.turn.rotation.set(0, (SHOWCASE.facingDeg + goofy + this.yawDeg + SHOWCASE.idleSpin * this.showT) * DEG, 0);
       this.turn.position.set(0, sp.hop, 0);
       this.anim.update(this.rig, this.style, { dt, pose: sp.pose, speed: 0, landed: sp.landed, perfect: false });
     } else {
