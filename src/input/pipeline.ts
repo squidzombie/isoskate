@@ -1,7 +1,8 @@
 // input/pipeline.ts: recognizer + keyboard mapper + frame builder, with no DOM. The DOM InputSource (index.ts), the
 // debug API (`__skate.pointer`, manual stepping) and bots all drive this same pipeline, so a synthetic trace and a
 // real thumb produce identical InputFrames.
-import type { InputFrame, PointerSample } from '../core/input';
+import type { PointerSample } from '../core/input';
+import type { InputFrameExt } from '../tricks';
 import { FrameBuilder } from './frames';
 import { KeyboardMapper } from './keyboard';
 import { createRecognizerImpl, type Recognizer, type RecognizerConfigExt } from './recognizer';
@@ -38,7 +39,7 @@ export class InputPipeline {
   keyUp(code: string): void { this.keys.up(code); }
 
   /** One sim tick's frame: due synthetic samples, time-based recognizer transitions, then binning. */
-  frame(tickEndMs: number): InputFrame {
+  frame(tickEndMs: number): InputFrameExt {
     while (this.scheduled.length && this.scheduled[0]!.tMs <= tickEndMs) this.feed(this.scheduled.shift()!);
     this.frames.pushAll(this.rec.tick(tickEndMs));
     return this.frames.frame(tickEndMs, this.keys.levels());

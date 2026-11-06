@@ -93,7 +93,7 @@ export function createRecognizer(cfg?: Partial<RecognizerConfig>): GestureRecogn
 }
 
 export { DEFAULT_RECOGNIZER, RECOGNIZER_INTERNALS, arcCompensate, directionOf, screenAngle, sectorOf, sectorOfAngle,
-  type Recognizer, type RecognizerConfigExt } from './recognizer';
+  type HoldEndExt, type Recognizer, type RecognizerConfigExt } from './recognizer';
 export { FrameBuilder, NO_KEYS, steerMetresPerPx, type KeyEdge, type KeyLevels } from './frames';
 export { KEY_AMEND_MS, KeyboardMapper, diagonalOf, type KeyPreset } from './keyboard';
 export { InputPipeline } from './pipeline';

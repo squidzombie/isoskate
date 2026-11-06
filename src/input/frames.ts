@@ -1,10 +1,13 @@
 // input/frames.ts: timestamped gesture and key-edge queues → one InputFrame per sim tick (TECH §6.1 input binning,
 // §7.1). Everything with tMs ≤ tickEndMs lands in that tick. At most one swipe per tick: a second swipe (and everything
 // queued after it) waits for the next tick, so a fast double flick still reaches the sim as two swipes.
-// Steering px → metres via S = 9 / (0.55·screenWidthPx) × sensitivity (DESIGN §4.2).
+// Steering px → metres via S = 9 / (0.55·screenWidthPx) × sensitivity (DESIGN §4.2). A holdEnd marked `release` (a
+// still touch lifted 350–600 ms after touch-down) sets the frame's `longTap` (InputFrameExt, GP request).
 import type { Dir8 } from '../core/ids';
-import type { Gesture, InputFrame } from '../core/input';
+import type { Gesture } from '../core/input';
 import { EMPTY_FRAME } from '../core/input';
+import type { InputFrameExt } from '../tricks';
+import type { HoldEndExt } from './recognizer';
 
 /** Metres of steering per CSS px of drag (sensitivity applied). */
 export const steerMetresPerPx = (screenW: number, sensitivity = 1) => (9 / (0.55 * Math.max(1, screenW))) * sensitivity;
@@ -38,8 +41,8 @@ export class FrameBuilder {
   get pending(): number { return this.queue.length + this.keyEdges.length; }
 
   /** Collects everything with tMs ≤ tickEndMs into one frame (called once per sim tick). */
-  frame(tickEndMs: number, keys: Readonly<KeyLevels> = NO_KEYS): InputFrame {
-    const f: InputFrame = { ...EMPTY_FRAME };
+  frame(tickEndMs: number, keys: Readonly<KeyLevels> = NO_KEYS): InputFrameExt {
+    const f: InputFrameExt = { ...EMPTY_FRAME };
     const m = steerMetresPerPx(this.screenW(), this.sensitivity);
     let i = 0;
     for (; i < this.queue.length; i++) {
@@ -52,7 +55,7 @@ export class FrameBuilder {
           f.swipe = g.dir; f.swipeDx = g.dxPx * m; f.swipeFast = g.fast; f.swipeFromRest = g.fromRest; f.swipeSteer = g.steer;
           break;
         case 'holdStart': this.holds++; break;
-        case 'holdEnd': this.holds = Math.max(0, this.holds - 1); break;
+        case 'holdEnd': this.holds = Math.max(0, this.holds - 1); if ((g as HoldEndExt).release) f.longTap = true; break;
         case 'press': this.presses = Math.max(0, this.presses + (g.down ? 1 : -1)); break;
       }
     }
