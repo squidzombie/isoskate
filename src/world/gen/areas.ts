@@ -37,3 +37,16 @@ export function areaAtTime(t: number, startArea: AreaId = 'downtown'): AreaSampl
   else if (k > 0 && Math.abs(tt - midIn) <= BLEND_SEC / 2) blend = { from: prev, to: area, u: (tt - (midIn - BLEND_SEC / 2)) / BLEND_SEC };
   return { area, blend, gateway, first: k < n, visit: k };
 }
+
+/** Area and gateway at run time t, written into `out` (no allocation): the sim's per-tick marker check. Same result
+ *  as areaAtTime(t, startArea).area / .gateway. */
+export function areaGatewayInto(t: number, startArea: AreaId, out: { area: AreaId; gateway: GatewayId | null }): void {
+  const start = AREA_ORDER.indexOf(startArea);
+  const n = AREA_ORDER.length;
+  const tt = Math.max(0, t);
+  const k = tt < FIRST_VISIT_SEC + GATEWAY_SEC ? 0 : 1 + Math.floor((tt - FIRST_VISIT_SEC - GATEWAY_SEC) / (VISIT_SEC + GATEWAY_SEC));
+  const area = AREA_ORDER[(start + k) % n]!;
+  const gwStart = (k === 0 ? 0 : FIRST_VISIT_SEC + GATEWAY_SEC + (k - 1) * (VISIT_SEC + GATEWAY_SEC)) + (k === 0 ? FIRST_VISIT_SEC : VISIT_SEC);
+  out.area = area;
+  out.gateway = tt >= gwStart ? GATEWAY_AFTER[area] : null;
+}

@@ -35,7 +35,7 @@ export function setGround(k: Ctx, g: GroundHit): void {
 /** One rolling tick (roll or manual). Returns 'bump' when a step-up was taken (manuals end on bumps). */
 export function rollGround(k: Ctx): 'ok' | 'bump' | 'air' | 'crash' {
   const st = k.st, c = st.cur;
-  const g = k.world.groundAt(c.p.s, c.p.x, c.p.y + STEP_UP);
+  const g = k.ground(c.p.s, c.p.x, c.p.y + STEP_UP);
   if (g.pit && !g.slab && c.p.y <= g.pit.lipY + PIT_FALL_EPS + 1e-9) {
     const ob = obstacleOfPit(k, g);
     if (st.cfg.god) {                       // logged once per obstacle (crash() ghosts it), then ridden as ground

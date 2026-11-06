@@ -6,7 +6,7 @@ import type { GameEvent } from '../core/events';
 import type { RunConfig, ScoreState, SkaterMode, SkaterState } from '../core/sim';
 import type { TrickTables } from '../core/tricks';
 import { sAt, speedAt } from '../core/tuning';
-import type { GroundSlab, Obstacle, WorldGen, WorldQuery } from '../core/world';
+import type { Coin, GroundHit, GroundSlab, Obstacle, WorldGen, WorldQuery } from '../core/world';
 import { emptyCombo } from '../tricks';
 
 /** Per-air bookkeeping (reset at every take-off). */
@@ -60,6 +60,13 @@ export interface Ctx {
   readonly ev: GameEvent[];
   /** Obstacles in [s − 2, s + 20] for this tick (collision, warnings, magnet and align candidates). */
   obs: readonly Obstacle[];
+  /** world.groundAt without allocating: the result lives in scratch `slot` until the next call with that slot
+   *  (slot 0: this tick's ground and touchdown checks; slot 1: the air prediction loop). */
+  ground(s: number, x: number, yMax: number, slot?: 0 | 1): GroundHit;
+  /** world.coins without allocating (valid until the next call). */
+  coinsNear(s0: number, s1: number): readonly Coin[];
+  /** The area and gateway at s (gen.areaAt's area / gateway) without allocating. */
+  areaGateway(s: number): { readonly area: AreaId; readonly gateway: GatewayId | null };
   crash(cause: 'slam' | 'badLanding' | 'fall' | 'splash', obstacleId: number | null, kind?: PropKind | null): void;
 }
 
@@ -100,20 +107,38 @@ export function initState(cfg: RunConfig): SimState {
   };
 }
 
-/** prev ← cur without allocating the hot fields (trick sub-states are small and copied by value). */
+type SubKey = 'flip' | 'spin' | 'grind' | 'manual' | 'grab' | 'pickWindow' | 'crash';
+const SUB_KEYS: readonly SubKey[] = ['flip', 'spin', 'grind', 'manual', 'grab', 'pickWindow', 'crash'];
+/** Spare sub-state objects per destination (prev), reused so copySkater allocates nothing once warm. They never
+ *  alias the source's objects, and they are not part of the state (snapshots clone prev on their own). */
+const SPARES = new WeakMap<SkaterState, Partial<Record<SubKey, object>>>();
+const OLD: (object | null)[] = SUB_KEYS.map(() => null);
+
+/** prev ← cur without allocating: plain fields one by one (a generic copy would box every number), the trick
+ *  sub-states copied by value into reused objects (TECH §6.3: no allocation per tick). A field added to SkaterState
+ *  must be added here: tests/unit/sim/replay.test.ts checks the copy is complete. */
 export function copySkater(dst: SkaterState, src: Readonly<SkaterState>): void {
+  let spares = SPARES.get(dst);
+  if (!spares) { spares = {}; SPARES.set(dst, spares); }
   const p = dst.p, vel = dst.vel, airTricks = dst.airTricks;
-  Object.assign(dst, src);
-  dst.p = p; dst.vel = vel; dst.airTricks = airTricks;
+  const d = dst as unknown as Record<SubKey, object | null>;
+  for (let i = 0; i < SUB_KEYS.length; i++) OLD[i] = d[SUB_KEYS[i]!];
+  dst.tick = src.tick; dst.t = src.t; dst.targetX = src.targetX;
+  dst.mode = src.mode; dst.layer = src.layer; dst.groundY = src.groundY; dst.surface = src.surface;
+  dst.airT = src.airT; dst.airLeft = src.airLeft; dst.dropH = src.dropH;
+  dst.coyote = src.coyote; dst.jumpBuffer = src.jumpBuffer; dst.popBleed = src.popBleed;
+  dst.flipsThisAir = src.flipsThisAir; dst.fakie = src.fakie;
+  dst.magnetEdge = src.magnetEdge; dst.magnetCancelled = src.magnetCancelled; dst.transferArmed = src.transferArmed;
+  dst.pressRiseTick = src.pressRiseTick; dst.wobble = src.wobble;
   p.s = src.p.s; p.x = src.p.x; p.y = src.p.y;
   vel.s = src.vel.s; vel.x = src.vel.x; vel.y = src.vel.y;
   airTricks.length = 0;
   for (const id of src.airTricks) airTricks.push(id);
-  dst.flip = src.flip && { ...src.flip };
-  dst.spin = src.spin && { ...src.spin };
-  dst.grind = src.grind && { ...src.grind };
-  dst.manual = src.manual && { ...src.manual };
-  dst.grab = src.grab && { ...src.grab };
-  dst.pickWindow = src.pickWindow && { ...src.pickWindow };
-  dst.crash = src.crash && { ...src.crash };
+  for (let i = 0; i < SUB_KEYS.length; i++) {
+    const key = SUB_KEYS[i]!;
+    const from = src[key] as object | null, mine = OLD[i]!;
+    OLD[i] = null;
+    if (from) d[key] = Object.assign(mine ?? spares[key] ?? {}, from);
+    else { if (mine) spares[key] = mine; d[key] = null; }
+  }
 }

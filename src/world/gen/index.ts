@@ -15,7 +15,7 @@ export function createWorldQuery(gen: WorldGen): WorldQuery {
 }
 
 export { areaAtTime, GATEWAY_AFTER, LOOP_SEC, FIRST_VISIT_SEC, VISIT_SEC, GATEWAY_SEC, BLEND_SEC } from './areas';
-export { slabYAt, STREET } from './query';
+export { fastQueryOf, slabYAt, STREET, type FastQuery } from './query';
 export { GEN, GEN_FLAGS, PHASES, type PhaseId, type Tier } from './gen.config';
 export { gatewayWindow, phaseAt } from './schedule';
 export { polyX, KEY_EVERY } from './safe';

@@ -4,13 +4,13 @@
 //  10 bookkeeping. Deterministic: it reads only RunConfig, InputFrames and the WorldGen output.
 import type { GameEvent } from '../core/events';
 import type { InputFrame } from '../core/input';
-import type { CrashCause, PropKind } from '../core/ids';
+import type { AreaId, CrashCause, GatewayId, PropKind } from '../core/ids';
 import type { RunConfig, RunResult, ScoreState, Sim, SimDeps, SimSnapshot, SkaterMode, SkaterState } from '../core/sim';
 import type { TrickTables } from '../core/tricks';
 import type { SkaterPose } from '../core/view';
-import type { Obstacle, WorldGen, WorldGenConfig, WorldQuery } from '../core/world';
+import type { Coin, GroundHit, Obstacle, WorldGen, WorldGenConfig, WorldQuery } from '../core/world';
 import { PIT_FALL_EPS } from '../core/tuning';
-import { createWorldGen, createWorldQuery } from '../world/gen';
+import { createWorldGen, createWorldQuery, fastQueryOf, type FastQuery } from '../world/gen';
 import { SCORE, interpret, lose, tickCombo, type Intent, type InterpretView } from '../tricks';
 import { copySkater, initState, modeOf, type Ctx, type SimState } from './state';
 import { advanceTime, applySteer, lateral, nudgeTarget, timers } from './kinematics';
@@ -41,13 +41,33 @@ export class SimImpl implements Sim, Ctx {
   private readonly view: InterpretView = { mode: 'roll', airLeft: 0, popBleed: 0, coyote: 0, flip: null, spin: null,
     pickOpen: false, comboWindow: -1, onTop: false, manual: false, manualLatched: false };
   private readonly makeWorld: MakeWorld;
+  // Allocation-free world queries (world/gen FastQuery) and their scratch; contract calls for other worlds.
+  private fast: FastQuery | undefined;
+  private readonly obsBuf: Obstacle[] = [];
+  private readonly coinBuf: Coin[] = [];
+  private readonly groundBuf: [GroundHit, GroundHit] = [
+    { y: 0, layer: 0, surface: 'asphalt', slab: null, pit: null }, { y: 0, layer: 0, surface: 'asphalt', slab: null, pit: null }];
+  private readonly areaBuf: { area: AreaId; gateway: GatewayId | null } = { area: 'downtown', gateway: null };
 
   constructor(readonly tables: TrickTables, deps?: SimDeps) {
     this.makeWorld = deps?.makeWorld ?? defaultWorld;
     const cfg: RunConfig = { runId: 'none', seed: 0, mode: 'normal', firstRuns: false, bestDist: 0 };
     const w = this.makeWorld({ seed: 0, mode: 'normal' });
     this._gen = w.gen; this._world = w.world; this._worldKey = worldKey(cfg);
+    this.fast = fastQueryOf(w.world);
     this.st = initState(cfg);
+  }
+
+  ground(s: number, x: number, yMax: number, slot: 0 | 1 = 0): GroundHit {
+    return this.fast ? this.fast.groundInto(s, x, yMax, this.groundBuf[slot]) : this._world.groundAt(s, x, yMax);
+  }
+  coinsNear(s0: number, s1: number): readonly Coin[] {
+    return this.fast ? this.fast.coinsInto(s0, s1, this.coinBuf) : this._world.coins(s0, s1);
+  }
+  areaGateway(s: number): { readonly area: AreaId; readonly gateway: GatewayId | null } {
+    if (this.fast) this.fast.areaGatewayInto(s, this.areaBuf);
+    else { const a = this._gen.areaAt(s); this.areaBuf.area = a.area; this.areaBuf.gateway = a.gateway; }
+    return this.areaBuf;
   }
 
   get cur(): Readonly<SkaterState> { return this.st.cur; }
@@ -59,6 +79,7 @@ export class SimImpl implements Sim, Ctx {
   reset(cfg: RunConfig): void {
     const w = this.makeWorld({ seed: cfg.seed, mode: cfg.mode, startT: cfg.startT, startArea: cfg.startArea });
     this._gen = w.gen; this._world = w.world; this._worldKey = worldKey(cfg);
+    this.fast = fastQueryOf(w.world);
     this.st = initState(cfg);
     const a = this._gen.areaAt(this.st.s0);
     this.st.area = a.area; this.st.gateway = a.gateway;
@@ -76,7 +97,7 @@ export class SimImpl implements Sim, Ctx {
     advanceTime(this);
     if (c.tick === 1) ev.push({ t: 'runStart', tick: c.tick, seed: st.cfg.seed, mode: st.cfg.mode });
     timers(this);
-    this.obs = this._world.obstacles(c.p.s - 2, c.p.s + 20);
+    this.obs = this.fast ? this.fast.obstaclesInto(c.p.s - 2, c.p.s + 20, this.obsBuf) : this._world.obstacles(c.p.s - 2, c.p.s + 20);
     // 2. Steering target.
     let applied = applySteer(this, f);
     // 3. Interpret and apply.
@@ -108,7 +129,7 @@ export class SimImpl implements Sim, Ctx {
     if (c.mode === 'air') { predict(this); tryCapture(this); }
     if (modeOf(c) !== 'crashed') collide(this);
     if (c.mode === 'air' && c.vel.y <= 0) {
-      const g = this._world.groundAt(c.p.s, c.p.x, st.prev.p.y + 1e-6);
+      const g = this.ground(c.p.s, c.p.x, st.prev.p.y + 1e-6);
       if (g.pit && !g.slab && c.p.y <= g.pit.lipY + PIT_FALL_EPS + 1e-9) {
         const ob = obstacleOfPit(this, g);
         if (!st.cfg.god) { this.crash(g.pit.cause, ob?.id ?? null); return ev; }
@@ -202,6 +223,7 @@ export class SimImpl implements Sim, Ctx {
     if (key !== this._worldKey) {
       const w = this.makeWorld({ seed: st.cfg.seed, mode: st.cfg.mode, startT: st.cfg.startT, startArea: st.cfg.startArea });
       this._gen = w.gen; this._world = w.world; this._worldKey = key;
+      this.fast = fastQueryOf(w.world);
     }
     this.st = st;
   }

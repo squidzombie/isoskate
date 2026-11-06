@@ -55,7 +55,7 @@ export function predict(k: Ctx): void {
   for (let j = 1; j <= PREDICT_MAX_STEPS; j++) {
     const tau = j * DT;
     const y = c.p.y + c.vel.y * tau - 0.5 * G * tau * tau;
-    const g = k.world.groundAt(sAt(tAhead(k, j)), c.p.x, yPrev + 1e-6);
+    const g = k.ground(sAt(tAhead(k, j)), c.p.x, yPrev + 1e-6, 1);
     if (y <= g.y + 1e-9) { tLand = tau; landY = g.y; jLand = j; break; }
     yPrev = y;
   }

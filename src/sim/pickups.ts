@@ -11,7 +11,7 @@ export function pickups(k: Ctx): void {
   const st = k.st, c = st.cur;
   if (c.mode === 'crashed') return;
   const cy = c.p.y + COIN_VOLUME.centreUp;
-  for (const coin of k.world.coins(c.p.s - COIN_VOLUME.fwd, c.p.s + COIN_VOLUME.fwd)) {
+  for (const coin of k.coinsNear(c.p.s - COIN_VOLUME.fwd, c.p.s + COIN_VOLUME.fwd)) {
     if (st.collected.has(coin.id)) continue;
     // Inclusive bounds (+1 µm): a coin string on a 0.6 m ledge's centre is exactly 0.3 m from either grind edge.
     if (Math.abs(coin.p.x - c.p.x) > COIN_VOLUME.lat + 1e-6 || Math.abs(coin.p.y - cy) > COIN_VOLUME.vert + 1e-6) continue;
@@ -27,7 +27,7 @@ export function pickups(k: Ctx): void {
       if (set.size < 64) continue;
       const keep = new Set<number>();
       for (const ob of k.obs) if (set.has(ob.id)) keep.add(ob.id);
-      if (set === st.collected) for (const coin of k.world.coins(c.p.s - 2, c.p.s + 2)) if (set.has(coin.id)) keep.add(coin.id);
+      if (set === st.collected) for (const coin of k.coinsNear(c.p.s - 2, c.p.s + 2)) if (set.has(coin.id)) keep.add(coin.id);
       set.clear();
       for (const id of keep) set.add(id);
     }
@@ -45,7 +45,7 @@ export function markers(k: Ctx): void {
     }
   }
   // Areas and gateways (world/gen's pure timeline).
-  const a = k.gen.areaAt(c.p.s);
+  const a = k.areaGateway(c.p.s);
   if (a.gateway !== st.gateway) {
     st.gateway = a.gateway;
     if (a.gateway) {

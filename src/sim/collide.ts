@@ -10,7 +10,7 @@
 //      frontal: knock → knock; crash → slam whenever the board is below the top (crash tops never skim);
 //               landable with top − boardBottom ≤ STEP_UP → skim (y := top, airborne keeps vy ≥ 0, `bump`); else slam.
 //  - God mode: crashes are emitted with god: true and the obstacle is passed through from then on.
-import type { Obstacle, Solid } from '../core/world';
+import type { GroundHit, Obstacle, Solid } from '../core/world';
 import { HITBOX, SIDE_BUMP_V, STEP_UP } from '../core/tuning';
 import { insetOf } from '../world/gen';
 import { BUMP_WOBBLE } from './consts';
@@ -33,6 +33,7 @@ export function insetBox(so: Solid, out: Box): Box {
 }
 
 const I: Box = { s0: 0, s1: 0, x0: 0, x1: 0, y0: 0, y1: 0 };
+const HIT: GroundHit = { y: 0, layer: 0, surface: 'asphalt', slab: null, pit: null };
 const HW = HITBOX.w / 2, HL = HITBOX.l / 2;
 
 function knock(k: Ctx, ob: Obstacle): void {
@@ -93,8 +94,8 @@ export function collide(k: Ctx): void {
         if (c.p.x > b.x1 - 0.02) c.p.x = b.x1 - 0.02;
         c.p.y = top;
         const sl = topSlab(ob, top);
-        const hit = { y: top, layer: sl?.layer ?? 0, surface: sl?.surface ?? c.surface, slab: sl, pit: null };
-        if (c.mode === 'air') { touchdown(k, hit); if (modeOf(c) === 'crashed') return; } else c.groundY = top;
+        HIT.y = top; HIT.layer = sl?.layer ?? 0; HIT.surface = sl?.surface ?? c.surface; HIT.slab = sl; HIT.pit = null;
+        if (c.mode === 'air') { touchdown(k, HIT); if (modeOf(c) === 'crashed') return; } else c.groundY = top;
         continue;
       }
       if (axis === 's') {

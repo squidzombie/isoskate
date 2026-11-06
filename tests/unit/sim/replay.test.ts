@@ -9,6 +9,8 @@ import { SIM_HZ } from '../../../src/core/tuning';
 import { BOTS } from '../../../src/debug/bots';
 import { createSim } from '../../../src/sim';
 import { TRICKS } from '../../../src/tricks';
+import { copySkater, initSkater } from '../../../src/sim/state';
+import type { SkaterState } from '../../../src/core/sim';
 import { box, fixtureWorld, frame } from './fixtures';
 
 const TWO_MIN = 120 * SIM_HZ;
@@ -41,6 +43,35 @@ function replay(c: RunConfig, frames: readonly InputFrame[]): { hashes: number[]
   for (const fr of frames) { events += sim.step(fr).length; hashes.push(sim.hash()); }
   return { hashes, events, sim };
 }
+
+describe('prev ← cur copy (sim/state.ts copySkater)', () => {
+  it('copies every SkaterState field by value, and reuses its sub-state objects without aliasing the source', () => {
+    const src = initSkater(12.5) as SkaterState;
+    let k = 1;
+    for (const key of Object.keys(src) as (keyof SkaterState)[]) {
+      const v = src[key] as unknown;
+      if (typeof v === 'number') (src as unknown as Record<string, unknown>)[key] = v + k++ * 0.37;
+      else if (typeof v === 'boolean') (src as unknown as Record<string, unknown>)[key] = !v;
+    }
+    src.mode = 'air'; src.surface = 'wood'; src.magnetEdge = 7; src.airTricks.push('ollie', 'kickflip');
+    src.flip = { id: 'kickflip', t: 0.1, dur: 0.3, upgrades: 0, airLeftAtStart: 0.4, angle0: 0, t0: 0 };
+    src.spin = { id: 'fs180', t: 0.05, dur: 0.3, upgrades: 0, startTick: 3, linked: true };
+    src.pickWindow = { edgeId: 3, tCapture: 13.1 };
+    const dst = initSkater(0) as SkaterState;
+    copySkater(dst, src);
+    expect(JSON.parse(JSON.stringify(dst))).toEqual(JSON.parse(JSON.stringify(src)));
+    expect(dst.flip).not.toBe(src.flip);
+    const flipObj = dst.flip;
+    src.flip.t = 0.2;
+    copySkater(dst, src);
+    expect(dst.flip).toBe(flipObj);                       // reused, not reallocated
+    expect(dst.flip!.t).toBe(0.2);
+    src.flip = null;
+    copySkater(dst, src);
+    expect(dst.flip).toBeNull();
+    expect(JSON.parse(JSON.stringify(dst))).toEqual(JSON.parse(JSON.stringify(src)));
+  });
+});
 
 describe('replay determinism', () => {
   it('a recorded 2-minute input replays with identical per-tick hashes (god run, every trick path exercised)', () => {
