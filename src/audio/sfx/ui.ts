@@ -1,11 +1,11 @@
 // audio/sfx/ui.ts: interface and meta sounds (DESIGN §19.3 "Other sounds"): taps, back, toggle, error, purchase,
 // level up (Maj9 arpeggio on EP + mallet with a 6 kHz shimmer), crate shake / open and the four reveal stingers.
 // All of them are in the current key, short and soft; they play on the SFX bus and never through the music chain.
-import { LEVEL_UP, SFX_LEVEL } from '../mix.config';
+import { LEVEL_UP, SFX_LEVEL, VARIATION } from '../mix.config';
 import type { Graph } from '../graph';
 import { playEp, playMallet } from '../music/instruments';
 import { midiHz, pentatonicNote } from '../music/progressions';
-import { gain, osc, perc, voice } from '../synth';
+import { gain, osc, perc, vary, voice } from '../synth';
 import { PRI } from '../voices';
 import { nz, tn, type CueOpts, type KeyInfo } from './oneshots';
 
@@ -19,7 +19,7 @@ export function playUi(g: Graph, id: string, t: number, o: CueOpts, key: KeyInfo
   const L = SFX_LEVEL;
   const v = (len: number, lvl: number) => {
     const x = voice(g, g.sfx, t, t + len + 0.05, PRI.sfx);
-    if (x) x.out.gain.value = lvl * (o.gain ?? 1);
+    if (x) x.out.gain.value = lvl * (o.gain ?? 1) * vary(g, 0, VARIATION.db).gain;   // ±1.5 dB; pitch stays in key
     return x;
   };
   switch (id) {
