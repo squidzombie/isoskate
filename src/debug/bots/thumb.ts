@@ -47,7 +47,7 @@ export class ThumbBot {
 
   constructor(o: ThumbOptions = {}) {
     this.rng = new Sfc32(hash32(o.seed ?? 1, 0x7b0b));
-    this.safe = new SafeBot({ seed: hash32(o.seed ?? 1, 0x7b0c), latency: o.latency ?? 0.27 });
+    this.safe = new SafeBot({ seed: hash32(o.seed ?? 1, 0x7b0c), latency: o.latency ?? 0.27, lazy: false });
     this.tremor = [this.rng.float() * 6.28, this.rng.float() * 6.28, 0.6 + this.rng.float() * 0.4, 1.6 + this.rng.float() * 0.8];
   }
 

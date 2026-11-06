@@ -1,6 +1,7 @@
 // debug/bots/safe.ts: the safe bot ("human", DESIGN §10.11, TECH §11.2). It plans with the validator's planner
 // (world/gen planLine: the same grid, F / B passes and minimum-action DP) on what was inside the guaranteed 2.5 s
-// view 0.25 s ago (observation delay), re-planning every 6 ticks. Its inputs reach the sim 0.15 s late (a delay line
+// view 0.25 s ago (observation delay), re-planning every 6 ticks when the view changed (something new in view, the
+// board off the plan, a landing) and at least every 0.5 s. Its inputs reach the sim 0.15 s late (a delay line
 // of decided frames), taps carry ±0.05 s of seeded jitter and the steering target moves at most 85 % of V_LAT_MAX.
 // Steering puts targetX on the plan's x a little ahead of the tick the input lands on (the controller lags it).
 // A re-plan starts where the board will be when its first input lands: on the ground, after any tap already sent.
@@ -25,6 +26,8 @@ export interface SafeBotOptions {
   every?: number;
   /** Steering lead over the landing tick (s): the lateral controller lags targetX. */
   lead?: number;
+  /** Re-plan only when the view changed (default true); false re-plans every `every` ticks. */
+  lazy?: boolean;
 }
 
 /** A tap: its tick (run time), the planned touch-down and the tick the plan asked for (before jitter). */
@@ -35,7 +38,7 @@ export interface Decision { targetX: number; tap: boolean }
 
 export class SafeBot {
   readonly reaction: number; readonly latency: number; readonly jitter: number; readonly latFrac: number;
-  readonly every: number; readonly lead: number;
+  readonly every: number; readonly lead: number; readonly lazy: boolean;
   private pts: { t: number; x: number }[] = [];
   private taps: Tap[] = [];                         // the current plan's taps (planned ticks)
   private pending: Tap[] = [];                      // decided, not yet sent
@@ -44,6 +47,8 @@ export class SafeBot {
   private readonly rng: Sfc32;
   private tick = 0;
   private sincePlan = 1e9;
+  private seenTo = -Infinity;                       // visible end (s) at the last plan
+  private planT = -Infinity;                        // when the last plan was made
   private desired = Number.NaN;
   private dir: -1 | 0 | 1 = 0;
   /** Plans made / failed (no viable line in view). */
@@ -53,12 +58,12 @@ export class SafeBot {
 
   constructor(o: SafeBotOptions = {}) {
     this.reaction = o.reaction ?? 0.25; this.latency = o.latency ?? 0.15; this.jitter = o.jitter ?? 0.05;
-    this.latFrac = o.latFrac ?? 0.85; this.every = o.every ?? 6; this.lead = o.lead ?? 0.1;
+    this.latFrac = o.latFrac ?? 0.85; this.every = o.every ?? 6; this.lead = o.lead ?? 0.1; this.lazy = o.lazy ?? true;
     this.rng = new Sfc32(hash32(o.seed ?? 1, 0x5afe));
   }
 
   /** Forget the plan (the trick bot left it): the next re-plan starts from the board. */
-  reset(): void { this.pts = []; this.taps = []; this.pending = []; this.sent = []; this.delay.length = 0; this.sincePlan = 1e9; this.desired = Number.NaN; }
+  reset(): void { this.pts = []; this.taps = []; this.pending = []; this.sent = []; this.delay.length = 0; this.sincePlan = 1e9; this.desired = Number.NaN; this.seenTo = -Infinity; }
 
   /** The plan's x at run time t (the thumb bot renders it). */
   planX(t: number): number { return polyAt(this.pts, t); }
@@ -69,7 +74,12 @@ export class SafeBot {
     const tNow = c.t + DT;                            // the tick about to be stepped
     const tLand = tNow + this.latency;                // the tick this decision lands on
     if (Number.isNaN(this.desired)) this.desired = c.targetX;
-    if (++this.sincePlan >= this.every || !this.pts.length) { this.sincePlan = 0; this.replan(sim, tNow); }
+    if (!this.pts.length) { this.sincePlan = 0; this.replan(sim, tNow); }
+    else if (++this.sincePlan >= this.every) {
+      this.sincePlan = 0;
+      // The kept plan's taps for the next window are decided either way.
+      if (!this.lazy || this.stale(sim, tNow)) this.replan(sim, tNow); else this.commit(tNow);
+    }
     const want = this.pts.length ? polyAt(this.pts, tLand + this.lead) : c.targetX;
     const maxStep = this.latFrac * V_LAT_MAX * DT;
     this.desired += Math.max(-maxStep, Math.min(maxStep, want - this.desired));
@@ -95,6 +105,18 @@ export class SafeBot {
     return f;
   }
 
+  /** Re-plan (at most every `every` ticks) when something new came into view, the board left the plan, a tap has
+   *  touched down since the last plan, or 0.5 s passed; an unchanged view gives the same plan (and costs a raster). */
+  private stale(sim: Sim, tNow: number): boolean {
+    const c = sim.cur;
+    if (tNow - this.planT >= 0.5) return true;
+    if (Math.abs(c.p.x - polyAt(this.pts, c.t)) > 0.3) return true;
+    if (this.sent.some((p) => p.land > this.planT && p.land <= tNow)) return true;
+    const sEnd = sAt(tNow - this.reaction + LOOKAHEAD_MIN);
+    for (const o of sim.world.obstacles(this.seenTo, sEnd)) if (o.s > this.seenTo && o.s <= sEnd) return true;
+    return false;
+  }
+
   private replan(sim: Sim, tNow: number): void {
     const c = sim.cur;
     if (c.mode === 'grind') return;
@@ -111,6 +133,7 @@ export class SafeBot {
     const horizon = tSeen + LOOKAHEAD_MIN - t0;
     if (horizon < 0.6) return;
     const sEnd = sAt(tSeen + LOOKAHEAD_MIN);
+    this.seenTo = sEnd; this.planT = tNow;
     const obs = sim.world.obstacles(sAt(t0) - 4, sEnd).filter((o) => o.s < sEnd);
     const w0 = performance.now();
     const p = planLine({ t: t0, x: Math.max(-4.25, Math.min(4.25, x0)), horizon, obstacles: obs, phase, dir: this.dir, refine: true });
