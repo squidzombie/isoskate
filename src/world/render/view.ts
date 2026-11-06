@@ -121,7 +121,8 @@ class GreyboxWorldView implements WorldView {
   update(f: RenderFrame): void {
     for (const e of f.events) if (e.t === 'coin') this.hideCoin(e.id);
     if (!this.gen) return;
-    if (this.startS === null) this.startS = f.playerS;
+    const fresh = this.startS === null;                  // first frame of a run (or the Title preview)
+    if (fresh) this.startS = f.playerS;
     const origin = originOf(f.playerS);
     if (origin !== this.originS) {
       this.originS = origin;
@@ -145,10 +146,15 @@ class GreyboxWorldView implements WorldView {
       this.nearHidden = hide;
       for (const c of this.chunks.values()) if (c.parts.near) c.parts.near.mesh.material = hide ? this.shadowOnly : this.mat;
     }
-    // At most one chunk build per frame (TECH §8.6): missing chunks nearest-first ahead, then behind, then stale ones.
+    // The first frame of a run builds everything the camera sees at once (the chunk under the skater, the one behind
+    // it at the bottom of the screen, the next one ahead), so a retry never shows the empty fog behind the start.
+    if (fresh) for (const i of [ci, lo, ci + 1]) if (!this.chunks.has(i)) this.recordBuild(this.build(i));
+    // Then at most one chunk build per frame (TECH §8.6): the current one, the one behind (always on screen), then
+    // the missing ones ahead nearest-first, then stale ones.
     let target: number | null = null;                    // chunk indices can be negative (behind the start)
-    for (let i = ci; i <= hi && target === null; i++) if (!this.chunks.has(i)) target = i;
-    if (target === null && !this.chunks.has(lo)) target = lo;
+    if (!this.chunks.has(ci)) target = ci;
+    else if (!this.chunks.has(lo)) target = lo;
+    for (let i = ci + 1; i <= hi && target === null; i++) if (!this.chunks.has(i)) target = i;
     if (target === null) for (let i = ci; i <= hi && target === null; i++) { const c = this.chunks.get(i); if (c && c.key !== this.optsKey) target = i; }
     if (target !== null) {
       const old = this.chunks.get(target);
