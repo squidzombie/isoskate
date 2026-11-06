@@ -247,7 +247,7 @@ function scriptSteps(script: NonNullable<SceneOptions['script']>, area: MusicAre
   const out: Step[] = [];
   if (script === 'music' || script === 'roll') return out;
   if (script === 'sfxTour') {
-    const ids: (SfxId | 'spin' | 'revert' | 'pickChime' | 'rewind' | 'needle' | 'grindSwitch')[] = ['pop', 'whoosh', 'catch', 'land', 'sketchy', 'perfect',
+    const ids: SfxId[] = ['pop', 'whoosh', 'catch', 'land', 'sketchy', 'perfect',
       'perfectLock', 'stair', 'bump', 'knock', 'coin', 'nearMiss', 'hazardTick', 'comboBank', 'comboLost', 'crash', 'newBest', 'newArea',
       'grindEntry', 'grindExit', 'spin', 'revert', 'pickChime', 'rewind', 'needle', 'uiTap', 'uiBack', 'uiToggle', 'uiError', 'purchase',
       'levelUp', 'crateShake', 'crateOpen', 'revealCommon', 'revealRare', 'revealEpic', 'revealLegendary'];

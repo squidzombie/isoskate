@@ -148,7 +148,13 @@ class GreyboxWorldView implements WorldView {
     }
     // The first frame of a run builds everything the camera sees at once (the chunk under the skater, the one behind
     // it at the bottom of the screen, the next one ahead), so a retry never shows the empty fog behind the start.
-    if (fresh) for (const i of [ci, lo, ci + 1]) if (!this.chunks.has(i)) this.recordBuild(this.build(i));
+    // That frame builds those three and nothing else (TECH §8.6 exception); the scheduler resumes next frame.
+    if (fresh) {
+      for (const i of [ci, lo, ci + 1]) if (!this.chunks.has(i)) this.recordBuild(this.build(i));
+      this.updateCoinScale(f);
+      this.updateShadow(f, origin);
+      return;
+    }
     // Then at most one chunk build per frame (TECH §8.6): the current one, the one behind (always on screen), then
     // the missing ones ahead nearest-first, then stale ones.
     let target: number | null = null;                    // chunk indices can be negative (behind the start)

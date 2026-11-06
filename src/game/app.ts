@@ -61,6 +61,7 @@ export class App {
 
   constructor(private readonly d: AppDeps) {
     this.back = createBackGuard((during) => {
+      if (this.backToPause()) return;               // Settings opened from Pause: back returns to Pause
       if (during === 'run') { if (this.screen === 'run') this.pause(false); }
       else if (this.screen !== 'title') this.home();
     });

@@ -72,6 +72,8 @@ export function wire(root: HTMLElement): Game {
   ui.attach(gameBus, appBus, meta);
   const session = createRunSession(save, flags.seed);
 
+  // Slides (boardslide family) vs grinds (truck locks), for the grind sound; precomputed so render() never allocates.
+  const SLIDE_GRINDS: ReadonlySet<string> = new Set(TRICKS.grinds.filter((d) => d.slide).map((d) => d.id));
   const render = (f: RenderFrame, catchUp: boolean): boolean => {
     const before = worldView.stats().chunksBuilt;
     worldView.update(f);
@@ -89,7 +91,7 @@ export function wire(root: HTMLElement): Game {
     const c = f.cur, g = c.grind, live = app.current === 'run' && c.mode !== 'crashed';
     audio.roll(live ? clamp(f.speed / V_MAX, 0, 1) : 0, c.surface, c.mode === 'air', c.mode === 'manual');
     audio.grind(live && !!g, g ? sim.world.edge(g.edgeId)?.material ?? null : null,
-      !!g && !!TRICKS.grinds.find((d) => d.id === g.id)?.slide);
+      !!g && SLIDE_GRINDS.has(g.id));
     cameraRig.update(f);
     gfx.renderer.render(gfx.scene, cameraRig.camera);
     if (app.current === 'run' || app.current === 'crash') ui.hud.update(f.score, f.cur, f.dt, cameraRig.project(f.cur.p));

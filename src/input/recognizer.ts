@@ -2,7 +2,8 @@
 // comes only from the samples (and from tick()). The thumb bot runs this exact code on synthetic traces.
 //
 // Per pointer: PENDING (travel < SLOP) → HOLD at 200 ms still, or DRAG once travel ≥ SLOP (permanent).
-//   - Release while still and ≤ 350 ms after down → tap (also from HOLD, which then also ends the hold).
+//   - Release while still and ≤ 350 ms after down → tap (also from HOLD, which then also ends the hold); a sloppy tap
+//     (see the G0 amendments below) is a tap too.
 //   - HOLD that moves ≥ SLOP → holdEnd, then DRAG. `cancel` → no tap or swipe, ends the hold, frees steering.
 //   - Steering: only the steering owner (the first touch to become a DRAG) emits `steer`, counted from touch-down.
 //     When the owner lifts or cancels, the next touch that becomes a DRAG takes ownership.
@@ -19,12 +20,26 @@
 //   that eases into a slower drag dips but never rises, so it fires once (a deliberate flick-flick fires twice).
 // `dxPx` of a swipe is the steering that stroke contributed: 0 for a non-owner touch; for the owner, the window's dx,
 // or all dx since touch-down when the stroke is ≤ 150 ms old.
+// G0 amendments (DESIGN §4.2, playtest review):
+//   - Owner sectors: a swipe from the steering owner uses narrow diagonals (±ownerDiagonalHalfDeg, cardinals widen to
+//     fill) unless it is a flick from a parked thumb that had not steered before it, so a dodge that rises 30–35°
+//     stays sideways steering instead of a ↗/↖ pop. Parked-then-flicked thumbs and other fingers keep ±15°.
+//   - Sloppy tap: a touch that drifted past SLOP but stayed within sloppyTapMaxPx of its start (and sloppyTapMaxDxPx
+//     sideways), fired no swipe and lifted ≤ sloppyTapMs after touch-down is also a tap (its drift already steered).
 import type { Dir8 } from '../core/ids';
 import type { Gesture, GestureRecognizer, PointerSample, RecognizerConfig } from '../core/input';
 
 /** RecognizerConfig with the screen metrics required (core has them optional since G0; the live config always holds
  *  numbers, so the recognizer never tests for undefined). */
 export interface RecognizerConfigExt extends RecognizerConfig {
+  /** Diagonal half-angle for swipes from the steering owner that are not `fromRest` (cardinals get 45° − this). */
+  ownerDiagonalHalfDeg: number;
+  /** Sloppy tap: lifted ≤ this many ms after touch-down ... */
+  sloppyTapMs: number;
+  /** ... having never moved more than this from the touch-down point (·k) ... */
+  sloppyTapMaxPx: number;
+  /** ... nor more than this sideways (·k: ≤ ~0.6 m of steering), and no swipe fired. */
+  sloppyTapMaxDxPx: number;
   /** Screen width in CSS px: arc compensation applies to strokes starting in the outer `arcOuterFrac` of it.
    *  0 = unknown → 390·k. The DOM binding keeps it live. */
   screenW: number;
@@ -45,6 +60,8 @@ export const DEFAULT_RECOGNIZER: Readonly<RecognizerConfigExt> = {
   deadZoneBottomPx: 12,
   k: 1,
   screenW: 0, screenH: 0,
+  ownerDiagonalHalfDeg: 10,
+  sloppyTapMs: 250, sloppyTapMaxPx: 20, sloppyTapMaxDxPx: 15,
 };
 
 /** Measurement windows (how the grammar's speeds are measured, not grammar tunables): the speed used for the
@@ -94,9 +111,13 @@ export function sectorOf(dx: number, dy: number, cfg: Pick<RecognizerConfig, 'ca
   return sectorOfAngle(screenAngle(dx, dy), cfg);
 }
 
-/** Direction of a stroke: arc compensation from its start x, then the sectors. */
-export function directionOf(dx: number, dy: number, startX: number, cfg: RecognizerConfigExt): Dir8 {
-  return sectorOfAngle(arcCompensate(screenAngle(dx, dy), startX, cfg), cfg);
+/** Direction of a stroke: arc compensation from its start x, then the sectors. `narrow`: the steering owner's
+ *  not-from-rest sectors (diagonals ±ownerDiagonalHalfDeg). */
+export function directionOf(dx: number, dy: number, startX: number, cfg: RecognizerConfigExt, narrow = false): Dir8 {
+  const a = arcCompensate(screenAngle(dx, dy), startX, cfg);
+  if (!narrow || cfg.simpleTricks) return sectorOfAngle(a, cfg);
+  const dh = Math.min(cfg.diagonalHalfDeg, cfg.ownerDiagonalHalfDeg);
+  return sectorOfAngle(a, { cardinalHalfDeg: 45 - dh, diagonalHalfDeg: dh, simpleTricks: false });
 }
 
 interface Sample { t: number; x: number; y: number; fx: number; fy: number }   // raw and recoil-filtered position
@@ -106,6 +127,8 @@ interface Touch {
   t: number; x: number; y: number; fx: number; fy: number;
   state: 'pending' | 'hold' | 'drag';
   press: boolean;
+  maxD: number; maxDx: number;        // farthest from the touch-down point (any direction / sideways), for sloppy taps
+  dragMs: number;                      // when it became a DRAG (Infinity before)
   trail: Sample[];
   steerX: number;
   // swipe bookkeeping
@@ -188,10 +211,13 @@ export function createRecognizerImpl(partial?: Partial<RecognizerConfigExt>): Re
     // included): the speed right now is what tells a hard flick from a corrective drag.
     const vNow = speed(tc, RECOGNIZER_INTERNALS.speedWinMs);
     const len = Math.hypot(dx, dy);
+    const fromRest = (tc.moving ? tc.lastRestLen : tc.t - tc.restStart) >= config.restMs;
+    // A steering thumb: the owner, unless this is a parked thumb's first motion (it became a DRAG during this flick).
+    const steeredBefore = tc.dragMs < (tc.moving ? tc.motionStart : tc.restStart);
     out.push({
-      k: 'swipe', tMs: t, dir: directionOf(dx, dy, sx, config), dxPx,
+      k: 'swipe', tMs: t, dir: directionOf(dx, dy, sx, config, isOwner && (!fromRest || steeredBefore)), dxPx,
       fast: Math.max(flickSpeed, vNow) >= (config.fastMinPx * k) / config.swipeWindowMs,
-      fromRest: (tc.moving ? tc.lastRestLen : tc.t - tc.restStart) >= config.restMs,
+      fromRest,
       steer: isOwner && t - tc.downMs > config.steerStrokeMs,
     });
     tc.fires++; tc.lastFireMs = t; tc.fireFx = tc.fx; tc.fireFy = tc.fy;
@@ -211,12 +237,15 @@ export function createRecognizerImpl(partial?: Partial<RecognizerConfigExt>): Re
     tc.x = s.x; tc.y = s.y; tc.t = t;
     tc.trail.push({ t, x: tc.x, y: tc.y, fx: tc.fx, fy: tc.fy });
     while (tc.trail.length > 2 && tc.trail[1]!.t < t - RECOGNIZER_INTERNALS.trailMs) tc.trail.shift();
+    tc.maxD = Math.max(tc.maxD, Math.hypot(tc.x - tc.x0, tc.y - tc.y0));
+    tc.maxDx = Math.max(tc.maxDx, Math.abs(tc.x - tc.x0));
 
     // Slop: PENDING/HOLD → DRAG (permanent). The owner's steering counts from the touch-down point.
     if (tc.state !== 'drag' && Math.hypot(tc.x - tc.x0, tc.y - tc.y0) >= config.slopPx * k) {
       if (tc.state === 'hold') out.push({ k: 'holdEnd', tMs: t });
       if (tc.press) { tc.press = false; out.push({ k: 'press', tMs: t, down: false }); }
       tc.state = 'drag';
+      tc.dragMs = t;
       if (owner === null) { owner = tc.id; tc.steerX = tc.x0; }
     }
     if (tc.state === 'drag' && owner === tc.id && tc.x !== tc.steerX) {
@@ -278,7 +307,7 @@ export function createRecognizerImpl(partial?: Partial<RecognizerConfigExt>): Re
         if (config.screenH > 0 && s.y > config.screenH - config.deadZoneBottomPx) { ignored.add(s.id); return out; }
         touches.set(s.id, {
           id: s.id, downMs: s.tMs, x0: s.x, y0: s.y, t: s.tMs, x: s.x, y: s.y, fx: s.x, fy: s.y,
-          state: 'pending', press: true, trail: [{ t: s.tMs, x: s.x, y: s.y, fx: s.x, fy: s.y }], steerX: s.x,
+          state: 'pending', press: true, maxD: 0, maxDx: 0, dragMs: Infinity, trail: [{ t: s.tMs, x: s.x, y: s.y, fx: s.x, fy: s.y }], steerX: s.x,
           fires: 0, lastFireMs: -Infinity, fireFx: s.x, fireFy: s.y, fireUx: 0, fireUy: 0, peak: 0, dipped: false, trough: Infinity, rose: false,
           moving: false, restStart: s.tMs, lastRestLen: 0, motionStart: s.tMs,
         });
@@ -298,6 +327,9 @@ export function createRecognizerImpl(partial?: Partial<RecognizerConfigExt>): Re
         const [wx, wy, ws] = windowDisp(tc, t);
         if (Math.hypot(wx, wy) >= config.liftSwipeMinPx * config.k && !inRecoil(tc, t, wx, wy)) fire(tc, t, wx, wy, ws, out);
       }
+      // Sloppy tap: a short jab that drifted a little past SLOP (thumbs roll on the glass) is still an ollie.
+      if (tc.state === 'drag' && tc.fires === 0 && t - tc.downMs <= config.sloppyTapMs
+        && tc.maxD < config.sloppyTapMaxPx * config.k && tc.maxDx < config.sloppyTapMaxDxPx * config.k) out.push({ k: 'tap', tMs: t });
       end(tc, t, out);
       return out;
     },

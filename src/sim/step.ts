@@ -152,7 +152,9 @@ export class SimImpl implements Sim, Ctx {
     return ev;
   }
 
-  /** Apply one intent. Returns true when it consumed its swipe (→ swipe cancel). */
+  /** Apply one intent. Returns true when it consumed an air swipe (→ swipe cancel, DESIGN §4.4 rule 2: flips, spin
+   *  upgrades and picks in the air). Pops from the ground, a manual or a grind keep the swipe's steering, so a dodge
+   *  that also pops is still a dodge (and grinds ignore steering, so there is nothing to cancel). */
   private apply(it: Intent): boolean {
     const c = this.st.cur;
     switch (it.k) {
@@ -160,20 +162,20 @@ export class SimImpl implements Sim, Ctx {
         const from: SkaterMode = c.mode === 'manual' ? 'manual' : 'roll';
         if (c.mode === 'manual') endManual(this, 'pop');
         pop(this, from, null);
-        return true;
+        return false;
       }
       case 'spinOllie': {
         const from: SkaterMode = c.mode === 'manual' ? 'manual' : 'roll';
         if (c.mode === 'manual') endManual(this, 'pop');
         pop(this, from, it.dir);
-        return true;
+        return false;
       }
       case 'flip': startFlip(this, it.id); return true;
       case 'flipUpgrade': upgradeFlip(this, it.to); return true;
       case 'spinUpgrade': upgradeSpin(this, it.to); return true;
-      case 'pick': addPick(this, it.dir); if (c.mode === 'grind') latePick(this); return true;
-      case 'popOut': endGrind(this, 'pop', null); return true;
-      case 'spinOut': endGrind(this, 'pop', it.dir); return true;
+      case 'pick': { const air = c.mode === 'air'; addPick(this, it.dir); if (c.mode === 'grind') latePick(this); return air; }
+      case 'popOut': endGrind(this, 'pop', null); return false;
+      case 'spinOut': endGrind(this, 'pop', it.dir); return false;
       case 'manualStart': startManual(this); this.st.manualLatch = true; return false;
       case 'bufferOllie': bufferOllie(this); return false;
     }

@@ -41,9 +41,15 @@ export interface InterpretView {
 
 const POP_DIRS: readonly Dir8[] = ['u', 'ur', 'ul'];
 
-/** Steering-stroke rule (DESIGN §4.3): a swipe labelled `steer` counts only when it was clearly meant. */
+const SIDEWAYS: readonly Dir8[] = ['l', 'r', 'ul', 'ur', 'dl', 'dr'];
+
+/** Steering-stroke rule (DESIGN §4.3): a swipe labelled `steer` counts only when it was clearly meant.
+ *  G0 amendment: a fresh stroke that is steering (the owner, ≤ 150 ms old: its swipeDx is not 0; other touches and
+ *  keys carry 0) counts in a direction with a sideways component only if `fast` or `fromRest`, so a quick dodge from a
+ *  thumb that just landed on the glass stays a dodge. ↑ and ↓ keep the normal threshold. */
 export function swipeCounts(mode: SkaterMode, f: Readonly<InputFrame>): boolean {
-  if (!f.swipe || !f.swipeSteer) return true;
+  if (!f.swipe) return true;
+  if (!f.swipeSteer) return f.swipeDx === 0 || !SIDEWAYS.includes(f.swipe) || f.swipeFast || f.swipeFromRest;
   const d = f.swipe;
   if (mode === 'air') return d === 'l' || d === 'r' ? f.swipeFromRest : f.swipeFast || f.swipeFromRest;
   if (mode === 'roll' || mode === 'manual') return POP_DIRS.includes(d) && (f.swipeFast || f.swipeFromRest);

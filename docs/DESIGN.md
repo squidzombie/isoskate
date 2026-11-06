@@ -95,11 +95,11 @@ The recognizer stays stateless with respect to the game. It labels each swipe wi
 | Name | Rule |
 |---|---|
 | `SLOP` | 10 px |
-| **TAP** | A still touch (travel < SLOP) released **≤ 350 ms** after touch-down. Human taps last 60–250 ms, so a nervous long tap is still an ollie. |
+| **TAP** | A still touch (travel < SLOP) released **≤ 350 ms** after touch-down. Human taps last 60–250 ms, so a nervous long tap is still an ollie. **Sloppy tap (G0):** a touch that drifted past SLOP but stayed within 20 px of its start (and 15 px sideways), fired no swipe and lifted ≤ 250 ms after touch-down is also a TAP; its drift already steered. |
 | **HOLD** | Stays within SLOP for 200 ms. Level-triggered: active until lift. A HOLD released by 350 ms *also* emits a TAP. A HOLD that then moves ≥ SLOP ends the hold and becomes a DRAG (steering gain 1.0). |
 | **DRAG** | Travel ≥ SLOP. **Permanent for that touch**: a DRAG never becomes a HOLD. |
 | **SWIPE** | Either ≥ 32 px moved within any 80 ms window (≥ 0.4 px/ms), or a lift-off with ≥ 24 px moved in its last 80 ms. Detected inside a DRAG too. Every swipe carries three labels: **`fast`** (≥ 60 px in 80 ms, ≥ 0.75 px/ms), **`fromRest`** (the thumb was parked, < 0.15 px/ms for ≥ 60 ms, right before the flick) and **`steer`** (the stroke is the steering owner and is older than 150 ms). |
-| **Direction** | 8 screen-space sectors: **cardinals ±30°, diagonals ±15°**. **Arc compensation:** for strokes that start in the outer 40% of the screen width (either side) and are within 45° of horizontal, the measured angle is rotated 8° toward horizontal before sectoring, because a thumb swiping sideways arcs upward. The Settings toggle **Simple tricks** snaps every diagonal to the nearest cardinal. |
+| **Direction** | 8 screen-space sectors: **cardinals ±30°, diagonals ±15°**. **Steering thumbs (G0):** a swipe from the steering owner uses diagonals ±10° (cardinals ±35°), unless it is the first motion of a parked thumb (it rested ≥ 60 ms and had not steered before), so a dodge that rises 30–35° stays a dodge. **Arc compensation:** for strokes that start in the outer 40% of the screen width (either side) and are within 45° of horizontal, the measured angle is rotated 8° toward horizontal before sectoring, because a thumb swiping sideways arcs upward. The Settings toggle **Simple tricks** snaps every diagonal to the nearest cardinal. |
 | **Recoil filter** | For 150 ms after a swipe fires, motion within ±60° of the opposite direction is ignored on that stroke |
 | **Re-fire** (same stroke) | A stroke can fire again only when **all three** hold: ≥ 90 ms since its last fire, ≥ 32 px moved since the last fire point, and its speed dipped below 50% of the previous flick's peak in between. One long flick therefore fires once; a deliberate flick-flick fires twice (how doubles work). |
 | **Lift-off swipe** | Disabled for a stroke that fired in the last 150 ms, so a lift never adds a phantom double or triple |
@@ -119,7 +119,7 @@ The recognizer stays stateless with respect to the game. It labels each swipe wi
 | Ground, ↑ ↗ ↖ (they pop) | `fast` or `fromRest` |
 | Ground, other directions | Never (horizontal ones are just fast steering) |
 
-A swipe that does not count is plain steering: it was already applied and nothing is cancelled. Fresh strokes (≤ 150 ms old) and non-steering touches keep the normal 0.4 px/ms threshold.
+A swipe that does not count is plain steering: it was already applied and nothing is cancelled. Non-steering touches keep the normal 0.4 px/ms threshold. **Fresh steering strokes (G0):** a stroke ≤ 150 ms old that is the steering owner (its `swipeDx` is not 0) counts in any direction with a sideways component (← → and the diagonals) only if `fast` or `fromRest`, so a thumb that lands on the glass and dodges at 0.4–0.7 px/ms dodges; ↑ and ↓ keep the normal threshold.
 
 | Gesture | Ground (roll) | Manual | Air | Grind |
 |---|---|---|---|---|
@@ -133,7 +133,7 @@ A swipe that does not count is plain steering: it was already applied and nothin
 
 ### 4.4 Conflict rules (ordered: the first rule that applies wins)
 1. **Pick window first.** While a grind pick window is open (§6.3), **every** swipe is a pick, ↑ included. The late-flip cutoff, spin upgrades and flip upgrades do not apply to it. A buffered TAP is discarded at capture.
-2. **Steering drag vs trick swipe.** Steering applies live. When the sim consumes an air swipe as a flip, spin or pick, it subtracts that swipe's `swipeDx` from `targetX`, so a flick doesn't yank the skater sideways. A `steer` swipe that fails the steering-stroke rule (§4.3) is not consumed and nothing is subtracted, so a dodge stays a dodge.
+2. **Steering drag vs trick swipe.** Steering applies live. When the sim consumes an air swipe as a flip, spin or pick, it subtracts that swipe's `swipeDx` from `targetX`, so a flick doesn't yank the skater sideways. Pops (↑ ↗ ↖ from the ground or a manual, pop-outs and 180 Outs) subtract nothing: a dodge that also pops keeps its dodge. A `steer` swipe that fails the steering-stroke rule (§4.3) is not consumed and nothing is subtracted, so a dodge stays a dodge.
 3. **Resting thumb vs manual.** A still touch never starts a manual outside a combo, except on a pad or ledge top, and a release ≤ 350 ms is always an ollie (manual → linked ollie). A thumb that has steered stays a DRAG for life. Manual has no fail state and scores only inside a combo, so an accidental manual costs nothing, and steering feel never changes (gain 1.0 everywhere).
 4. **Pop bleed.** No air swipe is recognized in the first 70 ms after a pop, and the stroke that popped is spent.
 5. **Too-late flips.** Outside the pick window, a swipe with < 0.15 s of predicted airtime left is ignored (↑ becomes a buffered ollie). A long trick started early enough to count but too late to finish still bails. That is the intended risk.
@@ -1999,3 +1999,11 @@ Every MUST-FIX was applied. The rows below record decisions where critiques conf
 | 54 | Scope for one night | Feasibility: defer movers, ship 6 templates per area, skip L1 in the validator, move PWA to M4, fewer bot seeds, static title, stretch cosmetic fx | **All accepted** (ROADMAP). |
 | 55 | Daily Street, landmark records | Player (nice) | **Moved to ROADMAP "Later".** Cheap thanks to determinism, but they need UI and save work that competes with the core tonight. |
 | 56 | Fonts | Mobile: self-host now | **Accepted:** `@fontsource` woff2 files bundled by Vite (inlined in the single-file build). No third-party requests at all. |
+
+### G0 playtest review (integration gate)
+
+| # | Topic | Finding | Resolution |
+|---|---|---|---|
+| 57 | Dodges read as tricks | A fast dodge rising 30–40° popped a FS/BS 180 and the ground pop subtracted the dodge; a fresh medium-speed sideways stroke in the air heelflipped and lost the dodge | **Steering-thumb sectors** (§4.2, diagonals ±10° for the steering owner unless a parked thumb flicks first), **fresh steering strokes** need `fast` or `fromRest` sideways (§4.3), and **pops cancel no steering** (§4.4 rule 2). |
+| 58 | Sloppy taps | 12–20 px of drift within 100 ms gave nothing | **Sloppy tap** (§4.2): < 20 px (< 15 px sideways), no swipe, lifted ≤ 250 ms. A 350–600 ms press outside a combo is still nothing: it needs a recognizer/sim contract decision and touches the manual rules (GP, W1a). |
+| 59 | First run teaches nothing | No hints until M4 | **Interim first-runs hints** (runs 1–3, Roll-out only): "DRAG TO STEER", "TAP TO OLLIE" 1.2 s before the chain, "OLLIE ONTO THE LEDGE"; the crash cause line now says what to do ("tap to ollie it" / "steer around it"). The Lesson Line hints (M4) replace them. |

@@ -1036,6 +1036,7 @@ import type { AreaId, ItemId, ScreenId } from './ids';
 import type { RunRewards, MetaApi } from './meta';
 import type { RunResult, ScoreState, SkaterState } from './sim';
 import type { Bus } from './bus';
+import type { SaveV1 } from './save';
 import type { AppEvent, GameEvent } from './events';
 export interface HudApi {
   show(on: boolean): void;
@@ -1422,7 +1423,8 @@ frames.ts: queue of timestamped gestures → InputFrame per tick:
   5. buildings and off-screen shadow casters
 - **Per-vertex `fx` flags** in the shared material: emissive mask, sway, and **`noFog`** (hazards and grind edges skip the haze).
 - **Global instanced layers:** decals (`polygonOffset`), coins (`InstancedMesh`, capacity 256; collected coins are hidden by matrix), lantern spheres, and the bank-timer arc.
-- **Time slicing.** At most 1 chunk built per frame with a 4 ms budget, never in a frame that generates a segment. A chunk is built ≥ 2 chunks before it becomes visible. The window keeps `CHUNK_WINDOW` = 1 chunk behind and 3 ahead (96 m, inside the 12 s generation lead). The Roll-out's chunks are cached across runs.
+- **Time slicing.** At most 1 chunk built per frame with a 4 ms budget, never in a frame that generates a segment. A chunk is built ≥ 2 chunks before it becomes visible. The window keeps `CHUNK_WINDOW` = 1 chunk behind and 3 ahead (96 m, inside the 12 s generation lead). The Roll-out's chunks are cached across runs (not yet implemented at G0: WA).
+  - **Exception (G0): the first frame of a run** builds the three chunks the camera sees (the one under the skater, the one behind it, the next one ahead) and nothing else, so a retry never shows empty fog behind the start. The one-per-frame scheduler resumes on the next frame. Until the Roll-out cache lands, that frame costs 3 builds (~3–9 ms).
 - **No opaque overhead.** Overhead decor is thin (lantern strings ≤ 0.3 m on screen, maglev as two edge beams), so there is no overhead dither pass.
 - **Desaturate.** A shared `uDesat` uniform in every world and skater material (crash: 0.4); no CSS filter on the canvas.
 - **Crash outline flash.** On a `crash` event, the renderer redraws the obstacle `obstacleId` once more with a coral inverted-hull outline for 0.6 s.

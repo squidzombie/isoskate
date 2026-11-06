@@ -23,13 +23,27 @@ describe('tap / hold / drag boundaries', () => {
     expect(kinds(run(makeRec(), new Trace(1, 0, CX, CY).rest(120).up().samples))).toEqual(['press+', 'tap', 'press-']);
   });
 
-  it('SLOP: 9 px of travel stays still (tap), 11 px is a DRAG (no tap, steering from touch-down)', () => {
+  it('SLOP: 9 px of travel stays still (tap), 11 px is a DRAG (steering from touch-down)', () => {
     const still = run(makeRec(), new Trace(1, 0, CX, CY).move(9, 0, 60).up().samples);
     expect(kinds(still)).toEqual(['press+', 'tap', 'press-']);
     expect(steerSum(still)).toBe(0);
-    const drag = run(makeRec(), new Trace(1, 0, CX, CY).move(11, 0, 60).up().samples);
-    expect(kinds(drag)).toEqual(['press+', 'press-']);
+    const drag = run(makeRec(), new Trace(1, 0, CX, CY).move(11, 0, 60).rest(240).up().samples);
+    expect(kinds(drag)).toEqual(['press+', 'press-']);         // lifted at 300 ms: a drag, not a tap
     expect(steerSum(drag)).toBeCloseTo(11, 9);              // no motion lost below the slop
+  });
+
+  it('sloppy tap (G0): a jab that drifts past SLOP but < 20 px (< 15 px sideways), no swipe, lifted ≤ 250 ms, is a tap', () => {
+    const tapOf = (dx: number, dy: number, ms: number, hold = 0) =>
+      kinds(run(makeRec(), new Trace(1, 0, CX, CY).move(dx, dy, ms).rest(hold).up().samples)).includes('tap');
+    expect(tapOf(11, 0, 60)).toBe(true);                     // 11 px sideways drift in 60 ms
+    expect(tapOf(9, -8, 90)).toBe(true);                     // 12 px up-right
+    expect(tapOf(4, -18, 90)).toBe(true);                    // 18 px upward
+    expect(tapOf(12, -14, 100)).toBe(true);                  // 18.4 px, 12 px sideways
+    expect(tapOf(16, 0, 90)).toBe(false);                    // 16 px sideways: a steering nudge
+    expect(tapOf(12, -17, 100)).toBe(false);                 // 20.8 px: too far
+    expect(tapOf(11, 0, 60, 200)).toBe(false);               // lifted at 260 ms
+    const steer = run(makeRec(), new Trace(1, 0, CX, CY).move(12, 0, 80).up().samples);
+    expect(steerSum(steer)).toBeCloseTo(12, 9);              // the drift still steered
   });
 
   it('a HOLD released at 300 ms emits both holdEnd and tap; a HOLD that moves 12 px becomes a DRAG', () => {
@@ -208,6 +222,30 @@ describe('direction: sectors, arc compensation, simple tricks', () => {
     expect(swipes(run(makeRec(), new Trace(1, 0, 0.1 * W, CY).rest(80).flick(1.2, 36, 60).up().samples))[0]!.dir).toBe('r');
     expect(arcCompensate(50, 0.1 * W, { ...cfg, screenW: W })).toBe(50);
     expect(arcCompensate(5, 0.1 * W, { ...cfg, screenW: W })).toBe(0);     // never past horizontal
+  });
+});
+
+describe('owner sectors (G0): the steering owner has diagonals ±10° unless a parked thumb flicks first', () => {
+  const dirOf = (angle: number, o: { rest?: number; second?: boolean } = {}) => {
+    const samples = [];
+    if (o.second) samples.push(...new Trace(1, 0, CX, CY + 100).move(40, 0, 100).rest(400).up().samples);   // owner elsewhere
+    samples.push(...new Trace(2, 150, CX, CY).rest(o.rest ?? 0).flick(1.0, angle, 60).up().samples);
+    return swipes(run(makeRec(), samples)).find((x) => x.tMs >= 150)!.dir;
+  };
+  it('a fresh owner flick at 34° is →, at 36° and 45° ↗', () => {
+    expect(dirOf(34)).toBe('r');
+    expect(dirOf(36)).toBe('ur');
+    expect(dirOf(45)).toBe('ur');
+    expect(dirOf(180 - 34)).toBe('l');
+    expect(dirOf(56)).toBe('u');
+  });
+  it('a parked thumb\'s first flick, or a touch that is not steering, keeps the normal ±15° diagonals', () => {
+    expect(dirOf(34, { rest: 80 })).toBe('ur');
+    expect(dirOf(34, { second: true })).toBe('ur');
+  });
+  it('a thumb that steered, parked, then flicks 34° is → (still a steering thumb)', () => {
+    const g = run(makeRec(), new Trace(1, 0, CX, CY).move(30, 0, 150).rest(200).flick(1.0, 34, 60).up().samples);
+    expect(swipes(g)[0]).toMatchObject({ dir: 'r', fromRest: true, steer: true });
   });
 });
 

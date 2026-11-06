@@ -5,6 +5,10 @@
 //   - a steering thumb that parks, then flicks ← in the air, kickflips (fromRest);
 //   - a hard ↓ from a steering thumb (still moving) pop shove-its in the air;
 //   - a fresh second-finger flick ← in the air kickflips.
+// G0 review amendments (DESIGN §4.2 owner sectors, §4.3 fresh steering strokes, §4.4 rule 2 ground pops):
+//   - a fast fresh dodge that rises 32° stays a dodge (no ↗ pop); one that rises 40° pops a FS 180 and keeps its dodge;
+//   - a steering thumb that flicks 34° up-right while dodging does not pop;
+//   - a fresh medium-speed sideways stroke in the air is steering, not a heelflip; a hard fresh flick still flips.
 // Pops use a second-finger tap, so the steering thumb stays down through the whole trace.
 import { describe, expect, it } from 'vitest';
 import type { GameEvent } from '../../../src/core/events';
@@ -97,5 +101,57 @@ describe('recognizer labels → sim (DESIGN §4.3 steering-stroke rule)', () => 
     r.until(1300);
     expect(r.swipes.at(-1)).toMatchObject({ dir: 'l', steer: false });
     expect(flips(r.events)).toEqual(['kickflip']);
+  });
+
+  /** x after a fresh dodge on the ground (no pop expected unless `pops`). */
+  const dodge = (angle: number, speed = 0.83, ms = 96, x0 = 195) => {
+    const r = rig();
+    r.play(new Trace(1, 0, x0, 700).flick(speed, angle, ms).rest(150).up());
+    r.until(1100);
+    return r;
+  };
+
+  it('a fast fresh dodge rising 32° is steering (owner sectors: diagonals ±10°): all of its sideways motion counts', () => {
+    const flat = dodge(0), up32 = dodge(32);
+    expect(ollies(up32.events)).toHaveLength(0);
+    expect(up32.swipes[0]?.dir).toBe('r');
+    expect(up32.sim.cur.p.x).toBeCloseTo(flat.sim.cur.p.x * Math.cos((32 * Math.PI) / 180), 1);
+  });
+
+  it('a fast fresh dodge rising 40° pops a FS 180 and keeps the dodge (ground pops cancel no steering)', () => {
+    const flat = dodge(0), up40 = dodge(40);
+    expect(up40.events.some((e) => e.t === 'spinStart' && e.id === 'fs180')).toBe(true);
+    // The pop takes the skater into the air (lower lateral authority), but the stroke's steering (its horizontal
+    // part: cos 40° of the flat dodge's) stands.
+    expect(up40.sim.cur.targetX).toBeCloseTo(flat.sim.cur.targetX * Math.cos((40 * Math.PI) / 180), 1);
+    expect(up40.sim.cur.p.x).toBeGreaterThan(0.6 * flat.sim.cur.p.x);
+  });
+
+  it('a medium-speed fresh dodge (0.5 px/ms) rising 36° does not pop', () => {
+    const r = dodge(36, 0.5, 120);
+    expect(ollies(r.events)).toHaveLength(0);
+    expect(r.sim.cur.p.x).toBeGreaterThan(1.8);
+  });
+
+  it('a steering thumb that flicks 34° up-right while dodging does not pop', () => {
+    const r = rig();
+    r.play(new Trace(1, 0, 195, 700).move(20, 0, 300).flick(0.9, 34, 80).rest(200).up());
+    r.until(1100);
+    expect(r.swipes[0]).toMatchObject({ dir: 'r', steer: true });
+    expect(ollies(r.events)).toHaveLength(0);
+    expect(r.sim.cur.p.x).toBeGreaterThan(2.6);
+  });
+
+  it('in the air, a fresh medium-speed sideways stroke is steering, a hard fresh flick is a flip', () => {
+    const slow = rig();
+    slow.play(tapAt(0), new Trace(2, 300, 195, 650).flick(0.41, 0, 110).rest(150).up());
+    slow.until(1300);
+    expect(slow.swipes.at(-1)).toMatchObject({ dir: 'r', fast: false, steer: false });
+    expect(flips(slow.events)).toEqual([]);
+    expect(slow.sim.cur.p.x).toBeGreaterThan(1.5);
+    const hard = rig();
+    hard.play(tapAt(0), new Trace(2, 250, 250, 600).flick(1.2, 180, 50).up());
+    hard.until(1300);
+    expect(flips(hard.events)).toEqual(['kickflip']);
   });
 });

@@ -237,6 +237,13 @@ test('Settings opens from Pause with the current values, and Back returns to the
   await settings.getByRole('button', { name: /back/i }).click();
   await expect(screenOn(page, 'pause')).toHaveClass(/\bon\b/);
   expect(await page.evaluate(() => window.__skate!.snapshot().tick)).toBe(frozen);
+  // The back gesture (Android back / iOS edge swipe) on Settings over Pause also returns to Pause.
+  await screenOn(page, 'pause').getByRole('button', { name: /settings/i }).click();
+  await expect(settings).toHaveClass(/\bon\b/);
+  await page.evaluate(() => history.back());
+  await expect(screenOn(page, 'pause')).toHaveClass(/\bon\b/);
+  await expect(settings).not.toHaveClass(/\bon\b/);
+  expect(await page.evaluate(() => window.__skate!.snapshot().tick)).toBe(frozen);
   await screenOn(page, 'pause').getByRole('button', { name: /resume/i }).click();
   await expect.poll(() => page.evaluate(() => window.__skate!.snapshot().tick)).toBeGreaterThan(frozen);
   expect(errors).toEqual([]);

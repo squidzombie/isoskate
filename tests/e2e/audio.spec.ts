@@ -29,7 +29,10 @@ test('a tap on the Title unlocks audio: unlocked and the context is running', as
   const st = await page.evaluate(() => window.__skateAudio!.stats());
   expect(st.contextState).toBe('running');
   expect(st.scene).toBe('run');
-  await expect.poll(() => page.evaluate(() => window.__skateAudio!.stats().playing), { timeout: 3000 }).toBe(true);
+  // The music starts once every kit buffer is built (audio/bank.ts whenReady, built in 4 ms idle slices at boot).
+  // The tap here comes right at boot, so on a CPU shared with other jobs those slices can be starved for seconds
+  // (≈ 0.25 s when idle). Unlocking is the gate (5 s above); the music only has to follow.
+  await expect.poll(() => page.evaluate(() => window.__skateAudio!.stats().playing), { timeout: 12_000 }).toBe(true);
   expect(errors).toEqual([]);
 });
 
