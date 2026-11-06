@@ -39,6 +39,55 @@ Entry format:
 
 ## M0-sim (sim/, tricks/, world/gen/ minimum, debug/bots/ SafeKey follower)
 
+No contract change was needed: everything below is implemented inside sim/, tricks/, world/gen/ and debug/bots/.
+The first block is the frozen behaviour later packages (GP, WG, WA, the bots) can rely on; the rest are open notes.
+
+### Frozen M0 contact details the validator mirrors   (status: open, informational)
+- File / symbol: sim/collide.ts, world/gen/validator/path.ts (TECH §6.4)
+- Change: none. Details TECH §6.4 leaves implicit, now fixed in code and tests:
+  - The inset is `min(FACE_INSET, extent / 4)` per axis, so a 0.05 m rail keeps a body (`insetOf`, exported from sim/index.ts).
+  - Overlap uses the inset box. Skim compares the **true** top (`box.y1`) with the board bottom (`≤ STEP_UP`): a 0.19 m
+    landable body slams, a 0.18 m one skims. A crash top slams whenever the board is below its inset top.
+  - The first-contact axis is the one that started overlapping last (slab method, prev → cur): from above, lateral or
+    frontal. Knock tops are knocked from every side.
+  - In an air tick, capture is tested **before** collisions, so a board coming down onto a ledge or rail locks before
+    it can touch the crash top.
+  - Gravity is integrated exactly (`y += vy·DT − ½G·DT²`), so a flat ollie lasts 36 ticks (0.600 s), pop tick included.
+  - A roll-off drop (a curb, a ledge end) keeps the link window running and does not refresh it on landing.
+- Why: the validator's path check and the sim must agree to the centimetre.
+- Local workaround meanwhile: n/a.
+
+### SafeKey and WorldQuery semantics   (status: open, informational)
+- File / symbol: core/world.ts › SafeKey, WorldQuery.groundAt
+- Change: none (please copy into TECH §5.3 at G0).
+  - SafeKeys are the vertices of the safe line in run time t, sorted by t, with x linear between consecutive keys.
+    An `action: 'ollie'` key is the take-off: tap on the tick whose time is nearest `key.t`. There is a key at every
+    vertex and at least every 0.5 s. Segment boundaries repeat the boundary key, with the same x.
+  - `groundAt` returns the highest slab top `≤ yMax`. If no slab covers the point it returns the pit at lip level, or
+    else the implicit street datum (y = 0, 'asphalt'). M0 emits sidewalk slabs (+0.15) but no road slab.
+- Why: bots, the debug overlay and coins read keys this way, and GP's fixture worlds need the same ground rules.
+- Local workaround meanwhile: n/a.
+
+### Pits and trench planks must be drawn   (status: open, for M0-io / WA)
+- File / symbol: world/render (grey-box chunk builder) › Obstacle.pits
+- Change: none to core. S_TRENCH emits `kind: 'trench'` with three `pits` (road lip 0, sidewalk lips 0.15). It also
+  emits one 1.2 m plank slab at y = 0 (surface 'wood') and `params { plankX, plankW, depth }`, and cuts the sidewalk
+  slabs over the trench. S_BARRIER may carry `params { slotX, slotW }` with two solids.
+- Why: the M0-core view draws nothing for pits, so a trench on the road is invisible (it is still fair in the sim and
+  the validator, but a crash there would not feel deserved). Please draw the pit (dark, with chevrons) and the plank.
+- Local workaround meanwhile: none in my folders. The trench is announced by `hazardWarn` 1.6 s ahead.
+
+### A1/A2 stand-in, GenStats timing, Lesson mode   (status: open, for WG)
+- File / symbol: world/gen/schedule.ts, gen.config.ts › GEN.gate; core/world.ts › GenStats.msPerSegment
+- Change: none.
+  - Instead of A1 column fillers, M0 forces an S_GATE every `GEN.gate.period` seconds of non-T0 time (5.5 / 5.5 / 4.5 / 4 s).
+    Its opening is ≥ 3 m from the previous safe x and ≥ 2.4 m from every opening of the previous gate, so no straight
+    lane passes two gates in a row. WG replaces this with A1 fillers.
+  - `msPerSegment` stays 0, because world/gen may not read clocks. The loop or a bench measures it.
+  - `mode: 'lesson'` plays the Roll-out like a normal run (the Lesson Line is WG's).
+- Why: hand-off for W1b.
+- Local workaround meanwhile: n/a.
+
 ## M0-io (input/, platform/, ui/ debug HUD, world/render/ grey-box, gfx/ additions, debug/ api, shots, e2e)
 
 ## GP: Gameplay (W1a)
