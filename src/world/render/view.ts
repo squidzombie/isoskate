@@ -311,7 +311,28 @@ class WorldViewImpl implements WorldView {
     return { chunks: [...this.chunks.keys()].sort((a, b) => a - b), cached: [...this.cache.keys()].sort((a, b) => a - b), geosCreated, geosIdle,
       verts, chunkTris: tris, maxChunkTris, coinSlotsUsed: this.coins.used, decalsUsed: this.decals.used, lanternsUsed: this.lanterns.used,
       originS: this.originS, edgeHalfW: this.opts.edgeHalfW, mainCalls: this.mainCalls, shadowCalls: this.shadowCalls,
-      chunksBuilt: this.built, cacheHits: this.cacheHits, buildMsP95: this.buildP95, quality: this.ctx.quality, autoQuality: this.autoOn };
+      chunksBuilt: this.built, cacheHits: this.cacheHits, buildMsP95: this.buildP95, quality: this.ctx.quality, autoQuality: this.autoOn,
+      bench: (n?: number) => this.benchBuild(n) };
+  }
+
+  /** Debug / wa.spec: rebuilds the live chunk under `index` (default: the nearest ahead) n times into scratch buffers
+   *  and returns the build-time distribution (ms). The live chunk is untouched. */
+  benchBuild(n = 40, index?: number): { p50: number; p95: number; max: number; tris: number } {
+    const idx = index ?? Math.max(...this.chunks.keys());
+    const ch = this.chunks.get(idx)?.chunk;
+    if (!ch) return { p50: 0, p95: 0, max: 0, tris: 0 };
+    const w = this.writers, t: number[] = [];
+    let tris = 0;
+    for (let k = 0; k < n; k++) {
+      for (const tg of TARGETS) w[tg].begin(this.pools[tg].acquire());
+      const t0 = nowMs();
+      buildChunk(ch, w, this.areaSrc, this.opts, QUALITY[this.ctx.quality].glowCards);
+      t.push(nowMs() - t0);
+      tris = 0;
+      for (const tg of TARGETS) { tris += w[tg].tris; this.pools[tg].release(w[tg].end()); }
+    }
+    t.sort((a, b) => a - b);
+    return { p50: t[Math.floor(n / 2)]!, p95: t[Math.min(n - 1, Math.floor(n * 0.95))]!, max: t[n - 1]!, tris };
   }
 
   // ── internals ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -642,5 +663,5 @@ function emptyChunk(index: number): Chunk {
     safe: [], segments: [] };
 }
 
-export type WorldViewDebug = WorldView & { debugInfo(): ReturnType<WorldViewImpl['debugInfo']> };
+export type WorldViewDebug = WorldView & { debugInfo(): ReturnType<WorldViewImpl['debugInfo']>; benchBuild: WorldViewImpl['benchBuild'] };
 export function createWorldViewImpl(ctx: GfxContext): WorldViewDebug { return new WorldViewImpl(ctx); }

@@ -62,6 +62,9 @@ export function streetBase(c: KitCtx, ch: Chunk, roadAt: (s: number) => number =
 }
 /** Calls f for the rectangles of [x0,x1]×[s0,s1] not covered by the pits. */
 function rectsMinusPits(x0: number, x1: number, s0: number, s1: number, pits: readonly Pit[], f: (x0: number, x1: number, s0: number, s1: number) => void): void {
+  let any = false;
+  for (const p of pits) if (p.s1 > s0 && p.s0 < s1) { any = true; break; }
+  if (!any) { f(x0, x1, s0, s1); return; }        // the common case: no pit in this strip
   const cuts = new Set<number>([s0, s1]);
   for (const p of pits) { if (p.s0 > s0 && p.s0 < s1) cuts.add(p.s0); if (p.s1 > s0 && p.s1 < s1) cuts.add(p.s1); }
   const ss = [...cuts].sort((u, v) => u - v);

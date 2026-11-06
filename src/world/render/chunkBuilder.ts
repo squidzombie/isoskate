@@ -30,9 +30,12 @@ export interface ChunkBuildOut { decals: DecalRec[]; lanterns: LanternRec[]; amb
 
 /** Builds chunk `ch` into the targets. `first`: the first chunk built for this run (draws compact bodies anchored
  *  before it). `glowCards`: the per-chunk glow-card cap (TECH §8.4, per quality tier). */
+const KITS_BY_TARGETS = new WeakMap<KitTargets, Kit>();
 export function buildChunk(ch: Chunk, w: KitTargets, areas: AreaSource, opts: Readonly<BuildOptions> = DEFAULT_BUILD,
   glowCards = 40, first = false): ChunkBuildOut {
-  const K = new Kit(w).chunk(ch.s0);
+  let K = KITS_BY_TARGETS.get(w);
+  if (!K) { K = new Kit(w); KITS_BY_TARGETS.set(w, K); }
+  K.chunk(ch.s0).frame(0, 0, 0).reset();
   const out: ChunkBuildOut = { decals: [], lanterns: [], ambient: [], far: ch.s0 + ch.len };
   const c: KitCtx = {
     K, area: ch.area, hz: HAZARD[ch.area], s0: ch.s0, s1: ch.s0 + ch.len, opts, glowLeft: glowCards,
