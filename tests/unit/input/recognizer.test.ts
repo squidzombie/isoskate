@@ -23,6 +23,22 @@ describe('tap / hold / drag boundaries', () => {
     expect(kinds(run(makeRec(), new Trace(1, 0, CX, CY).rest(120).up().samples))).toEqual(['press+', 'tap', 'press-']);
   });
 
+  it('long tap (W1a): a still release 350–600 ms after down marks its holdEnd `release`; a drag, a cancel or 601 ms do not', () => {
+    const holdEnd = (ms: number, end: 'up' | 'cancel' = 'up') => {
+      const tr = new Trace(1, 0, CX, CY).rest(ms);
+      const g = run(makeRec(), (end === 'up' ? tr.up() : tr.cancel()).samples);
+      return g.find((x) => x.k === 'holdEnd') as { release?: true } | undefined;
+    };
+    expect(holdEnd(351)?.release).toBe(true);
+    expect(holdEnd(600)?.release).toBe(true);
+    expect(holdEnd(601)?.release).toBeUndefined();
+    expect(holdEnd(300)?.release).toBeUndefined();                        // ≤ 350 ms is a real tap
+    expect(holdEnd(450, 'cancel')?.release).toBeUndefined();
+    expect(kinds(run(makeRec(), new Trace(1, 0, CX, CY).rest(450).up().samples))).toEqual(['press+', 'holdStart', 'holdEnd', 'press-']);
+    const drag = run(makeRec(), new Trace(1, 0, CX, CY).rest(250).move(12, 0, 40).rest(100).up().samples);
+    expect(drag.some((x) => x.k === 'holdEnd' && (x as { release?: true }).release)).toBe(false);
+  });
+
   it('SLOP: 9 px of travel stays still (tap), 11 px is a DRAG (steering from touch-down)', () => {
     const still = run(makeRec(), new Trace(1, 0, CX, CY).move(9, 0, 60).up().samples);
     expect(kinds(still)).toEqual(['press+', 'tap', 'press-']);

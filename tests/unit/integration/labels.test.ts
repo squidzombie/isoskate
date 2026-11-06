@@ -154,4 +154,43 @@ describe('recognizer labels → sim (DESIGN §4.3 steering-stroke rule)', () => 
     hard.until(1300);
     expect(flips(hard.events)).toEqual(['kickflip']);
   });
+
+  // ── W1a (GP) traces: the open G0 items, through the real recognizer and frames ──
+  it('a 450 ms still press outside a combo pops an ollie on release (it felt like nothing at G0); 700 ms does nothing', () => {
+    const mid = rig();
+    mid.play(new Trace(3, 0, 200, 500).rest(450).up());
+    mid.until(700);
+    expect(ollies(mid.events)).toHaveLength(1);
+    expect(mid.events.some((e) => e.t === 'manualStart')).toBe(false);
+    const long = rig();
+    long.play(new Trace(3, 0, 200, 500).rest(700).up());
+    long.until(1000);
+    expect(ollies(long.events)).toHaveLength(0);
+  });
+
+  it('a thumb that comes to rest right after a landing manuals only 0.30 s later, and a tap inside that 0.30 s just ollies', () => {
+    const r = rig();
+    r.play(tapAt(0));
+    r.until(700);                                                    // landed at ≈ 0.6 s
+    const landT = r.events.find((e) => e.t === 'land')!.tick;
+    r.play(new Trace(4, landT + 30 - 0, 220, 520).rest(500).up());   // ms relative to base: rests 30 ms after landing
+    r.until(landT + 600);
+    const m = r.events.find((e) => e.t === 'manualStart');
+    expect(m).toBeDefined();
+    expect(m!.tick - (landT + 30)).toBeGreaterThanOrEqual(290);       // ≥ 0.30 s of stillness
+  });
+
+  it('a steering thumb\'s fast ← in the air is no flip and its steering stays; a parked thumb\'s ← kickflips and gives the flick back', () => {
+    const steer = rig();
+    steer.play(new Trace(1, 0, 195, 700).move(-30, 0, 200).flick(1.0, 180, 40).rest(100).up(), tapAt(140));
+    steer.until(1200);
+    expect(flips(steer.events)).toEqual([]);
+    expect(steer.sim.cur.targetX).toBeCloseTo(-70 * 9 / (0.55 * 390), 1);   // all 70 px steered
+    const parked = rig();
+    parked.play(new Trace(1, 0, 195, 700).move(-30, 0, 200).rest(150).flick(1.0, 180, 40).rest(100).up(), tapAt(140));
+    parked.until(1200);
+    expect(flips(parked.events)).toEqual(['kickflip']);
+    expect(parked.sim.cur.targetX).toBeGreaterThan(steer.sim.cur.targetX + 1.0);   // the flick's dx was given back
+  });
 });
+
