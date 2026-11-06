@@ -7,9 +7,9 @@
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; }
 #hud .hud-left { display: flex; flex-direction: column; min-width: 0; }
 #hud .hud-score { font-weight: 900; font-size: calc(26px * var(--k, 1)); line-height: 1; white-space: nowrap; }
-#hud .hud-dist { font-weight: 800; font-size: calc(12px * var(--k, 1)); opacity: 0.9; white-space: nowrap; margin-top: 2px; }
+#hud .hud-dist { font-weight: 800; font-size: calc(12px * var(--k, 1)); line-height: 1.1; opacity: 0.9; white-space: nowrap; margin-top: 2px; }
 #hud .hud-mid { display: flex; flex-direction: column; align-items: center; min-width: 0; overflow: hidden; }
-#hud .hud-combo { font-weight: 900; font-size: calc(15px * var(--k, 1)); line-height: 1.25; padding: 1px 10px; border-radius: 999px;
+#hud .hud-combo { font-weight: 900; font-size: calc(15px * var(--k, 1)); line-height: 1.2; padding: 1px 10px; border-radius: 999px;
   background: rgba(43, 33, 64, 0.6); color: #fff1d6; visibility: hidden; white-space: nowrap; max-width: 100%;
   overflow: hidden; text-overflow: ellipsis; animation-duration: 120ms; animation-timing-function: ease-out; }
 #hud .hud-combo.on { visibility: visible; }
