@@ -71,6 +71,7 @@ export class Generator implements WorldGen {
   readonly cur: GenCursor;
   private rerolls = 0;
   private fallbacks = 0;
+  private replans = 0;
   private readonly rejections: Record<string, number> = {};
   private coinsTotal = 0;
   private coinsTrick = 0;
@@ -189,9 +190,12 @@ export class Generator implements WorldGen {
     for (let attempt = 0; attempt <= GEN.rerolls; attempt++) {
       const r = this.tryBuild(plan, index, area, inGw ? gw.id : null, rng, coinRng, maxT1, attempt, fixed, false);
       if (typeof r !== 'string') { built = r; break; }
-      this.rejections[r] = (this.rejections[r] ?? 0) + 1;
+      // Scheduling re-plans (no room for the gate row, does not fit) are counted apart from validator rejections.
+      const sched = r === 'gate' || r === 'fit' || r === 'tpl';
+      this.rejections[sched ? `replan:${r}` : r] = (this.rejections[sched ? `replan:${r}` : r] ?? 0) + 1;
       GEN_DEBUG.onReject?.({ index, t0, tpl: plan.tpl.id, tier: plan.tier, attempt, why: r });
-      rerolls++;
+      if (!sched) rerolls++;
+      else this.replans++;
       if (fixed) continue;
       // Re-plan on scheduling failures; otherwise re-roll the same plan (jitter, mirror, shift).
       if (r === 'fit' && plan.reason !== 'filler') plan = planSegment(c, { area, phase, t: t0, left, trench: this.trench, gateRoom: this.gateLatestStart(t0) - t0, force: 'filler' }, rng);
@@ -372,7 +376,12 @@ export class Generator implements WorldGen {
         break;
       }
       if (!placed) GEN_DEBUG.onReject?.({ index, t0, tpl: tpl.id, tier: plan.tier, attempt, why: `  detail overlay none in [${tLo.toFixed(2)}, ${tHi.toFixed(2)}]` });
-      if (!placed && t1 > this.gateLatestStart(t0) + GEN.gate.lead + 0.3) return fail('gate');
+      if (!placed) {
+        // Without a row here, the next one comes in the next segment (or after the gateway): too late → a gate instead.
+        const gw = gatewayWindow(t1 - 1e-6, this.startArea);
+        const nextRow = (gw.start - t1 < GEN.gate.fit && t1 < gw.end) ? gw.end + GEN.gate.lead : t1 + GEN.gate.lead;
+        if (nextRow > c.gateDueT + 0.3) return fail('gate');
+      }
     }
     let wander = c.wander;
     let walls = 0;

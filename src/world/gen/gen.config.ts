@@ -48,10 +48,10 @@ export const GEN = {
   a3: { opening: [12, 16], other: [8, 12] } as Record<'opening' | 'other', readonly [number, number]>,
   /** S_GATE (DESIGN §10.4): openings 2.5 / 2.2 / 2.0 m by tier, ≥ 3 m (≤ 3.6 m) from the last wander's safe x. */
   gate: { width: { 0: 2.5, 1: 2.5, 2: 2.5, 3: 2.2, 4: 2.0 } as Record<Tier, number>, maxC: 3.3, shift: [3.2, 4.4] as readonly [number, number],
-    second: { 2: 0.6, 3: 0.3 } as Partial<Record<Tier, number>>, secondOff: [3.6, 6.6] as readonly [number, number], lead: 1.7,
+    second: { 2: 0.6, 3: 0.3 } as Partial<Record<Tier, number>>, secondOff: [3.6, 6.6] as readonly [number, number], lead: 2.3,
     /** Consecutive rows ≤ gap seconds apart (run time, T0 included): a straight lane passes at most one of two rows
      *  (openings ≥ `apart` from the last row's), so every lane dies within two rows (DESIGN §10.7 guarantees). */
-    gap: { opening: 8.5, warm: 6.5, build: 5.5, plateau: 5 } as Record<PhaseId, number>, apart: 2.4,
+    gap: { opening: 8.0, warm: 6.5, build: 5.5, plateau: 5 } as Record<PhaseId, number>, apart: 2.4,
     /** Planning: the shortest gate segment. */
     fit: 2.6 },
   /** S_TRENCH: gap per tier (s·v, DESIGN §10.3 0.25 / 0.30 / 0.35) and the plank offset from the safe x per tier. */

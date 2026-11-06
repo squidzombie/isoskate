@@ -10,11 +10,11 @@ import type { Obstacle } from '../../../core/world';
 import type { StreetLayout } from '../props/street';
 import { SafeLine, type RequiredAction } from '../safe';
 import { HI_MASK, NC, RASTER, SLICE, cellOf, cellX, nG } from './grid';
-import { checkPath, ollieWindow } from './path';
+import { PATH_FAIL, checkPath, ollieWindow } from './path';
 import { TRICK_FAIL, checkBands, checkOcclusion, checkSpacing, checkTrickLines } from './rules';
 import {
   DEAD_END_SLICES, EXIT_FAIL, F, B, actionsOf, backward, classOfCell, decisionTime, exitSetViolations, fillViable, forward,
-  GUIDES, dumpGround, greedyCheck, minActionPath, planesAt, precomputePlanes, rMinAt, worstDeadEnd, type PlaneBits,
+  GUIDES, QUIET, dumpGround, greedyCheck, minActionPath, planesAt, precomputePlanes, rMinAt, worstDeadEnd, type PlaneBits,
 } from './sweep';
 
 /** What the cursor carries between segments for the validator. */
@@ -94,9 +94,11 @@ export function validate(st: ValState, inp: ValInput): ValResult {
     }
   }
   GUIDES.length = 0;
+  QUIET.length = 0;
+  QUIET.push({ i0: iS - 1, i1: Math.ceil((inp.t0 + inp.headSec) / SLICE) - j0 }, { i0: Math.floor((inp.t1 - inp.tailSec) / SLICE) - j0, i1: iT });
   for (const g of inp.guides ?? []) GUIDES.push({ i0: Math.round(g.t0 / SLICE) - j0, i1: Math.round(g.t1 / SLICE) - j0, c0: cellOf(g.x0), c1: cellOf(g.x1) });
   const dp = minActionPath(r, iP, cP, st.lastDir);
-  GUIDES.length = 0;
+  GUIDES.length = 0; QUIET.length = 0;
   if (!dp) return { ok: false, why: 'dp' };
   const steps = [...pre, ...dp.steps];
   const tOf = (i: number) => r.t[i]!;
@@ -138,7 +140,7 @@ export function validate(st: ValState, inp: ValInput): ValResult {
   // (i) the greedy player.
   if (inp.greedy && !inp.relax) {
     const g = greedyCheck(r, iP, cellX(cP), iT);
-    if (g >= 0) return { ok: false, why: 'i:greedy' };
+    if (g >= 0) return { ok: false, why: 'i:greedy', detail: `fail t=${r.t[g]!.toFixed(2)} start x=${cellX(cP)} t0=${inp.t0.toFixed(2)}` };
   }
   // (e), (d), (g).
   const band = checkBands(inp.seg, inp.groundHi);
@@ -166,7 +168,7 @@ export function validate(st: ValState, inp: ValInput): ValResult {
   for (const t of ollieKeys.values()) line.ollies.push(t);
   line.ollies.sort((p, q) => p - q);
   const pr = checkPath(line, inp.obstacles, inp.t0, inp.t1, 0);
-  if (pr) return { ok: false, why: pr };
+  if (pr) return { ok: false, why: pr, detail: PATH_FAIL.text + ' ollies=' + line.ollies.map((o) => o.toFixed(2)).join(',') + ' pts=' + line.pts.map((p) => `${p.t.toFixed(2)}:${p.x}`).join(' ') };
   // Required actions for the cursor (spacing across the boundary).
   const actions: RequiredAction[] = acts.map((a) => ({ t: a.t, kind: a.kind, dx: a.dx, x: cellX(a.c) }));
   // Next state.

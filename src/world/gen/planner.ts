@@ -6,7 +6,7 @@ import type { Obstacle } from '../../core/world';
 import { LAYOUTS } from './props/street';
 import { RASTER, SLICE, cellOf, cellX } from './validator/grid';
 import { ollieWindow } from './validator/path';
-import { GUIDES, backward, fillViable, forward, minActionPath, precomputePlanes } from './validator/sweep';
+import { GUIDES, QUIET, backward, fillViable, forward, minActionPath, precomputePlanes } from './validator/sweep';
 
 export interface PlanInput {
   /** Plan start (run time, on the ground) and the board x there. */
@@ -36,7 +36,7 @@ export function plan(inp: PlanInput): PlanOutput | null {
   forward(r, [{ h: null, k: 0, lo, hi }]);
   backward(r);
   fillViable(r);
-  GUIDES.length = 0;
+  GUIDES.length = 0; QUIET.length = 0;
   const dp = minActionPath(r, 0, c0, inp.dir ?? 0);
   if (!dp) return null;
   const pts: { t: number; x: number }[] = [{ t: inp.t, x: inp.x }];

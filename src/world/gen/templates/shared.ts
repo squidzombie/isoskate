@@ -182,7 +182,7 @@ export const S_GATE: Template = {
     const centres = gateOpenings(c.rng, c.safeX, c.lastGateX, c.tier);
     if (!centres) return null;
     const pick = centres[0]!;
-    const tRow = Math.max(actFrom(c) + T_SHIFT(Math.abs(pick - c.safeX)) + 0.3, c.t0 + GEN.gate.lead) + c.rng.range(0, 0.2);
+    const tRow = Math.max(actFrom(c) + T_SHIFT(Math.abs(pick - c.safeX)) + 0.3, c.t0 + 1.7) + c.rng.range(0, 0.15);
     const sRow = sOf(tRow);
     for (const ob of gateRow(sRow, centres, w, c.props, c.rng)) put(c, ob);
     const tr = tAt(sRow);

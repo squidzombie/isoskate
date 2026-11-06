@@ -279,6 +279,9 @@ const PEN = new Int32Array(MAX_SLICES * NC);
 export const DP_COST = { action: 1000, perCell: 25, edge: 6, late: 30, lateSlices: 6, guide: 5 } as const;
 /** Line guides (template hints such as a gate opening's centre): local slices [i0, i1] prefer cells [c0, c1]. */
 export const GUIDES: { i0: number; i1: number; c0: number; c1: number }[] = [];
+/** Local slice ranges where starting an action costs extra (a template's head and tail windows, DESIGN §10.5). */
+export const QUIET: { i0: number; i1: number }[] = [];
+const quiet = (i: number) => { for (const q of QUIET) if (i >= q.i0 && i <= q.i1) return 600; return 0; };
 
 export interface PathStep { i: number; c: number; air: boolean; h: number; k: number }
 export interface DpResult {
@@ -345,6 +348,7 @@ export function minActionPath(r: Raster, iS: number, cS: number, d0: -1 | 0 | 1)
   for (let i = last - 1; i >= iS; i--) {
     const j = r.j0 + i, ng = nG(j);
     const sl = r.slope[i * 2]!, sh = r.slope[i * 2 + 1]!;
+    const qi = quiet(i);
     for (let c = 0; c < NC; c++) {
       if (!vgOK(i, c)) continue;
       const pen = PEN[i * NC + c]!;
@@ -361,14 +365,14 @@ export function minActionPath(r: Raster, iS: number, cS: number, d0: -1 | 0 | 1)
           for (const dir of [-1, 1] as const) {
             const c2 = c + dir;
             if (c2 < 0 || c2 >= NC || !vgOK(i + 1, c2)) continue;
-            const v = DP_COST.perCell + (dir !== d ? DP_COST.action : 0) + COST[((i + 1) * NC + c2) * 3 + dir + 1]!;
+            const v = DP_COST.perCell + (dir !== d ? DP_COST.action + qi : 0) + COST[((i + 1) * NC + c2) * 3 + dir + 1]!;
             if (v < best) best = v;
           }
         }
         if (!onSlope && HOLD[i * NC + c]! < 26) {
           if (macro === -2) macro = ollieMacro(r, i, c);
           if (macro >= 0) {
-            const v = DP_COST.action + COST[(macro * NC + c) * 3 + 1]!;
+            const v = DP_COST.action + qi + COST[(macro * NC + c) * 3 + 1]!;
             if (v < best) best = v;
           }
         }
@@ -384,6 +388,7 @@ export function minActionPath(r: Raster, iS: number, cS: number, d0: -1 | 0 | 1)
   while (i < last) {
     const j = r.j0 + i, ng = nG(j);
     const here = COST[(i * NC + c) * 3 + d + 1]! - PEN[i * NC + c]!;
+    const qi = quiet(i);
     const onSlope = bitTest(r.slope[i * 2]!, r.slope[i * 2 + 1]!, c);
     let took = false;
     if (vgOK(i + 1, c)) {
@@ -395,14 +400,14 @@ export function minActionPath(r: Raster, iS: number, cS: number, d0: -1 | 0 | 1)
       for (const dir of order) {
         const c2 = c + dir;
         if (c2 < 0 || c2 >= NC || !vgOK(i + 1, c2)) continue;
-        if (DP_COST.perCell + (dir !== d ? DP_COST.action : 0) + COST[((i + 1) * NC + c2) * 3 + dir + 1]! === here) {
+        if (DP_COST.perCell + (dir !== d ? DP_COST.action + qi : 0) + COST[((i + 1) * NC + c2) * 3 + dir + 1]! === here) {
           i++; c = c2; d = dir; steps.push({ i, c, air: false, h: -1, k: 0 }); took = true; break;
         }
       }
     }
     if (!took && !onSlope) {
       const m = ollieMacro(r, i, c);
-      if (m >= 0 && DP_COST.action + COST[(m * NC + c) * 3 + 1]! === here) {
+      if (m >= 0 && DP_COST.action + qi + COST[(m * NC + c) * 3 + 1]! === here) {
         ollies.push(i);
         const h = classOfCell(r, i, c);
         for (let k = i + 1; k < m; k++) steps.push({ i: k, c, air: true, h, k: k - i });
@@ -467,10 +472,23 @@ const MY = VALIDATOR.myopic;
  *  next 1.5 s, as seen 0.35 s ago, is clear of tall (non-ollie-able) solids; it ollies ollie-able hazards in its cell
  *  with the arc centred on them; 75 % lateral speed (35 % in the air). Returns the first local slice where its state
  *  is outside B, or −1. */
+const GHARD_L = new Int32Array(MAX_SLICES), GHARD_H = new Int32Array(MAX_SLICES);
 export function greedyCheck(r: Raster, iS: number, x0: number, iEnd: number): number {
   let x = x0, target = x0, air = 0, h = -1;
   const vG = MY.latFrac * V_LAT_MAX * SLICE, vA = 0.35 * V_LAT_MAX * SLICE;
   const react = Math.round(MY.reaction / SLICE), look = Math.round(MY.lookSec / SLICE);
+  // What the myopic player steers around: tall solids, and low ones (or pits) too long to ollie (> 0.4 s in a cell).
+  const LONG = 12;
+  for (let i = 0; i < r.n; i++) { GHARD_L[i] = r.hard[i * 2]!; GHARD_H[i] = r.hard[i * 2 + 1]!; }
+  for (let c = 0; c < NC; c++) {
+    let run = 0;
+    for (let i = 0; i <= r.n; i++) {
+      const soft = i < r.n && bitTest(r.soft[i * 2]!, r.soft[i * 2 + 1]!, c);
+      if (soft) { run++; continue; }
+      if (run > LONG) for (let k = i - run; k < i; k++) { if (c < 32) GHARD_L[k] = GHARD_L[k]! | (1 << c); else GHARD_H[k] = GHARD_H[k]! | (1 << (c - 32)); }
+      run = 0;
+    }
+  }
   for (let i = iS; i <= iEnd; i++) {
     const c = cellOf(x);
     if (air > 0) {
@@ -487,7 +505,7 @@ export function greedyCheck(r: Raster, iS: number, x0: number, iEnd: number): nu
       // Visible horizon: [i, (i − react) + look].
       const hz = Math.min(r.n - 1, i - react + look);
       let bl = 0, bh = 0;
-      for (let k = i; k <= hz; k++) { bl |= r.hard[k * 2]!; bh |= r.hard[k * 2 + 1]!; }
+      for (let k = i; k <= hz; k++) { bl |= GHARD_L[k]!; bh |= GHARD_H[k]!; }
       bl |= 1; bh |= 1 << 4;
       let best = -1, bd = Infinity;
       for (let cc = 0; cc < NC; cc++) {
@@ -497,7 +515,7 @@ export function greedyCheck(r: Raster, iS: number, x0: number, iEnd: number): nu
       }
       if (best >= 0) target = cellX(best);
     }
-    // Ollie: an ollie-able hazard ahead in this cell, centred under the arc's apex (9 slices after take-off).
+    // Ollie: a short ollie-able block ahead in this cell, centred under the arc's apex (9 slices after take-off).
     if (air === 0) {
       let a0 = -1, a1 = -1;
       for (let k = i + 1; k < Math.min(r.n, i + 24); k++) {
@@ -505,7 +523,7 @@ export function greedyCheck(r: Raster, iS: number, x0: number, iEnd: number): nu
         if (soft && a0 < 0) a0 = k;
         if (a0 >= 0) { if (soft) a1 = k; else break; }
       }
-      if (a0 >= 0 && i >= Math.round((a0 + a1) / 2) - 9) {
+      if (a0 >= 0 && a1 - a0 <= LONG && i >= Math.round((a0 + a1) / 2) - 9) {
         const hc = classOfCell(r, i, c);
         if (hc >= 0) { h = hc; air = 1; continue; }
       }

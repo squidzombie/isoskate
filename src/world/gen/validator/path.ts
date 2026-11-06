@@ -12,6 +12,7 @@ import type { GroundSlab, Obstacle, Pit } from '../../../core/world';
 import { slabYAt } from '../query';
 import type { SafeLine } from '../safe';
 
+export const PATH_FAIL = { text: '' };
 /** How far a follower may lag / lead the polyline (s). */
 export const TUBE_LAG = 0.2, TUBE_LEAD = 0.1;
 /** Extra margin on the board centre when crossing a pit on a plank (m). */
@@ -113,7 +114,7 @@ export function checkPath(line: SafeLine, obs: readonly Obstacle[], tFrom: numbe
     }
     const [lo, hi] = tube(line, t - TUBE_LAG, t + TUBE_LEAD);
     const r = contact(f, s, lo, hi, y, air, vy, VALIDATOR.safeMargin);
-    if (r) return r;
+    if (r) { PATH_FAIL.text = `t=${t.toFixed(3)} x=${xc.toFixed(2)} tube=[${lo.toFixed(2)},${hi.toFixed(2)}] y=${y.toFixed(2)} air=${air}`; return r; }
   }
   return null;
 }

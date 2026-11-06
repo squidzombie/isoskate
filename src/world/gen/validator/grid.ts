@@ -54,7 +54,11 @@ export function popY(h0: number, k: number): { y: number; lo: number; hi: number
 }
 
 const ENT_CAP = 24, LV_CAP = 8;
-const DIL_X = VALIDATOR.dilateX + VALIDATOR.safeMargin, DIL_S = VALIDATOR.dilateS;
+/** Lateral margin of the board centre on a plank across a pit (path.ts PIT_CENTRE_MARGIN + 0.05). */
+const PIT_MARGIN = 0.2;
+/** Grid dilation: half hitbox + SAFE_MARGIN, plus 5 cm so a committed line keeps slack for the exact tube check. */
+export const GRID_EXTRA = 0.05;
+const DIL_X = VALIDATOR.dilateX + VALIDATOR.safeMargin + GRID_EXTRA, DIL_S = VALIDATOR.dilateS;
 const insetOf = (extent: number): number => Math.min(FACE_INSET, Math.max(0, extent) / 4);
 
 /** An edge for capture-zone tests (non-pickOnly; L0 and L1). */
@@ -320,7 +324,8 @@ export class Raster {
   }
   private coveredAt(_obstacles: readonly Obstacle[], sa: number, sb: number, x: number, p0: number, p1: number): boolean {
     for (const sl of this.datumSlabs) {
-      if (x < sl.x0 + 0.05 || x > sl.x1 - 0.05) continue;
+      // The board centre must stay PIT_MARGIN inside a plank (the exact check's centre margin plus tracking).
+      if (x < sl.x0 + PIT_MARGIN || x > sl.x1 - PIT_MARGIN) continue;
       if (sl.s0 <= Math.max(sa, p0) + 1e-9 && sl.s1 >= Math.min(sb, p1) - 1e-9) return true;
     }
     return false;
