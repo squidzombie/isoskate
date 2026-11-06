@@ -138,9 +138,10 @@ export interface BuildOptions {
 }
 export const DEFAULT_BUILD: Readonly<BuildOptions> = { edgeHalfW: 0.035, inkPad: 0.02 };
 
-/** Builds one chunk: `main` gets everything; `near` gets the bulky tall decor on the camera side (+x: backdrops and
- *  tree crowns), which the view draws shadow-only when ψ > 0, where it would cover the corridor on screen (DESIGN §8:
- *  no opaque structure over the corridor). Thin lamps stay in `main` on both sides. */
+/** Builds one chunk: `main` gets everything; `near` gets the tall decor on the camera side (+x: backdrops, lamps,
+ *  trees), which the view draws shadow-only when ψ > 0 (landscape), where it stands over the corridor on screen
+ *  (DESIGN §8: no opaque structure over the corridor). Even a lamp does: at ψ = 30° a +x lamp's head lands on the
+ *  obstacles 4–8 m ahead (the contrast gate measured a bench edge behind one at 1.76:1). Its shadow still shows. */
 export function buildChunk(ch: Chunk, main: GeoWriter, near: GeoWriter, opts: Readonly<BuildOptions> = DEFAULT_BUILD): void {
   const s0 = ch.s0, s1 = ch.s0 + ch.len;
   const z = (s: number) => -(s - s0);
@@ -223,7 +224,7 @@ function grindEdge(e: GrindEdge, s0: number, s1: number, z: (s: number) => numbe
 const num = (d: Decor, k: string, def: number) => d.params?.[k] ?? def;
 
 /** Decor as tinted boxes by zone. Backdrop kinds extend away from the corridor from their street face at x.
- *  `w` takes the bulky tall pieces (backdrops, trees), `main` the thin lamps, low furniture and overhead spans. */
+ *  `w` takes the tall pieces (backdrops, lamps, trees), `main` the low furniture and overhead spans. */
 function decor(d: Decor, z: (s: number) => number, w: GeoWriter, main: GeoWriter): void {
   const kind = d.kind;
   const zone = isDecorKind(kind) ? DECOR_KINDS[kind].zone : kind === 'building' ? 'backdrop' : null;
@@ -247,8 +248,8 @@ function decor(d: Decor, z: (s: number) => number, w: GeoWriter, main: GeoWriter
   // Side band: lamps, trees and street furniture.
   if (kind === 'street_lamp') {
     const h = num(d, 'h', 5) * sc;
-    main.box(d.x - 0.06, d.y, z(d.s) - 0.06, d.x + 0.06, d.y + h, z(d.s) + 0.06, COLORS.pole);
-    main.box(d.x - 0.18, d.y + h - 0.2, z(d.s) - 0.18, d.x + 0.18, d.y + h + 0.05, z(d.s) + 0.18, COLORS.lampHead);
+    w.box(d.x - 0.06, d.y, z(d.s) - 0.06, d.x + 0.06, d.y + h, z(d.s) + 0.06, COLORS.pole);
+    w.box(d.x - 0.18, d.y + h - 0.2, z(d.s) - 0.18, d.x + 0.18, d.y + h + 0.05, z(d.s) + 0.18, COLORS.lampHead);
   } else if (kind === 'tree' || kind === 'cherry_tree') {
     const tr = num(d, 'trunkH', 2.6) * sc, cr = num(d, 'crown', 1.6) * sc;
     w.box(d.x - 0.1, d.y, z(d.s) - 0.1, d.x + 0.1, d.y + tr, z(d.s) + 0.1, COLORS.pole);

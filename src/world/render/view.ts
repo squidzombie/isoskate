@@ -28,6 +28,7 @@ export const VIEW = {
   glowOpacity: 0.5,          // additive cyan contact glow on dark ground
   glowGroundLum: 0.06,       // ground relative luminance below which the glow replaces the dark blob (wet asphalt 0.03)
   rebuildFrac: 0.1,          // rebuild chunks when the minimum edge width changes by more than this
+  inkPadPx: 1.6,             // the ink underline shows ≥ this many CSS px beside the cream stripe (reads on light tops)
 } as const;
 
 type Role = 'main' | 'near' | 'casters';
@@ -38,7 +39,7 @@ interface LiveChunk { index: number; s0: number; group: Group; parts: Partial<Re
 export function buildOptionsFor(vp: Viewport): BuildOptions {
   const mPerPx = solveFraming(V_MAX, vp).H / Math.max(1, vp.hCss);
   const hw = Math.max(DEFAULT_BUILD.edgeHalfW, (CAMERA.minEdgePx * mPerPx) / 2);
-  return { edgeHalfW: hw, inkPad: Math.max(DEFAULT_BUILD.inkPad, 0.8 * mPerPx) };
+  return { edgeHalfW: hw, inkPad: Math.max(DEFAULT_BUILD.inkPad, VIEW.inkPadPx * mPerPx) };
 }
 
 class GreyboxWorldView implements WorldView {

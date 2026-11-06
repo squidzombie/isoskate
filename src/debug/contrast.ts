@@ -6,11 +6,13 @@
 //     contrast ratio (L1 + 0.05) / (L2 + 0.05). Gate ≥ 2.5:1.
 //   - edge: every visible grind edge. At 5 points along it, a patch across the projected edge (5 px along it): the
 //     cream stripe is the run of offsets around the brightest one that stays above halfway to the surface, the ink
-//     underline the same around the darkest; each stripe's value is the median of all its pixels (not one extreme
-//     pixel), the surface the median of the pixels beside them. The better of the two stripes counts (DESIGN: "at
-//     least one of its two stripes"). The search width comes from CAMERA.minEdgePx and EDGE_SEARCH_M, not from any
+//     underline the same around the darkest (a run that fills the search window to its end is a surface, not a
+//     stripe, and counts as no stripe); each stripe's value is the median of all its pixels (not one extreme
+//     pixel), each side's surface the median of the pixels beside it. Against each side the better of the two
+//     stripes counts (DESIGN: "at least one of its two stripes"), and an edge on a border between two surfaces
+//     (a bench top over the road) reads only as well as its weaker side. The search width comes from CAMERA.minEdgePx and EDGE_SEARCH_M, not from any
 //     renderer, so the gate measures whatever world/render draws. Gate ≥ 1.8:1.
-// NaN means nothing of that class was in view.
+// The skater and the coins in view are excluded from every measurement. NaN means nothing of that class was in view.
 import { Box3, Vector3 } from 'three';
 import type { V3 } from '../core/math';
 import { CAMERA } from '../core/tuning';
@@ -21,7 +23,7 @@ export const CONTRAST_GATE = { hazard: 2.5, edge: 1.8 } as const;
 export const RING_PX = 8;
 /** Half-width across a grind edge within which its stripes are looked for, m (at least 1.5 × minEdgePx on screen);
  *  the surface is read in the 6 px beyond it. */
-export const EDGE_SEARCH_M = 0.08;
+export const EDGE_SEARCH_M = 0.1;
 /** Patch length along the edge at each sample point, device px (odd). */
 const ALONG_PX = 5;
 
@@ -98,7 +100,18 @@ export function measureContrast(host: DebugHost): ContrastReport {
     sk = [x0 - 2, y0 - 2, x1 + 2, y1 + 2];
   }
   const inSkater = (x: number, y: number) => !!sk && x >= sk[0] && x <= sk[2] && y >= sk[1] && y <= sk[3];
-  const usable = (x: number, y: number) => x >= 0 && y >= hudBottom && x < W && y < H && !inSkater(x, y);
+  // Coins in view (pickups drawn over ledges and rails): their discs are excluded like the skater.
+  // Radius: the coin's world size (≈ 0.16 m) or the CAMERA.minCoinPx floor, plus 3 px of antialiasing.
+  const coins: [number, number, number][] = [];
+  for (const c of host.sim().world.coins(cur.p.s - 2, cur.p.s + 60)) {
+    const a = proj(c.p), b = proj({ ...c.p, x: c.p.x + 0.16 });
+    coins.push([a[0], a[1], Math.max((CAMERA.minCoinPx / 2) * sx, Math.hypot(b[0] - a[0], b[1] - a[1])) + 3 * sx]);
+  }
+  const inCoin = (x: number, y: number) => {
+    for (const c of coins) if ((x - c[0]) ** 2 + (y - c[1]) ** 2 <= c[2] * c[2]) return true;
+    return false;
+  };
+  const usable = (x: number, y: number) => x >= 0 && y >= hudBottom && x < W && y < H && !inSkater(x, y) && !inCoin(x, y);
 
   const obs = sim.world.obstacles(s - 2, s + ahead);
   interface Shape { poly: P[]; s0: number; y1: number; top: string; kind: string; id: number; bb: [number, number, number, number] }
@@ -178,27 +191,45 @@ export function measureContrast(host: DebugHost): ContrastReport {
           patch.push(row);
           col.push(row.length > halfAlong ? median(row) : NaN);
         }
-        const side = [...patch.slice(0, 4), ...patch.slice(n - 4)].flat();
-        if (side.length < 3 * ALONG_PX) continue;
-        const surf = median(side);
-        let hi = -1, lo = -1;
-        for (let i = mid - reach; i <= mid + reach; i++) {
-          if (!Number.isFinite(col[i]!)) continue;
-          if (hi < 0 || col[i]! > col[hi]!) hi = i;
-          if (lo < 0 || col[i]! < col[lo]!) lo = i;
-        }
-        if (hi < 0) continue;
-        // The stripe: the contiguous offsets around the extreme that stay past halfway to the surface.
-        const stripe = (k: number, brighter: boolean) => {
-          const half = (col[k]! + surf) / 2, keep = (v: number) => Number.isFinite(v) && (brighter ? v >= half : v <= half);
-          let a = k, b = k;
-          while (a - 1 >= mid - reach && keep(col[a - 1]!)) a--;
-          while (b + 1 <= mid + reach && keep(col[b + 1]!)) b++;
-          return median(patch.slice(a, b + 1).flat());
+        // The surface on each side (an edge on a border, e.g. a bench top over the road, has two different ones).
+        const sides = [patch.slice(0, 4).flat(), patch.slice(n - 4).flat()].filter((v) => v.length >= 2 * ALONG_PX).map(median);
+        if (!sides.length) continue;
+        let valid = 0;
+        for (let i = mid - reach; i <= mid + reach; i++) if (Number.isFinite(col[i]!)) valid++;
+        if (valid < 0.8 * (2 * reach + 1)) continue;          // the stripes are mostly hidden here (coin, skater, HUD)
+        // A stripe: the contiguous offsets around an extreme that stay past halfway to the nearest surface value (the
+        // brighter surface for the cream, the darker one for the ink), so a run never spills onto a surface. A run that
+        // reaches the end of the search window is a surface (the far side of a border), not a stripe: the next most
+        // extreme offset outside it is tried (a neighbouring edge's stripe can sit inside the window too).
+        const light = Math.max(...sides), dark = Math.min(...sides);
+        const stripe = (brighter: boolean) => {
+          const used = new Set<number>();
+          for (let tries = 0; tries < 4; tries++) {
+            let k = -1;
+            for (let i = mid - reach; i <= mid + reach; i++) {
+              if (used.has(i) || !Number.isFinite(col[i]!)) continue;
+              if (k < 0 || (brighter ? col[i]! > col[k]! : col[i]! < col[k]!)) k = i;
+            }
+            if (k < 0) return NaN;
+            const half = (col[k]! + (brighter ? light : dark)) / 2;
+            const keep = (v: number) => Number.isFinite(v) && (brighter ? v >= half : v <= half);
+            let a = k, b = k;
+            while (a - 1 >= mid - reach && keep(col[a - 1]!)) a--;
+            while (b + 1 <= mid + reach && keep(col[b + 1]!)) b++;
+            if (a > mid - reach && b < mid + reach) return median(patch.slice(a, b + 1).flat());
+            for (let i = a; i <= b; i++) used.add(i);
+          }
+          return NaN;
         };
-        const cream = stripe(hi, true), ink = stripe(lo, false);
-        const rc = ratioOf(cream, surf), ri = ratioOf(ink, surf);
-        rs.push(Math.max(rc, ri)); fgs.push(rc >= ri ? cream : ink); bgs.push(surf);
+        const cream = stripe(true), ink = stripe(false);
+        // Against each side, the better of the two stripes; the edge reads as well as its weaker side.
+        const rat = (v: number, sf: number) => (Number.isFinite(v) ? ratioOf(v, sf) : 1);
+        let r = Infinity, fg = cream, bg = sides[0]!;
+        for (const sf of sides) {
+          const rc = rat(cream, sf), ri = rat(ink, sf), best = Math.max(rc, ri);
+          if (best < r) { r = best; fg = rc >= ri ? cream : ink; bg = sf; }
+        }
+        rs.push(r); fgs.push(Number.isFinite(fg) ? fg : bg); bgs.push(bg);
         ax0 = Math.min(ax0, c[0]); ay0 = Math.min(ay0, c[1]); ax1 = Math.max(ax1, c[0]); ay1 = Math.max(ay1, c[1]);
       }
       if (rs.length < 2) continue;
