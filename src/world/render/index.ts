@@ -1,4 +1,4 @@
-// world/render/: world meshes, palette, lights and the run camera (WA; M0-io adds the grey-box chunk builder).
+// world/render/: world meshes, palette, lights and the run camera (WA; M0-io ships the grey-box chunk builder).
 // Public surface (TECH §4.13).
 import type { CameraRig, GfxContext, WorldView } from '../../core/view';
 import { createCameraRigImpl } from './camera';
@@ -13,4 +13,5 @@ export function createCameraRig(): CameraRig {
 }
 
 export { solveFraming, lookAheadFor, yawForAspect, hudTopOf, type Framing } from './camera';
-export { heightClass } from './view';
+export { heightClass, solidColor, COLORS, SURFACE_COLOR } from './chunkBuilder';
+export { buildOptionsFor, VIEW, type GreyboxView } from './view';

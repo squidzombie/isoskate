@@ -1,107 +1,253 @@
-// world/render/view.ts: M0 grey-box world view. Streams chunk meshes around the player with origin rebasing:
-// street slab and verges, sidewalks and curbs from slabs, solids as boxes coloured by height class, grind edges as
-// cream over an ink underline, coins (instanced, hidden on pickup), simple building/lamp decor, a contact shadow and
-// a sun that follows the skater.
-// TODO(WA): kits per PropKind and area, every DECOR_KINDS entry, palette blends, the 5-mesh chunk layout and pools,
-// x-ray cap, decals, glow, quality tiers, context-loss rebuild, roll-out cache (TECH §8.6–8.9).
+// world/render/view.ts: the M0 grey-box WorldView. Streams chunk meshes around the player (CHUNK_WINDOW: 1 behind,
+// 3 ahead) with origin rebasing (TECH §8.2), builds at most one chunk per frame into pooled buffers (chunkBuilder.ts,
+// pools.ts), keeps coins in one global InstancedMesh (hidden on pickup, kept ≥ 12 px on screen), draws the always-on
+// contact shadow (dark blob on light ground, additive cyan glow on dark ground) and points the sun at the skater.
+// TODO(WA): kits per PropKind and area, every DECOR_KINDS entry, palette blends, the 5-mesh chunk layout, x-ray cap,
+// decals, glow cards, quality tiers with auto-adjust, the Roll-out chunk cache (TECH §8.6–8.9).
 import {
-  CylinderGeometry, DoubleSide, Group, InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, PlaneGeometry,
-  Quaternion, Vector3, type BufferGeometry,
+  AdditiveBlending, CylinderGeometry, DoubleSide, Group, InstancedMesh, Matrix4, Mesh, MeshBasicMaterial,
+  MeshLambertMaterial, PlaneGeometry, Quaternion, Vector3,
 } from 'three';
 import type { QualityTier } from '../../core/ids';
 import { lerp } from '../../core/math';
-import { CHUNK_LEN, CHUNK_WINDOW, HEIGHT } from '../../core/tuning';
-import type { GfxContext, RenderFrame, WorldView } from '../../core/view';
-import type { Chunk, Obstacle, WorldGen } from '../../core/world';
-import { colorBox, getSun, mergeAll, originOf, setGfxQuality } from '../../gfx';
-import { yawForAspect } from './camera';
+import { CAMERA, CHUNK_LEN, CHUNK_WINDOW, V_MAX, speedAt } from '../../core/tuning';
+import type { GfxContext, RenderFrame, Viewport, WorldView } from '../../core/view';
+import type { Coin, WorldGen } from '../../core/world';
+import { getSun, originOf, setGfxQuality } from '../../gfx';
+import { solveFraming, yawForAspect } from './camera';
+import { buildChunk, COLORS, DEFAULT_BUILD, GeoWriter, type BuildOptions } from './chunkBuilder';
+import { GeoPool, type PooledGeo } from './pools';
 
-export const COLORS = {
-  asphalt: 0x6b6478, concrete: 0xd9c3ae, curbTop: 0xe8d6c2, granite: 0xb9a9a0, paint: 0xede3d3, verge: 0xcdb8a3,
-  bump: 0xcfc3b8, lowLandable: 0xa99cc0, lowCrash: 0x2b2140, chevron: 0xf2b630, knock: 0xff8a5b,
-  forbidden: 0xff00ff, tall: 0x2b2140, tallTop: 0x4a3b6b, tallAccent: 0xd9765a, edgeCream: 0xfff1d6, ink: 0x2b2140, coin: 0xffc94a,
-  lampHead: 0xffd39a,                                  // decor never uses the cream grind-edge colour (DESIGN §18.4)
-  building: [0xd9765a, 0xc9a15a, 0xf3e3c3, 0x3e8e8a, 0xb5645a, 0xe8b38f, 0x9c7bb0, 0xc4473d],
+export const VIEW = {
+  buildBudgetMs: 4,          // TECH §8.6 (warn when a build takes 4× this)
+  coinCapacity: 256,         // global coin instances
+  coinDiameter: 0.32,        // m, the coin mesh
+  shadowSize: [0.9, 1.1],    // contact shadow quad, m (x, s)
+  shadowOpacity: [0.6, 0.25] as const,   // on the ground → at 2 m height (DESIGN §8)
+  glowOpacity: 0.5,          // additive cyan contact glow on dark ground
+  rebuildFrac: 0.1,          // rebuild chunks when the minimum edge width changes by more than this
 } as const;
 
-/** Height class of a solid relative to its local ground (DESIGN §5.5). */
-export function heightClass(top: number, ground: number): 'bump' | 'low' | 'forbidden' | 'tall' {
-  const h = top - ground;
-  if (h <= HEIGHT.bumpMax) return 'bump';
-  if (h <= HEIGHT.lowMax) return 'low';
-  if (h < HEIGHT.tallMin) return 'forbidden';
-  return 'tall';
+type Role = 'main' | 'near' | 'casters';
+interface Part { mesh: Mesh; geo: PooledGeo }
+interface LiveChunk { index: number; s0: number; group: Group; parts: Partial<Record<Role, Part>>; slots: number[]; key: number }
+
+/** Edge stripe width so a grind edge stays ≥ CAMERA.minEdgePx wide at this viewport's widest run framing. */
+export function buildOptionsFor(vp: Viewport): BuildOptions {
+  const mPerPx = solveFraming(V_MAX, vp).H / Math.max(1, vp.hCss);
+  const hw = Math.max(DEFAULT_BUILD.edgeHalfW, (CAMERA.minEdgePx * mPerPx) / 2);
+  return { edgeHalfW: hw, inkPad: Math.max(DEFAULT_BUILD.inkPad, 0.8 * mPerPx) };
 }
-
-interface ChunkMesh { index: number; s0: number; group: Group; coinIds: number[]; coins: InstancedMesh | null; nearSide: Mesh | null }
-
-const BUILD_BUDGET_MS = 4;
 
 class GreyboxWorldView implements WorldView {
   private gen: WorldGen | null = null;
   private readonly root = new Group();
-  private readonly chunks = new Map<number, ChunkMesh>();
+  private readonly chunks = new Map<number, LiveChunk>();
+  private readonly pool = new GeoPool(4096);
+  private readonly meshPool: Mesh[] = [];
+  private readonly groupPool: Group[] = [];
+  private readonly writers: Record<Role, GeoWriter> = { main: new GeoWriter(), near: new GeoWriter(), casters: new GeoWriter() };
   private readonly mat = new MeshLambertMaterial({ vertexColors: true });
-  /** Shadow-only material for buildings on the camera side when ψ > 0 (they would cover the corridor). */
+  /** Shadow-only: drawn into the shadow map, invisible in the main pass (camera-side decor when ψ > 0, casters). */
   private readonly shadowOnly = new MeshLambertMaterial({ vertexColors: true, colorWrite: false, depthWrite: false });
   private nearHidden = false;
+  private opts: BuildOptions = DEFAULT_BUILD;
+  private optsKey = 0;
+  // Coins: one global instanced layer (TECH §8.6).
+  private readonly coinGeo = new CylinderGeometry(VIEW.coinDiameter / 2, VIEW.coinDiameter / 2, 0.05, 12).rotateX(Math.PI / 2 - (CAMERA.pitchDeg * Math.PI) / 180);
   private readonly coinMat = new MeshLambertMaterial({ color: COLORS.coin, emissive: 0x8a5a00 });
-  private readonly coinGeo = new CylinderGeometry(0.16, 0.16, 0.05, 8).rotateX(Math.PI / 2);
-  private readonly shadow: Mesh;
+  private readonly coins = new InstancedMesh(this.coinGeo, this.coinMat, VIEW.coinCapacity);
+  private readonly slotCoin: (Coin | null)[] = new Array<Coin | null>(VIEW.coinCapacity).fill(null);
+  private readonly freeSlots: number[] = [];
   private readonly collected = new Set<number>();
+  private coinScale = 1;
+  // Contact shadow / glow.
+  private readonly blob: Mesh;
+  private readonly glow: Mesh;
   private originS = 0;
   private built = 0;
-  private buildMs: number[] = [];
+  private readonly buildMs: number[] = [];
   private readonly m4 = new Matrix4();
+  private readonly q = new Quaternion();
+  private readonly v = new Vector3();
+  private readonly sc = new Vector3();
   private readonly zero = new Matrix4().makeScale(0, 0, 0);
 
   constructor(private readonly ctx: GfxContext) {
     this.root.name = 'world';
     ctx.scene.add(this.root);
-    const tex = ctx.canvasTexture('contactShadow', 64, 64, (c) => {
+    for (let i = VIEW.coinCapacity - 1; i >= 0; i--) { this.freeSlots.push(i); this.coins.setMatrixAt(i, this.zero); }
+    this.coins.name = 'coins';
+    this.coins.castShadow = false;
+    this.coins.frustumCulled = false;
+    this.coins.count = 0;
+    ctx.scene.add(this.coins);
+    const radial = (rgb: string) => (c: CanvasRenderingContext2D) => {
       const g = c.createRadialGradient(32, 32, 0, 32, 32, 32);
-      g.addColorStop(0, 'rgba(43,33,64,1)'); g.addColorStop(0.6, 'rgba(43,33,64,0.5)'); g.addColorStop(1, 'rgba(43,33,64,0)');
+      g.addColorStop(0, `rgba(${rgb},1)`); g.addColorStop(0.6, `rgba(${rgb},0.5)`); g.addColorStop(1, `rgba(${rgb},0)`);
       c.fillStyle = g; c.fillRect(0, 0, 64, 64);
-    });
-    this.shadow = new Mesh(new PlaneGeometry(0.9, 1.1).rotateX(-Math.PI / 2),
-      new MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0.6, side: DoubleSide }));
-    this.shadow.renderOrder = 1;
-    this.shadow.name = 'contactShadow';
-    ctx.scene.add(this.shadow);
+    };
+    const quad = new PlaneGeometry(VIEW.shadowSize[0], VIEW.shadowSize[1]).rotateX(-Math.PI / 2);
+    this.blob = new Mesh(quad, new MeshBasicMaterial({ map: ctx.canvasTexture('contactShadow', 64, 64, radial('43,33,64')),
+      transparent: true, depthWrite: false, opacity: VIEW.shadowOpacity[0], side: DoubleSide }));
+    this.glow = new Mesh(quad, new MeshBasicMaterial({ map: ctx.canvasTexture('contactGlow', 64, 64, radial('255,255,255')),
+      color: 0x3ff2ff, transparent: true, depthWrite: false, blending: AdditiveBlending, opacity: VIEW.glowOpacity, side: DoubleSide }));
+    this.blob.name = 'contactShadow'; this.glow.name = 'contactGlow';
+    this.blob.renderOrder = 1; this.glow.renderOrder = 1;
+    this.glow.visible = false;
+    ctx.scene.add(this.blob, this.glow);
   }
 
   attach(gen: WorldGen): void {
-    this.clear();
+    this.releaseAll();
     this.gen = gen;
     this.collected.clear();
   }
 
   update(f: RenderFrame): void {
-    if (!this.gen) return;
     for (const e of f.events) if (e.t === 'coin') this.hideCoin(e.id);
+    if (!this.gen) return;
     const origin = originOf(f.playerS);
     if (origin !== this.originS) {
       this.originS = origin;
       for (const c of this.chunks.values()) c.group.position.z = -(c.s0 - origin);
+      this.writeAllCoins();
+    }
+    // Build options follow the viewport (edge widths); stale chunks are rebuilt progressively.
+    const want = buildOptionsFor(f.viewport);
+    if (Math.abs(want.edgeHalfW - this.opts.edgeHalfW) > VIEW.rebuildFrac * this.opts.edgeHalfW || this.optsKey === 0) {
+      this.opts = want; this.optsKey++;
     }
     const ci = Math.floor(f.playerS / CHUNK_LEN);
     const lo = ci - CHUNK_WINDOW.behind, hi = ci + CHUNK_WINDOW.ahead;
-    for (const [i, c] of this.chunks) if (i < lo || i > hi) { this.disposeChunk(c); this.chunks.delete(i); }
-    this.nearHidden = yawForAspect(f.viewport.aspect) > 0;
-    for (const c of this.chunks.values()) if (c.nearSide) c.nearSide.material = this.nearHidden ? this.shadowOnly : this.mat;
-    for (let i = lo; i <= hi; i++) {                     // at most one chunk build per frame (TECH §8.6)
-      if (this.chunks.has(i)) continue;
-      const t0 = performance.now();
-      this.buildChunk(this.gen.chunk(i));
-      this.recordBuild(performance.now() - t0);
-      break;
+    for (const [i, c] of this.chunks) if (i < lo || i > hi) this.release(c);
+    const hide = yawForAspect(f.viewport.aspect) > 0;
+    if (hide !== this.nearHidden) {
+      this.nearHidden = hide;
+      for (const c of this.chunks.values()) if (c.parts.near) c.parts.near.mesh.material = hide ? this.shadowOnly : this.mat;
     }
-    // Contact shadow (always drawn) and the sun box following the skater.
+    // At most one chunk build per frame (TECH §8.6): missing chunks nearest-first ahead, then behind, then stale ones.
+    let target = -1;
+    for (let i = ci; i <= hi && target < 0; i++) if (i >= 0 && !this.chunks.has(i)) target = i;
+    if (target < 0 && lo >= 0 && !this.chunks.has(lo)) target = lo;
+    if (target < 0) for (let i = ci; i <= hi && target < 0; i++) { const c = this.chunks.get(i); if (c && c.key !== this.optsKey) target = i; }
+    if (target >= 0) {
+      const t0 = performance.now();
+      const old = this.chunks.get(target);
+      if (old) this.release(old);
+      this.build(target);
+      this.recordBuild(performance.now() - t0);
+    }
+    this.updateCoinScale(f);
+    this.updateShadow(f, origin);
+  }
+
+  setQuality(q: QualityTier): void { setGfxQuality(this.ctx, q); }
+  /** After a context restore: rebuild every chunk from the generator (deterministic) and the collected-coin set. */
+  rebuildGPU(): void { const g = this.gen; const got = new Set(this.collected); this.releaseAll(); this.gen = g; for (const id of got) this.collected.add(id); }
+  stats() {
+    const sorted = [...this.buildMs].sort((a, b) => a - b);
+    return { chunksBuilt: this.built, buildMsP95: sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))]! : 0,
+      drawCalls: this.ctx.renderer.info.render.calls };
+  }
+  dispose(): void {
+    this.releaseAll();
+    this.ctx.scene.remove(this.root, this.coins, this.blob, this.glow);
+    this.pool.dispose();
+    this.mat.dispose(); this.shadowOnly.dispose(); this.coinMat.dispose(); this.coinGeo.dispose(); this.coins.dispose();
+  }
+
+  /** Debug and tests: live chunk indices, pool usage and coin slots. */
+  debugInfo() {
+    let verts = 0;
+    for (const c of this.chunks.values()) for (const p of Object.values(c.parts)) verts += p?.geo.count ?? 0;
+    return { chunks: [...this.chunks.keys()].sort((a, b) => a - b), geosCreated: this.pool.created, geosIdle: this.pool.idle,
+      verts, coinSlotsUsed: VIEW.coinCapacity - this.freeSlots.length, originS: this.originS, edgeHalfW: this.opts.edgeHalfW };
+  }
+
+  // ── internals ─────────────────────────────────────────────────────────────────────────────────────────────────
+  private build(index: number): void {
+    const ch = this.gen!.chunk(index);
+    const w = this.writers;
+    w.main.begin(this.pool.acquire()); w.near.begin(this.pool.acquire()); w.casters.begin(this.pool.acquire());
+    buildChunk(ch, w.main, w.near, this.opts);
+    const group = this.groupPool.pop() ?? new Group();
+    group.name = `chunk${index}`;
+    group.position.z = -(ch.s0 - this.originS);
+    const parts: LiveChunk['parts'] = {};
+    for (const role of ['main', 'near', 'casters'] as const) {
+      const geo = w[role].end();
+      if (geo.count === 0) { this.pool.release(geo); continue; }
+      const mesh = this.meshPool.pop() ?? new Mesh();
+      mesh.geometry = geo.geo;
+      mesh.material = role === 'main' || (role === 'near' && !this.nearHidden) ? this.mat : this.shadowOnly;
+      mesh.castShadow = true; mesh.receiveShadow = role !== 'casters';
+      group.add(mesh);
+      parts[role] = { mesh, geo };
+    }
+    const slots: number[] = [];
+    for (const c of ch.coins) {
+      const k = this.freeSlots.pop();
+      if (k === undefined) break;                     // capacity reached: the rest of this chunk's coins are not drawn
+      this.slotCoin[k] = c;
+      slots.push(k);
+      this.writeCoin(k);
+      if (k + 1 > this.coins.count) this.coins.count = k + 1;
+    }
+    this.coins.instanceMatrix.needsUpdate = true;
+    this.root.add(group);
+    this.chunks.set(index, { index, s0: ch.s0, group, parts, slots, key: this.optsKey });
+    this.built++;
+  }
+
+  private release(c: LiveChunk): void {
+    this.root.remove(c.group);
+    for (const p of Object.values(c.parts)) {
+      if (!p) continue;
+      c.group.remove(p.mesh);
+      this.pool.release(p.geo);
+      this.meshPool.push(p.mesh);
+    }
+    this.groupPool.push(c.group);
+    for (const k of c.slots) { this.slotCoin[k] = null; this.coins.setMatrixAt(k, this.zero); this.freeSlots.push(k); }
+    if (c.slots.length) this.coins.instanceMatrix.needsUpdate = true;
+    this.chunks.delete(c.index);
+  }
+
+  private releaseAll(): void { for (const c of [...this.chunks.values()]) this.release(c); }
+
+  private writeCoin(k: number): void {
+    const c = this.slotCoin[k];
+    if (!c || this.collected.has(c.id)) { this.coins.setMatrixAt(k, this.zero); return; }
+    this.sc.setScalar(this.coinScale);
+    this.coins.setMatrixAt(k, this.m4.compose(this.v.set(c.p.x, c.p.y, -(c.p.s - this.originS)), this.q, this.sc));
+  }
+  private writeAllCoins(): void {
+    for (let k = 0; k < this.coins.count; k++) this.writeCoin(k);
+    this.coins.instanceMatrix.needsUpdate = true;
+  }
+  private hideCoin(id: number): void {
+    this.collected.add(id);
+    for (let k = 0; k < this.coins.count; k++) {
+      if (this.slotCoin[k]?.id === id) { this.coins.setMatrixAt(k, this.zero); this.coins.instanceMatrix.needsUpdate = true; }
+    }
+  }
+  /** Coins stay ≥ CAMERA.minCoinPx on screen however far the camera zooms out (DESIGN §8). */
+  private updateCoinScale(f: RenderFrame): void {
+    const H = solveFraming(Math.max(f.speed, speedAt(f.cur.t + CAMERA.zoomTau)), f.viewport).H;
+    const s = Math.max(1, (CAMERA.minCoinPx * H) / Math.max(1, f.viewport.hCss) / VIEW.coinDiameter);
+    if (Math.abs(s - this.coinScale) > 0.02) { this.coinScale = s; this.writeAllCoins(); }
+  }
+
+  private updateShadow(f: RenderFrame, origin: number): void {
     const s = f.playerS, x = lerp(f.prev.p.x, f.cur.p.x, f.alpha), y = lerp(f.prev.p.y, f.cur.p.y, f.alpha);
     const gy = lerp(f.prev.groundY, f.cur.groundY, f.alpha);
-    const hgt = Math.max(0, y - gy);
-    this.shadow.position.set(x, gy + 0.012, -(s - origin));
-    (this.shadow.material as MeshBasicMaterial).opacity = lerp(0.6, 0.25, Math.min(1, hgt / 2));
+    const u = Math.min(1, Math.max(0, y - gy) / 2);
+    const dark = f.cur.surface === 'wetAsphalt' || f.area === 'neon';    // low ground luminance: cyan glow instead
+    for (const m of [this.blob, this.glow]) m.position.set(x, gy + 0.012, -(s - origin));
+    this.blob.visible = !dark; this.glow.visible = dark;
+    (this.blob.material as MeshBasicMaterial).opacity = lerp(VIEW.shadowOpacity[0], VIEW.shadowOpacity[1], u);
+    (this.glow.material as MeshBasicMaterial).opacity = VIEW.glowOpacity * (1 - 0.5 * u);
     const sun = getSun(this.ctx);
     if (sun) {
       const p = this.ctx.palette(f.area, f.blend);
@@ -113,154 +259,15 @@ class GreyboxWorldView implements WorldView {
     }
   }
 
-  setQuality(q: QualityTier): void { setGfxQuality(this.ctx, q); }
-  rebuildGPU(): void { const g = this.gen; this.clear(); this.gen = g; }
-  stats() {
-    const sorted = [...this.buildMs].sort((a, b) => a - b);
-    return { chunksBuilt: this.built, buildMsP95: sorted.length ? sorted[Math.floor(sorted.length * 0.95)] ?? 0 : 0,
-      drawCalls: this.ctx.renderer.info.render.calls };
-  }
-  dispose(): void {
-    this.clear();
-    this.ctx.scene.remove(this.root, this.shadow);
-    this.mat.dispose(); this.shadowOnly.dispose(); this.coinMat.dispose(); this.coinGeo.dispose();
-  }
-
-  // ── internals ─────────────────────────────────────────────────────────────────────────────────────────────────
   private recordBuild(ms: number): void {
     this.buildMs.push(ms);
     if (this.buildMs.length > 120) this.buildMs.shift();
-    if (ms > BUILD_BUDGET_MS * 4) console.debug(`[world] chunk build ${ms.toFixed(1)} ms`);
-  }
-
-  private clear(): void {
-    for (const c of this.chunks.values()) this.disposeChunk(c);
-    this.chunks.clear();
-  }
-
-  private disposeChunk(c: ChunkMesh): void {
-    this.root.remove(c.group);
-    c.group.traverse((o) => { if (o instanceof Mesh && o.geometry !== this.coinGeo) o.geometry.dispose(); });
-    c.coins?.dispose();
-  }
-
-  private hideCoin(id: number): void {
-    this.collected.add(id);
-    for (const c of this.chunks.values()) {
-      const k = c.coinIds.indexOf(id);
-      if (k >= 0 && c.coins) { c.coins.setMatrixAt(k, this.zero); c.coins.instanceMatrix.needsUpdate = true; }
-    }
-  }
-
-  private buildChunk(ch: Chunk): void {
-    const s0 = ch.s0;
-    const z = (s: number) => -(s - s0);                 // chunk-local z of track s
-    const parts: BufferGeometry[] = [];
-    // Street slab across the corridor and wide verges for the backdrop.
-    parts.push(colorBox(-3.0, -0.3, z(s0 + ch.len), 3.0, 0, z(s0), COLORS.asphalt));
-    parts.push(colorBox(-16, -0.3, z(s0 + ch.len), -4.5, 0.15, z(s0), COLORS.verge));
-    parts.push(colorBox(4.5, -0.3, z(s0 + ch.len), 16, 0.15, z(s0), COLORS.verge));
-    for (const ob of ch.obstacles) this.obstacleParts(ob, ch, z, parts);
-    // Tall decor on the +x side (the camera side when ψ > 0) goes into `near`: drawn normally in portrait, shadow-only
-    // when ψ > 0, where it would cross over the corridor (DESIGN §8: no opaque structure over the corridor).
-    const near: BufferGeometry[] = [];
-    for (const d of ch.decor) {
-      if (d.kind === 'building') {
-        const w = d.params?.w ?? 8, dd = d.params?.d ?? 12, h = d.params?.h ?? 12;
-        const xIn = d.x, xOut = d.x + Math.sign(d.x || 1) * w;
-        (d.x > 0 ? near : parts).push(colorBox(Math.min(xIn, xOut), d.y, z(d.s + dd), Math.max(xIn, xOut), d.y + h, z(d.s),
-          COLORS.building[d.variant % COLORS.building.length]!));
-      } else if (d.kind === 'street_lamp') {
-        const h = d.params?.h ?? 5, into = d.x > 0 ? near : parts;
-        into.push(colorBox(d.x - 0.06, d.y, z(d.s) - 0.06, d.x + 0.06, d.y + h, z(d.s) + 0.06, COLORS.ink));
-        into.push(colorBox(d.x - 0.18, d.y + h - 0.2, z(d.s) - 0.18, d.x + 0.18, d.y + h + 0.05, z(d.s) + 0.18, COLORS.lampHead));
-      }
-      // Other DECOR_KINDS render as nothing in M0 (TODO(WA)).
-    }
-    const group = new Group();
-    group.name = `chunk${ch.index}`;
-    const geo = mergeAll(parts);
-    if (geo) {
-      const mesh = new Mesh(geo, this.mat);
-      mesh.castShadow = true; mesh.receiveShadow = true;
-      group.add(mesh);
-    }
-    let nearSide: Mesh | null = null;
-    const nearGeo = mergeAll(near);
-    if (nearGeo) {
-      nearSide = new Mesh(nearGeo, this.nearHidden ? this.shadowOnly : this.mat);
-      nearSide.castShadow = true; nearSide.receiveShadow = true;
-      group.add(nearSide);
-    }
-    // Coins: one instanced mesh per chunk; collected ones are hidden by matrix.
-    let coins: InstancedMesh | null = null;
-    const coinIds: number[] = [];
-    if (ch.coins.length) {
-      coins = new InstancedMesh(this.coinGeo, this.coinMat, ch.coins.length);
-      const q = new Quaternion(), sc = new Vector3(1, 1, 1), pos = new Vector3();
-      ch.coins.forEach((c, k) => {
-        coinIds.push(c.id);
-        if (this.collected.has(c.id)) coins!.setMatrixAt(k, this.zero);
-        else coins!.setMatrixAt(k, this.m4.compose(pos.set(c.p.x, c.p.y, z(c.p.s)), q, sc));
-      });
-      coins.castShadow = false;
-      group.add(coins);
-    }
-    group.position.z = -(s0 - this.originS);
-    this.root.add(group);
-    this.chunks.set(ch.index, { index: ch.index, s0, group, coinIds, coins, nearSide });
-    this.built++;
-  }
-
-  /** Obstacles are listed in every chunk they overlap; geometry is clipped to this chunk's s-range. */
-  private obstacleParts(ob: Obstacle, ch: Chunk, z: (s: number) => number, parts: BufferGeometry[]): void {
-    const c0 = ch.s0, c1 = ch.s0 + ch.len;
-    const clipS = (a: number, b: number): [number, number] | null => {
-      const lo = Math.max(a, c0), hi = Math.min(b, c1);
-      return hi > lo ? [lo, hi] : null;
-    };
-    for (const sl of ob.slabs) {
-      if (ob.solids.length) break;                       // the solid body already draws a landable top
-      const r = clipS(sl.s0, sl.s1);
-      if (!r) continue;
-      const top = Math.max(sl.y0, sl.y1);
-      parts.push(colorBox(sl.x0, 0, z(r[1]), sl.x1, top, z(r[0]), ob.kind === 'curb' ? COLORS.concrete : COLORS.granite));
-    }
-    for (const so of ob.solids) {
-      const b = so.box;
-      const r = clipS(b.s0, b.s1);
-      if (!r) continue;
-      const cls = heightClass(b.y1, b.y0);
-      const color = so.top === 'knock' ? COLORS.knock
-        : cls === 'bump' ? COLORS.bump
-        : cls === 'forbidden' ? COLORS.forbidden
-        : cls === 'tall' ? COLORS.tall
-        : so.top === 'landable' ? COLORS.lowLandable : COLORS.lowCrash;
-      parts.push(colorBox(b.x0, b.y0, z(r[1]), b.x1, b.y1, z(r[0]), color));
-      if (cls === 'tall') {
-        // Dark ink body, a slightly lighter top and one saturated accent band on the camera-facing front face.
-        parts.push(colorBox(b.x0 + 0.02, b.y1, z(r[1]) + 0.02, b.x1 - 0.02, b.y1 + 0.01, z(r[0]) - 0.02, COLORS.tallTop));
-        if (r[0] === b.s0) parts.push(colorBox(b.x0, b.y1 - 0.16, z(r[0]), b.x1, b.y1 - 0.06, z(r[0]) + 0.01, COLORS.tallAccent));
-      }
-      if (cls === 'low' && so.top === 'crash' && b.x1 - b.x0 > 6) {
-        // Full-width hazard: amber/ink chevron blocks on the front face.
-        for (let x = b.x0; x < b.x1 - 0.3; x += 0.9) parts.push(colorBox(x, b.y0 + 0.05, z(r[0]) - 0.005, x + 0.45, b.y1 - 0.05, z(r[0]) + 0.02, COLORS.chevron));
-      }
-    }
-    for (const e of ob.edges) {
-      const r = clipS(e.a.s, e.b.s);
-      if (!r) continue;
-      const u0 = (r[0] - e.a.s) / Math.max(1e-6, e.b.s - e.a.s), u1 = (r[1] - e.a.s) / Math.max(1e-6, e.b.s - e.a.s);
-      const xa = lerp(e.a.x, e.b.x, u0), xb = lerp(e.a.x, e.b.x, u1);
-      const y = Math.max(lerp(e.a.y, e.b.y, u0), lerp(e.a.y, e.b.y, u1));
-      const xm = (xa + xb) / 2;
-      // Cream top edge (0.06 wide) over a 0.02 m ink underline (DESIGN §18.4).
-      parts.push(colorBox(xm - 0.04, y - 0.05, z(r[1]), xm + 0.04, y - 0.015, z(r[0]), COLORS.ink));
-      parts.push(colorBox(xm - 0.03, y - 0.015, z(r[1]), xm + 0.03, y + 0.012, z(r[0]), COLORS.edgeCream));
-    }
+    if (ms > VIEW.buildBudgetMs * 4) console.debug(`[world] chunk build ${ms.toFixed(1)} ms`);
   }
 }
 
-export function createGreyboxWorldView(ctx: GfxContext): WorldView {
+export type GreyboxView = WorldView & { debugInfo(): ReturnType<GreyboxWorldView['debugInfo']> };
+
+export function createGreyboxWorldView(ctx: GfxContext): GreyboxView {
   return new GreyboxWorldView(ctx);
 }
