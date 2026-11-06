@@ -4,7 +4,9 @@
 // skater is `px` CSS px tall, or the Locker perspective camera (FOV 35°, 1.4 m high) for the showcase sheet.
 //   ?sheet=items&px=60    all 40 items on the starter loadout (boards mid-kickflip so the graphic shows)
 //   ?sheet=poses&px=90    the pose strip from synthetic SkaterPose objects
-//   ?sheet=showcase       Locker turntable views of six loadouts
+//   ?sheet=showcase       Locker turntable views of eight loadouts, plus four board displays (graphic-out)
+//   &area=neon            blue-hour lights (DESIGN §18.1) over the wet neon asphalt #352F55
+//   &switch=1             also times setLoadout + the first render after it, and checks the shader program count
 import {
   Mesh, MeshLambertMaterial, OrthographicCamera, PerspectiveCamera, PlaneGeometry, type Camera, Vector3,
 } from 'three';
@@ -13,7 +15,7 @@ import type { Loadout } from '../../../src/core/cosmetics';
 import type { GrindId } from '../../../src/core/ids';
 import type { ScoreState, SkaterState } from '../../../src/core/sim';
 import type { RenderFrame, SkaterPose, Viewport } from '../../../src/core/view';
-import { createGfx, getSun } from '../../../src/gfx';
+import { HEMI_NAME, LIGHT_SCALE, createGfx, getSun } from '../../../src/gfx';
 import { SkaterViewImpl, basePose } from '../../../src/skater';
 
 const q = new URLSearchParams(location.search);
@@ -23,7 +25,9 @@ const yawDeg = Number(q.get('yaw') ?? 0);
 const DPR = Number(q.get('dpr') ?? 1);
 const ZOOM = Number(q.get('zoom') ?? 1);                  // review aid: nearest-neighbour upscale of the whole sheet
 
-interface Cell { label: string; loadout: Loadout; pose: SkaterPose; x?: number; showcase?: { t: number; yaw: number }; dtSteps?: number }
+interface Cell { label: string; loadout: Loadout; pose: SkaterPose; x?: number; showcase?: { t: number; yaw: number; display?: boolean }; dtSteps?: number }
+const AREA = (q.get('area') as RenderFrame['area'] | null) ?? 'downtown';
+const NEON = AREA === 'neon';
 
 const items = (): Cell[] => CATALOG.map((it) => {
   const l: Loadout = { ...DEFAULT_LOADOUT, [it.slot]: it.look } as Loadout;
@@ -75,7 +79,13 @@ const showcase = (): Cell[] => {
     ['Gus / Golden / Sunflower', pick('sk_gus', 'bd_golden_hour', 'hm_sunflower')],
     ['Ines / Koi / Cat Ears', pick('sk_ines', 'bd_koi_current', 'hm_catears')],
   ];
-  return looks.map(([label, l], i) => ({ label, loadout: l, pose: basePose({ pose: 'showcase' }), showcase: { t: 1 + i * 0.37, yaw: yawDeg + (i % 2 ? 25 : -20) } }));
+  const cells: Cell[] = looks.map(([label, l], i) => ({ label, loadout: l, pose: basePose({ pose: 'showcase' }), showcase: { t: 1 + i * 0.37, yaw: yawDeg + (i % 2 ? 25 : -20) } }));
+  // Board displays: what the Locker / Shop shows right after a board is picked.
+  for (const [b, s] of [['bd_koi_current', 'sk_juno'], ['bd_night_market', 'sk_mika'], ['bd_golden_hour', 'sk_rook'], ['bd_hazard_tape', 'sk_kettle']] as const) {
+    const l = { ...DEFAULT_LOADOUT, skater: CATALOG.find((c) => c.id === s)!.look, board: CATALOG.find((c) => c.id === b)!.look } as Loadout;
+    cells.push({ label: `display: ${CATALOG.find((c) => c.id === b)!.name}`, loadout: l, pose: basePose({ pose: 'showcase' }), showcase: { t: 0, yaw: yawDeg + 15, display: true } });
+  }
+  return cells;
 };
 
 // Close-ups for review: every board's graphic face-on, every helmet (and skater head) from the front three-quarter.
@@ -89,7 +99,7 @@ const heads = (): Cell[] => CATALOG.filter((c) => c.slot === 'helmet' || c.slot 
 }));
 const close = sheet === 'boards' || sheet === 'heads';
 const cells = sheet === 'poses' ? poses() : sheet === 'showcase' ? showcase() : sheet === 'boards' ? boards() : sheet === 'heads' ? heads() : items();
-const cols = Number(q.get('cols') ?? (sheet === 'items' ? 8 : sheet === 'showcase' ? 4 : sheet === 'boards' ? 4 : sheet === 'heads' ? 6 : 11));
+const cols = Number(q.get('cols') ?? (sheet === 'items' ? 8 : sheet === 'showcase' ? 6 : sheet === 'boards' ? 4 : sheet === 'heads' ? 6 : 11));
 const cellW = Number(q.get('cw') ?? Math.round(sheet === 'showcase' ? 240 : sheet === 'boards' ? 300 : sheet === 'heads' ? 180 : Math.max(46, px * 1.55)));
 const cellH = Number(q.get('ch') ?? Math.round(sheet === 'showcase' ? 300 : sheet === 'boards' ? 130 : sheet === 'heads' ? 200 : px * 2.0 + 14));
 const rows = Math.ceil(cells.length / cols);
@@ -104,8 +114,18 @@ r.setPixelRatio(DPR);
 r.setSize(W, H, false);
 r.setScissorTest(true);
 
-// Ground: asphalt (DESIGN §18.1), a sidewalk strip and a lane dash for context.
-const ground = new Mesh(new PlaneGeometry(400, 400), new MeshLambertMaterial({ color: 0x6b6478 }));
+// Blue hour (DESIGN §18.1): hemi #8C8CE0 / #3B2A5C, moon fill #9AA8FF at 0.6 from 30°, exposure 1.2 (gfx/ M0 only
+// knows Golden; the lights are set here by hand until WA's palette lands).
+const sunElev = NEON ? 30 : 22;
+if (NEON) {
+  const hemi = gfx.scene.getObjectByName(HEMI_NAME) as unknown as { color: { setHex(h: number): void }; groundColor: { setHex(h: number): void }; intensity: number } | undefined;
+  if (hemi) { hemi.color.setHex(0x8c8ce0); hemi.groundColor.setHex(0x3b2a5c); hemi.intensity = 1.0 * LIGHT_SCALE; }
+  const s0 = getSun(gfx)!;
+  s0.color.setHex(0x9aa8ff); s0.intensity = 0.6 * LIGHT_SCALE;
+  r.toneMappingExposure = 1.2;
+}
+// Ground: asphalt (DESIGN §18.1; wet neon asphalt at blue hour), a sidewalk strip for context.
+const ground = new Mesh(new PlaneGeometry(400, 400), new MeshLambertMaterial({ color: NEON ? 0x352f55 : 0x6b6478 }));
 ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true;
 gfx.scene.add(ground);
 const curb = new Mesh(new PlaneGeometry(1.2, 400), new MeshLambertMaterial({ color: 0xd9c3ae }));
@@ -120,7 +140,7 @@ const state = (x: number, y: number): SkaterState => ({ tick: 0, t: 0, p: { s: 0
 const frame = (pose: SkaterPose, dt: number): RenderFrame => {
   const st = state(0, pose.height);
   return { alpha: 1, dt, timeScale: 1, prev: st, cur: st, pose, score: {} as ScoreState, events: [], playerS: 0, speed: 7,
-    area: (q.get('area') as RenderFrame['area']) ?? 'downtown', blend: null, viewport: vp };
+    area: AREA, blend: null, viewport: vp };
 };
 
 // Loadout switch timing (real canvases, the first switch per look and a cached switch back).
@@ -129,7 +149,10 @@ cells.forEach((c, i) => {
   const v = views[i]!;
   v.setLoadout(c.loadout);
   switchMs.push(v.lastSwitchMs);
-  if (c.showcase) { v.setMode('showcase'); v.setTurntable(c.showcase.yaw); v.setShowcaseTime(c.showcase.t); }
+  if (c.showcase) {
+    v.setMode('showcase'); v.setTurntable(c.showcase.yaw); v.setShowcaseTime(c.showcase.t);
+    if (c.showcase.display) v.showBoard();
+  }
   v.snap();
   v.update(frame(c.pose, 1 / 60));
   for (let k = 0; k < (c.dtSteps ?? 0); k++) v.update(frame(c.pose, 1 / 60));
@@ -152,9 +175,9 @@ function frameCell(i: number): Camera {
     v.object3d.updateMatrixWorld(true);
     bone.getWorldPosition(target);
     persp.aspect = cellW / cellH; persp.fov = 30; persp.updateProjectionMatrix();
-    const d = sheet === 'boards' ? 1.75 : 1.15;
-    persp.position.set(target.x, target.y + (sheet === 'boards' ? 0.25 : 0.12), target.z + d);
-    persp.lookAt(target.x, target.y - (sheet === 'heads' ? 0.12 : 0), target.z);
+    const d = sheet === 'boards' ? 1.75 : 1.3;
+    persp.position.set(target.x, target.y + (sheet === 'boards' ? 0.25 : 0.16), target.z + d);
+    persp.lookAt(target.x, target.y - (sheet === 'heads' ? 0.05 : 0), target.z);
     // Boards: hide the rider so the deck reads alone.
     if (sheet === 'boards') v.object3d.traverse((o) => { if (o.name.startsWith('skater-body') || o.name.startsWith('skater-helmet') || o.name.startsWith('helmet-')) o.visible = false; });
     return persp;
@@ -193,7 +216,7 @@ for (let i = 0; i < cells.length; i++) {
   const cam = frameCell(i);
   // Sun behind the camera, 35° to the left, golden elevation 22° (as world/render does).
   v.object3d.getWorldPosition(target);
-  const elev = (22 * Math.PI) / 180, az = (35 * Math.PI) / 180;
+  const elev = (sunElev * Math.PI) / 180, az = (35 * Math.PI) / 180;
   sun.target.position.set(target.x, 0, target.z);
   sun.position.set(target.x - Math.sin(az) * Math.cos(elev) * 30, Math.sin(elev) * 30, target.z + Math.cos(az) * Math.cos(elev) * 30);
   sun.target.updateMatrixWorld();
@@ -209,6 +232,46 @@ for (let i = 0; i < cells.length; i++) {
 }
 
 const pct = (a: number[], q: number) => { const b = [...a].sort((x, y) => x - y); return b[Math.min(b.length - 1, Math.floor(q * b.length))] ?? 0; };
+
+// Switch + first render (`&switch=1`): every item and back to the starter, each followed by a synced render, against
+// a plain frame. The program count must not change (a switch never compiles a shader).
+let switchRender: Record<string, number> | null = null;
+if (q.get('switch') === '1') {
+  for (const o of views) o.object3d.visible = false;
+  const pv = new SkaterViewImpl(gfx);
+  gfx.scene.add(pv.object3d);
+  const gl = r.getContext(), px = new Uint8Array(4);
+  const cam = new PerspectiveCamera(35, 1, 0.1, 100);
+  cam.position.set(0, 1.3, 3.4); cam.lookAt(0, 0.95, 0);
+  r.setViewport(0, 0, 200, 200); r.setScissor(0, 0, 200, 200);
+  const sync = () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  const draw = () => { pv.update(frame(basePose({ pose: 'roll' }), 1 / 60)); r.render(gfx.scene, cam); sync(); };
+  draw(); draw();
+  const programs0 = r.info.programs?.length ?? 0;
+  const set: number[] = [], first: number[] = [], plain: number[] = [];
+  const seq: Loadout[] = [], slots: string[] = [];
+  for (const it of CATALOG) { seq.push({ ...DEFAULT_LOADOUT, [it.slot]: it.look } as Loadout, DEFAULT_LOADOUT); slots.push(it.slot, it.slot); }
+  for (const l of seq) {
+    const t0 = performance.now();
+    pv.setLoadout(l);
+    const t1 = performance.now();
+    draw();
+    const t2 = performance.now();
+    draw();
+    plain.push(performance.now() - t2);
+    set.push(t1 - t0); first.push(t2 - t0);
+  }
+  const programs1 = r.info.programs?.length ?? 0;
+  const over = first.map((f, i) => f - plain[i]!);
+  const bySlot: Record<string, number> = {};
+  for (const sl of ['skater', 'board', 'helmet']) bySlot[`over_${sl}`] = pct(over.filter((_, i) => slots[i] === sl), 0.5);
+  switchRender = {
+    ...bySlot, overP50: pct(over, 0.5),
+    setP95: pct(set, 0.95), firstP50: pct(first, 0.5), firstP95: pct(first, 0.95), firstMax: Math.max(...first),
+    plainP50: pct(plain, 0.5), overP95: pct(over, 0.95), overMax: Math.max(...over), programs0, programs1,
+  };
+  pv.object3d.removeFromParent();
+}
 const st = views.map((v) => v.stats());
 const info = r.info;
 (window as unknown as { __views: unknown }).__views = views;
@@ -219,4 +282,5 @@ const info = r.info;
     p50: pct([...switchMs, ...reSwitch], 0.5), p95: pct([...switchMs, ...reSwitch], 0.95) },
   parts: st.map((s, i) => ({ label: cells[i]!.label, ...s.parts, calls: s.drawCalls, tris: s.tris })),
   renderInfo: { calls: info.render.calls, triangles: info.render.triangles },
+  switchRender,
 };

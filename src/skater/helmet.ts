@@ -45,16 +45,21 @@ export function buildHelmet(look: HelmetLook): HelmetBuild {
     case 'dome': case 'visor': case 'catEars': case 'petalRing': case 'wrapVisor': {
       const r = HR * 1.08;
       pb.add(dome(r, 100), { color: shellCol, uv: SHELL, emit: glow ? [0.6, 0] : undefined }, tiltBack(-0.01, 0.02, 0, 18));
-      domeRim(r, 100, 0.02, 18, look.shell === 'visor' ? look.visorTint ?? rim : rim);   // Visor Pro: tinted rim (reads from behind)
+      domeRim(r, 100, 0.02, 18);
       if (look.shell === 'visor') {
+        // Visor Pro: the tint wraps all round as a wide band, so it reads from the run camera behind (31 px).
+        const rr = r * Math.sin((100 * Math.PI) / 180), yy = r * Math.cos((100 * Math.PI) / 180);
+        pb.add(new CylinderGeometry(rr * 1.0, rr * 1.045, 0.1, 10, 1, true, -Math.PI / 2), { color: look.visorTint ?? rim, outline: 0 },
+          tiltBack(-0.01, 0.02 + yy + 0.058, 0, 18));
         // Visor Pro: a tinted brim that reflects the sky gradient.
         pb.add(new CylinderGeometry(r * 1.06, r * 1.16, 0.05, 8, 1, false, Math.PI / 2 - 0.95, 1.9), { color: 0xffffff, uv: VISOR },
           place(0.0, 0.07, 0, 0, 0, -22));
       }
       if (look.shell === 'catEars') {
+        // Big ears (they are the silhouette from behind at 31 px), pink inners toward the face.
         for (const s of [-1, 1]) {
-          pb.add(new CylinderGeometry(0, 0.055, 0.1, 3, 1, false), { color: look.color, outline: 0.9 }, place(-0.02, 0.17, s * 0.095, s * 24, 0, 6));
-          pb.add(new CylinderGeometry(0, 0.032, 0.065, 3, 1, true), { color: look.decalColor, outline: 0 }, place(0.012, 0.165, s * 0.093, s * 24, 0, 6));
+          pb.add(new CylinderGeometry(0, 0.078, 0.15, 3, 1, false), { color: look.color, outline: 1 }, place(-0.025, 0.2, s * 0.1, s * 22, 0, 4));
+          pb.add(new CylinderGeometry(0, 0.046, 0.1, 3, 1, true), { color: look.decalColor, outline: 0 }, place(0.018, 0.192, s * 0.098, s * 22, 0, 4));
         }
       }
       if (look.shell === 'petalRing') {
@@ -66,7 +71,8 @@ export function buildHelmet(look: HelmetLook): HelmetBuild {
         }
       }
       if (look.shell === 'wrapVisor') {
-        pb.add(new CylinderGeometry(r * 1.05, r * 1.05, 0.085, 12, 1, true, Math.PI / 2 - 1.75, 3.5), { color: 0xffffff, uv: VISOR, emit: [0.9, 0] },
+        // Holo Visor: the glowing glyph band wraps all the way round (it reads from behind as a cyan ring).
+        pb.add(new CylinderGeometry(r * 1.05, r * 1.05, 0.085, 14, 1, true), { color: 0xffffff, uv: VISOR, emit: [0.9, 0] },
           place(0.004, 0.012, 0));
       }
       break;

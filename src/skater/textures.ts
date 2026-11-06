@@ -6,7 +6,7 @@ import type { BoardLook, BoardPattern, Hex, HelmetLook, SkaterLook } from '../co
 import { SKIN_TONES } from '../core/cosmetics';
 import { hash32, Sfc32 } from '../core/rng';
 import { mix, shade } from './parts';
-import { TEX } from './skater.config';
+import { SHADE, TEX } from './skater.config';
 
 type Ctx = CanvasRenderingContext2D;
 const css = (h: Hex, a = 1) => a >= 1 ? `#${h.toString(16).padStart(6, '0')}` : `rgba(${(h >> 16) & 255},${(h >> 8) & 255},${h & 255},${a})`;
@@ -313,9 +313,16 @@ export const PATTERNS: Readonly<Record<BoardPattern, PatternFn>> = {
     for (let x = -h, i = 0; x < w + h; x += bw, i++) { c.fillStyle = css(cols[i % 4]!); c.fillRect(x, -h, bw + 1, h * 3); }
   },
   chevrons(c, w, h, p, _r, s) {
+    // V chevrons (safety-tape arrows) pointing toward the nose, in rows across the deck.
     c.fillStyle = css(p[0]); c.fillRect(-w, -h, w * 3, h * 3);
-    const step = 34 * s; c.fillStyle = css(p[1]);
-    for (let x = -w; x < w * 2; x += step) { c.beginPath(); c.moveTo(x, -h); c.lineTo(x + step / 2, -h); c.lineTo(x + step / 2 + h * 2, h * 2); c.lineTo(x + h * 2, h * 2); c.closePath(); c.fill(); }
+    const step = 44 * s, band = step * 0.42, depth = h * 0.45;
+    c.fillStyle = css(p[1]);
+    for (let x = -w; x < w * 2; x += step) {
+      c.beginPath();
+      c.moveTo(x, -h); c.lineTo(x - depth, h / 2); c.lineTo(x, h * 2); c.lineTo(x + band, h * 2); c.lineTo(x + band - depth, h / 2);
+      c.lineTo(x + band, -h); c.closePath(); c.fill();
+    }
+    c.fillStyle = css(p[2], 0.5); c.fillRect(-w, h / 2 - 2, w * 3, 4);
   },
   checker(c, w, h, p, _r, s) {
     const q = 16 * s;
@@ -500,8 +507,8 @@ export const PATTERNS: Readonly<Record<BoardPattern, PatternFn>> = {
 };
 
 /** One of 9 original sticker shapes. */
-function sticker(c: Ctx, kind: number, r: number, fill: string): void {
-  c.fillStyle = fill; c.strokeStyle = '#ffffff'; c.lineWidth = Math.max(1.5, r * 0.18); c.lineJoin = 'round';
+function sticker(c: Ctx, kind: number, r: number, fill: string, edge: Hex = 0xffffff): void {
+  c.fillStyle = fill; c.strokeStyle = css(edge); c.lineWidth = Math.max(1.5, r * 0.18); c.lineJoin = 'round';
   c.beginPath();
   switch (kind) {
     case 0: for (let i = 0; i < 10; i++) { const a = (i * Math.PI) / 5 - Math.PI / 2, rr = i % 2 ? r * 0.45 : r; c.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); } c.closePath(); break;   // star
@@ -654,24 +661,32 @@ export function drawHelmetDecal(c: Ctx, look: HelmetLook, sky: readonly [Hex, He
     c.fillStyle = g; c.fillRect(0, 0, W, SH);
   }
   if (look.shell === 'dome' || look.shell === 'visor' || look.shell === 'catEars' || look.shell === 'wrapVisor') {
-    // 8 vents in two rows over the top.
-    c.fillStyle = css(shade(look.color, 0.45));
+    // 8 vents in two rows over the top. Visor Pro's vents take the visor tint (wide), so its crown reads violet from
+    // the run camera behind it, apart from the Classic's.
+    const tinted = look.shell === 'visor' && look.visorTint !== undefined, vw = tinted ? 11 : 6, vh = tinted ? 22 : 18;
+    c.fillStyle = css(tinted ? look.visorTint! : shade(look.color, 0.45));
     for (let i = 0; i < 8; i++) {
       const az = (i < 4 ? -1 : 1) * (0.06 + (i % 4) * 0.05), el = 0.5 + (i % 2) * 0.18;
       const x = cx + az * W, y = yOf(el);
-      roundRect(c, x - 3, y - 9, 6, 18, 3); c.fill();
+      roundRect(c, x - vw / 2, y - vh / 2, vw, vh, vw / 2); c.fill();
     }
-    for (let i = 0; i < 4; i++) { const x = (i < 2 ? 0.08 : 0.92) * W + (i % 2) * 10 - 5; roundRect(c, x - 3, yOf(0.62) - 9, 6, 18, 3); c.fill(); }
+    for (let i = 0; i < 4; i++) { const x = (i < 2 ? 0.08 : 0.92) * W + (i % 2) * 10 - 5; roundRect(c, x - vw / 2, yOf(0.62) - vh / 2, vw, vh, vw / 2); c.fill(); }
   }
   switch (look.decal) {
     case 'stickers': {
-      const cols = [0xff8a5b, 0x7ee0b5, 0xa88beb, 0xffc94a, 0xff5e6c, 0x5eb8ff, INK, look.decalColor, 0x9ccfb3];
-      // Procedural scatter of the 9 sticker shapes, big and saturated so the bomb reads as confetti at run scale.
-      // A jittered 10 × 4 grid: every view of the shell shows a dozen stickers.
-      for (let i = 0; i < 40; i++) {
-        const gx = i % 10, gy = Math.floor(i / 10);
-        c.save(); c.translate(gx * 25.6 + 12 + rng.range(-7, 7), 16 + gy * 24 + rng.range(-6, 6)); c.rotate(rng.range(-0.7, 0.7));
-        sticker(c, (i * 4 + gy) % 9, rng.range(10, 14), css(cols[(i * 5 + gy) % cols.length]!)); c.restore();
+      // Procedural scatter of the 9 sticker shapes: big, saturated and ink-edged, covering most of the shell (crown
+      // included: the run camera sees mostly the top), so the bomb reads as a multicoloured helmet at 31 px and not as
+      // a cream dome with specks. Each sticker is widened by 1/sin(polar angle) so it stays round on the sphere.
+      const cols = [0xff5e6c, 0x3e8e8a, 0x8a5cff, 0xffc94a, 0xff8a5b, 0x5eb8ff, 0xff3fa4, 0x7ee0b5, look.decalColor];
+      const rings: readonly (readonly [number, number])[] = [[96, 7], [70, 7], [46, 6], [24, 4], [7, 2]];
+      let i = 0;
+      for (const [y0, n] of rings) for (let k = 0; k < n; k++, i++) {
+        const x = ((k + (i % 2) * 0.5) / n) * W + rng.range(-6, 6), y = y0 + rng.range(-3, 3);
+        const polar = (y / SH) * (100 * Math.PI / 180), wide = 1 / Math.max(0.28, Math.sin(polar));
+        for (const dx of x < 40 ? [0, W] : x > W - 40 ? [0, -W] : [0]) {            // wrap across the back seam
+          c.save(); c.translate(x + dx, y); c.scale(Math.min(3.2, wide), 1); c.rotate(rng.range(-0.5, 0.5));
+          sticker(c, (i * 4 + k) % 9, rng.range(21, 26), css(cols[(i * 5 + k) % cols.length]!), INK); c.restore();
+        }
       }
       break;
     }
@@ -726,7 +741,7 @@ export function drawHelmetDecal(c: Ctx, look: HelmetLook, sky: readonly [Hex, He
       break;
     }
     case 'glyphScroll': {
-      c.strokeStyle = css(look.decalColor, 0.35); c.lineWidth = 1.5;
+      c.strokeStyle = css(look.decalColor, 0.5); c.lineWidth = 2;
       for (let y = 10; y < SH; y += 22) { c.beginPath(); c.moveTo(0, y); c.lineTo(W, y); c.stroke(); }
       break;
     }
@@ -735,7 +750,7 @@ export function drawHelmetDecal(c: Ctx, look: HelmetLook, sky: readonly [Hex, He
   if (look.finish === 'gloss') {
     // Specular sprite: a soft highlight on the upper front-left.
     const hx = cx - W * 0.09, hy = yOf(0.62);
-    const g = c.createRadialGradient(hx, hy, 1, hx, hy, 22); g.addColorStop(0, 'rgba(255,255,255,0.85)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    const g = c.createRadialGradient(hx, hy, 1, hx, hy, 22); g.addColorStop(0, `rgba(255,255,255,${SHADE.glossSpec})`); g.addColorStop(1, 'rgba(255,255,255,0)');
     c.fillStyle = g; c.beginPath(); c.ellipse(hx, hy, 30, 18, -0.3, 0, Math.PI * 2); c.fill();
   }
   // Visor band.

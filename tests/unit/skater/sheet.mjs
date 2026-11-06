@@ -22,7 +22,7 @@ const only = opt('only', '')?.split(',').filter(Boolean) ?? [];
 const area = opt('area', 'downtown');
 
 const SHEETS = [
-  { name: 'items60', q: 'sheet=items&px=60' },
+  { name: 'items60', q: 'sheet=items&px=60&switch=1' },
   { name: 'items31', q: 'sheet=items&px=31' },
   { name: 'items31-zoom3', q: 'sheet=items&px=31&zoom=3' },
   { name: 'items31-dpr15', q: 'sheet=items&px=31&dpr=1.5&zoom=2' },
@@ -33,6 +33,9 @@ const SHEETS = [
   { name: 'heads', q: 'sheet=heads' },
   { name: 'heads-back', q: 'sheet=heads&yaw=180' },
   { name: 'showcase-back', q: 'sheet=showcase&yaw=180' },
+  // Blue hour on the wet neon asphalt (DESIGN §18.1, §18.4): dark outfits must keep an edge.
+  { name: 'items31-neon', q: 'sheet=items&px=31&zoom=3', area: 'neon' },
+  { name: 'poses60-neon', q: 'sheet=poses&px=60&cols=11', area: 'neon' },
 ].filter((s) => !only.length || only.includes(s.name));
 
 async function up() { try { const r = await fetch(`${BASE}/tests/unit/skater/sheet.html`); return r.ok; } catch { return false; } }
@@ -58,7 +61,7 @@ try {
     const errors = [];
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
     page.on('pageerror', (e) => errors.push(String(e)));
-    await page.goto(`${BASE}/tests/unit/skater/sheet.html?${s.q}&area=${area}`);
+    await page.goto(`${BASE}/tests/unit/skater/sheet.html?${s.q}&area=${s.area ?? area}`);
     await page.waitForFunction(() => window.__sheet?.done === true, null, { timeout: 120000 });
     const info = await page.evaluate(() => window.__sheet);
     const size = { w: Math.ceil(info.width), h: Math.ceil(info.height) };
@@ -69,6 +72,14 @@ try {
     console.log(`${s.name}: ${file}  calls ≤ ${info.maxCalls}, tris ≤ ${info.maxTris}, switch p50 ${info.switchMs.p50.toFixed(1)} / p95 ${info.switchMs.p95.toFixed(1)} / max ${Math.max(info.switchMs.first, info.switchMs.again).toFixed(1)} ms${errors.length ? `, ${errors.length} console errors` : ''}`);
     for (const e of errors.slice(0, 5)) console.log(`  error: ${e}`);
     if (errors.length) failed = true;
+    const sr = info.switchRender;
+    if (sr) {
+      // The first frame after a switch uploads the redrawn canvas. Under SwiftShader that upload rasterises the 2D
+      // canvas in software (by slot: board ≫ skater ≈ helmet), so its p95 is reported, not gated; a real GPU copies it.
+      console.log(`  switch + first render: set p95 ${sr.setP95.toFixed(1)} ms; first frame over a plain one (${sr.plainP50.toFixed(1)} ms): p50 ${sr.overP50.toFixed(1)} / p95 ${sr.overP95.toFixed(1)} / max ${sr.overMax.toFixed(1)} ms (p50 by slot: skater ${sr.over_skater.toFixed(1)}, board ${sr.over_board.toFixed(1)}, helmet ${sr.over_helmet.toFixed(1)}); shader programs ${sr.programs0} -> ${sr.programs1}`);
+      if (sr.programs1 !== sr.programs0) { console.log('  FAIL: a loadout switch compiled a shader program'); failed = true; }
+      if (sr.setP95 + sr.overP50 > 30) { console.log('  FAIL: a typical switch (set p95 + first-frame p50) is over 30 ms'); failed = true; }
+    }
     await page.close();
   }
 } finally {
