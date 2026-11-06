@@ -25,6 +25,8 @@ class Gfx implements GfxContext {
   readonly sun: DirectionalLight;
   readonly hemi: HemisphereLight;
   private readonly textures = new Map<string, TexEntry>();
+  /** Where palette() samples come from (WA: world/render presets, set by the WorldView at construction). */
+  paletteSource: ((area: AreaId, blend: AreaBlend | null) => PaletteSample) | null = null;
 
   constructor(canvas: HTMLCanvasElement, q: QualityTier) {
     this.quality = q;
@@ -65,8 +67,8 @@ class Gfx implements GfxContext {
     }
   }
 
-  palette(_area: AreaId, _blend: AreaBlend | null): PaletteSample {
-    return GOLDEN;   // TODO(WA): per-area presets and blends (DESIGN §18.1)
+  palette(area: AreaId, blend: AreaBlend | null): PaletteSample {
+    return this.paletteSource ? this.paletteSource(area, blend) : GOLDEN;
   }
 
   canvasTexture(key: string, w: number, h: number, draw: (c: CanvasRenderingContext2D) => void): Texture {
@@ -103,6 +105,14 @@ export function setGfxQuality(ctx: GfxContext, q: QualityTier): void {
 }
 export function redrawCanvasTextures(ctx: GfxContext): void {
   if (ctx instanceof Gfx) ctx.redrawTextures();
+}
+/** Routes `ctx.palette()` to a preset sampler (WA, W2a: world/render/palette.ts; DESIGN §22 keeps presets there).
+ *  The sampler may return the same object every call (read it, don't keep it). */
+export function setPaletteSource(ctx: GfxContext, f: ((area: AreaId, blend: AreaBlend | null) => PaletteSample) | null): void {
+  if (ctx instanceof Gfx) ctx.paletteSource = f;
+}
+export function getHemi(ctx: GfxContext): HemisphereLight | null {
+  return ctx instanceof Gfx ? ctx.hemi : (ctx.scene.getObjectByName(HEMI_NAME) as HemisphereLight | undefined) ?? null;
 }
 export function getSun(ctx: GfxContext): DirectionalLight | null {
   return ctx instanceof Gfx ? ctx.sun : (ctx.scene.getObjectByName(SUN_NAME) as DirectionalLight | undefined) ?? null;

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>World art gallery</title>
+  <style>
+    html, body { margin: 0; padding: 0; background: #2b2140; overflow: hidden; width: 100%; height: 100%; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+    #label { position: absolute; left: 6px; bottom: 4px; font: 800 11px system-ui, sans-serif; color: #fff4e3; text-shadow: 0 1px 0 #2b2140, 0 0 3px #2b2140; pointer-events: none; }
+    #tags { position: absolute; left: 0; top: 0; pointer-events: none; font: 700 9px/1 system-ui, sans-serif; color: #fff4e3; }
+    #tags div { position: absolute; transform: translate(-50%, 0); white-space: nowrap; text-shadow: 0 1px 0 #2b2140, 0 0 2px #2b2140; }
+    #safe-probe { position: fixed; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); visibility: hidden; pointer-events: none; }
+  </style>
+</head>
+<body>
+  <canvas id="gl"></canvas>
+  <div id="tags"></div>
+  <div id="label"></div>
+  <div id="safe-probe"></div>
+  <script type="module" src="./gallery.ts"></script>
+</body>
+</html>
