@@ -199,6 +199,49 @@ The first block is the frozen behaviour later packages (GP, WG, WA, the bots) ca
 
 ## WG: World-gen (W1b)
 
+### Anti-straight: gate rows instead of A1 column fillers; A1 / A2 measured   (status: info, design deviation for the gate review; no core change)
+- File / symbol: world/gen/generator.ts (tryBuild rows), schedule.ts, templates/shared.ts › S_GATE, gen.config.ts › GEN.gate
+- Change: none. A1 column fillers cost too much (validation per filler) and failed near the line, so the straight-bot
+  guarantee comes from gate rows: a row of the area's tall blockers with 1–2 openings, ≤ `GEN.gate.gap` apart
+  (8 / 6.5 / 6.3 / 6.3 s by phase), each opening ≥ 2.4 m from every opening of the previous row (pass zones
+  disjoint: no straight lane passes two rows). Rows are overlaid on the template due at the deadline (validated with
+  it in one pass) or come as an S_GATE segment; a run's first segment is an at-line S_GATE (its row stands inside
+  the spawn grace) so two rows stand within ~4.5 s of any start; a long template drawn while the gate is not due may
+  slip the deadline by ≤ its length (not in the first 12 s of a run, nor right before a gateway); a gate due inside
+  a gateway comes before it. A1 column coverage and A2 wander (line range ≥ 3 m) are tracked and measured, not
+  enforced (no filler / wall insertion). S_GATE may also carry the A3 barrier when both deadlines fall together.
+- Why: straight bot 100 % dead by 17.2 s from t = 0 and by 4.4 s / 7.2 s from startT 150 / 165 (gate.straight).
+- Local workaround meanwhile: n/a.
+
+### Validator conventions other packages rely on   (status: info; no core change)
+- Street base obstacles are `kind: 'curb'` with `params.band` (world/gen BAND_CODE: road 0, sidewalk 1, lawn 2, apron 3,
+  dock 4, plaza 5, path 6, tunnel 7); curb grind edges are cut so no edge ends 2.2 s before a gate row or faces a
+  blocker in its exit zone. The Docks lip is one persistent `dock_lip` body per visit (0.8 s·v into it) with its edges
+  per segment (no joints under a board).
+- Stepped bodies (stair rails, hubbas, incline sides): landable pieces sit at the lower end, crash pieces (rails) on
+  the higher ground of their piece, so no box height lies in the forbidden band; ride-on slope bodies are exempt
+  from the band rule (they are ramps).
+- Rule (h) uses one 1/30 s grid slice of tolerance (dead ends measured ≤ 2.033 s): the grid's air reach and slice
+  interval are pessimistic. Required ollies never clear a pit longer than 10 slices (no 0.25 s window: plank only).
+- `insetOf` (sim's crash-face inset) is exported from world/gen; `planLine` (world/gen) is the validator's planner for bots.
+- `GEN_FLAGS.trench` (ON since G0): S_TRENCH in the A3 slots and the Lesson Line's 33–35.5 s pit; off, every A3 slot
+  is an S_BARRIER and the Lesson Line uses a barrier there. Read once per Generator.
+- Why: hand-off notes. Local workaround: n/a.
+
+### Thumb bot taps are capped at 190 ms where a HOLD would start a manual   (status: info for GP; no core change)
+- File / symbol: debug/bots/thumb.ts; sim interpret (GP) › manualStart on HOLD with an open combo window or on a prop top
+- Change: none. TECH §11.2 asks for 60–260 ms taps; a 2nd-finger tap held ≥ 200 ms becomes a HOLD, which on the ground
+  starts a manual when the combo window is open or the board is on a prop top (an unintended trick). The bot caps such
+  taps at 190 ms, and never puts the tap finger down in the 0.10–0.30 s pre-press window before a touchdown. If GP
+  wants 260 ms taps to stay taps there, the recognizer / interpret rule is GP's call.
+- Why: 0 unintended tricks (gate.thumb). Local workaround: the cap.
+
+### Decor anchors   (status: info for WA; no core change)
+- Decor records use only `DECOR_KINDS` with their documented params; billboards stand at |x| ≥ 4.9 (inner edge); end
+  walls every 8–12 s of an area visit; shadow casters, lantern strings and blade signs follow the area recipes in
+  world/gen/decor.ts. Backdrop buildings keep their parameter ranges (w 6–14, d 8–30, h 6–40 m).
+- Why: hand-off. Local workaround: n/a.
+
 ## WA: World art (W2a)
 
 ## SK: Skater and cosmetics (W2b)

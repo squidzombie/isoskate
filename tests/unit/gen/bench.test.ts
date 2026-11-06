@@ -1,7 +1,7 @@
-// World-gen bench (TECH §6.8, §11.6: part of `npm test`): generating and validating one segment ≤ 3 ms p95. Each
-// `ensure(∞, 1)` call is one unit of the loop's per-frame generation budget (TECH §5.2). 5 seeds × ~8 min of street
-// from t = 0, releasing behind as the game does. CPU is shared, so the p95 is taken over 2 passes and the better one
-// counts (noise only adds time).
+// World-gen bench (TECH §6.8, §11.6: part of `npm test`): generating and validating one segment, re-rolls included,
+// ≤ 3 ms p95. Each `ensure(∞, 1)` call is one unit of the loop's per-frame generation budget (TECH §5.2). 5 seeds ×
+// 160 segments (≈ 8 min of street) from t = 0, releasing behind as the game does. CPU is shared with other work, so
+// a warm-up pass runs first (JIT), then the best p95 of 3 passes counts (noise only adds time).
 import { describe, expect, it } from 'vitest';
 import { CHUNK_LEN } from '../../../src/core/tuning';
 import { createWorldGen } from '../../../src/world/gen';
@@ -9,7 +9,7 @@ import { createWorldGen } from '../../../src/world/gen';
 export const SEGMENT_P95_BUDGET_MS = 3;
 const SEGMENTS_PER_SEED = 160;
 
-function pass(): { p95: number; n: number; max: number } {
+function pass(): { p50: number; p95: number; n: number; max: number } {
   const times: number[] = [];
   for (const seed of [1, 2, 3, 4, 5]) {
     const gen = createWorldGen({ seed, mode: 'normal' });
@@ -24,15 +24,16 @@ function pass(): { p95: number; n: number; max: number } {
     }
   }
   times.sort((a, b) => a - b);
-  return { p95: times[Math.floor(0.95 * (times.length - 1))]!, n: times.length, max: times[times.length - 1]! };
+  return { p50: times[Math.floor(0.5 * (times.length - 1))]!, p95: times[Math.floor(0.95 * (times.length - 1))]!, n: times.length, max: times[times.length - 1]! };
 }
 
 describe('world-gen bench', () => {
-  it(`one segment (generate + validate) ≤ ${SEGMENT_P95_BUDGET_MS} ms p95 (5 seeds, best of 2 passes)`, () => {
-    const a = pass(), b = pass();
-    const best = a.p95 <= b.p95 ? a : b;
-    console.info(`[bench] segment p95 ${best.p95.toFixed(3)} ms (n ${best.n}, max ${best.max.toFixed(2)} ms)`);
-    expect(best.n).toBeGreaterThan(100);
+  it(`one segment (generate + validate, re-rolls included) ≤ ${SEGMENT_P95_BUDGET_MS} ms p95 (5 seeds, warm-up + best of 3 passes)`, () => {
+    pass();
+    const runs = [pass(), pass(), pass()];
+    const best = runs.reduce((a, b) => (b.p95 < a.p95 ? b : a));
+    console.info(`[bench] segment p50 ${best.p50.toFixed(3)} ms, p95 ${best.p95.toFixed(3)} ms (n ${best.n}, max ${best.max.toFixed(2)} ms); passes ${runs.map((r) => r.p95.toFixed(2)).join(' / ')}`);
+    expect(best.n).toBeGreaterThan(700);
     expect(best.p95).toBeLessThanOrEqual(SEGMENT_P95_BUDGET_MS);
-  });
+  }, 120_000);
 });

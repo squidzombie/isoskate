@@ -39,4 +39,13 @@ describe('bots.quick', () => {
     expect(crashes).toEqual([]);
     expect(grinds).toBe(0);
   });
+
+  it('conformance bot on the Lesson Line (first runs): 0 crashes through 0–45 s on 3 seeds', () => {
+    const crashes: string[] = [];
+    for (const seed of [1, 2, 3]) {
+      const r = runBot('conformance', seed, { ticks: 45 * 60, mode: 'lesson' });
+      if (r.crash) crashes.push(`seed ${seed}: ${describeCrash(r)}`);
+    }
+    expect(crashes).toEqual([]);
+  });
 });

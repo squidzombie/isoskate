@@ -12,6 +12,7 @@ import type { Sim } from '../../core/sim';
 import { DT, FLIP_UPGRADE_MAX_PROGRESS, G, LATE_FLIP_CUTOFF, SPIN_UPGRADE_MAX_PROGRESS, V_LAT_MAX, V_POP, sAt, tAt } from '../../core/tuning';
 import { ObTag, type GrindEdge } from '../../core/world';
 import { FLIPS, SPINS } from '../../tricks';
+import { SafeLine, checkPath } from '../../world/gen';
 import { SafeBot } from './safe';
 
 export interface TrickBotOptions { seed?: number; spinShare?: number; grindShare?: number }
@@ -26,7 +27,7 @@ const CHAINS: readonly Chain[] = FLIPS.map((f) => {
 
 const swipe = (d: Dir8): Partial<InputFrame> => ({ swipe: d, swipeFast: true, swipeDx: 0, swipeSteer: false, swipeFromRest: false });
 
-interface Attempt { edge: GrindEdge; obstacle: number; x: number; tTake: number; tEntry: number }
+interface Attempt { edge: GrindEdge; obstacle: number; x: number; tTake: number; tEntry: number; line: SafeLine }
 
 export class TrickBot {
   readonly safe: SafeBot;
@@ -65,7 +66,13 @@ export class TrickBot {
         if (tTake < tNow + 0.15) continue;
         const x = e.a.x;
         if (Math.abs(x - c.p.x) > 0.7 * V_LAT_MAX * (tTake - tNow - 0.15)) continue;
-        return { edge: e, obstacle: ob.id, x, tTake: Math.round(tTake / DT) * DT, tEntry };
+        // The approach (steer to the edge's x, ollie) must meet nothing before the capture.
+        const line = new SafeLine(tNow, c.p.x);
+        line.moveTo(x, tNow + 0.05, 0.7 * V_LAT_MAX);
+        line.ollie(Math.round(tTake / DT) * DT);
+        const hit = checkPath(line, sim.world.obstacles(c.p.s - 2, sAt(tEntry + 0.5)), tNow, tEntry - 0.05, 0);
+        if (hit && hit !== 'path:capture') continue;
+        return { edge: e, obstacle: ob.id, x, tTake: Math.round(tTake / DT) * DT, tEntry, line };
       }
     }
     return null;
@@ -79,8 +86,8 @@ export class TrickBot {
     if (c.mode === 'grind' && this.lastMode !== 'grind') this.grinds++;
     this.lastMode = c.mode;
     if (c.mode === 'grind') { this.offPlan = true; return f; }
-    // Back on the ground after leaving the plan: re-plan from the board.
-    if (this.offPlan && !this.attempt && c.mode === 'roll') { this.offPlan = false; this.safe.reset(); }
+    // Off the edge (or back on the ground) after leaving the plan: re-plan from the board (in the air from its landing).
+    if (this.offPlan && !this.attempt && (c.mode === 'roll' || c.mode === 'air')) { this.offPlan = false; this.safe.reset(); }
     // Pick window: the best entry value among the directions (a single swipe).
     if (c.mode === 'air' && c.pickWindow) return { ...swipe('dr'), steerDx: 0 };
     const d = this.safe.decide(sim);
@@ -91,7 +98,7 @@ export class TrickBot {
     }
     const a = this.attempt;
     if (a) {
-      f.steerDx = a.x - c.targetX;
+      f.steerDx = a.line.xAt(tNow + 0.1) - c.targetX;
       if (c.mode === 'roll' && Math.abs(tNow - a.tTake) <= DT / 2 + 1e-9) f.tap = true;
       if (tNow > a.tEntry + 0.6 || (c.mode === 'roll' && tNow > a.tTake + 0.1)) this.attempt = null;
       return f;
@@ -126,7 +133,9 @@ export class TrickBot {
       }
       if (!c.flip && c.flipsThisAir === 0 && c.airLeft > LATE_FLIP_CUTOFF + 0.05) {
         // Clean enough: ≥ 85 % of the chain's rotation before touchdown (the sim lands ≥ 80 % clean, ≥ 55 % sketchy).
-        const fit = CHAINS.find((ch) => ch.dur * 0.85 + (ch.inputs.length - 1) * 2 * DT <= c.airLeft);
+        // One of the three best that fit (variety: doubles, lasers, tres …).
+        const fits = CHAINS.filter((ch) => ch.dur * 0.85 + (ch.inputs.length - 1) * 2 * DT <= c.airLeft).slice(0, 3);
+        const fit = fits.length ? fits[Math.min(fits.length - 1, Math.floor(this.rng.float() * fits.length))] : undefined;
         if (fit) {
           this.chain = fit.inputs.slice(1);
           this.nextSwipe = tNow + 2 * DT;
