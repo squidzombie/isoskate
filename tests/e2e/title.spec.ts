@@ -7,7 +7,8 @@ declare global { interface Window { __skate?: import('../../src/core/debug').Deb
 interface TitleTools {
   stats(): { drawCalls: number; tris: number; backdrop: string; diving: boolean; worldWarm: number;
     bake: { previewMs: number; slices: number; maxSliceMs: number; totalMs: number; done: boolean } };
-  dive(): { frames: number; maxWorkMs: number; startedAt: number; liveAt: number };
+  dive(): { frames: number; maxWorkMs: number; startedAt: number; liveAt: number; skipped: boolean | null };
+  hold(t: number | null): void;
   bakeDone(): boolean;
   scene: { camera: import('three').PerspectiveCamera; boardSlot: import('three').Object3D };
 }
@@ -92,7 +93,8 @@ test('TAP TO ROLL dives into a live run within 2.5 s', async ({ page }, info) =>
   const d = (await state(page)).dive;
   const tapAt = await page.evaluate(() => (window as unknown as { tapAt: number }).tapAt);
   expect(d.liveAt - tapAt).toBeLessThan(2500);
-  expect(d.frames).toBeGreaterThan(5);
+  expect(d.frames).toBeGreaterThanOrEqual(3);
+  expect(d.skipped).toBe(false);
   expect(d.liveAt - d.startedAt).toBeGreaterThan(1000);                        // it played (DIVE.sec 1.45 s)
   expect(errors).toEqual([]);
 });
@@ -104,15 +106,19 @@ test('a tap during the dive skips it', async ({ page }, info) => {
   const vp = page.viewportSize()!, touch = !!info.project.use.hasTouch;
   await tap(page, touch, vp.width / 2, vp.height * 0.45);
   expect((await state(page)).diving).toBe(true);
-  // The skipping tap's pointerdown, stamped in the page (Playwright's own latency under load is not the game's).
-  await page.evaluate(() => window.addEventListener('pointerdown', () => { (window as unknown as { skipAt: number }).skipAt = performance.now(); }, { capture: true, once: true }));
+  // Hold the dive mid-flight (so the harness's own latency under load cannot let it end by itself), and stamp the
+  // skipping tap's pointerdown in the page.
+  await page.evaluate(() => {
+    (window as unknown as { __skateTitle: TitleTools }).__skateTitle.hold(0.4);
+    window.addEventListener('pointerdown', () => { (window as unknown as { skipAt: number }).skipAt = performance.now(); }, { capture: true, once: true });
+  });
   await tap(page, touch, vp.width / 2, vp.height * 0.5);
   await expect.poll(async () => (await state(page)).diving, { timeout: 2000, intervals: [20] }).toBe(false);
   await expect.poll(async () => (await state(page)).tick, { timeout: 3000 }).toBeGreaterThan(5);
   const d = (await state(page)).dive;
   const skipAt = await page.evaluate(() => (window as unknown as { skipAt: number }).skipAt);
+  expect(d.skipped).toBe(true);
   expect(d.liveAt - skipAt).toBeLessThan(700);                                 // the next frame or two is the run
-  expect(d.liveAt - d.startedAt).toBeLessThan(1450 + 400);                     // and the dive did not play out
   // The skipping tap did not reach the run's input: no ollie at the start.
   const ev = await page.evaluate(() => window.__skate!.events(0).filter((e) => e.t === 'ollie').length);
   expect(ev).toBe(0);

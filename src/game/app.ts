@@ -81,6 +81,8 @@ export class App {
   /** The Title → run dive in progress (the run is prepared, the sim and input wait for the hand-over). */
   private dive: DiveClock | null = null;
   private diveLastMs = -1;
+  /** How the last dive ended (tools: title.spec): skipped by a tap or key, and at what dive time. */
+  lastDive: { skipped: boolean; t: number } | null = null;
   /** A tap that skipped the dive must not also press what appears under it (the HUD's pause button). */
   private swallowClickUntil = -1;
 
@@ -104,7 +106,7 @@ export class App {
         // Any tap during the dive skips to the run; the touch itself never reaches the run's input.
         e.stopPropagation();
         this.swallowClickUntil = e.timeStamp + 600;
-        this.dive.skip();
+        this.skipDive();
         return;
       }
       if (this.screen === 'crash' && e.timeStamp - this.crashAtMs >= RETRY_MIN_MS) this.retryArmed = true;
@@ -195,7 +197,8 @@ export class App {
       d.input.setEnabled(false);
       d.loop.setRunning(false);
       d.ui.hud.show(false);
-      this.dive = new DiveClock(!!d.reducedMotion?.(), () => this.goLive());
+      this.lastDive = null;
+      this.dive = new DiveClock(!!d.reducedMotion?.(), () => { this.lastDive ??= { skipped: false, t: this.dive?.t ?? 0 }; this.goLive(); });
       this.diveLastMs = d.now?.() ?? -1;
       d.loop.fast = true;                               // the dive renders at the run's 60 fps cap
       d.audio.sfx('dive');
@@ -212,6 +215,14 @@ export class App {
     d.loop.setRunning(true);
     d.ui.hud.show(true);
     this.checkRotate(d.sim.cur.vel.s);  // a phone already in landscape starts paused on the rotate card (DESIGN §8)
+  }
+
+  private skipDive(): void {
+    const dv = this.dive;
+    if (!dv?.active) return;
+    const t = dv.t;
+    dv.skip();
+    this.lastDive = { skipped: true, t };
   }
 
   /** Leaves a dive without its hand-over (another screen or another run start took over). */
@@ -369,7 +380,7 @@ export class App {
     if (e.repeat) return;
     if (this.dive?.active) {                           // any key skips the dive (browser shortcuts still work)
       if (e.code === 'Space' || e.code === 'Enter' || e.code.startsWith('Arrow')) e.preventDefault();
-      this.dive.skip();
+      this.skipDive();
       return;
     }
     const s = this.screen;

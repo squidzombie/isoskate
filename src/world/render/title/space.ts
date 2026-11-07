@@ -178,9 +178,11 @@ export class TitleScene {
     this.washScene.add(wash);
   }
 
-  /** Starts the full-resolution bake in idle slices (≤ EARTH_TEX.sliceMs each); `schedule` runs a callback later. */
-  startBake(schedule: (step: (budgetMs: number) => boolean) => void = idleSlices): void {
+  /** Starts the full-resolution bake in idle slices (≤ EARTH_TEX.sliceMs each); `schedule` runs a callback later.
+   *  `allowed()` false (a run or a screen without the space backdrop is up) holds the bake: it never competes with play. */
+  startBake(allowed: () => boolean = () => true, schedule: (step: (budgetMs: number) => boolean) => void = idleSlices): void {
     schedule((budgetMs) => {
+      if (!allowed()) return false;
       const done = this.full.step(Math.min(EARTH_TEX.sliceMs, budgetMs), nowMs);
       const b = this.bake;
       b.slices = this.full.slices; b.maxSliceMs = this.full.maxSliceMs; b.totalMs = this.full.totalMs;
@@ -454,8 +456,8 @@ function idleSlices(step: (budgetMs: number) => boolean): void {
   const run = (d?: { timeRemaining(): number }) => {
     if (d && d.timeRemaining() < EARTH_TEX.sliceMs && ++skipped < 30) { next(); return; }   // a short idle period: wait
     skipped = 0;
-    let done = step(EARTH_TEX.sliceMs);
-    while (!done && d && d.timeRemaining() > EARTH_TEX.sliceMs + 1) done = step(EARTH_TEX.sliceMs);
+    let done = step(EARTH_TEX.sliceMs), n = 1;
+    while (!done && d && n < 4 && d.timeRemaining() > EARTH_TEX.sliceMs + 1) { done = step(EARTH_TEX.sliceMs); n++; }
     if (!done) next();
   };
   const next = () => { if (g.requestIdleCallback) g.requestIdleCallback(run); else setTimeout(run, 16); };

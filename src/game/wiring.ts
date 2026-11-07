@@ -81,7 +81,8 @@ export function wire(root: HTMLElement): Game {
   };
   const title = new TitleScene(titleBand);
   title.boardSlot.add(hero.object3d);
-  title.startBake();
+  let spaceUp = false;                                  // the bake runs only while the space backdrop is drawn
+  title.startBake(() => spaceUp);
 
   // Simulation, input, audio, meta, UI.
   const sim = createSim(TRICKS);
@@ -103,10 +104,11 @@ export function wire(root: HTMLElement): Game {
   const SLIDE_GRINDS: ReadonlySet<string> = new Set(TRICKS.grinds.filter((d) => d.slide).map((d) => d.id));
   // The Title's floating board follows the equipped board (an id compare per frame: no allocation).
   const syncHero = boardFollower(() => save.data.equipped.board, () => meta.loadout().board, hero);
-  // The world is first drawn by the dive: while the Title idles (after the Earth bake), build the Roll-out chunks and
-  // compile the world's programs (off the main thread where KHR_parallel_shader_compile exists), then draw the world
-  // once into a 1-pixel scissor (uploads its buffers and textures, compiles the shadow programs) under the space
-  // frame, so none of it lands in a dive frame. 0 = pending, 1 = compiling, 2 = compiled, 3 = done.
+  // The world is first drawn by the dive (or a run started another way): from the Title's third frame, build the
+  // Roll-out chunks and compile the world's programs (off the main thread where KHR_parallel_shader_compile exists),
+  // then draw the world once into a 1-pixel scissor (uploads its buffers and textures, compiles the shadow programs)
+  // under a space frame, so none of it lands in a dive or run frame (the old diorama paid all of it in the first
+  // frame). 0 = pending, 1 = compiling, 2 = compiled, 3 = done.
   let worldWarm = 0, spaceFrames = 0, uploadNext = false;
   const warmWorld = (f: RenderFrame) => {
     const r = gfx.renderer;
@@ -116,7 +118,11 @@ export function wire(root: HTMLElement): Game {
       title.precompile(r);
       const ra = r as typeof r & { compileAsync?: (s: unknown, c: unknown) => Promise<unknown> };
       const done = () => { worldWarm = 2; };
-      try { if (ra.compileAsync) ra.compileAsync(gfx.scene, cameraRig.camera).then(done, done); else done(); } catch { done(); }
+      // Without parallel compiles (KHR_parallel_shader_compile) an async compile is a sync one plus a wait: go
+      // straight to the 1-pixel draws (this frame then costs what the old diorama's first frame did).
+      const parallel = !!r.extensions?.has?.('KHR_parallel_shader_compile');
+      if (!parallel || !ra.compileAsync) { worldWarm = 2; warmWorld(f); return; }
+      try { ra.compileAsync(gfx.scene, cameraRig.camera).then(done, done); } catch { done(); }
     } else if (worldWarm === 2) {
       worldWarm = 3;
       TitleScene.warm(r, gfx.scene, cameraRig.camera);
@@ -135,13 +141,14 @@ export function wire(root: HTMLElement): Game {
     const w0 = performance.now();
     app.frame(f.dt);
     const bd = app.backdrop;
+    spaceUp = bd === 'space';
     if (bd !== 'dive' && diveStats.startedAt >= 0 && diveStats.liveAt < 0) diveStats.liveAt = w0;
     if (bd === 'space') {
       title.endDive();
       syncHero();
       hero.update(f.dt);
       title.update(f.dt, viewport);
-      if (worldWarm !== 1 && worldWarm < 3 && title.bake.done && ++spaceFrames > 20) warmWorld(f);
+      if (worldWarm !== 1 && worldWarm < 3 && ++spaceFrames > 1) warmWorld(f);
       title.render(gfx.renderer);
       return false;
     }
@@ -275,7 +282,7 @@ export function wire(root: HTMLElement): Game {
     // Title tooling (e2e title.spec, shots): the space scene's stats, the bake, the dive's frame times.
     (window as unknown as { __skateTitle?: unknown }).__skateTitle = {
       stats: () => ({ ...title.stats(), hero: hero.stats(), backdrop: app.backdrop, diving: app.diving, worldWarm }),
-      dive: () => ({ ...diveStats, works: diveWorks.slice() }),
+      dive: () => ({ ...diveStats, works: diveWorks.slice(), skipped: app.lastDive?.skipped ?? null }),
       hold: (t: number | null) => app.holdDive(t),
       bakeDone: () => title.bake.done,
       scene: title,
