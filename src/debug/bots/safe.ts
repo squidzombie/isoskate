@@ -68,6 +68,15 @@ export class SafeBot {
   /** The plan's x at run time t (the thumb bot renders it). */
   planX(t: number): number { return polyAt(this.pts, t); }
 
+  /** The first planned or decided tap at or after run time t (Infinity if none): the trick bot keeps its extra pops
+   *  and manuals clear of the plan's own ollies. */
+  nextTap(t: number): number {
+    let best = Infinity;
+    for (const p of this.pending) if (p.t >= t - 1e-9 && p.t < best) best = p.t;
+    for (const p of this.taps) if (p.t >= t - 1e-9 && p.t < best) best = p.t;
+    return best;
+  }
+
   /** Decide the input for the tick `latency` from now (call once per tick, before step). */
   decide(sim: Sim): Decision {
     const c = sim.cur;

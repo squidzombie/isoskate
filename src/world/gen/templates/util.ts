@@ -1,8 +1,9 @@
 // world/gen/templates/util.ts: small helpers shared by the template scripts.
-import { round1cm } from '../../../core/math';
+import { clamp, round1cm } from '../../../core/math';
 import { sAt, speedAt, tAt } from '../../../core/tuning';
 import type { Obstacle } from '../../../core/world';
 import { GEN } from '../gen.config';
+import { buildBench, buildFlatbar, buildPad } from '../props/shared';
 import type { TemplateCtx } from './types';
 
 export const sOf = (t: number): number => round1cm(sAt(t));
@@ -30,3 +31,31 @@ export function edgeCoins(c: TemplateCtx, ob: Obstacle, n = 1): void {
 }
 /** The road half-width of the area layout (|x| of the curbs, or the corridor when curb-free). */
 export const roadHalf = (c: TemplateCtx): number => c.layout.curbX ?? 4.2;
+
+/** (G1 flow) A template's second beat: one more trick element after its main one, so a line chains (grind → manual,
+ *  grind → hop → grind) instead of ending in empty road. `after` is the obstacle the rider leaves (its edges' exit
+ *  zones: a crash-faced beat starts ≥ GEN.beat.clearSec after its end or ≥ 1.8 m to the side; a pad's bump top is no
+ *  crash face, so it may follow at once). Chance GEN.beat.chance; returns the beat or null. */
+export function secondBeat(c: TemplateCtx, after: Obstacle): Obstacle | null {
+  if (!c.rng.chance(GEN.beat.chance)) return null;
+  const rh = (c.layout.lip ? 2.6 : roadHalf(c)) - 0.7;
+  const tEnd = tAt(after.s + after.len);
+  const ex = clamp(after.x, -rh, rh);
+  const kind = c.rng.weighted(GEN.beat.kinds[c.area] ?? GEN.beat.kinds.downtown!);
+  if (kind === 'pad') {
+    const x = round1cm(clamp(ex + c.rng.range(-0.6, 0.6), -rh + 0.3, rh - 0.3));
+    const pad = put(c, buildPad(sOf(tEnd + c.rng.range(GEN.beat.padAfter[0], GEN.beat.padAfter[1])), x, clamp(c.v * c.rng.range(0.4, 0.55), 3, 6), c.props));
+    c.coins.string(pad.s + 0.4, pad.s + pad.len - 0.4, x, c.datum + 0.15 + GEN.coins.padUp, c.v);
+    return pad;
+  }
+  // A bench / flat bar 1.8–2.6 m to the side of the exit (toward the centre when there is no room outside).
+  let x = ex + (c.rng.chance(0.5) ? 1 : -1) * c.rng.range(1.8, 2.6);
+  if (Math.abs(x) > rh) x = ex - Math.sign(x - ex) * Math.abs(x - ex);
+  if (Math.abs(x) > rh) return null;
+  const tA = tEnd + c.rng.range(GEN.beat.sideAfter[0], GEN.beat.sideAfter[1]);
+  const ob = kind === 'bench' ? buildBench(sOf(tA), round1cm(x), c.props)
+    : buildFlatbar(sOf(tA), round1cm(x), round1cm(clamp(c.v * c.rng.range(0.6, 1.0), 3, 10)), round1cm(c.rng.range(0.35, 0.42)), c.props);
+  put(c, ob);
+  c.coins.edge(ob.edges[0]!);
+  return ob;
+}

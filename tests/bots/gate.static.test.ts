@@ -6,9 +6,10 @@
 //  - no solid box with a height in the forbidden band 0.61–1.14 m (ride-on slope bodies excepted);
 //  - every area visit's datum closes to y = 0 (the street base is at 0 when each gateway starts);
 //  - trick-coin share ≥ 75 %; validator rejections < 5 %, fallbacks < 1 %.
+// Also reported (G1): the DESIGN §11 density table per phase and how many distinct openings the seeds get.
 import { describe, expect, it } from 'vitest';
-import { CHUNK_LEN, HEIGHT, T_SHIFT, sAt } from '../../src/core/tuning';
-import type { Obstacle, SafeKey } from '../../src/core/world';
+import { CHUNK_LEN, HEIGHT, T_SHIFT, sAt, tAt } from '../../src/core/tuning';
+import { ObTag, type Obstacle, type SafeKey } from '../../src/core/world';
 import { createWorldGen, createWorldQuery, Generator, rMinAt } from '../../src/world/gen';
 import { ollieWindow } from '../../src/world/gen/validator/path';
 import { seedsFor, writeReport } from './suites';
@@ -17,7 +18,14 @@ const S_END = 3000;
 const COT35 = 1 / Math.tan((35 * Math.PI) / 180);
 const seeds = seedsFor(100);
 
+/** Difficulty phases (DESIGN §11) for the density table: trick elements (TrickLine obstacles), required actions
+ *  (ollies and ≥ 0.5 m moves along the SafeKeys), run time, S_GATE time, breathers; reported, not gated (targets
+ *  are ±25 % measured outputs, DESIGN §11). */
+const PHASE_OF = (t: number) => (t < 45 ? 'opening' : t < 90 ? 'warm' : t < 150 ? 'build' : 'plateau');
+type Dens = Record<string, { dur: number; trick: number; acts: number; gate: number; breathers: number }>;
+
 interface Measure {
+  dens: Dens; opening: string;
   seed: number; segments: number; rerolls: number; fallbacks: number; coinShare: number; coins: number; trickCoins: number; valCalls: number; valFails: number; replans: number;
   decisionMin: number; windowMin: number; windowMinIndep: number; deadEndMax: number;
   spacingMin: number; band: string[]; datum: string[]; hidden: string[];
@@ -46,6 +54,19 @@ function measure(seed: number): Measure {
     }
   }
   acts.sort((a, b) => a.t - b.t);
+  // Density per phase (from t = 9, after the Roll-out).
+  const dens: Dens = {};
+  const ph = (t: number) => (dens[PHASE_OF(t)] ??= { dur: 0, trick: 0, acts: 0, gate: 0, breathers: 0 });
+  const sEnd = Math.min(S_END, gen.segments().filter((sg) => sg.s1 <= S_END).reduce((m, sg) => Math.max(m, sg.s1), 0));
+  for (const sg of gen.segments()) {
+    if (sg.t0 < 9 || sg.s1 > sEnd) continue;
+    const d = ph(sg.t0); d.dur += sg.t1 - sg.t0;
+    if (sg.templateId === 'S_GATE') d.gate += sg.t1 - sg.t0;
+    if (sg.tier === 0) d.breathers++;
+  }
+  for (const o of obs) if ((o.tags & ObTag.TrickLine) && o.s < sEnd && o.s >= sAt(9)) ph(tAt(o.s)).trick++;
+  for (const a of acts) if (a.t >= 9 && sAt(a.t) < sEnd) ph(a.t).acts++;
+  const opening = gen.segments().filter((sg) => sg.t0 >= 9 && sg.t0 < 40).map((sg) => sg.templateId).join(' ');
   let spacingMin = Infinity;
   for (let i = 1; i < acts.length; i++) spacingMin = Math.min(spacingMin, acts[i]!.t - acts[i - 1]!.t - Math.max(rMinAt(acts[i - 1]!.t), T_SHIFT(acts[i - 1]!.dx)));
   // Forbidden band (box heights), ride-on slopes (a landable body under an incline / hubba slab) excepted.
@@ -93,7 +114,7 @@ function measure(seed: number): Measure {
   }
   const st = gen.stats(), vs = gen.valStats;
   const replans = Object.entries(st.rejections).filter(([k]) => k.startsWith('replan:')).reduce((a, [, v]) => a + v, 0);
-  return { seed, segments: st.segments, rerolls: st.rerolls, fallbacks: st.fallbacks, coinShare: st.trickCoinShare, coins, trickCoins, valCalls: gen.valCalls, valFails: gen.valFails, replans,
+  return { dens, opening, seed, segments: st.segments, rerolls: st.rerolls, fallbacks: st.fallbacks, coinShare: st.trickCoinShare, coins, trickCoins, valCalls: gen.valCalls, valFails: gen.valFails, replans,
     decisionMin: vs.decisionMin, windowMin: vs.windowMin, windowMinIndep, deadEndMax: vs.deadEndMax, spacingMin, band, datum, hidden };
 }
 
@@ -116,6 +137,13 @@ const agg = {
   band: ms.flatMap((m) => m.band.map((b) => `seed ${m.seed}: ${b}`)),
   datum: ms.flatMap((m) => m.datum.map((b) => `seed ${m.seed}: ${b}`)),
   hidden: ms.flatMap((m) => m.hidden.map((b) => `seed ${m.seed}: ${b}`)),
+  density: Object.fromEntries(['opening', 'warm', 'build', 'plateau'].map((p) => {
+    const d = ms.reduce((a, m) => { const x = m.dens[p]; if (x) { a.dur += x.dur; a.trick += x.trick; a.acts += x.acts; a.gate += x.gate; a.breathers += x.breathers; } return a; },
+      { dur: 0, trick: 0, acts: 0, gate: 0, breathers: 0 });
+    return [p, { trickPer10: +(d.trick / d.dur * 10).toFixed(2), actsPer10: +(d.acts / d.dur * 10).toFixed(2), gateShare: +(d.gate / d.dur).toFixed(3),
+      breathersPerMin: +(d.breathers / d.dur * 60).toFixed(2) }];
+  })),
+  openingsDistinct: new Set(ms.map((m) => m.opening)).size,
 };
 writeReport('static', agg);
 

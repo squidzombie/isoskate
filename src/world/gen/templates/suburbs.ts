@@ -12,17 +12,18 @@ import { buildParkedCar } from '../props/downtown';
 import { buildDip } from '../props/shared';
 import { buildBins, buildGardenWall, buildHedge, buildMailbox } from '../props/suburbs';
 import type { Template, TemplateCtx, TemplateOut } from './types';
-import { contentFrom, edgeCoins, endAfter, put, side, sOf } from './util';
+import { contentFrom, edgeCoins, endAfter, put, side, sOf, secondBeat } from './util';
 
 /** Lateral position of a wall on the sidewalk band (x ∈ ±[2.6, 3.8]) or the lawn edge. */
 const wallX = (c: TemplateCtx, sd: number): number => round1cm(sd * (c.rng.chance(0.6) ? 3.2 : 2.15));
 
 export const SB_WALL: Template = {
-  id: 'SB_WALL', area: 'suburbs', tiers: [1], durMax: 3.4, mirror: true,
+  id: 'SB_WALL', area: 'suburbs', tiers: [1], durMax: 4.4, mirror: true,
   build(c: TemplateCtx): TemplateOut {
     const sd = side(c), x = wallX(c, sd);
     const w = put(c, buildGardenWall(sOf(contentFrom(c) + 0.3), x, c.v * c.rng.range(1.4, 2.2), c.props));
     c.coins.string(w.s + 0.3 * c.v, w.s + w.len - 0.2 * c.v, x, w.solids[0]!.box.y1 + GEN.coins.edgeUp, c.v);
+    secondBeat(c, w);
     return { t1: endAfter(c, 0.7) };
   },
 };

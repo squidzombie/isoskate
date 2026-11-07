@@ -1,8 +1,8 @@
-// Gate: the trick bot (greedy trick lines, flips, spins, grinds on the safe plan): 50 seeds × 5 min from the
-// plateau. Trick lines are safe to ride (0 crashes); feasibility: doubles, triples and the 360 spin happen.
-// The score ratio (survival-only ÷ trick bot per minute ≤ 10 %, DESIGN §10.11 A4) and the p95 combo duration
-// (≤ 45 s, comboBanked.durSec) are measured and written to artifacts/bots.json; they gate from G1, with the W1a
-// scoring merged (ROADMAP W1b), so their assertions are `todo` here.
+// Gate: the trick bot (greedy trick lines, flips, spins, grinds and combo keeping on the safe plan, decks for the
+// long air): 50 seeds × 5 min from the plateau. Trick lines are safe to ride (0 crashes); feasibility: doubles,
+// triples and the 360 spin happen. With the W1a scoring (G1): the score ratio (survival-only ÷ trick bot per minute
+// ≤ 10 %, DESIGN §10.11 A4) and the p95 combo duration (≤ 45 s, comboBanked.durSec); both are written to
+// artifacts/bots.json. The trick bot plays like a good player (DESIGN §13.7: 20–35k pts/min; debug/bots/trick.ts).
 import { describe, expect, it } from 'vitest';
 import { runBot } from '../../src/debug/bots';
 import { MIN, PLATEAU_T, crashOf, quantile, seedsFor, writeReport } from './suites';
@@ -37,8 +37,15 @@ describe('bots gate: trick', () => {
     expect(feasible.spin360).toBeGreaterThan(0);
     expect(feasible.grinds).toBeGreaterThan(seeds.length);
   });
-  // Triples need ≥ 0.82 s of air (drops): reported, asserted from G1 with the W1a trick timings.
-  it.todo('trick bot: a triple flip happens (G1)');
-  it.todo('score ratio: survival-only ≤ 10 % of the trick bot per minute at the plateau (G1, W1a scoring)');
-  it.todo('p95 combo duration ≤ 45 s (G1, W1a scoring)');
+  // Triples need ≥ 0.82 s of air: a pop off a 2.0 m deck (the skywalk, the Harbor Bridge).
+  it('trick bot: a triple flip happens (pops off the 2.0 m decks)', () => {
+    expect(feasible.triples).toBeGreaterThan(0);
+  });
+  it('score ratio: survival-only ≤ 10 % of the trick bot per minute at the plateau (W1a scoring)', () => {
+    expect(survRate / trickRate).toBeLessThanOrEqual(0.10);
+  });
+  it('p95 combo duration ≤ 45 s (W1a scoring)', () => {
+    expect(durs.length).toBeGreaterThan(seeds.length);
+    expect(quantile(durs, 0.95)).toBeLessThanOrEqual(45);
+  });
 });

@@ -100,9 +100,9 @@ export function planSegment(c: GenCursor, env: PlanEnv, rng: Sfc32): Plan {
     return { tpl: gate, tier: Math.max(2, tier) as Tier, reason: 'wander', ...(both ? { a3: true } : {}) };
   }
   if (a3Due) return a3Plan(rng, tier, env.trench, area, Math.min(left, env.gateRoom + 2.3));
-  // A due breather (T0: the A-clocks pause; the row comes right after it).
+  // A due breather (T0: the A-clocks pause; the row comes right after it), never right before a gateway (G1 flow).
   const br = GEN.breather[phase];
-  if (br && env.t >= c.breatherDueT && br.dur + 0.5 <= left && !gateNow) {
+  if (br && env.t >= c.breatherDueT && br.dur + GEN.breatherGwGap <= left && !gateNow) {
     const tpl = TEMPLATES[(GEN.breatherTemplate[area] ?? 'S_OPEN') as 'S_OPEN'] ?? open;
     return { tpl, tier: 0, dur: tpl === open ? br.dur : undefined, reason: 'breather' };
   }

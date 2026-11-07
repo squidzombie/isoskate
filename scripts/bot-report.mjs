@@ -29,5 +29,9 @@ for (const [name, s] of Object.entries(suites).sort(([a], [b]) => a.localeCompar
   if (s.feasible) parts.push(`feasible ${JSON.stringify(s.feasible)}`);
   if (s.rerollRate !== undefined) parts.push(`rerolls ${(s.rerollRate * 100).toFixed(2)} % fallbacks ${(s.fallbackRate * 100).toFixed(2)} % failed validations ${((s.validationFailRate ?? 0) * 100).toFixed(1)} % re-plans ${((s.replanRate ?? 0) * 100).toFixed(1)} % coins ${s.coinShare} decision ${s.decisionMin} window ${s.windowMin}/${s.windowMinIndep ?? '–'} deadEnd ${s.deadEndMax}`);
   console.log(parts.join(' | '));
+  if (s.density) {
+    for (const [p, d] of Object.entries(s.density)) console.log(`  density ${p.padEnd(8)} trick elements/10 s ${d.trickPer10}  required actions/10 s ${d.actsPer10}  S_GATE ${(d.gateShare * 100).toFixed(0)} %  breathers/min ${d.breathersPerMin}`);
+    if (s.openingsDistinct !== undefined) console.log(`  openings: ${s.openingsDistinct} distinct template sequences (9–40 s) over ${s.seeds} seeds`);
+  }
 }
 console.log(`bot-report: ${Object.keys(suites).length} suites → artifacts/bots.json`);

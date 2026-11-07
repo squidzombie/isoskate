@@ -12,14 +12,15 @@ import { GEN } from '../gen.config';
 import { buildBollard, buildContainer, buildDeck, buildDrums, buildIbeam, buildPallet } from '../props/docks';
 import { LIP } from '../props/street';
 import type { Template, TemplateCtx, TemplateOut } from './types';
-import { contentFrom, edgeCoins, endAfter, put, sOf } from './util';
+import { contentFrom, edgeCoins, endAfter, put, sOf, secondBeat } from './util';
 
 export const IN_BEAM: Template = {
-  id: 'IN_BEAM', area: 'docks', tiers: [1], durMax: 3.2, mirror: false,
+  id: 'IN_BEAM', area: 'docks', tiers: [1], durMax: 4.2, mirror: false,
   build(c: TemplateCtx): TemplateOut {
     const x = round1cm(c.rng.range(-1.2, 2.2));
     const beam = put(c, buildIbeam(sOf(contentFrom(c) + 0.3), x, c.v * c.rng.range(1.0, 1.3), c.props));
     edgeCoins(c, beam);
+    secondBeat(c, beam);
     return { t1: endAfter(c, 0.7) };
   },
 };

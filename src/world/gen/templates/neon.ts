@@ -12,16 +12,17 @@ import { buildDeck } from '../props/docks';
 import { buildCherryPlanter, buildGuardRail, buildPillar, buildVending } from '../props/neon';
 import { buildBarrier, buildBench } from '../props/shared';
 import type { Template, TemplateCtx, TemplateOut } from './types';
-import { actFrom, contentFrom, edgeCoins, endAfter, put, side, sOf } from './util';
+import { actFrom, contentFrom, edgeCoins, endAfter, put, side, sOf, secondBeat } from './util';
 
 const RAIL_X = 2.95;
 
 export const NE_RAIL: Template = {
-  id: 'NE_RAIL', area: 'neon', tiers: [1], durMax: 3.6, mirror: true,
+  id: 'NE_RAIL', area: 'neon', tiers: [1], durMax: 4.6, mirror: true,
   build(c: TemplateCtx): TemplateOut {
     const sd = side(c);
     const rail = put(c, buildGuardRail(sOf(contentFrom(c) + 0.3), round1cm(sd * RAIL_X), c.v * c.rng.range(1.5, 2.4), c.props));
     edgeCoins(c, rail);
+    secondBeat(c, rail);
     return { t1: endAfter(c, 0.7) };
   },
 };

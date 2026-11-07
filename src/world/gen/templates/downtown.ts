@@ -12,10 +12,10 @@ import { GEN } from '../gen.config';
 import { buildLedge, buildParkedCar, buildPlanter } from '../props/downtown';
 import { buildBench, buildFlatbar, buildHandrail, buildHubba, buildTerrace, stairDrop, STAIR } from '../props/shared';
 import type { Template, TemplateCtx, TemplateOut } from './types';
-import { contentFrom, edgeCoins, endAfter, put, side, sOf } from './util';
+import { contentFrom, edgeCoins, endAfter, put, side, sOf, secondBeat } from './util';
 
 export const DT_LEDGE: Template = {
-  id: 'DT_LEDGE', area: 'downtown', tiers: [1], durMax: 3.2, mirror: true,
+  id: 'DT_LEDGE', area: 'downtown', tiers: [1], durMax: 4.2, mirror: true,
   build(c: TemplateCtx): TemplateOut {
     const sd = side(c);
     const walk = c.layout.curbX !== null && c.rng.chance(0.55);
@@ -23,6 +23,7 @@ export const DT_LEDGE: Template = {
     const tA = contentFrom(c) + 0.3;
     const ledge = put(c, buildLedge(sOf(tA), lx, c.v * c.rng.range(1.2, 2.0), c.props));
     c.coins.string(ledge.s + 0.3 * c.v, ledge.s + ledge.len - 0.2 * c.v, lx, ledge.solids[0]!.box.y1 + GEN.coins.edgeUp, c.v);
+    secondBeat(c, ledge);
     return { t1: endAfter(c, 0.7) };
   },
 };

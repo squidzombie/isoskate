@@ -67,6 +67,9 @@ export const GEN = {
     /** S_GATE approach trick line: chance, and its end ≥ this many seconds before the row; each re-roll stands the
      *  row retryLate s later. */
     feature: 0.95, featureGap: 1.3, retryLate: 0.3,
+    /** (G1 flow) Chance of a manual pad in the opening's lane ending padGap s before the
+     *  row (its curb edges' exit zones and rail-end lanes stay clear of the row), at most padSec[1] s long (≥ 3 m). */
+    pad: 0.9, padGap: 1.02, padSec: [0.3, 0.6] as readonly [number, number],
     /** After a gate the fallback could not stand, the row deadline moves to its end + lead + this. */
     fallbackDefer: 1.0,
     /** A gate carries the A3 barrier only when the line enters within ±a3MaxX (not from the sidewalk edge). */
@@ -98,14 +101,28 @@ export const GEN = {
     /** A template longer than the room before the row (+ slipPad) slips the row deadline (schedule.ts), only with
      *  slipGwRoom s to spare before the next gateway. */
     slipPad: 0.3, slipGwRoom: 2.0 },
+  /** (G1 flow) A single-element template's second beat (templates/util.ts secondBeat): chance, kind weights per area,
+   *  start after the main element's end (s): a pad at once, a bench / flat bar to the side a little later. */
+  beat: { chance: 0.7, padAfter: [0.25, 0.45] as readonly [number, number], sideAfter: [0.35, 0.6] as readonly [number, number],
+    kinds: {
+      downtown: [['pad', 1], ['bench', 1.5], ['flatbar', 1]], suburbs: [['pad', 1.5], ['flatbar', 1]],
+      docks: [['pad', 1], ['flatbar', 1.5]], neon: [['pad', 1], ['bench', 1], ['flatbar', 1]],
+    } as Record<AreaId, readonly (readonly ['pad' | 'bench' | 'flatbar', number])[]> },
+  /** (G1 flow) A3 hazards land into a manual pad: chance, start after the landing (s), length (s·v, 3–6 m). */
+  landPad: { chance: 0.5, after: 0.25, sec: [0.4, 0.55] as readonly [number, number] },
   /** S_TRENCH: gap per tier (s·v, DESIGN §10.3 0.25 / 0.30 / 0.35) and the plank offset from the safe x per tier. */
   trench: { gapSec: { 0: 0.25, 1: 0.25, 2: 0.30, 3: 0.33, 4: 0.33 } as Record<Tier, number>,
     plankOff: { 0: [0, 1], 1: [0, 1], 2: [1, 2], 3: [1.5, 2.5], 4: [1.5, 2.5] } as Record<Tier, readonly [number, number]>, depth: 0.6 },
-  /** Breathers (S_OPEN, T0) per phase: every `every` seconds, lasting `dur` (DESIGN §11). Gateways count. */
-  breather: { warm: { every: [30, 30], dur: 5 }, build: { every: [30, 30], dur: 4 }, plateau: { every: [20, 30], dur: 4 } } as
+  /** Breathers (S_OPEN, T0) per phase: `every` seconds after the last breather or gateway, lasting `dur` (DESIGN §11;
+   *  gateways count). G1 flow: a 35 s visit gets one breather near its middle (no breather ever runs straight into a
+   *  gateway: ≥ breatherGwGap s of street between them), so no gap between breathers exceeds ~20 s and no stretch of
+   *  empty road is longer than one breather; breathers are 0.5–1.5 s shorter than DESIGN §11's first numbers. */
+  breather: { warm: { every: [16, 20], dur: 3.5 }, build: { every: [16, 20], dur: 3.5 }, plateau: { every: [16, 20], dur: 3.5 } } as
     Partial<Record<PhaseId, { every: readonly [number, number]; dur: number }>>,
-  /** S_OPEN length when drawn freely, and the shortest cut-down filler (DESIGN §10.5). */
-  open: { dur: [3, 5] as readonly [number, number], minFiller: 0.6, flatbar: 0.6 },
+  breatherGwGap: 8,
+  /** S_OPEN length when drawn freely, the shortest cut-down filler (DESIGN §10.5), the optional flat bar's chance, and
+   *  the shortest breather that carries it too (G1 flow). */
+  open: { dur: [3, 5] as readonly [number, number], minFiller: 0.6, flatbar: 0.75, breatherBar: 3.4 },
   /** Re-rolls before the constructive fallback (DESIGN §10.6.7); from `easyFrom` on the template drops its hardest
    *  element. */
   rerolls: 6, easyFrom: 4,
@@ -121,8 +138,8 @@ export const GEN = {
   /** Downtown: every 3rd segment is a curb-free granite plaza (DESIGN §10.2). Suburbs: driveway cuts every 1.5–2 s. */
   plazaEvery: 3, driveway: { every: [1.5, 2.0] as readonly [number, number], w: 3.0, hazardClear: 1.6 },
   /** Decor across the road (m between): Neon lantern strings, Suburbs overhead wires (with their poles). Sparse, so the
-   *  read of the street stays on the ground plane. */
-  decorOverhead: { neonLanterns: 26, suburbsWires: 32 },
+   *  read of the street stays on the ground plane (G1 owner playtest: Neon overhead clutter; was 26 / 32 m). */
+  decorOverhead: { neonLanterns: 48, suburbsWires: 40 },
   /** Coins (DESIGN §10.8). Gold Stacks on hard lines from T3 (and transfers, high rails, Neon elevated). */
   coins: { stringSec: 0.12, stringMin: 5, stringMax: 8, edgeUp: 0.35, arcUp: 0.25, padUp: 0.35, groundY: 0.5,
     breatherAmp: 1.4, waveCount: 4, goldFromTier: 3 },

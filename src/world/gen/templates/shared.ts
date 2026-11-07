@@ -26,7 +26,8 @@ export const S_OPEN: Template = {
     const dur = c.dur ?? c.rng.range(GEN.open.dur[0], GEN.open.dur[1]);
     const t1 = Math.min(c.t0 + dur, c.maxT1);
     const x = c.safeX;
-    if (c.dur === undefined && t1 - c.t0 >= 2.8 && c.rng.chance(GEN.open.flatbar)) {
+    // (G1 flow: breathers too, when long enough; the bar is optional, the street stays calm)
+    if ((c.dur === undefined ? t1 - c.t0 >= 2.8 : t1 - c.t0 >= GEN.open.breatherBar) && c.rng.chance(GEN.open.flatbar)) {
       // Optional flat bar (trick line) 1.8–2.6 m off the line, on the road.
       const rh = roadHalf(c) - 0.4;
       let bx = x + side(c) * c.rng.range(1.8, 2.6);
@@ -64,6 +65,20 @@ export const S_CONES: Template = {
 const pitBands = (c: TemplateCtx) => c.layout.bands.map((b) => ({ x0: b.x0, x1: c.layout.lip ? Math.min(b.x1, LIP.x0) : b.x1, dy: b.dy }))
   .filter((b) => b.x1 > b.x0);
 
+/** A manual pad in the lane a required air lands in (A3 hazards, DESIGN §13.2: ollie into a manual keeps the link
+ *  window), starting GEN.landPad.after s after the landing; returns the template end it needs (the pad's end + the
+ *  tail rule), or −Infinity when none was placed (chance, or no room in the corridor). */
+function landingPad(c: TemplateCtx, tLand: number, x: number): number {
+  if (!c.rng.chance(GEN.landPad.chance)) return -Infinity;
+  const rh = (c.layout.lip ? 2.6 : roadHalf(c)) - 0.9;
+  const px = round1cm(clamp(x + c.rng.range(-0.4, 0.4), -rh, rh));
+  const tA = tLand + GEN.landPad.after;
+  const len = round1cm(clamp(c.v * c.rng.range(GEN.landPad.sec[0], GEN.landPad.sec[1]), 3, 6));
+  const pad = put(c, buildPad(sOf(tA), px, len, c.props));
+  c.coins.string(pad.s + 0.4, pad.s + pad.len - 0.4, px, c.datum + 0.15 + GEN.coins.padUp, c.v);
+  return tAt(pad.s + pad.len) + GEN.noActionTail + 0.15;
+}
+
 export const S_TRENCH: Template = {
   id: 'S_TRENCH', area: 'shared', tiers: [1, 2, 3], durMax: 2.6, mirror: true, fullWidth: true,
   build(c: TemplateCtx): TemplateOut {
@@ -83,7 +98,9 @@ export const S_TRENCH: Template = {
     // Trick line: flip across, away from the plank.
     const tx = clamp(plankX + (plankX >= 0 ? -2.2 : 2.2), -2.6, 2.6);
     c.coins.arc(tAt(s + len / 2) - 0.3, tx, c.datum);
-    return { t1: tAt(s + len) + 0.55, fullWidth: true };
+    // (G1 flow) The flip line lands into a manual pad.
+    const t1 = Math.max(tAt(s + len) + 0.55, landingPad(c, tAt(s + len) + 0.05, tx));
+    return { t1, fullWidth: true };
   },
 };
 
@@ -100,7 +117,10 @@ export const S_BARRIER: Template = {
       if (Math.abs(sx - c.safeX) >= 1.5) slot = { x: sx, w: 2.0 };
     }
     put(c, buildBarrier(round1cm(s), hgt, speedAt(tTake), c.props, slot));
-    return { t1: tTake + 0.6 + GEN.noActionTail + 0.25, fullWidth: true };
+    let t1 = tTake + 0.6 + GEN.noActionTail + 0.25;
+    // (G1 flow) Ollie the barrier into a manual: a pad in the landing lane (no action needed: a bump-class top).
+    if (!slot) t1 = Math.max(t1, landingPad(c, tTake + 0.6, c.safeX));
+    return { t1, fullWidth: true };
   },
 };
 
@@ -151,6 +171,7 @@ export const S_GATE: Template = {
     // The approach carries a trick line beyond the opening (away from the entry, off the move path): a bench or a
     // flat bar ending ≥ 1 s before the row (its exit zone stays clear of the blockers), coins along it.
     const fA = contentFrom(c) + 0.2, fB = tRow - GEN.gate.featureGap;
+    let feature = false;
     if (!withA3 && fB - fA >= 0.45 && c.rng.chance(GEN.gate.feature)) {
       const dir = Math.sign(pick - c.safeX) || 1;
       const fx = round1cm(clamp(pick + dir * c.rng.range(1.3, 1.7), -3.3, 3.3));
@@ -159,7 +180,20 @@ export const S_GATE: Template = {
         const f = c.rng.chance(0.5) || len < 3 ? buildBench(sOf(fB) - 2.0, fx, c.props) : buildFlatbar(round1cm(sAt(fB) - len), fx, round1cm(len), 0.35, c.props);
         put(c, f);
         c.coins.string(f.s + 0.2, f.s + f.len - 0.2, fx, f.solids[0]!.box.y1 + GEN.coins.edgeUp, c.v);
+        feature = true;
       }
+    }
+    // (G1 flow) Most rows have no room for that feature (the move fills the approach): a manual pad in the opening's
+    // own lane, ending just before the row, so threading the gap is a manual line, not a wait. A bump-class top:
+    // rolling over it needs no action; its curb edges end inside the opening's lanes.
+    const pB = tRow - GEN.gate.padGap, pA = Math.max(contentFrom(c), pB - GEN.gate.padSec[1]);
+    // (kept 0.9 m inside the road edge: a grinder on its outer curb edge clears the sidewalk; ≤ 1.3 m from the opening,
+    // which a rider leaving it 1 s before the row still reaches)
+    const padX = round1cm(clamp(pick, -(roadHalf(c) - 0.9), roadHalf(c) - 0.9));
+    if (!feature && !withA3 && Math.abs(padX - pick) <= 1.3 && sAt(pB) - sAt(pA) >= 3 && c.rng.chance(GEN.gate.pad)) {
+      const len = round1cm(Math.min(6, sAt(pB) - sAt(pA)));
+      const pad = put(c, buildPad(round1cm(sAt(pB) - len), padX, len, c.props));
+      c.coins.string(pad.s + 0.4, pad.s + pad.len - 0.4, pad.x, c.datum + 0.15 + GEN.coins.padUp, c.v);
     }
     for (const ob of gateRow(sRow, centres, w, c.props, c.rng)) put(c, ob);
     const tr = tAt(sRow);
