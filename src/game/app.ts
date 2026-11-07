@@ -3,6 +3,8 @@
 //                                              └──(1.2 s, no fresh touch)──▶ Results ──ROLL AGAIN──▶ Run | Home
 //   Run ⇄ Pause (pause button, Esc, back gesture, landscape rotation, visibilitychange / pagehide / blur)
 //   Title / Results ──open──▶ Locker | Shop (skater 'showcase', camera 'locker', try-on loadouts) ──home──▶ Title
+//   Title ──TAP TO ROLL──▶ dive (game/dive.ts: ~1.45 s into the Earth, any tap skips; 0.3 s fade with reduced motion)
+//         ──hand-over──▶ Run. Instant retry, ROLL AGAIN, Restart, debug and every other start skip the dive.
 // UI raises intents; this file decides what happens. Nothing here is deterministic gameplay.
 import type { AudioEngine } from '../core/audio';
 import type { Loadout } from '../core/cosmetics';
@@ -17,6 +19,7 @@ import type { RunResult, Sim } from '../core/sim';
 import type { UiApi, UiIntent } from '../core/ui';
 import type { CameraMode, CameraRig, SkaterView, Vfx, Viewport, WorldView } from '../core/view';
 import { blurActive, createBackGuard, createWakeLock, onHide, type BackGuard } from '../platform';
+import { DiveClock, type DiveView } from './dive';
 import type { GameLoop } from './loop';
 import type { RunSession, StartOptions } from './runSession';
 
@@ -31,6 +34,8 @@ export interface AppDeps {
   applySettings(): void;
   /** First-runs hints (game/onboarding.ts), armed at every run start. */
   hints?: { start(runsStarted: number, startT: number, god: boolean): void };
+  /** The dive plays as a 0.3 s fade (prefers-reduced-motion, Settings › Reduce motion or Reduce effects). */
+  reducedMotion?(): boolean;
   /** DESIGN §21 run_end properties (meta/index.ts runEndProps, passed in by wiring so App imports no module). */
   runEndProps?(r: RunResult, w: RunRewards | null, retryKind: 'instant' | 'results'): Record<string, string | number | boolean>;
 }
@@ -71,6 +76,10 @@ export class App {
   private previewing = false;
   /** The ended run's run_end, sent once its retry kind is known (instant retry, or once Results show). */
   private runEnd: { result: RunResult; rewards: RunRewards | null } | null = null;
+  /** The Title → run dive in progress (the run is prepared, the sim and input wait for the hand-over). */
+  private dive: DiveClock | null = null;
+  /** A tap that skipped the dive must not also press what appears under it (the HUD's pause button). */
+  private swallowClickUntil = -1;
 
   constructor(private readonly d: AppDeps) {
     this.back = createBackGuard((during) => {
@@ -88,21 +97,44 @@ export class App {
       }),
     );
     const down = (e: PointerEvent) => {
+      if (this.dive?.active) {
+        // Any tap during the dive skips to the run; the touch itself never reaches the run's input.
+        e.stopPropagation();
+        this.swallowClickUntil = e.timeStamp + 600;
+        this.dive.skip();
+        return;
+      }
       if (this.screen === 'crash' && e.timeStamp - this.crashAtMs >= RETRY_MIN_MS) this.retryArmed = true;
+    };
+    const click = (e: MouseEvent) => {
+      if (e.timeStamp < this.swallowClickUntil) { e.stopPropagation(); e.preventDefault(); this.swallowClickUntil = -1; }
     };
     const up = () => { if (this.screen === 'crash' && this.retryArmed) this.retry(); };
     const key = (e: KeyboardEvent) => this.onKey(e);
     d.root.addEventListener('pointerdown', down, true);
     d.root.addEventListener('pointerup', up, true);
+    d.root.addEventListener('click', click, true);
     window.addEventListener('keydown', key);
     this.offs.push(() => {
       d.root.removeEventListener('pointerdown', down, true);
       d.root.removeEventListener('pointerup', up, true);
+      d.root.removeEventListener('click', click, true);
       window.removeEventListener('keydown', key);
     });
   }
 
   get current(): ScreenId { return this.screen; }
+  /** True while the Title → run dive plays (screen 'run', the sim not yet stepping). */
+  get diving(): boolean { return !!this.dive?.active; }
+  /** What the canvas shows: the Title's space scene (Title and the menus opened from it), the dive, or the world. */
+  get backdrop(): 'space' | 'dive' | 'world' { return this.dive?.active ? 'dive' : this.camMode === 'title' ? 'space' : 'world'; }
+  /** The dive's timeline at this frame (null when no dive plays). */
+  get diveView(): DiveView | null { return this.dive?.active ? this.dive.shape() : null; }
+
+  /** Tools: freeze the dive at `t` seconds (null: let it run on). */
+  holdDive(t: number | null): void { if (this.dive?.active) { this.dive.hold = t; this.dive.tick(0); } }
+  /** Once per rendered frame, before drawing (real seconds): advances the dive; its end hands over to the run. */
+  frame(dt: number): void { if (this.dive?.active) this.dive.tick(dt); }
 
   /** Boot → Title: the static diorama (DESIGN §18.7): the start street, the rider idling, the 'title' camera. */
   boot(): void {
@@ -124,9 +156,12 @@ export class App {
     this.previewing = true;
   }
 
-  /** Title / instant retry / ROLL AGAIN / debug start: a fresh run (no loading; the world regenerates lazily). */
-  startRun(o: StartOptions = {}): void {
+  /** Title / instant retry / ROLL AGAIN / debug start: a fresh run (no loading; the world regenerates lazily).
+   *  `dive` (TAP TO ROLL on the Title only): the run is prepared now and goes live when the dive hands over; its
+   *  first chunks are built during the dive (TECH §8.6 first-frame exception). */
+  startRun(o: StartOptions = {}, dive = false): void {
     const d = this.d;
+    this.stopDive();
     this.clearCrashTimers();
     this.sendRunEnd('results');                          // a run left from Results / Home without a retry tap
     const cfg = d.session.next(o);
@@ -143,18 +178,43 @@ export class App {
     d.analytics.track('run_start', { seed: cfg.seed, runIndex: d.save.data.onboarding.runsStarted, lesson: cfg.mode === 'lesson' });
     blurActive();
     d.play.classList.add('run');
-    d.input.setEnabled(true);
-    d.loop.setRunning(true);
     this.back.armRun();
     this.wake.request();
-    d.audio.setScene('run');
+    d.audio.setScene('run');                            // the music moves to the run song during the dive
     this.setScreen('run');
+    if (dive) {
+      d.input.setEnabled(false);
+      d.loop.setRunning(false);
+      d.ui.hud.show(false);
+      this.dive = new DiveClock(!!d.reducedMotion?.(), () => this.goLive());
+      d.loop.fast = true;                               // the dive renders at the run's 60 fps cap
+      d.audio.sfx('dive');
+      return;
+    }
+    this.goLive();
+  }
+
+  /** The run goes live: input, the sim, the HUD (straight from startRun, or at the dive's hand-over, once). */
+  private goLive(): void {
+    const d = this.d;
+    d.loop.fast = false;
+    d.input.setEnabled(true);
+    d.loop.setRunning(true);
     d.ui.hud.show(true);
     this.checkRotate(d.sim.cur.vel.s);  // a phone already in landscape starts paused on the rotate card (DESIGN §8)
   }
 
+  /** Leaves a dive without its hand-over (another screen or another run start took over). */
+  private stopDive(): void {
+    if (!this.dive) return;
+    this.dive.cancel();
+    this.dive = null;
+    this.d.loop.fast = false;
+  }
+
   pause(rotate: boolean): void {
     if (this.screen !== 'run') return;
+    if (this.dive?.active) this.dive.skip();           // hidden tab / back gesture mid-dive: pause the live run
     const d = this.d;
     d.loop.setRunning(false);
     d.input.setEnabled(false);
@@ -180,6 +240,7 @@ export class App {
 
   home(): void {
     const d = this.d;
+    this.stopDive();
     this.clearCrashTimers();
     this.sendRunEnd('results');
     if (!this.previewing) this.preview();               // the Title shows the start street, not the crash site
@@ -209,6 +270,7 @@ export class App {
     if (screen === 'run') { this.startRun(); return; }
     if (screen === 'pause' && this.screen === 'run') { this.pause(!!p.rotate); return; }
     const d = this.d;
+    this.stopDive();
     this.clearCrashTimers();
     d.loop.setRunning(false);
     d.input.setEnabled(false);
@@ -226,7 +288,7 @@ export class App {
     if (SHOWCASE.has(screen)) this.showcase(p);
   }
 
-  dispose(): void { for (const off of this.offs) off(); this.back.dispose(); this.d.loop.stop(); }
+  dispose(): void { this.stopDive(); for (const off of this.offs) off(); this.back.dispose(); this.d.loop.stop(); }
 
   // ── internals ─────────────────────────────────────────────────────────────────────────────────────────────────
   private setScreen(screen: ScreenId, params?: UiParams): void {
@@ -275,7 +337,7 @@ export class App {
 
   private onIntent(i: UiIntent): void {
     switch (i.k) {
-      case 'play': if (this.screen === 'title') this.startRun(i.startArea ? { startArea: i.startArea } : {}); break;
+      case 'play': if (this.screen === 'title') this.startRun(i.startArea ? { startArea: i.startArea } : {}, true); break;
       case 'retry': if (this.screen === 'crash' || this.screen === 'results') this.retry(); break;
       case 'restart': if (this.screen === 'pause' || this.screen === 'results') this.startRun(); break;
       case 'pause': this.pause(false); break;
@@ -295,6 +357,7 @@ export class App {
 
   private onKey(e: KeyboardEvent): void {
     if (e.repeat) return;
+    if (this.dive?.active) { e.preventDefault(); this.dive.skip(); return; }   // any key skips the dive
     const s = this.screen;
     if (e.code === 'Escape') {
       if (this.backToPause()) return;
@@ -304,7 +367,7 @@ export class App {
       return;
     }
     const retryKey = e.code === 'Enter' || e.code === 'KeyR';
-    if (s === 'title' && (e.code === 'Space' || e.code === 'Enter')) { e.preventDefault(); this.startRun(); }
+    if (s === 'title' && (e.code === 'Space' || e.code === 'Enter')) { e.preventDefault(); this.startRun({}, true); }
     else if (retryKey && s === 'pause') { e.preventDefault(); this.startRun(); }
     else if (retryKey && s === 'results') { e.preventDefault(); this.retry(); }
     else if (retryKey && s === 'crash' && e.timeStamp - this.crashAtMs >= RETRY_MIN_MS) { e.preventDefault(); this.retry(); }

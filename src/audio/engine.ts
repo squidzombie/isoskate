@@ -29,7 +29,7 @@ export type Scene = 'menu' | 'run' | 'paused' | 'results';
 /** Every cue the engine can play: SfxId (the six internal cues spin … grindSwitch joined SfxId @G0). */
 export type Cue = import('../core/audio').SfxId;
 const UI_CUES = new Set<string>(['uiTap', 'uiBack', 'uiToggle', 'uiError', 'purchase', 'levelUp', 'crateShake', 'crateOpen',
-  'revealCommon', 'revealRare', 'revealEpic', 'revealLegendary']);
+  'revealCommon', 'revealRare', 'revealEpic', 'revealLegendary', 'dive']);
 
 interface Song { area: MusicArea; seed: number; alt: boolean; clock: SongClock; bar: number; pivotBar: number; pivot: ChordSpec | null; pivotTo: MusicArea | null }
 interface Queued { at: number; ev: NoteEv; area: MusicArea }

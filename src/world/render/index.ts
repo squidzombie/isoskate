@@ -18,3 +18,7 @@ export { COLORS, SURFACE_COLOR, CONTACT, PRESETS, HAZARD, ACCENTS, samplePalette
 export { buildOptionsFor, worldAmbient, VIEW, type WorldViewDebug } from './view';
 export { QUALITY } from './render.config';
 export type { AmbientRec } from './kits/decor';
+/** The Title's space scene (the Earth, the floating equipped board) and the dive's hand-over to the run camera. */
+export { TitleScene, TITLE_SCENE, type TitleBand, type DiveFrame } from './title/space';
+export { HANDOVER } from './title/handover';
+export { EarthBaker, EARTH_TEX } from './title/earthTexture';

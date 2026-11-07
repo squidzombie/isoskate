@@ -1,11 +1,11 @@
 // audio/sfx/ui.ts: interface and meta sounds (DESIGN §19.3 "Other sounds"): taps, back, toggle, error, purchase,
 // level up (Maj9 arpeggio on EP + mallet with a 6 kHz shimmer), crate shake / open and the four reveal stingers.
 // All of them are in the current key, short and soft; they play on the SFX bus and never through the music chain.
-import { EP, LEVEL_UP, SFX_LEVEL, VARIATION } from '../mix.config';
+import { DIVE_CUE, EP, LEVEL_UP, SFX_LEVEL, VARIATION } from '../mix.config';
 import type { Graph } from '../graph';
 import { playEp, playMallet } from '../music/instruments';
 import { midiHz, pentatonicNote } from '../music/progressions';
-import { filter, gain, osc, perc, vary, voice } from '../synth';
+import { filter, gain, osc, perc, sweep, swell, vary, voice } from '../synth';
 import { PRI } from '../voices';
 import { nz, tn, type CueOpts, type KeyInfo } from './oneshots';
 
@@ -92,6 +92,21 @@ export function playUi(g: Graph, id: string, t: number, o: CueOpts, key: KeyInfo
           s.src(car, t + 0.25, t + 1.22); s.src(mod, t + 0.25, t + 1.22);
           for (let i = 0; i < 9; i++) nz(g, s, s.out, t + 0.3 + g.rng.float() * 0.8, 0.004, 'highpass', 3000, 0.7, 0.25, 0.0005);
         }
+      }
+      return;
+    }
+    case 'dive': {
+      // Rising whoosh (band-pass noise 260 → 3.4 kHz, peaking at the cloud break) over a soft Maj9 pad swell.
+      const D = DIVE_CUE, s = v(D.sec + D.padRelease, L.dive); if (!s) return;
+      nz(g, s, s.out, t, D.sec, 'bandpass', D.whooshHz[0], 1.6, 0.55, 0, D.whooshHz[1], 'swell');
+      nz(g, s, s.out, t + 0.12, D.sec * 0.9, 'highpass', 2400, 0.7, 0.08, 0, undefined, 'swell');
+      const ctx = g.ctx, lp = filter(ctx, 'lowpass', D.padLpHz[0], 0.7, s.out);
+      sweep(lp.frequency, t, D.padLpHz[0], D.padLpHz[1], D.padAttack);
+      const pad = gain(ctx, 0, lp);
+      swell(pad.gain, t, D.padGain, D.padAttack, D.padRelease + D.sec - D.padAttack);
+      for (const [i, m] of maj9(key, 4).slice(0, 4).entries()) {
+        const o = osc(ctx, i % 2 ? 'triangle' : 'sine', midiHz(m) * (1 + (i - 1.5) * 0.002), pad);
+        s.src(o, t, t + D.sec + D.padRelease + 0.05);
       }
       return;
     }

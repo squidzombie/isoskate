@@ -32,6 +32,8 @@ export class GameLoop {
   renderScale = 1;
   /** Battery saver: 30 fps cap everywhere. */
   batterySaver = false;
+  /** Renders at the run's 60 fps cap while the sim is not stepping (the Title → run dive). */
+  fast = false;
   private running = false;
   private acc = 0;
   private lastFrameMs = -1;
@@ -106,8 +108,8 @@ export class GameLoop {
   }
 
   private onFrame(now: number): void {
-    // Frame cap: 60 fps in runs (skip callbacks < 14 ms after the last render), 30 fps on menus or battery saver.
-    const capMs = this.running && !this.batterySaver ? 14 : 30;
+    // Frame cap: 60 fps in runs and the dive (skip callbacks < 14 ms after the last render), 30 fps on menus or battery saver.
+    const capMs = (this.running || this.fast) && !this.batterySaver ? 14 : 30;
     if (this.lastRenderMs >= 0 && now - this.lastRenderMs < capMs) return;
     const dt = this.lastFrameMs < 0 ? 1 / 60 : Math.min(0.1, (now - this.lastFrameMs) / 1000);
     if (this.lastRenderMs >= 0) { this.intervals.push(now - this.lastRenderMs); if (this.intervals.length > 120) this.intervals.shift(); }
