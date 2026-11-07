@@ -1,7 +1,8 @@
 // ui/screens/showcase.ts: Locker and Shop (DESIGN §16.2, §17.2). The 3D turntable fills the top (game/app.ts puts the
 // skater in 'showcase' and the camera in 'locker'); drag there to rotate (UiIntent 'turntable'). Below, a panel with
-// Skaters / Boards / Helmets tabs and a 3-column card grid; tapping a card tries it on for free (UiIntent 'preview').
-//   Locker: owned items only (+ a "get more" card). Equipping is free and instant.
+// Skaters / Boards / Helmets tabs and a 3-column card grid; tapping a card puts it on the turntable (UiIntent
+// 'preview'; the App keeps one try-on per slot for the visit, so a board try-on keeps the skater you tried on).
+//   Locker: owned items only (+ a "get more" card). Equipping is free and instant: tapping a card equips it.
 //   Shop:   every item, always buyable except the L30 board; today's featured row (3 picks, 25% off, "New picks
 //           tomorrow", no countdown); pin one item to the wishlist (♥); the shop opens at Level 3; Crates link.
 import type { ItemId, Slot } from '../../core/ids';
@@ -56,7 +57,16 @@ export function showcaseScreen(ctx: ScreenCtx, id: 'locker' | 'shop'): Screen {
   };
   const pick = (it: CosmeticItem) => {
     picked = it.id;
-    ctx.raise({ k: 'preview', id: ext()?.data.equipped[it.slot] === it.id ? null : it.id });
+    const m = ext();
+    // Locker: a tap on an owned item equips it at once (owner playtest: a try-on that needed a second "Equip" tap
+    // was lost when another tab was picked, which looked like the board forcing a skater change).
+    if (!shop && m && m.owns(it.id) && m.data.equipped[it.slot] !== it.id) {
+      m.equip(it.id);
+      ctx.raise({ k: 'preview', id: it.id });
+      fill();
+      return;
+    }
+    ctx.raise({ k: 'preview', id: it.id });
     for (const c of el.querySelectorAll<HTMLElement>('.card')) c.classList.toggle('sel', c.dataset.item === it.id);
     renderDetail();
   };
@@ -150,7 +160,7 @@ export function showcaseScreen(ctx: ScreenCtx, id: 'locker' | 'shop'): Screen {
     const m = ext();
     if (!m || !picked) return;
     m.equip(picked);
-    ctx.raise({ k: 'preview', id: null });
+    ctx.raise({ k: 'preview', id: picked });                 // the slot's try-on is now the equipped item
     fill();
   };
   const wish = () => {
