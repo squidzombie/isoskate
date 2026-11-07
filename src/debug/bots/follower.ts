@@ -2,7 +2,8 @@
 // committed (world/gen safe.ts semantics: a polyline in run time, 'ollie' keys at take-off) and drives the real sim
 // only through InputFrames: steerDx puts targetX on the line's x `lead` seconds ahead (the lateral controller lags
 // it by about 1/STEER_P), and a tap on the tick nearest each ollie key. Deterministic, no latency or jitter.
-// TODO(WG): the planner-based safe bot with a 0.25 s observation delay, latency and jitter (TECH §11.2).
+// Since W1b BOTS.safe is WG's planner bot (0.25 s observation delay, latency, jitter; TECH §11.2); this follower
+// is BOTS.conformance and records the sim fixtures and the sim bench.
 import type { InputFrame } from '../../core/input';
 import type { Sim } from '../../core/sim';
 import { CHUNK_LEN, DT } from '../../core/tuning';

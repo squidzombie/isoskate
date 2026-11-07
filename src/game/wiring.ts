@@ -43,7 +43,8 @@ export function wire(root: HTMLElement): Game {
   haptics.enabled = save.data.settings.haptics !== 'off';
   installTouchHygiene(play);
 
-  // Rendering. Tier: ?quality flag, else the saved setting, else by device (auto-adjust is TODO(WA), TECH §8.9).
+  // Rendering. Tier: ?quality flag, else the saved setting, else by device; 'auto' also lets world/render step the
+  // tier on measured frame time (TECH §8.9, setAutoQuality in applySettings).
   const savedQ = save.data.settings.quality;
   const autoTier: QualityTier = isTouchDevice() ? 'med' : 'high';
   const startTier: QualityTier = flags.quality ?? (savedQ === 'auto' ? autoTier : savedQ);

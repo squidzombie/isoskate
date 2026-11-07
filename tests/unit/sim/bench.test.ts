@@ -1,12 +1,14 @@
 // Sim bench (TECH §6.8, §11.6: part of `npm test`): `step()` ≤ 0.05 ms mean per tick. The input is recorded first
 // (SafeKey follower `BOTS.conformance`, 3 seeds × 2 min from t = 0, with S_TRENCH as shipped) in `beforeAll`, then
 // replayed into a fresh Sim, so only sim work is timed and the bot's cost never counts against the test's timeout
-// (G1: `BOTS.safe` became the planner, about 2× the follower's cost). CPU is shared with other agents and CI jobs, so each seed is replayed 3 times and the best mean
-// counts: noise only ever adds time, and a real regression slows every repeat.
+// (G1: `BOTS.safe` became the planner, about 2× the follower's cost). The replayed world is generated before the
+// clock starts (world/gen has its own segment bench), so only `step()` is timed. CPU is shared with other agents and
+// CI jobs, so each seed is replayed 3 times and the best mean counts: noise only ever adds time, and a real
+// regression slows every repeat.
 import { beforeAll, describe, expect, it } from 'vitest';
 import { EMPTY_FRAME, type InputFrame } from '../../../src/core/input';
 import type { RunConfig } from '../../../src/core/sim';
-import { SIM_HZ } from '../../../src/core/tuning';
+import { sAt, SIM_HZ } from '../../../src/core/tuning';
 import { BOTS } from '../../../src/debug/bots';
 import { createSim } from '../../../src/sim';
 import { TRICKS } from '../../../src/tricks';
@@ -44,6 +46,7 @@ describe('sim bench', () => {
       for (let rep = 0; rep < 3; rep++) {
         const sim = createSim(TRICKS);
         sim.reset(c);
+        sim.gen.ensure(sAt(TICKS / SIM_HZ + 10));   // the 2 min of street (and its look-ahead) exist before timing
         const t0 = performance.now();
         for (const fr of frames) sim.step(fr);
         best = Math.min(best, (performance.now() - t0) / frames.length);

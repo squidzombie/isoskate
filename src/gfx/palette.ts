@@ -1,6 +1,6 @@
 // gfx/palette.ts: the M0 palette constant (DESIGN §18.1 "Golden", Downtown). One sample for every area.
-// TODO(WA): world/render/palette.ts presets for all four areas with the 8 s gateway blends; INT routes
-// GfxContext.palette() to it at G1.
+// The fallback only: the WorldView routes GfxContext.palette() to world/render/palette.ts (four area presets and
+// the 8 s gateway blends) through setPaletteSource at construction.
 import type { PaletteSample } from '../core/view';
 
 export const GOLDEN: Readonly<PaletteSample> = {

@@ -346,6 +346,14 @@ describe('startT and the validator path check', () => {
       .sort((a, b) => a.t - b.t)[0]!;
     expect(firstAction.t).toBeGreaterThanOrEqual(151.5 - 1e-6);
   });
+  it('a start inside a gateway builds (G1: a debug start late in the Level Crossing used to throw edge:boundary)', () => {
+    for (const seed of [1, 2]) {
+      for (let t = 40; t < 44; t += 0.4) {
+        const g = createWorldGen({ seed, mode: 'normal', startT: +t.toFixed(1) });
+        expect(() => g.ensure(sAt(t + 12)), `seed ${seed} startT ${t.toFixed(1)}`).not.toThrow();
+      }
+    }
+  });
   it('uses the sim inset rule (frozen: FACE_INSET clamped to a quarter of the extent)', () => {
     for (const e of [0.05, 0.3, 0.6, 2]) expect(insetOf(e)).toBe(Math.min(0.08, e / 4));
     // A crash-top box across the line with no ollie fails; an ollie over a 0.5 m barrier passes.

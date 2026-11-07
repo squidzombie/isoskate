@@ -289,7 +289,7 @@ export class App {
       case 'preview': if (SHOWCASE.has(this.screen)) this.showcase({ preview: i.id }); break;
       case 'turntable': if (SHOWCASE.has(this.screen)) { this.turnYaw += i.dYaw; this.d.skater.setTurntable?.(this.turnYaw); } break;
       case 'settings': this.setSetting(i.key, i.value); break;
-      default: break;                 // rewarded / backup / restore: TODO(MU, G3)
+      default: break;                 // rewarded / backup / restore: done by the UI itself (MU; core-requests MU)
     }
   }
 

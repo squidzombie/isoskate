@@ -85,7 +85,7 @@ export function solveFraming(speed: number, vp: Viewport, out?: Framing): Framin
  *  (`__skate.step(3600)`) frames exactly like real-time play. Shake and punch run on the frame dt. */
 /** The M0 Locker / Shop camera (DESIGN §8 "non-run cameras"): a low perspective camera (FOV 35°, 1.4 m high) behind
  *  the skater looking down the street, with the skater's mid-body at 33% from the top (the turntable sits in the top
- *  half, above the item panel). TODO(WA): the Title diorama, sky dome and skyline strips. */
+ *  half, above the item panel). The Title diorama has its own camera (TITLE_CAM). */
 export const LOCKER_CAM = { fovDeg: 35, height: 1.4, dist: 11, targetY: 0.9, anchorFromTop: 0.33 } as const;
 /** The static Title diorama camera (DESIGN §8): low, behind and to the right of the idling skater, looking down the
  *  street toward the horizon (the skater sits in the lower third, the sunset sky fills the top). */

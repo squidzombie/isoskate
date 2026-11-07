@@ -78,37 +78,43 @@ test('debug API: start, manual stepping, tap → ollie', async ({ page }) => {
 
 // Timing-sensitive flows run at the low tier: SwiftShader frames at the high tier are slow enough to starve timers.
 // The Roll-out is the same for every seed: going straight slams into the 3.5 s chain at tick ~208.
-async function crashStraight(page: Page, seed: number): Promise<void> {
-  const snap = await page.evaluate((s) => {
+// `tapAfterMs` schedules a fresh touch that long after the crash from inside the same page task as the crashing step
+// (the App stamps its crash time during that step), so neither the CDP round trip nor a slow rendered frame between
+// two evaluate() calls can shift it: 0 is a touch in the same task as the crash (a panic tap during the tumble). G1:
+// with the full world art a desktop frame can take 0.6 s+, and a "0 ms" tap sent by a second evaluate() reached the
+// App after its 0.6 s retry threshold. Returns whether the crash overlay was on at the crash.
+async function crashStraight(page: Page, seed: number, tapAfterMs: number | null = null): Promise<boolean> {
+  const r = await page.evaluate(({ s, tap }) => {
     window.__skate!.start({ seed: s });
     window.__skate!.manual(true);
     let sn = window.__skate!.step(200);
     while (sn.alive && sn.tick < 400) sn = window.__skate!.step(1);
-    return sn;
-  }, seed);
-  expect(snap.alive).toBe(false);
-  expect(snap.crash?.cause).toBe('slam');
-}
-
-/** A fresh tap `afterMs` after the crash, dispatched in-page so CPU load can't push it past the 1.2 s window. */
-async function tapAfterCrash(page: Page, afterMs: number): Promise<void> {
-  await page.evaluate(async (ms) => {
-    const crashAt = performance.now();               // ≥ the app's crash time (it was set during the last step)
-    await new Promise((r) => setTimeout(r, ms));
-    while (performance.now() - crashAt < ms) await new Promise((r) => setTimeout(r, 5));
-    const el = document.getElementById('play')!;
-    const o = { pointerId: 7, pointerType: 'touch', isPrimary: true, clientX: 195, clientY: 420, bubbles: true };
-    el.dispatchEvent(new PointerEvent('pointerdown', o));
-    el.dispatchEvent(new PointerEvent('pointerup', o));
-  }, afterMs);
+    const crashOn = /\bon\b/.test(document.querySelector('#screens [data-screen="crash"]')?.className ?? '');
+    if (tap !== null && !sn.alive) {
+      const el = document.getElementById('play')!;
+      const fire = () => {
+        const o = { pointerId: 7, pointerType: 'touch', isPrimary: true, clientX: 195, clientY: 420, bubbles: true };
+        el.dispatchEvent(new PointerEvent('pointerdown', o));
+        el.dispatchEvent(new PointerEvent('pointerup', o));
+      };
+      if (tap <= 0) fire();
+      else {
+        const at = performance.now();
+        const wait = () => { if (performance.now() - at >= tap) fire(); else setTimeout(wait, 5); };
+        setTimeout(wait, tap);
+      }
+    }
+    return { alive: sn.alive, cause: sn.crash?.cause ?? null, crashOn };
+  }, { s: seed, tap: tapAfterMs });
+  expect(r.alive).toBe(false);
+  expect(r.cause).toBe('slam');
+  return r.crashOn;
 }
 
 test('crash → overlay → fresh tap after 0.6 s → new run', async ({ page }) => {
   const errors: string[] = [];
   await boot(page, errors, '&quality=low');
-  await crashStraight(page, 1);
-  await expect(screenOn(page, 'crash')).toHaveClass(/\bon\b/);
-  await tapAfterCrash(page, 650);
+  expect(await crashStraight(page, 1, 650)).toBe(true);   // the overlay is up; the touch lands 650 ms later
   await expect(screenOn(page, 'crash')).not.toHaveClass(/\bon\b/);
   await expect(screenOn(page, 'results')).not.toHaveClass(/\bon\b/);
   const fresh = await page.evaluate(() => window.__skate!.snapshot());
@@ -120,8 +126,7 @@ test('crash → overlay → fresh tap after 0.6 s → new run', async ({ page })
 test('a touch that went down before 0.6 s does not retry', async ({ page }) => {
   const errors: string[] = [];
   await boot(page, errors, '&quality=low');
-  await crashStraight(page, 3);
-  await tapAfterCrash(page, 0);                      // panic tap during the tumble
+  await crashStraight(page, 3, 0);                   // panic tap during the tumble
   await expect(screenOn(page, 'results')).toHaveClass(/\bon\b/, { timeout: 10_000 });
   expect(errors).toEqual([]);
 });

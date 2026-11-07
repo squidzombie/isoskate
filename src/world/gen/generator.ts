@@ -222,12 +222,17 @@ export class Generator implements WorldGen {
       if (typeof r === 'string') GEN_DEBUG.onReject?.({ index, t0, tpl: fb.tpl.id, tier: fb.tier, attempt: GEN.rerolls + 1, why: `fallback ${r}` });
       built = r && typeof r !== 'string' ? r : null;
       if (!built) {
-        const bare: Plan = fixed ? plan : { tpl: TEMPLATES.S_OPEN!, tier: 0, dur: clamp(left, GEN.open.minFiller, 2.5), reason: 'filler' };
-        let r2 = this.tryBuild(bare, index, area, inGw ? gw.id : null, rng, coinRng, maxT1, GEN.rerolls + 2, fixed, true);
+        // A run started inside a gateway (a debug / bot / shots startT; real runs start at t = 0) whose cut gateway
+        // template cannot stand in the time left (the Level Crossing after 42.4 s: its rails cross the boundary)
+        // rides an open filler to the gateway's end instead of throwing (G1).
+        const midGw = index === 0 && inGw && !isRollout && t0 > gw.start + 1e-6;
+        const bareFixed = fixed && !midGw;
+        const bare: Plan = bareFixed ? plan : { tpl: TEMPLATES.S_OPEN!, tier: 0, dur: clamp(left, GEN.open.minFiller, 2.5), reason: 'filler' };
+        let r2 = this.tryBuild(bare, index, area, inGw ? gw.id : null, rng, coinRng, maxT1, GEN.rerolls + 2, bareFixed, true);
         if (typeof r2 === 'string') {
           GEN_DEBUG.onReject?.({ index, t0, tpl: bare.tpl.id, tier: bare.tier, attempt: GEN.rerolls + 2, why: `bare ${r2}` });
           this.rejections['emergency'] = (this.rejections['emergency'] ?? 0) + 1;
-          r2 = this.tryBuild(bare, index, area, inGw ? gw.id : null, rng, coinRng, maxT1, GEN.rerolls + 3, fixed, true);
+          r2 = this.tryBuild(bare, index, area, inGw ? gw.id : null, rng, coinRng, maxT1, GEN.rerolls + 3, bareFixed, true);
         }
         if (typeof r2 === 'string') throw new Error(`world/gen: segment ${index} at t=${t0.toFixed(2)} cannot be built (${r2})`);
         built = r2;
