@@ -36,7 +36,7 @@ export function wire(root: HTMLElement): Game {
 
   // Platform and persistence.
   const save = createSaveStore();
-  if (flags.reset && window.confirm('Reset all Dusklane progress on this device?')) save.reset();
+  if (flags.reset && window.confirm('Reset all Isoskate progress on this device?')) save.reset();
   const analytics = createAnalytics(save);
   const monetization = createMonetization({ fakeAds: flags.fakeAds });
   void monetization.init();

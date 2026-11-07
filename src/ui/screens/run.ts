@@ -53,7 +53,7 @@ export function pauseScreen(ctx: ScreenCtx): Screen {
     id: 'pause', el,
     show(p) {
       setText(title, p.rotate ? 'ROTATE TO PORTRAIT' : 'PAUSED');
-      setText(note, p.rotate ? 'Dusklane plays in portrait. Turn your phone upright, then tap Resume.' : 'Take a breath. Your run waits right here.');
+      setText(note, p.rotate ? 'Isoskate plays in portrait. Turn your phone upright, then tap Resume.' : 'Take a breath. Your run waits right here.');
       card.classList.toggle('rotate', !!p.rotate);
       phone.style.display = p.rotate ? '' : 'none';
       keys.style.display = finePointer() && !p.rotate ? '' : 'none';

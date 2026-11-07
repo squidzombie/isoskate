@@ -26,6 +26,24 @@ describe('TitleScene', () => {
       prev = th;
     }
   });
+  it('the angular velocity is the same at every phase of a full turn, whatever the frame times (no easing, no linger)', () => {
+    const s = new TitleScene();
+    const w = TAU / TITLE_SCENE.board.spinSec;
+    let seed = 7;
+    const rnd = () => { seed = (seed * 1103515245 + 12345) >>> 0; return seed / 2 ** 32; };
+    s.update(1 / 60, vp);
+    let prev = spinOf(s), turned = 0, n = 0;
+    const rates: number[] = [];
+    while (turned < TAU * 1.05) {                           // a full turn and a bit, in uneven frames (8–50 ms)
+      const dt = 0.008 + 0.042 * rnd();
+      s.update(dt, vp);
+      const th = spinOf(s), step = wrap(th - prev);
+      rates.push(step / dt); turned += step; prev = th; n++;
+    }
+    expect(n).toBeGreaterThan(200);
+    for (const r of rates) expect(r).toBeCloseTo(w, 6);     // rad/s at every phase: the graphic face, edge-on, the back
+    expect(Math.max(...rates) - Math.min(...rates)).toBeLessThan(1e-6);
+  });
   it('the dive keeps the spin going at the tap (no stop), its tumble adds on top', () => {
     const s = new TitleScene(), d = s as unknown as Diving;
     const dt = 1 / 60, w = TAU / TITLE_SCENE.board.spinSec;

@@ -1,8 +1,8 @@
-# DUSKLANE: Game Design Document
+# ISOSKATE: Game Design Document
 
 **Status:** v1.1, authoritative. It merges the Controls, Levels, Progression, Tech and Art/Audio proposals, then applies the Player, Feasibility and Mobile reviews. Where sources conflicted, this document wins. Every such conflict, and every review point that was rejected or changed, is listed in the Decision Log (§24).
 **Companion docs:** `TECH.md` (architecture and the frozen interfaces) and `ROADMAP.md` (milestones).
-**Repo codename:** `isoskate`. Every name the player sees comes from `GAME_NAME = "Dusklane"` and `GAME_ID = "dusklane"` (TECH §3).
+**Repo codename:** `isoskate`. Every name the player sees comes from `GAME_NAME = "Isoskate"`; `GAME_ID = "dusklane"` stays, so every storage key and save survives the rename (TECH §3, BRAND §1).
 
 **Units.** Distances are in metres. Time is in seconds unless a value is marked ms. Screen sizes are CSS px scaled by `k = clamp(screenWidthCss / 390, 0.85, 1.3)`. Track space uses three axes:
 - `s` is forward distance from the run start.
@@ -15,7 +15,7 @@
 
 ## 1. Identity
 
-**Name:** DUSKLANE. A web search on 2026-11-06 found no existing game with this title. Similar names exist (Duskers, DUSK, Dusk Runners), but none is a skate game or a close match.
+**Name:** Isoskate (owner direction, 2026-11-07; it replaces the working name Dusklane). Casing (BRAND §1): **ISOSKATE** in the all-caps logo lockup and all-caps display contexts only; **Isoskate** everywhere else (sentences, `<title>`, aria-labels, credits, store copy, lowercase in file names). Never IsoSkate, ISO Skate or Iso-skate, and never explain the pun. The brand (logo, fonts, UI colours) is `docs/BRAND.md`.
 
 **Logline:** *"Roll from golden hour into the neon night."* An endless, one-thumb street-skating game. You never push. You carve, pop, flip and grind your way down a never-ending procedural street that drifts from a sunset downtown into the suburbs, past the docks and up into a glowing futuristic city at blue hour.
 
@@ -1395,7 +1395,7 @@ Run ⇄ Pause (pause button, Esc, back gesture, landscape rotation, visibilitych
 
 | Screen | Content |
 |---|---|
-| **Boot** | Procedural logo on paper `#FFF4E3`. Checks for WebGL2, `structuredClone` and `AudioContext` (iOS 15.4+); if any is missing, a friendly "This browser is too old for Dusklane" card replaces the game. Builds geometry and textures behind a progress bar. Target < 1.5 s on mid-range phones. |
+| **Boot** | The wordmark (BRAND §3) on the space backdrop, a moss progress bar and one loading line. Checks for WebGL2, `structuredClone` and `AudioContext` (iOS 15.4+); if any is missing, a friendly "This browser is too old for Isoskate" card replaces the game. Builds geometry and textures behind a progress bar. Target < 1.5 s on mid-range phones. |
 | **Title** | **The Earth alone in space at golden hour** (owner request): a warm terminator band across the planet, a quiet night side with a few warm lights (the world went quiet), drifting clouds, a soft atmosphere rim, stars and a faint sunset nebula, the sun's glow just off frame, and a pulsing warm point at the run's start city on the dusk band. **Your equipped board floats in front of it like a small moon**, slowly spinning about its long axis at a constant, calm speed (one turn in 11 s, graphic and grip in turn), in the clear band between TAP TO ROLL and the tab bar (beside the logo column on wide screens); it changes the moment another board is equipped. All procedural, 30 fps, 7 draw calls. Bungee logo with a sunset gradient fill and 4 px ink stroke. "TAP TO ROLL" pulses every 1.2 s (Space or Enter on desktop). Best score is shown. Bottom tab bar: Play / Locker / Shop / Crates / Stats, plus a Settings gear. A Daily Gift badge appears when the gift is ready. The service-worker "Update ready" toast appears only here and on Results. **TAP TO ROLL dives** (1.45 s): the camera pushes into the start city behind the board, punches through a warm peach cloud wash, and comes out high over the street, descending into the run camera's exact first pose as the wash clears; the run begins at the hand-over. Any tap skips it; reduced motion (OS, Reduce motion, Reduce effects) is a 0.3 s fade; instant retry, ROLL AGAIN, Restart and every other start skip it. |
 | **Run HUD** | §13.8 |
 | **Pause** | Resume, Restart, Settings, Home. Shows the key list on desktop. Resume calls `ctx.resume()` inside its click handler (covers iOS audio interruptions). A landscape phone sees the "Rotate to portrait" variant instead. |
@@ -1418,19 +1418,19 @@ Run ⇄ Pause (pause button, Esc, back gesture, landscape rotation, visibilitych
 
 ### 17.4 UI style
 - **Buttons:**
-  - 18 px radius, paper `#FFF4E3` fill, 3 px ink `#2B2140` border, hard shadow `0 4px 0 #2B2140`.
+  - 18 px radius, paper `#F8F1E4` fill, 3 px ink `#1B1D3F` border, hard shadow `0 4px 0` ink, ink text (BRAND §4: "Earthlight").
   - Pressed: `translateY(3px)` and the shadow drops to 1 px.
-  - Primary buttons are filled `#FF8A5B`. Minimum touch target 56 px (the 48 px pause button has a 56 px hit area).
-  - Labels are uppercase Bungee 18 px.
-- **Cards:** 2 px ink border, a rarity-coloured top band and a **text rarity label** ("RARE", "EPIC"), because Rare blue and Epic violet are easy to confuse.
+  - Primary buttons are moss `#6FB552` with ink text. Minimum touch target 56 px (the 48 px pause button has a 56 px hit area).
+  - Labels are uppercase Bungee (≥ 15 px).
+- **Cards:** moon `#FFFDF6`, 3 px ink border, a **filled** rarity band with a **text rarity label** ("RARE", "EPIC") in ink, because Rare blue and Epic violet are easy to confuse.
 - **Hidden screens** get `visibility:hidden` (and `inert` where supported) once their transition ends, so they can't keep focus or eat key presses.
 - **Fonts** (self-hosted woff2, latin subset, `font-display: swap`, with system fallbacks; no CJK webfont; no third-party font requests, which matters for privacy and app-store builds):
-  - **Bungee** for display text and trick names.
-  - **Nunito** 700/800/900 with `tabular-nums` for UI.
+  - **Bungee** for the logo, headings, buttons, static display numbers ≥ 28 px and trick names (never under 15 px).
+  - **Nunito** 700/800/900 with `tabular-nums` for UI and every number that ticks (BRAND §2.4).
 - **Motion:** transitions use only `transform` and `opacity`.
   - The Results card slides up in 250 ms.
   - Trick popups: scale 0.6 → 1.1 → 1 in 120 ms, then fade, ≤ 0.5 s in total, beside or below the skater, one at a time.
-  - Popup colour by type: flip `#FFE3A3`, grind `#8FE3FF`, manual `#C3A8FF`, gap/transfer `#FF9E7A`.
+  - Popup fill by type, over an ink stroke: flip moon `#FFFDF6`, grind sea-glass `#9BE7DD`, manual `#CDB9FF`, gap/transfer gold `#FFC870`, points and bonuses amber `#FFB13B`.
 
 ---
 
@@ -1475,15 +1475,17 @@ The palette lerps over 8 s, centred on each gateway. Palettes are looked up by `
 
 | Role | Colour |
 |---|---|
-| Ink | `#2B2140` |
-| Paper | `#FFF4E3` |
-| Primary | `#FF8A5B` |
-| Lilac | `#A88BEB` |
-| Coin | `#FFC94A` |
-| Mint | `#7EE0B5` |
-| Coral | `#FF5E6C` |
+| Ink | `#1B1D3F` (space indigo) |
+| Paper / moon | `#F8F1E4` / `#FFFDF6` |
+| Primary (moss, "go") | `#6FB552` |
+| Lilac (epic, LV, focus) | `#B79AFF` |
+| Coin / sun · amber (points) | `#FFC94A` · `#FFB13B` |
+| Sea-glass | `#9BE7DD` |
+| Poppy (crash, warnings) | `#E0674F` |
 
-**Rarity colours:** Common `#C9C2B8`, Rare `#5EB8FF`, Epic `#B47CFF`, Legendary an animated gradient from `#FFB13B` to `#FF5EA8`.
+The full token set and the surface rule are in BRAND §4 (`src/ui/styles/base.css`).
+
+**Rarity colours:** Common `#D9D2C8`, Rare `#6EC6F0`, Epic `#B79AFF`, Legendary a gradient from `#FFC870` through `#FF967A` to `#FF8FB1`.
 
 ### 18.2 Lighting and materials
 

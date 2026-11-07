@@ -46,7 +46,9 @@ export const TITLE_SCENE = {
    *  landscape); the board floats in the clear band between TAP TO ROLL (and BEST) and the tab bar, `len` = its long
    *  axis as a fraction of that band (capped by `maxLen` of the height). */
   portrait: { fov: 44, earth: { x: 0.47, y: 0.62, r: 0.47 }, board: { x: 0.56, y: 0.5, len: 0.8, maxLen: 0.32 } },
-  landscape: { fov: 34, earth: { x: 0.37, y: 0.78, r: 0.36 }, board: { x: 0.7, y: 0.5, len: 0.56, maxLen: 0.46 } },
+  /** Landscape: the Earth's centre sits just under the logo (BRAND §3.4: the word crosses its middle); the Title CSS centres
+   *  the hero column on `earth.x`. */
+  landscape: { fov: 34, earth: { x: 0.37, y: 0.2, r: 0.36 }, board: { x: 0.7, y: 0.5, len: 0.56, maxLen: 0.46 } },
   stars: 900,
   /** The soft dark vignette behind the logo block (TitleBand.scrim*): depth at its centre, and its radii as a multiple
    *  of the block's half size. */

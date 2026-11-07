@@ -58,7 +58,7 @@ export function resultsScreen(ctx: ScreenCtx, hooks: ResultsHooks): Screen {
   const offer = h('div', { class: 'offer-slot', 'data-placement': 'results_double_coins' }, offerBtn);
   offer.hidden = true;
   const install = h('div', { class: 'install-hint' },
-    h('span', null, 'Add Dusklane to your Home Screen: it opens full-screen and keeps your progress safe.'),
+    h('span', null, 'Add Isoskate to your Home Screen: it opens full-screen and keeps your progress safe.'),
     btn('✕', () => { install.hidden = true; ext()?.markInstallHint(); }, ctx, 'x', 'Dismiss', 'back'));
   install.hidden = true;
   const card = h('div', { class: 'res-card' },

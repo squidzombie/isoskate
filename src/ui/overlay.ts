@@ -1,7 +1,7 @@
 // ui/overlay.ts: the lo-fi overlay in #lofi (DESIGN §18.9; DOM, pointer-events:none).
 //   Grain: a 128² tile baked once to a canvas at boot, shown at plain alpha 0.05 (no blend modes: expensive on mobile
 //   GPUs), moved by transform at 8 fps. Off on the low tier; static with reduced motion.
-//   Vignette: radial-gradient(ellipse at 50% 45%, transparent 55%, rgba(43,33,64,.35)).
+//   Vignette: radial-gradient(ellipse at 50% 45%, transparent 55%, rgba(27,29,63,.35)).
 //   Neon only: 2 px scanlines at 4% opacity.
 //   "Reduce effects" removes the whole overlay.
 import { h } from './h';
@@ -21,12 +21,12 @@ export function bakeGrain(size: number = LOFI.tile): string | null {
     const x = c.getContext('2d');
     if (!x) return null;
     const img = x.createImageData(size, size);
-    let s = 0x2b2140;
+    let s = 0x1b1d3f;
     for (let i = 0; i < img.data.length; i += 4) {
       s ^= s << 13; s ^= s >>> 17; s ^= s << 5;
       const v = (s >>> 0) / 4294967296;
       const light = v > 0.5;
-      img.data[i] = light ? 255 : 43; img.data[i + 1] = light ? 244 : 33; img.data[i + 2] = light ? 227 : 64;
+      img.data[i] = light ? 248 : 27; img.data[i + 1] = light ? 241 : 29; img.data[i + 2] = light ? 228 : 63;   // paper / ink
       img.data[i + 3] = Math.round(Math.abs(v - 0.5) * 2 * 255);
     }
     x.putImageData(img, 0, 0);

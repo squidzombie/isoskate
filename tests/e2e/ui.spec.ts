@@ -381,7 +381,7 @@ test('Back up → Restore round-trips through Settings', async ({ page }) => {
   await page.locator('.modal-card textarea.code').fill('{"hello":"world"}');
   await page.locator('.modal-card').getByRole('button', { name: 'Restore', exact: true }).click();
   await page.locator('.modal-card').getByRole('button', { name: 'Restore', exact: true }).click();
-  await expect(page.locator('#toasts')).toContainText('not a Dusklane backup');
+  await expect(page.locator('#toasts')).toContainText('not an Isoskate backup');
   expect((await save(page)).wallet.coins).toBe(4321);
   expect(errors).toEqual([]);
 });

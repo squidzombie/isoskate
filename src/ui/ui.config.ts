@@ -2,11 +2,13 @@
 // playtest tuning never hunts through the screens. Pure data; the modules import from here.
 
 /** Run HUD (DESIGN §13.8). Text is batched at ≤ textHz; the reward toast must be gone by 3.0 s. */
-export const HUD_TIMING = { textHz: 15, rollSec: 0.3, trickHoldSec: 1.6, trickMinPx: 8, rewardSec: 2.7, bankWarnSec: 0.75 } as const;
+export const HUD_TIMING = { textHz: 15, rollSec: 0.3, trickHoldSec: 1.6, trickMinPx: 9, rewardSec: 2.7, bankWarnSec: 0.75 } as const;
 /** HUD band columns (ui/fit.ts hudColumns; DESIGN §13.8): k = vw / 390 clamped; the score column holds 7 glyphs of
  *  26·k px digits (×3.95 em), coins 17·k px (×3.9 em), the pause hit area is 56 px; the middle takes what is left. */
 export const HUD_LAYOUT = { kMin: 0.85, kMax: 1.3, refW: 390, padL: 10, padR: 4, gap: 6, pause: 56, scorePx: 26, scoreEm: 3.95,
-  coinPx: 17, coinEm: 3.9, coinGap: 2, midMin: 40,
+  coinPx: 17, coinEm: 4.5, coinGap: 2, midMin: 40,
+  /** The coin chip's padding + border (hud.css .hud-coins, BRAND §4.4): taken off the text's width. */
+  coinChip: 18,
   /** Text fitting (ui/hud.ts): base sizes (× k, as in hud.css) and the smallest a long value may shrink to. */
   comboPx: 15, trickPx: 11, scoreMinPx: 14, coinMinPx: 10, comboMinPx: 9, comboPad: 20 } as const;
 /** Popups beside the skater (DESIGN §17.4): one at a time, ≤ 0.5 s, 0.6 → 1.1 → 1 in 120 ms; offsets in CSS px. */
@@ -23,7 +25,7 @@ export const RESULTS_ANIM = { scoreMs: 800, coinsAt: 450, coinsMs: 700, xpAt: 90
 export const LOFI = { tile: 128, alpha: 0.05, fps: 8, scanAlpha: 0.04 } as const;
 /** Shop "Today's picks" cards: the name size (as in screens.css) and the smallest a long single word ("Stickerbomb"
  *  in a 320 px pick card) may shrink to rather than break mid-word. */
-export const PICK_NAME = { px: 10, minPx: 8 } as const;
+export const PICK_NAME = { px: 11, minPx: 9 } as const;
 /** Toasts: default duration and the trick-discovery toast during runs (kept short: it sits over the far street). */
 export const TOAST = { defaultMs: 2000, discoveryMs: 1400, maxStacked: 2 } as const;
 /** Title: a crate reveal still waiting opens by itself this long after the Title appears (once per session). */

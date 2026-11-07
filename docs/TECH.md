@@ -1,4 +1,4 @@
-# DUSKLANE: Technical Architecture
+# ISOSKATE: Technical Architecture
 
 **Status:** v1.1, authoritative (after the Player, Feasibility and Mobile reviews). `DESIGN.md` owns the gameplay numbers. This document owns how the game is built.
 
@@ -127,8 +127,8 @@ isoskate/
 ---
 
 ## 3. Naming and environment
-- `core/ids.ts` exports `GAME_ID = 'dusklane'`, `GAME_NAME = 'Dusklane'` and `BUILD` (injected by Vite define: `{ version, hash, mode }`). Every user-visible name and storage key derives from these.
-- **Storage keys:**
+- `core/ids.ts` exports `GAME_ID = 'dusklane'`, `GAME_NAME = 'Isoskate'` and `BUILD` (injected by Vite define: `{ version, hash, mode }`). Every user-visible name and storage key derives from these.
+- **Storage keys** (they keep `GAME_ID` through the rename to Isoskate, BRAND §1.3, so existing saves, backups and the analytics ring load unchanged; import validates a backup by its content, never its file name):
   - `dusklane.save` (current)
   - `dusklane.save.bak` (backup)
   - `dusklane.analytics`
@@ -153,7 +153,7 @@ Created verbatim in M0. Everything is exported. There are no runtime dependencie
 ### 4.1 `core/ids.ts`: identifiers
 ```ts
 export const GAME_ID = 'dusklane';
-export const GAME_NAME = 'Dusklane';
+export const GAME_NAME = 'Isoskate';
 declare const __BUILD__: { version: string; hash: string; mode: 'development' | 'production' | 'single' };
 export const BUILD = __BUILD__;      // Vite `define` (also set in vitest.config.ts)
 
@@ -1583,7 +1583,7 @@ frames.ts: queue of timestamped gestures → InputFrame per tick:
 - **Eviction.** Safari deletes script-writable storage after 7 days of Safari use without a visit. So: after run 1, call `navigator.storage.persist()` once (feature-detected; `onboarding.persistAsked`); Settings offers **Back up / Restore progress** through `SaveStore.export()` / `import()` (copy, share or download a JSON file; paste or pick to restore); installed PWAs are not subject to the 7-day rule, which is one more reason for the calm install hint after run 3.
 
 ### 10.6 PWA and service worker (INT, **M4**)
-- **Manifest.** `public/manifest.webmanifest`: name "Dusklane", `display: standalone`, `orientation: portrait`, `theme_color #2B2140`, `background_color #FFF4E3`, and icons 192, 512 and 512-maskable.
+- **Manifest.** `public/manifest.webmanifest`: `name` and `short_name` "Isoskate", `display: standalone`, `orientation: portrait`, `theme_color #1B1D3F`, `background_color #1B1D3F`, and icons 192, 512 and 512-maskable (the procedural recipe in BRAND §3.5).
 - **iOS tags.** `<link rel="apple-touch-icon" href="icons/180.png">`, `<meta name="apple-mobile-web-app-capable" content="yes">` and `<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">`.
 - **Service worker generation.** A ~40-line Vite plugin (`swPlugin` in `vite.config.ts`) emits `dist/sw.js` with the build hash as the cache name and the precache list of hashed assets. The worker itself is about 60 lines of hand-written template.
 - **Caching:**
@@ -1599,7 +1599,7 @@ frames.ts: queue of timestamped gestures → InputFrame per tick:
 
 ### 10.8 Browser support (`platform/compat.ts`, INT)
 - **Minimum:** iOS / Safari 15.4+, Chrome / Edge / Firefox from 2022 on. WebKit cannot be tested on this machine (only Chromium is installed), so every newer API is feature-detected rather than assumed.
-- **Boot check:** WebGL2, `structuredClone` and `AudioContext`. If any is missing, show a friendly "This browser is too old for Dusklane" card instead of a broken game.
+- **Boot check:** WebGL2, `structuredClone` and `AudioContext`. If any is missing, show a friendly "This browser is too old for Isoskate" card instead of a broken game.
 - **Feature-detected:** `PointerEvent.getCoalescedEvents`, `inert` (15.5), `dvh` (fallback `100%`), `navigator.audioSession`, `navigator.wakeLock`, `navigator.storage.persist`, `requestFullscreen`.
 - **M5** includes a real-device check on an iPhone in Safari and installed (ROADMAP).
 

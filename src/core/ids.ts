@@ -1,6 +1,6 @@
 // core/ids.ts: identifiers (TECH §4.1). FROZEN CONTRACT: change only via docs/core-requests.md.
 export const GAME_ID = 'dusklane';
-export const GAME_NAME = 'Dusklane';
+export const GAME_NAME = 'Isoskate';
 declare const __BUILD__: { version: string; hash: string; mode: 'development' | 'production' | 'single' };
 export const BUILD = __BUILD__;      // Vite `define` (also set in vitest.config.ts)
 

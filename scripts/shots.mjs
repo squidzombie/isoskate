@@ -264,7 +264,7 @@ async function cosmeticsMode() {
     const x = c.getContext('2d');
     x.fillStyle = '#fff4e3'; x.fillRect(0, 0, c.width, c.height);
     x.fillStyle = '#2b2140'; x.font = '700 16px Nunito, sans-serif';
-    x.fillText(`DUSKLANE cosmetics · ${list.length} items · turntable views on a plain background; in-run crops at native pixels (DPR 2)`, 10, 22);
+    x.fillText(`ISOSKATE cosmetics · ${list.length} items · turntable views on a plain background; in-run crops at native pixels (DPR 2)`, 10, 22);
     for (let i = 0; i < list.length; i++) await drawCell(x, list[i], (i % cols) * CW, 34 + Math.floor(i / cols) * CH);
     return { sheet: c.toDataURL('image/png'), per };
   }, [cells, COSMETIC_BG]);

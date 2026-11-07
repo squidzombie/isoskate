@@ -1,6 +1,6 @@
 // ui/popups.ts: trick / bonus popups beside the skater (DESIGN §13.8, §17.4; TECH §9). A pool of 4 elements, ONE
 // visible at a time, ≤ 0.5 s in total (scale 0.6 → 1.1 → 1 in 120 ms, then fade), placed beside the projected skater
-// toward the screen centre so it never covers the look-ahead, coloured by type and tinted coral while the predicted
+// toward the screen centre so it never covers the look-ahead, coloured by type and tinted poppy while the predicted
 // landing of the trick it names would be Sketchy or a bail. Per frame: transform/opacity only. The text is written
 // once per popup, inside the HUD's ≤ 15 Hz text batch.
 import { LAND } from '../core/tuning';
@@ -9,10 +9,12 @@ import { h } from './h';
 import { POPUP } from './ui.config';
 
 export type PopupKind = 'flip' | 'grind' | 'manual' | 'gap' | 'perfect' | 'sketchy' | 'bonus';
+/** Fills over the ink stroke (BRAND §4.4): trick names in moon or a light type tint, points and bonuses in amber / sun, the
+ *  poppy tint for a landing that would go wrong. Every one is ≥ 4.8:1 against the ink stroke. */
 export const POPUP_COLOR: Readonly<Record<PopupKind, string>> = {
-  flip: '#FFE3A3', grind: '#8FE3FF', manual: '#C3A8FF', gap: '#FF9E7A', perfect: '#FFC94A', sketchy: '#D8D0C6', bonus: '#9CF0C8',
+  flip: '#FFFDF6', grind: '#9BE7DD', manual: '#CDB9FF', gap: '#FFC870', perfect: '#FFC94A', sketchy: '#D9D2C8', bonus: '#FFB13B',
 };
-export const CORAL = '#FF5E6C';
+export const CORAL = '#E0674F';
 export { POPUP };
 
 /** Would the current flip/spin land sketchy or bail if nothing changes (DESIGN §13.8 popup tint)? */

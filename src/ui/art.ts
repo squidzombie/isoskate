@@ -6,10 +6,10 @@
 import type { AreaId } from '../core/ids';
 import type { BoardLook, CosmeticItem, HelmetLook, SkaterLook } from '../core/cosmetics';
 import { SKIN_TONES } from '../core/cosmetics';
-import { drawBoardThumb } from '../skater';
+import { drawBoardThumb, ITEM_GRAPHIC } from '../skater';
 
 type C = CanvasRenderingContext2D;
-const INK = '#2b2140';
+const INK = '#1b1d3f';   // BRAND §4: space-indigo ink
 const hex = (n: number, a = 1) => {
   const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
   return a >= 1 ? `rgb(${r},${g},${b})` : `rgba(${r},${g},${b},${a})`;
@@ -62,7 +62,7 @@ function drawSkater(c: C, l: SkaterLook, S: number): void {
   const cx = S / 2;
   const wide = l.build === 'stocky' ? 1.1 : l.build === 'slim' ? 0.9 : 1;
   // Backpack straps peek behind the shoulders.
-  if (l.accessory === 'backpack') blob(c, hex(l.accessoryColor ?? 0x2b2140), () => rr(c, cx - 52 * wide, 112, 104 * wide, 60, 18));
+  if (l.accessory === 'backpack') blob(c, hex(l.accessoryColor ?? ITEM_GRAPHIC.accessory), () => rr(c, cx - 52 * wide, 112, 104 * wide, 60, 18));
   // Hood behind the head.
   if (l.top === 'hoodie') blob(c, hex(shade(c1, -0.12)), () => c.ellipse(cx, 104, 40, 26, 0, 0, Math.PI * 2));
   // Torso.
@@ -84,12 +84,12 @@ function drawSkater(c: C, l: SkaterLook, S: number): void {
   const pc = l.printColors?.map((x) => hex(x));
   switch (l.print) {
     case 'stripe': c.fillStyle = hex(c2); c.fillRect(cx - w, 140, w * 2, 12); break;
-    case 'sunsetStripe': { const g = c.createLinearGradient(0, 138, 0, 162); g.addColorStop(0, '#ffc94a'); g.addColorStop(0.5, '#ff8a5b'); g.addColorStop(1, '#a06bff');
+    case 'sunsetStripe': { const g = c.createLinearGradient(0, 138, 0, 162); ITEM_GRAPHIC.sunsetStripe.forEach((x, i) => g.addColorStop(i / 2, hex(x)));
       c.fillStyle = g; c.fillRect(cx - w, 138, w * 2, 22); break; }
     case 'pocket': c.fillStyle = hex(shade(c1, -0.18)); c.fillRect(cx + 10, 132, 20, 18); break;
     case 'chestLogo': c.fillStyle = hex(c2); c.beginPath(); c.arc(cx, 142, 13, 0, 7); c.fill(); break;
     case 'crestRD': c.fillStyle = hex(c2); c.font = '900 22px Nunito, sans-serif'; c.textAlign = 'center'; c.fillText('RD', cx - 22, 150); break;
-    case 'paintDots': for (let i = 0; i < 11; i++) { c.fillStyle = pc?.[i % (pc.length || 1)] ?? ['#ff8a5b', '#7ee0b5', '#a88beb'][i % 3]!;
+    case 'paintDots': for (let i = 0; i < 11; i++) { c.fillStyle = pc?.[i % (pc.length || 1)] ?? hex(ITEM_GRAPHIC.paintDots[i % 3]!);
       c.beginPath(); c.arc(cx - 44 + ((i * 37) % 88), 124 + ((i * 23) % 40), 4, 0, 7); c.fill(); } break;
     default: break;
   }
@@ -116,12 +116,12 @@ function drawSkater(c: C, l: SkaterLook, S: number): void {
   // Accessories on the head.
   if (l.accessory === 'headphones') {
     c.strokeStyle = INK; c.lineWidth = 9; c.beginPath(); c.arc(cx, 64, 38, Math.PI * 1.05, Math.PI * 1.95); c.stroke();
-    c.strokeStyle = hex(l.accessoryColor ?? 0xff8a5b); c.lineWidth = 5; c.stroke();
-    for (const dx of [-36, 36]) blob(c, hex(l.accessoryColor ?? 0xff8a5b), () => rr(c, cx + dx - 9, 56, 18, 26, 7), 4);
+    c.strokeStyle = hex(l.accessoryColor ?? ITEM_GRAPHIC.accessory); c.lineWidth = 5; c.stroke();
+    for (const dx of [-36, 36]) blob(c, hex(l.accessoryColor ?? ITEM_GRAPHIC.accessory), () => rr(c, cx + dx - 9, 56, 18, 26, 7), 4);
   }
   if (l.accessory === 'beanie') blob(c, hex(l.accessoryColor ?? 0x2f5d7c), () => { c.moveTo(cx - 34, 52); c.quadraticCurveTo(cx, 6, cx + 34, 52); c.closePath(); });
   if (l.accessory === 'antenna') { c.strokeStyle = INK; c.lineWidth = 4; c.beginPath(); c.moveTo(cx, 30); c.lineTo(cx + 8, 10); c.stroke();
-    blob(c, '#ff5e6c', () => c.arc(cx + 8, 10, 6, 0, 7), 3); }
+    blob(c, hex(l.accessoryColor ?? ITEM_GRAPHIC.accessory), () => c.arc(cx + 8, 10, 6, 0, 7), 3); }
 }
 
 function drawHair(c: C, l: SkaterLook, cx: number): void {
@@ -173,7 +173,7 @@ function drawHelmet(c: C, l: HelmetLook, S: number): void {
   const dc = hex(l.decalColor);
   switch (l.decal) {
     case 'stripe': c.fillStyle = dc; c.fillRect(cx - 9, cy - R, 18, R + 16); break;
-    case 'stickers': { const cols = ['#ff8a5b', '#7ee0b5', '#a88beb', '#ffc94a', '#5eb8ff'];
+    case 'stickers': { const cols = [...ITEM_GRAPHIC.stickers, l.decalColor].map((x) => hex(x));
       for (let i = 0; i < 9; i++) { c.fillStyle = cols[i % cols.length]!; c.save(); c.translate(cx - R + 14 + ((i * 41) % (R * 1.7)), cy - R + 16 + ((i * 29) % (R * 0.9))); c.rotate(i);
         if (i % 3 === 0) c.fillRect(-7, -7, 14, 14); else { c.beginPath(); c.arc(0, 0, 7, 0, 7); c.fill(); } c.restore(); } break; }
     case 'scuffs': c.strokeStyle = hex(l.decalColor, 0.5); c.lineWidth = 2; for (let i = 0; i < 6; i++) { c.beginPath(); c.moveTo(cx - 30 + i * 12, cy - 30 + (i % 3) * 9); c.lineTo(cx - 20 + i * 12, cy - 24 + (i % 3) * 9); c.stroke(); } break;
@@ -191,12 +191,12 @@ function drawHelmet(c: C, l: HelmetLook, S: number): void {
   if (l.shell === 'wrapVisor') { c.fillStyle = hex(l.decalColor); for (let i = 0; i < 6; i++) c.fillRect(cx - R + 12 + i * 16, cy - 8, 8, 6); }
   if (l.shell === 'dome' && l.decal === 'none') { c.fillStyle = INK; for (let i = 0; i < 4; i++) { c.beginPath(); c.ellipse(cx - 30 + i * 20, cy - R * 0.55 + Math.abs(i - 1.5) * 6, 4, 9, 0, 0, 7); c.fill(); } }
   if (l.finish === 'gloss' || l.finish === 'chrome' || l.shell === 'bubble') { c.fillStyle = 'rgba(255,255,255,0.7)'; c.beginPath(); c.ellipse(cx - R * 0.42, cy - R * 0.55, R * 0.18, R * 0.1, -0.6, 0, 7); c.fill(); }
-  if (l.shell === 'bubble') { c.strokeStyle = '#2b2140'; c.lineWidth = 3; c.beginPath(); c.moveTo(cx, cy - R * 1.1); c.lineTo(cx + 6, cy - R * 1.4); c.stroke(); }
+  if (l.shell === 'bubble') { c.strokeStyle = INK; c.lineWidth = 3; c.beginPath(); c.moveTo(cx, cy - R * 1.1); c.lineTo(cx + 6, cy - R * 1.4); c.stroke(); }
 }
 
 const AREA_SCENE: Readonly<Record<AreaId, { sky: [string, string, string]; ground: string; sun: string }>> = {
-  downtown: { sky: ['#ffd39a', '#ffb07a', '#ff8a5b'], ground: '#7a4e8c', sun: '#fff1b8' },
-  suburbs: { sky: ['#ffe3c4', '#ffb7a0', '#d08ab8'], ground: '#5e8c6a', sun: '#fff4e3' },
+  downtown: { sky: ['#ffd39a', '#ffb07a', '#ff967a'], ground: '#7a4e8c', sun: '#fff1b8' },
+  suburbs: { sky: ['#ffe3c4', '#ffb7a0', '#d08ab8'], ground: '#5e8c6a', sun: '#fffdf6' },
   docks: { sky: ['#f6a77a', '#b5645a', '#5a3b6e'], ground: '#2f4a5e', sun: '#ffc48a' },
   neon: { sky: ['#5a4e9c', '#2b2b6e', '#1e2350'], ground: '#1a1838', sun: '#ff6ec0' },
 };
@@ -208,7 +208,7 @@ export function postcardArt(area: AreaId, got: boolean): string {
     const g = c.createLinearGradient(0, 0, 0, 150);
     g.addColorStop(0, got ? s.sky[0] : '#d9d0c4'); g.addColorStop(0.55, got ? s.sky[1] : '#c9bfb2'); g.addColorStop(1, got ? s.sky[2] : '#b8ad9f');
     c.fillStyle = g; c.fillRect(0, 0, 240, 150);
-    if (!got && area === 'neon') { c.fillStyle = '#2b2140'; c.fillRect(0, 0, 240, 150); }
+    if (!got && area === 'neon') { c.fillStyle = INK; c.fillRect(0, 0, 240, 150); }
     if (got) { c.fillStyle = s.sun; c.beginPath(); c.arc(170, 74, 26, 0, 7); c.fill(); }
     const sil = got ? s.ground : area === 'neon' ? '#1e1838' : '#9d9285';
     c.fillStyle = sil;
@@ -227,6 +227,6 @@ export function postcardArt(area: AreaId, got: boolean): string {
     if (got && area === 'neon') { for (let i = 0; i < 26; i++) { c.fillStyle = i % 2 ? '#3ff2ff' : '#ff6ec0'; c.fillRect(8 + ((i * 53) % 224), 30 + ((i * 37) % 100), 5, 3); } }
     if (got && area === 'suburbs') { c.fillStyle = '#3e6b4e'; for (const x of [30, 120, 205]) { c.beginPath(); c.arc(x, 112, 16, 0, 7); c.fill(); } }
     if (got && area === 'docks') { c.fillStyle = '#c4473d'; c.fillRect(150, 70, 40, 22); c.fillStyle = '#2f5d7c'; c.fillRect(192, 74, 40, 18); }
-    if (!got) { c.fillStyle = glow ? 'rgba(255,110,192,0.9)' : 'rgba(43,33,64,0.55)'; c.font = '400 44px Bungee, Impact, sans-serif'; c.textAlign = 'center'; c.fillText('?', 120, 96); }
+    if (!got) { c.fillStyle = glow ? 'rgba(255,110,192,0.9)' : 'rgba(27,29,63,0.55)'; c.font = '400 44px Bungee, Impact, sans-serif'; c.textAlign = 'center'; c.fillText('?', 120, 96); }
   });
 }

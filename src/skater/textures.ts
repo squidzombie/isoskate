@@ -11,6 +11,13 @@ import { GRIP_BORDER, SHADE, TEX } from './skater.config';
 type Ctx = CanvasRenderingContext2D;
 const css = (h: Hex, a = 1) => a >= 1 ? `#${h.toString(16).padStart(6, '0')}` : `rgba(${(h >> 16) & 255},${(h >> 8) & 255},${h & 255},${a})`;
 const INK = 0x2b2140, PAPER = 0xfff4e3;
+/** Item-graphic colours the UI's card art (ui/art.ts) shares, so a card always shows the item's own colours. */
+export const ITEM_GRAPHIC = {
+  paintDots: [0xff8a5b, 0x7ee0b5, 0xa88beb], sunsetStripe: [0xffc94a, 0xff8a5b, 0xc4477a],
+  stickers: [0xff5e6c, 0x3e8e8a, 0x8a5cff, 0xffc94a, 0xff8a5b, 0x5eb8ff, 0xff3fa4, 0x7ee0b5],
+  /** body.ts's default accessory colour, and the wristband's. */
+  accessory: 0xff8a5b, wristband: 0xff5e6c,
+} as const;
 
 /** Stable 32-bit seed from any JSON-able look. */
 export function lookSeed(o: unknown): number {
@@ -192,7 +199,7 @@ function drawTorso(c: Ctx, look: SkaterLook): void {
       break;
     }
     case 'paintDots': {
-      const cols = look.printColors ?? [0xff8a5b, 0x7ee0b5, 0xa88beb];
+      const cols = look.printColors ?? ITEM_GRAPHIC.paintDots;
       // The bib (front 60%) in the overalls colour with paint dots; the rest is the tee.
       c.fillStyle = css(base); c.fillRect(cx - 30, 28, 60, h - 28);
       c.fillRect(cx - 30, 0, 8, 30); c.fillRect(cx + 22, 0, 8, 30);              // straps
@@ -205,7 +212,8 @@ function drawTorso(c: Ctx, look: SkaterLook): void {
     }
     case 'sunsetStripe': {
       const g = c.createLinearGradient(0, 40, 0, 64);
-      g.addColorStop(0, css(0xffc94a)); g.addColorStop(0.5, css(0xff8a5b)); g.addColorStop(1, css(0xc4477a));
+      const [s0, s1, s2] = ITEM_GRAPHIC.sunsetStripe;
+      g.addColorStop(0, css(s0)); g.addColorStop(0.5, css(s1)); g.addColorStop(1, css(s2));
       c.fillStyle = g; c.fillRect(0, 40, w, 24);
       c.fillStyle = css(sec); c.fillRect(cx - 1.5, 0, 3, h);                         // zip
       break;
@@ -724,7 +732,7 @@ export function drawHelmetDecal(c: Ctx, look: HelmetLook, sky: readonly [Hex, He
       // Procedural scatter of the 9 sticker shapes: big, saturated and ink-edged, covering most of the shell (crown
       // included: the run camera sees mostly the top), so the bomb reads as a multicoloured helmet at 31 px and not as
       // a cream dome with specks. Each sticker is widened by 1/sin(polar angle) so it stays round on the sphere.
-      const cols = [0xff5e6c, 0x3e8e8a, 0x8a5cff, 0xffc94a, 0xff8a5b, 0x5eb8ff, 0xff3fa4, 0x7ee0b5, look.decalColor];
+      const cols = [...ITEM_GRAPHIC.stickers, look.decalColor];
       const rings: readonly (readonly [number, number])[] = [[96, 7], [70, 7], [46, 6], [24, 4], [7, 2]];
       let i = 0;
       for (const [y0, n] of rings) for (let k = 0; k < n; k++, i++) {

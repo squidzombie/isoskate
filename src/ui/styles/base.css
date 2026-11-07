@@ -1,14 +1,28 @@
-/* ui/styles/base.css: UI tokens and globals (DESIGN §17.4). Sunset lo-fi: paper, ink, chunky hard shadows. */
+/* ui/styles/base.css: UI tokens and globals (DESIGN §17.4, BRAND §4 "Earthlight"). Paper, space-indigo ink, chunky hard shadows;
+   moss = go, amber / sun = reward, poppy = bad; ink text on every coloured surface, night chips for text over the scene. */
 :root {
-  --primary: #ff8a5b; --primary-deep: #e8663a; --sun: #ffc94a; --lilac: #a88beb; --coin: #ffc94a; --mint: #7ee0b5;
-  --coral: #ff5e6c; --peach: #ffd8b8; --plum: #6b4e8c; --cream: #f3e3c3;
-  --r-common: #c9c2b8; --r-rare: #4fb3e8; --r-epic: #a06bff; --r-legendary: #ffb13b;
-  --r-legendary-grad: linear-gradient(90deg, #ffc94a, #ff9e7a 50%, #ff7ab6);
+  /* Earthlight (BRAND §4). Ink and paper live in index.html. */
+  --primary: #6fb552; --primary-deep: #4e8e3c; --primary-hi: #8cc970;           /* moss: "go", primary buttons, active tab/segment */
+  --sun: #ffc94a; --coin: #ffc94a; --amber: #ffb13b;                              /* coins / combo x5; amber = points, score gains, x10 */
+  --lilac: #b79aff; --mint: #9be7dd; --sky: #6ec6f0;                              /* epic + LV badge + focus; sea-glass gift badge + x20; rare + steer */
+  --sea: #5db4c4; --ocean: #2d6e94; --ocean-deep: #24668a; --gold: #ffc870; --peach: #ff967a;
+  --coral: #e0674f;                                                               /* poppy: crash, warnings, strike lines only */
+  --bloom: #ff8fb1;                                                               /* wildflower pink: sale tags only */
+  --plum: #5a5680;                                                                /* muted text on light surfaces (6.1:1 on paper) */
+  --cream: #e4eee4; --moon: #fffdf6; --leaf: #2f6e2c;                             /* track/inset; cards/highlights; EQUIPPED */
+  --night: rgba(27, 29, 63, 0.78); --night-strong: rgba(27, 29, 63, 0.82);
+  --night-text: #fff6de; --night-rim: rgba(255, 241, 196, 0.22);
+  --r-common: #d9d2c8; --r-rare: #6ec6f0; --r-epic: #b79aff; --r-legendary: #ffc870;
+  --r-legendary-grad: linear-gradient(90deg, #ffc870, #ff967a 50%, #ff8fb1);
+  --logo-fill: linear-gradient(180deg, #fffdf6 10%, #e9f6ee 45%, #9be7dd 92%);
+  --earth: radial-gradient(circle at 28% 24%, #5db4c4 0 47%, #ffc870 47% 55%, #ff967a 55% 61%, #2d6e94 61%);
+  --glow-gold: rgba(255, 200, 112, 0.6);
   --font-ui: Nunito, ui-rounded, system-ui, sans-serif;
   --font-display: Bungee, 'Arial Black', Impact, system-ui;
   --shadow: 0 4px 0 var(--ink);
   --shadow-sm: 0 3px 0 var(--ink);
-  --menu-bg: linear-gradient(180deg, #ffdeba 0%, #ffbe9e 48%, #d696be 100%);   /* opaque: the grey-box road never shows through */
+  --menu-bg: linear-gradient(180deg, #fdf3e1 0%, #e6f0e2 52%, #bcdce4 100%);     /* opaque morning haze: cream, sage, sky */
+  --space-bg: radial-gradient(120% 70% at 50% 108%, #ffc870 0, #ff967a 14%, #4a3a7a 42%, #1b1d3f 78%);
 }
 #app, #screens, #hud, #toasts { -webkit-font-smoothing: antialiased; }
 #screens { font-family: var(--font-ui); color: var(--ink); font-variant-numeric: tabular-nums; }
@@ -16,8 +30,8 @@
 #screens .safe-lr, #hud .safe-lr { position: absolute; visibility: hidden; pointer-events: none; width: 0; height: 0;
   padding-left: var(--safe-left); padding-right: var(--safe-right); }
 #screens img { -webkit-user-drag: none; user-select: none; }
-#screens kbd { font-family: var(--font-display); font-size: 11px; border: 2px solid var(--ink); border-radius: 6px; padding: 1px 5px;
-  background: #fff; box-shadow: 0 2px 0 var(--ink); white-space: nowrap; }
+#screens kbd { font-family: var(--font-ui); font-weight: 900; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase;
+  border: 2px solid var(--ink); border-radius: 6px; padding: 1px 5px; background: var(--moon); color: var(--ink); box-shadow: 0 2px 0 var(--ink); white-space: nowrap; }
 #screens .coin-dot, #toasts .coin-dot { display: inline-block; width: 0.85em; height: 0.85em; border-radius: 50%; vertical-align: -0.1em;
   background: radial-gradient(circle at 35% 30%, #fff1b8 0 18%, #ffc94a 22%); box-shadow: inset 0 -2px 0 #c98a1a, 0 0 0 1.5px var(--ink); }
 #screens .coins-tag { display: inline-flex; align-items: center; gap: 5px; font-weight: 900; white-space: nowrap; }

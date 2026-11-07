@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { fitPx, hudColumns } from '../../../src/ui/fit';
 import { HINT_TEXT, REST_MARK_SEC } from '../../../src/ui/hints';
 import { popupCurve, POPUP } from '../../../src/ui/popups';
+import { HUD_LAYOUT } from '../../../src/ui/ui.config';
 import { HUD_TIMING } from '../../../src/ui/hud';
 import { fmtScore, fmtShort } from '../../../src/ui/format';
 import { HINT_IDS } from '../../../src/save';
@@ -33,7 +34,7 @@ describe('HUD band columns', () => {
       expect(s).toBeGreaterThanOrEqual(14);
       const pill = `${fmtShort(98_765)} × 24`;
       expect(fitPx(pill, 'Nunito', 900, 15 * c.k, 9, c.midW - 20)).toBeGreaterThanOrEqual(9);
-      expect(fitPx(fmtShort(98_765), 'Nunito', 900, 17 * c.k, 10, c.coinW - 17 * c.k)).toBeGreaterThanOrEqual(10);
+      expect(fitPx(fmtShort(98_765), 'Nunito', 900, 17 * c.k, 10, c.coinW - 17 * c.k - HUD_LAYOUT.coinChip)).toBeGreaterThanOrEqual(10);
     }
   });
   it('text writes are batched at ≤ 15 Hz', () => {
