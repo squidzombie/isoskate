@@ -8,10 +8,14 @@ export const DIVE = {
   sec: 1.45, switchSec: 0.7,
   /** Space phase: the wash rises over this fraction of it (cloud layer reached). */
   washIn: [0.44, 0.88] as const,
-  /** World phase: the wash opens from the centre over this fraction of it. */
-  washOut: [0.04, 0.62] as const,
+  /** World phase: the wash bursts open from the centre over this fraction of it (fast first, the last wisps drift
+   *  off), its hole radius going from `hole[0]` (closed: the cut to the world stays covered) to `hole[1]` (past the
+   *  corners). The fully opaque plateau lasts ~0.15 s. */
+  washOut: 0.62, hole: [-0.66, 1.7] as const,
   /** Reduced motion: a plain fade to the wash colour and back. */
   reducedSec: 0.3,
+  /** The music dips this much (dB) for this fraction of the dive while the run song comes in. */
+  duckDb: 8, duckFrac: 0.6,
 } as const;
 
 /** What the title scene needs to draw one dive frame. */
@@ -51,7 +55,8 @@ export function diveShape(t: number, reduced: boolean, out: DiveView): DiveView 
     const v = Math.min(1, (t - DIVE.switchSec) / (DIVE.sec - DIVE.switchSec));
     out.phase = 'world'; out.u = 1; out.v = v;
     out.cover = 1;
-    out.hole = -0.7 + 2.4 * ss(DIVE.washOut[0], DIVE.washOut[1], v);
+    const x = Math.min(1, v / DIVE.washOut);
+    out.hole = DIVE.hole[0] + (DIVE.hole[1] - DIVE.hole[0]) * (1 - (1 - x) * (1 - x));
   }
   return out;
 }

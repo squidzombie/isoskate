@@ -11,8 +11,8 @@
 import {
   AdditiveBlending, BackSide, BufferAttribute, BufferGeometry, ClampToEdgeWrapping, type Camera, DataTexture,
   DirectionalLight, Group, HemisphereLight, LinearFilter, Mesh, MirroredRepeatWrapping, OrthographicCamera, PerspectiveCamera,
-  Points, Quaternion, RedFormat, RepeatWrapping, RGBAFormat, Scene, ShaderMaterial, SphereGeometry, Vector3, Matrix4,
-  type WebGLRenderer,
+  Points, Quaternion, RedFormat, RepeatWrapping, RGBAFormat, Scene, ShaderMaterial, SphereGeometry, type Texture, Vector2, Vector3,
+  Vector4, Matrix4, type WebGLRenderer,
 } from 'three';
 import { Sfc32 } from '../../../core/rng';
 import type { Viewport } from '../../../core/view';
@@ -33,8 +33,9 @@ export const TITLE_SCENE = {
   cityDot: 0.06, cityUp: 0.12,
   cloudDegPerSec: 1.4,
   board: {
-    /** One turn about its long axis; `linger` slows it on the graphic and the grip (θ = 2πu − linger·sin 4πu). */
-    spinSec: 11, linger: 0.36,
+    /** One turn about its long axis, at a constant rate (owner direction: it floats in space, so no easing and no
+     *  lingering on a face; edge-on moments are part of it). */
+    spinSec: 11,
     /** Long axis tilted from vertical (deg) with a slow sway, a lean toward the viewer and a gentle bob. */
     tiltDeg: -24, swayDeg: 6, swaySec: 7.5, leanDeg: 8, bobSec: 5.2, bob: 0.025,
     outlinePx: 2.2,
@@ -47,12 +48,28 @@ export const TITLE_SCENE = {
   portrait: { fov: 44, earth: { x: 0.47, y: 0.62, r: 0.47 }, board: { x: 0.56, y: 0.5, len: 0.8, maxLen: 0.32 } },
   landscape: { fov: 34, earth: { x: 0.37, y: 0.78, r: 0.36 }, board: { x: 0.7, y: 0.5, len: 0.56, maxLen: 0.46 } },
   stars: 900,
+  /** The soft dark vignette behind the logo block (TitleBand.scrim*): depth at its centre, and its radii as a multiple
+   *  of the block's half size. */
+  scrim: { k: 0.4, padX: 1.3, padY: 1.55 },
+  /** Cross-fade (s) from one bake stage of a map to the next (placeholder → boot preview → full). */
+  fadeSec: 0.6,
 } as const;
 
 /** The Title UI's layout (CSS px): the clear band for the board (below TAP TO ROLL and BEST, above the tab bar), the
  *  logo block (the logo's top to TAP TO ROLL's bottom) the Earth sits behind, the right edge of the centre column
  *  (logo, TAP TO ROLL) and the bottom of the top chips: on wide screens the board takes the side region instead. */
-export interface TitleBand { top: number; bottom: number; heroTop: number; heroBottom: number; colR: number; sideTop: number }
+export interface TitleBand {
+  top: number; bottom: number; heroTop: number; heroBottom: number; colR: number; sideTop: number;
+  /** The logo block (logo + tagline): centre and half size; scrimRx 0 = none. */
+  scrimX: number; scrimY: number; scrimRx: number; scrimRy: number;
+}
+
+/** One map's texture pair in the shaders: `hi` fades in over `lo` as each bake stage lands. */
+interface Layer { lo: { value: Texture }; hi: { value: Texture }; mix: { value: number }; t: number }
+function pushStage(l: Layer, tex: Texture): void {
+  if (l.mix.value >= 0.5) l.lo.value = l.hi.value;   // mid-fade: keep whichever of the two dominates
+  l.hi.value = tex; l.t = 0; l.mix.value = 0;
+}
 
 /** One dive frame (game/dive.ts DiveView). */
 export interface DiveFrame { phase: 'space' | 'world'; u: number; v: number; cover: number; hole: number; flat: number }
@@ -75,21 +92,29 @@ export class TitleScene {
   /** The board host: the hero board's object3d goes in here (deck frame: long axis z, grip +y). */
   readonly boardSlot = new Group();
   readonly handover = new HandoverCamera();
-  /** Bake telemetry (ms): the boot preview, the slices of the full maps. */
-  readonly bake = { previewMs: 0, slices: 0, maxSliceMs: 0, totalMs: 0, done: false, uploadedAt: -1 };
+  /** Bake telemetry (ms): the preview's work, its slices and the full maps' (both bakers), the longest slice, and when
+   *  each stage landed (performance.now). */
+  readonly bake = { previewMs: 0, slices: 0, maxSliceMs: 0, over: 0, totalMs: 0, done: false, previewAt: -1, cloudsAt: -1, uploadedAt: -1 };
   private readonly earthGroup = new Group();
   private readonly earth: Mesh; private readonly clouds: Mesh; private readonly atmo: Mesh;
   private readonly sky: Mesh; private readonly stars: Points;
   private readonly anchor = new Group(); private readonly tilt = new Group(); private readonly spin = new Group();
   private readonly key: DirectionalLight;
   private readonly earthMat: ShaderMaterial; private readonly cloudMat: ShaderMaterial; private readonly atmoMat: ShaderMaterial;
-  private readonly starMat: ShaderMaterial;
+  private readonly starMat: ShaderMaterial; private readonly skyMat: ShaderMaterial;
   private readonly washMat: ShaderMaterial; private readonly washScene = new Scene(); private readonly washCam = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private readonly sun: Vector3; private readonly sunHome: Vector3; private readonly cityLocal: Vector3;
-  private readonly full: EarthBaker;
+  /** The boot preview (¼ colour, ½ clouds) and the full maps, both baked in idle slices; until the preview lands
+   *  the planet is a plain shaded ocean sphere (1-texel placeholders), so boot never waits on a bake. */
+  private readonly pre: EarthBaker; private readonly full: EarthBaker;
   private colorHi: DataTexture | null = null; private cloudsHi: DataTexture | null = null; private puffHi: DataTexture | null = null;
-  private readonly colorLo: DataTexture; private readonly cloudsLo: DataTexture; private readonly puffLo: DataTexture;
-  private time = 0; private mixT = 0;
+  private previewUp = false;
+  private readonly texs: DataTexture[] = [];
+  private readonly colorL: Layer; private readonly cloudL: Layer;
+  private nebT = 0;
+  private readonly scrimU = { uScrim: { value: new Vector4(0, 0, 1, 1) }, uScrimK: { value: 0 } };
+  private scrimK = 0; private readonly scrimBox = { x: 0, y: 0, rx: 0, ry: 0 }; private readonly buf = new Vector2();
+  private time = 0;
   private vpW = -1; private vpH = -1;
   /** The band the layout was made for (compared field by field: nothing allocates per frame). */
   private readonly laid = { on: false, top: 0, bottom: 0, heroTop: 0, heroBottom: 0, colR: 0 };
@@ -100,8 +125,9 @@ export class TitleScene {
   private readonly cityW = new Vector3(); private readonly n0 = new Vector3(); private readonly n1 = new Vector3();
   private readonly tmp = new Vector3(); private readonly tmp2 = new Vector3(); private readonly q0 = new Quaternion();
   private readonly qLook = new Quaternion(); private readonly mLook = new Matrix4();
-  private spin0 = 0; private boardA = 0.4; private readonly boardOff = new Vector3(); private baseFov: number = TITLE_SCENE.portrait.fov;
-  private lastCalls = 0; private lastTris = 0;
+  /** The board's spin angle this frame (a constant rate; the dive adds its tumble on top). */
+  private spinAngle = 0; private boardA = 0.4; private readonly boardOff = new Vector3(); private baseFov: number = TITLE_SCENE.portrait.fov;
+  private lastCalls = 0; private lastTris = 0; private readonly focusW = new Vector3();
 
   constructor(private readonly band: () => TitleBand | null = () => null) {
     this.scene.name = 'title-space';
@@ -120,24 +146,24 @@ export class TitleScene {
     const earthQ = new Quaternion().setFromEuler(this.earthGroup.rotation).multiply(spinQ);
     this.cityLocal = nCity.clone().applyQuaternion(earthQ.clone().invert());
     const city = [this.cityLocal.x, this.cityLocal.y, this.cityLocal.z] as const;
-    // Boot preview maps (1/16 of the texels, synchronous), then the full maps in idle slices (startBake).
-    const t0 = nowMs();
-    const pre = new EarthBaker({ w: EARTH_TEX.w / 4, h: EARTH_TEX.h / 4, cloudW: EARTH_TEX.cloudW / 4, cloudH: EARTH_TEX.cloudH / 4, puff: EARTH_TEX.puff / 4, city });
-    pre.bakeAll();
-    this.bake.previewMs = nowMs() - t0;
-    this.colorLo = dataTex(pre.color, pre.w, pre.h, true);
-    this.cloudsLo = dataTex(pre.clouds, pre.cw, pre.ch, false);
-    this.puffLo = mirrored(dataTex(pre.puff, pre.pw, pre.pw, false));
+    // The preview maps (¼ of the colour texels, ½ of the clouds'), then the full maps, all in idle slices (startBake).
+    this.pre = new EarthBaker({ w: EARTH_TEX.w / 4, h: EARTH_TEX.h / 4, cloudW: EARTH_TEX.cloudW / 2, cloudH: EARTH_TEX.cloudH / 2, puff: EARTH_TEX.puff / 4, city });
     this.full = new EarthBaker({ city });
+    const colorPh = this.tex(new Uint8Array([19, 86, 100, 0]), 1, 1, true), cloudPh = this.tex(new Uint8Array([0]), 1, 1, false);
+    const puffPh = this.tex(new Uint8Array([128]), 1, 1, false);
 
     const geo = new SphereGeometry(1, 72, 48), geoLo = new SphereGeometry(1, 40, 24);
     const sh = (fs: string, u: Record<string, { value: unknown }>, o: Partial<ConstructorParameters<typeof ShaderMaterial>[0]> = {}) =>
       new ShaderMaterial({ vertexShader: EARTH_VS, fragmentShader: fs, uniforms: u, ...o });
-    const tex = { uMap: { value: this.colorLo }, uMapLo: { value: this.colorLo }, uClouds: { value: this.cloudsLo }, uCloudsLo: { value: this.cloudsLo }, uMix: { value: 0 } };
-    this.earthMat = sh(EARTH_FS, { ...tex, uSun: { value: this.sun }, uCity: { value: this.cityLocal }, uTime: { value: 0 }, uCloudRot: { value: 0 }, uBeacon: { value: 1 }, uDive: { value: 0 } });
-    this.cloudMat = sh(CLOUDS_FS, { uClouds: tex.uClouds, uCloudsLo: tex.uCloudsLo, uMix: tex.uMix, uSun: { value: this.sun }, uFade: { value: 1 } },
+    const tex = { uMap: { value: colorPh as Texture }, uMapLo: { value: colorPh as Texture }, uMix: { value: 1 },
+      uClouds: { value: cloudPh as Texture }, uCloudsLo: { value: cloudPh as Texture }, uCMix: { value: 1 } };
+    this.colorL = { lo: tex.uMapLo, hi: tex.uMap, mix: tex.uMix, t: 1 };
+    this.cloudL = { lo: tex.uCloudsLo, hi: tex.uClouds, mix: tex.uCMix, t: 1 };
+    const sc = this.scrimU;
+    this.earthMat = sh(EARTH_FS, { ...tex, ...sc, uSun: { value: this.sun }, uCity: { value: this.cityLocal }, uTime: { value: 0 }, uCloudRot: { value: 0 }, uBeacon: { value: 1 }, uDive: { value: 0 } });
+    this.cloudMat = sh(CLOUDS_FS, { uClouds: tex.uClouds, uCloudsLo: tex.uCloudsLo, uCMix: tex.uCMix, ...sc, uSun: { value: this.sun }, uFade: { value: 1 } },
       { transparent: true, depthWrite: false });
-    this.atmoMat = sh(ATMO_FS, { uSun: { value: this.sun }, uGain: { value: 1 } }, { side: BackSide, transparent: true, depthWrite: false, blending: AdditiveBlending });
+    this.atmoMat = sh(ATMO_FS, { ...sc, uSun: { value: this.sun }, uGain: { value: 1 } }, { side: BackSide, transparent: true, depthWrite: false, blending: AdditiveBlending });
     this.earth = new Mesh(geo, this.earthMat); this.earth.name = 'title-earth';
     this.earth.rotation.y = C.spinDeg * DEG;
     this.clouds = new Mesh(geo, this.cloudMat); this.clouds.name = 'title-clouds';
@@ -149,8 +175,9 @@ export class TitleScene {
     // The atmosphere shader reads its own local position as the up vector: keep it unrotated relative to the sun.
     this.atmo.rotation.set(0, 0, 0);
 
-    const skyMat = new ShaderMaterial({ vertexShader: SKY_VS, fragmentShader: SKY_FS, side: BackSide, depthWrite: false,
-      uniforms: { uNoise: { value: this.cloudsLo }, uGlow: { value: norm3(C.glow) } } });
+    this.skyMat = new ShaderMaterial({ vertexShader: SKY_VS, fragmentShader: SKY_FS, side: BackSide, depthWrite: false,
+      uniforms: { uNoise: { value: cloudPh as Texture }, uGlow: { value: norm3(C.glow) }, uNeb: { value: 0 } } });
+    const skyMat = this.skyMat;
     this.sky = new Mesh(geoLo, skyMat); this.sky.name = 'title-sky';
     this.sky.scale.setScalar(600); this.sky.renderOrder = -10; this.sky.frustumCulled = false;
 
@@ -172,26 +199,30 @@ export class TitleScene {
     const tri = new BufferGeometry();
     tri.setAttribute('position', new BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3));
     this.washMat = new ShaderMaterial({ vertexShader: WASH_VS, fragmentShader: WASH_FS, transparent: true, depthTest: false, depthWrite: false,
-      uniforms: { uNoise: { value: this.puffLo }, uCover: { value: 0 }, uHole: { value: -1 }, uFlat: { value: 0 }, uZoom: { value: 0 },
+      uniforms: { uNoise: { value: puffPh as Texture }, uCover: { value: 0 }, uHole: { value: -1 }, uFlat: { value: 0 }, uZoom: { value: 0 },
         uAspect: { value: { x: 1, y: 1 } }, uTime: { value: 0 } } });
     const wash = new Mesh(tri, this.washMat); wash.frustumCulled = false;
     this.washScene.add(wash);
   }
 
-  /** Starts the full-resolution bake in idle slices (≤ EARTH_TEX.sliceMs each); `schedule` runs a callback later.
+  /** Starts the bake in idle slices (≤ EARTH_TEX.sliceMs each): the preview, then the full maps, each map uploaded
+   *  (and cross-faded in) as soon as its pass is complete, the clouds first. `schedule` runs a callback later.
    *  `allowed()` false (a run or a screen without the space backdrop is up) holds the bake: it never competes with play. */
   startBake(allowed: () => boolean = () => true, schedule: (step: (budgetMs: number) => boolean) => void = idleSlices): void {
     schedule((budgetMs) => {
       if (!allowed()) return false;
-      const done = this.full.step(Math.min(EARTH_TEX.sliceMs, budgetMs), nowMs);
-      const b = this.bake;
-      b.slices = this.full.slices; b.maxSliceMs = this.full.maxSliceMs; b.totalMs = this.full.totalMs;
-      if (done && !b.done) this.uploadFull();
+      const ms = Math.min(EARTH_TEX.sliceMs, budgetMs);
+      let done = false;
+      if (!this.pre.done) { if (this.pre.step(ms, nowMs)) this.uploadPreview(); }
+      else { done = this.full.step(ms, nowMs); this.uploadStages(); }
+      const b = this.bake, p = this.pre, f = this.full;
+      b.previewMs = p.totalMs; b.slices = p.slices + f.slices; b.maxSliceMs = Math.max(p.maxSliceMs, f.maxSliceMs); b.totalMs = p.totalMs + f.totalMs;
+      b.over = p.over + f.over;
       return done;
     });
   }
 
-  /** Bake progress 0…1. */
+  /** Bake progress 0…1 (the full maps). */
   get bakeProgress(): number { return this.full.progress; }
 
   /** Per frame on the Title (and under the menus opened from it): animation and layout. */
@@ -199,19 +230,21 @@ export class TitleScene {
     const d = Math.min(0.1, Math.max(0, dt));
     this.time += d;
     if (vp.wCss !== this.vpW || vp.hCss !== this.vpH || (!this.diving && this.bandMoved())) this.layout(vp);
-    if (this.colorHi && this.mixT < 1) {
-      this.mixT = Math.min(1, this.mixT + d / 0.6);
-      this.earthMat.uniforms.uMix!.value = ss(0, 1, this.mixT);
-    }
     const C = TITLE_SCENE, B = C.board, t = this.time;
+    for (const l of [this.colorL, this.cloudL]) if (l.t < 1) { l.t = Math.min(1, l.t + d / C.fadeSec); l.mix.value = ss(0, 1, l.t); }
+    if (this.previewUp && this.nebT < 1) { this.nebT = Math.min(1, this.nebT + d / C.fadeSec); this.skyMat.uniforms.uNeb!.value = ss(0, 1, this.nebT); }
+    // The vignette behind the logo block: on while the Title UI is up, gone as the dive starts (the UI leaves).
+    const band = this.diving ? null : this.band(), on = !!band && band.scrimRx > 0;
+    if (band && on) { const q = this.scrimBox; q.x = band.scrimX; q.y = band.scrimY; q.rx = band.scrimRx * C.scrim.padX; q.ry = band.scrimRy * C.scrim.padY; }
+    this.scrimK += ((on ? C.scrim.k : 0) - this.scrimK) * Math.min(1, d * (this.diving ? 14 : 6));
     this.earthMat.uniforms.uTime!.value = t;
     const rot = (t * C.cloudDegPerSec * DEG) % (2 * Math.PI);
     this.clouds.rotation.y = rot;
     this.earthMat.uniforms.uCloudRot!.value = rot / (2 * Math.PI);
     this.starMat.uniforms.uTime!.value = t;
+    this.spinAngle = 2 * Math.PI * ((t / B.spinSec + 0.5) % 1);   // constant angular speed; opens on the graphic (θ = π)
     if (!this.diving) {
-      const u = (t / B.spinSec + 0.5) % 1;                 // opens on the graphic (θ = π)
-      this.spin.rotation.y = 2 * Math.PI * u - B.linger * Math.sin(4 * Math.PI * u);
+      this.spin.rotation.y = this.spinAngle;
       this.tilt.rotation.set(B.leanDeg * DEG, 0, (B.tiltDeg + B.swayDeg * Math.sin((2 * Math.PI * t) / B.swaySec)) * DEG);
       this.anchor.position.copy(this.anchorHome);
       this.anchor.position.y += B.bob * this.boardScale * Math.sin((2 * Math.PI * t) / B.bobSec);
@@ -221,9 +254,17 @@ export class TitleScene {
   /** Draws the space scene (the Title backdrop). */
   render(r: WebGLRenderer): void {
     this.starMat.uniforms.uPx!.value = r.getPixelRatio();
+    // The vignette in drawing-buffer px (gl_FragCoord: origin bottom left).
+    r.getDrawingBufferSize(this.buf);
+    const sx = this.buf.x / Math.max(1, this.vpW), sy = this.buf.y / Math.max(1, this.vpH), q = this.scrimBox;
+    this.scrimU.uScrim.value.set(q.x * sx, (this.vpH - q.y) * sy, Math.max(1, q.rx * sx), Math.max(1, q.ry * sy));
+    this.scrimU.uScrimK.value = q.rx > 0 ? this.scrimK : 0;
     r.render(this.scene, this.camera);
     this.lastCalls = r.info.render.calls; this.lastTris = r.info.render.triangles + r.info.render.points;
   }
+
+  /** `o`'s world position (a shared vector, valid until the next call): the dive's focus on the rider. */
+  worldPos(o: { getWorldPosition(v: Vector3): Vector3 }): Vector3 { return o.getWorldPosition(this.focusW); }
 
   /** Draw calls and triangles (points included) of the last space render; bake telemetry. */
   stats() { return { drawCalls: this.lastCalls, tris: this.lastTris, bake: { ...this.bake, progress: this.full.progress } }; }
@@ -234,7 +275,6 @@ export class TitleScene {
     this.diving = true;
     this.camera.updateMatrixWorld();
     this.q0.copy(this.camera.quaternion);
-    this.spin0 = this.spin.rotation.y;
     this.earthGroup.updateMatrixWorld(true);
     this.cityW.copy(this.cityLocal).applyMatrix4(this.earth.matrixWorld);
     this.n1.copy(this.cityW).normalize();
@@ -300,7 +340,7 @@ export class TitleScene {
     const a = this.boardA + (0.97 - this.boardA) * ss(0.1, 0.8, u);
     this.anchor.position.copy(cam.position).addScaledVector(this.tmp, a).addScaledVector(this.boardOff, 1 - k);
     this.anchor.scale.setScalar((dist / d0) * (1 - 0.85 * ss(0.35, 0.8, u)));
-    this.spin.rotation.y = this.spin0 + 7 * u * u;
+    this.spin.rotation.y = this.spinAngle + 7 * u * u;     // keeps its speed at the tap, then tumbles as it falls
     this.anchor.visible = u < 0.9;
     cam.fov = this.baseFov + 18 * ss(0.25, 0.85, u);
     cam.updateProjectionMatrix();
@@ -310,8 +350,9 @@ export class TitleScene {
     this.earthMat.uniforms.uBeacon!.value = 1 - ss(0.15, 0.45, u);
     const warm = ss(0.1, 0.7, u);
     this.earthMat.uniforms.uDive!.value = warm;
-    // The late sun swings round onto the city: the dusk band moves off and the approach glows gold, not night blue.
-    this.sun.copy(this.sunHome).addScaledVector(this.n1, 0.9 * warm).normalize();
+    // The sun eases a little toward the city, keeping it inside the warm dusk band on its day side (n·l 0.06 → ~0.2):
+    // the approach glows orange-gold into the peach wash, neither night blue nor a day-green that greys under it.
+    this.sun.copy(this.sunHome).addScaledVector(this.n1, 0.16 * warm).normalize();
   }
 
   private drawWash(r: WebGLRenderer, f: DiveFrame, vp: Viewport): void {
@@ -397,20 +438,31 @@ export class TitleScene {
   }
 
   /** Context restore: re-upload the baked maps. */
-  rebuildGPU(): void {
-    for (const t of [this.colorLo, this.cloudsLo, this.puffLo, this.colorHi, this.cloudsHi, this.puffHi]) if (t) t.needsUpdate = true;
+  rebuildGPU(): void { for (const t of this.texs) t.needsUpdate = true; }
+
+  private tex(data: Uint8Array, w: number, h: number, rgba: boolean): DataTexture {
+    const t = dataTex(data, w, h, rgba);
+    this.texs.push(t);
+    return t;
   }
 
-  private uploadFull(): void {
-    const f = this.full;
-    this.colorHi = dataTex(f.color, f.w, f.h, true);
-    this.cloudsHi = dataTex(f.clouds, f.cw, f.ch, false);
-    const u = this.earthMat.uniforms;
-    u.uMap!.value = this.colorHi; u.uClouds!.value = this.cloudsHi;
-    this.cloudMat.uniforms.uClouds!.value = this.cloudsHi;
-    this.puffHi = mirrored(dataTex(f.puff, f.pw, f.pw, false));
-    this.washMat.uniforms.uNoise!.value = this.puffHi;
-    this.bake.done = true; this.bake.uploadedAt = nowMs();
+  /** The preview landed: the planet fades in from the plain sphere, the nebula with it. */
+  private uploadPreview(): void {
+    const p = this.pre;
+    pushStage(this.colorL, this.tex(p.color, p.w, p.h, true));
+    const clouds = this.tex(p.clouds, p.cw, p.ch, false);
+    pushStage(this.cloudL, clouds);
+    this.skyMat.uniforms.uNoise!.value = clouds;
+    this.washMat.uniforms.uNoise!.value = mirrored(this.tex(p.puff, p.pw, p.pw, false));
+    this.previewUp = true; this.bake.previewAt = nowMs();
+  }
+
+  /** Each full map goes up as soon as its pass is complete (clouds, then the wash noise, then the colour). */
+  private uploadStages(): void {
+    const f = this.full, b = this.bake;
+    if (f.cloudsDone && !this.cloudsHi) { this.cloudsHi = this.tex(f.clouds, f.cw, f.ch, false); pushStage(this.cloudL, this.cloudsHi); b.cloudsAt = nowMs(); }
+    if (f.puffDone && !this.puffHi) { this.puffHi = mirrored(this.tex(f.puff, f.pw, f.pw, false)); this.washMat.uniforms.uNoise!.value = this.puffHi; }
+    if (f.colorDone && !this.colorHi) { this.colorHi = this.tex(f.color, f.w, f.h, true); pushStage(this.colorL, this.colorHi); b.done = true; b.uploadedAt = nowMs(); }
   }
 }
 
@@ -453,11 +505,12 @@ const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Da
 function idleSlices(step: (budgetMs: number) => boolean): void {
   const g = globalThis as { requestIdleCallback?: (f: (d: { timeRemaining(): number }) => void) => number };
   let skipped = 0;
+  const room = EARTH_TEX.sliceMs + 2;                     // a slice starts only with its budget and 2 ms to spare
   const run = (d?: { timeRemaining(): number }) => {
-    if (d && d.timeRemaining() < EARTH_TEX.sliceMs && ++skipped < 30) { next(); return; }   // a short idle period: wait
+    if (d && d.timeRemaining() < room && ++skipped < 60) { next(); return; }   // a short idle period: wait
     skipped = 0;
     let done = step(EARTH_TEX.sliceMs), n = 1;
-    while (!done && d && n < 4 && d.timeRemaining() > EARTH_TEX.sliceMs + 1) { done = step(EARTH_TEX.sliceMs); n++; }
+    while (!done && d && n < 4 && d.timeRemaining() >= room) { done = step(EARTH_TEX.sliceMs); n++; }
     if (!done) next();
   };
   const next = () => { if (g.requestIdleCallback) g.requestIdleCallback(run); else setTimeout(run, 16); };

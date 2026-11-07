@@ -19,7 +19,7 @@ import type { RunResult, Sim } from '../core/sim';
 import type { UiApi, UiIntent } from '../core/ui';
 import type { CameraMode, CameraRig, SkaterView, Vfx, Viewport, WorldView } from '../core/view';
 import { blurActive, createBackGuard, createWakeLock, onHide, type BackGuard } from '../platform';
-import { DiveClock, type DiveView } from './dive';
+import { DIVE, DiveClock, type DiveView } from './dive';
 import type { GameLoop } from './loop';
 import type { RunSession, StartOptions } from './runSession';
 
@@ -198,10 +198,14 @@ export class App {
       d.loop.setRunning(false);
       d.ui.hud.show(false);
       this.lastDive = null;
-      this.dive = new DiveClock(!!d.reducedMotion?.(), () => { this.lastDive ??= { skipped: false, t: this.dive?.t ?? 0 }; this.goLive(); });
+      const reduced = !!d.reducedMotion?.();
+      this.dive = new DiveClock(reduced, () => { this.lastDive ??= { skipped: false, t: this.dive?.t ?? 0 }; this.goLive(); });
       this.diveLastMs = d.now?.() ?? -1;
       d.loop.fast = true;                               // the dive renders at the run's 60 fps cap
-      d.audio.sfx('dive');
+      d.audio.sfx('dive', { intensity: this.dive.dur / DIVE.sec });   // the cue fits the dive (or the 0.3 s fade)
+      // The menu song dips under the swell while the run song comes in on the next beat, then the music returns
+      // by the hand-over: the song change reads as a cross-fade, not a cut.
+      d.audio.music.duck(DIVE.duckDb, this.dive.dur * DIVE.duckFrac);
       return;
     }
     this.goLive();
@@ -221,6 +225,7 @@ export class App {
     const dv = this.dive;
     if (!dv?.active) return;
     const t = dv.t;
+    this.d.audio.sfx('dive', { intensity: 0 });          // the cue fades out with the dive it scored
     dv.skip();
     this.lastDive = { skipped: true, t };
   }
@@ -228,6 +233,7 @@ export class App {
   /** Leaves a dive without its hand-over (another screen or another run start took over). */
   private stopDive(): void {
     if (!this.dive) return;
+    if (this.dive.active) this.d.audio.sfx('dive', { intensity: 0 });
     this.dive.cancel();
     this.dive = null;
     this.d.loop.fast = false;
@@ -235,7 +241,7 @@ export class App {
 
   pause(rotate: boolean): void {
     if (this.screen !== 'run') return;
-    if (this.dive?.active) this.dive.skip();           // hidden tab / back gesture mid-dive: pause the live run
+    if (this.dive?.active) this.skipDive();            // hidden tab / back gesture mid-dive: pause the live run
     const d = this.d;
     d.loop.setRunning(false);
     d.input.setEnabled(false);

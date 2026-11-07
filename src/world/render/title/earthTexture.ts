@@ -1,14 +1,20 @@
 // world/render/title/earthTexture.ts: the Title's procedural Earth, baked on the CPU into equirect byte arrays in
-// idle slices (TECH §8.4: ≤ 4 ms each, so no Title frame ever hitches). Two maps, both in the texture layout of
-// three's SphereGeometry (memory row 0 = the south pole, column u → phi = 2πu, x = −cos phi, z = sin phi):
+// idle slices (TECH §8.4: ≤ 3 ms each, so no Title frame ever hitches). The maps, in the texture layout of three's
+// SphereGeometry (memory row 0 = the south pole, column u → phi = 2πu, x = −cos phi, z = sin phi), in bake order
+// (the clouds first: they dominate the frame close up, in a dive started early):
+//   clouds (R8):    the cloud field BEFORE its threshold (CLOUD_EDGE: the shaders threshold after filtering, so even a
+//                   coarse map magnifies into soft rounded clouds, never texel squares);
+//   puff (R8):      a square full-range cloud noise for the dive's wash (not tiled: the wash samples one window);
 //   colour (RGBA8): RGB = day albedo (deep teal seas, green reclaimed continents, soft warm ice caps);
 //                   A   = 0 on water, 128…255 on land, where 128 + 127·lights holds the few warm night lights.
-//   clouds (R8):    soft drifting cloud cover.
-//   puff (R8):      a square full-range cloud noise for the dive's wash (not tiled: the wash samples one window).
 // The run's start city is a coastal cluster of lights at `city` (an Earth-local unit vector): land is pulled up there.
 import { Noise3 } from './noise';
 
-export const EARTH_TEX = { w: 1024, h: 512, cloudW: 512, cloudH: 256, puff: 256, seed: 0xd5c1a9, sliceMs: 4 } as const;
+export const EARTH_TEX = { w: 1024, h: 512, cloudW: 512, cloudH: 256, puff: 256, seed: 0xd5c1a9, sliceMs: 3 } as const;
+/** Cloud cover = smoothstep(CLOUD_EDGE[0], CLOUD_EDGE[1], stored value / 255) (the shaders apply it; keep in sync). */
+export const CLOUD_EDGE = [0.4, 0.8] as const;
+/** Stored cloud value = (field − CLOUD_RAW.lo) / CLOUD_RAW.span, clamped: the old 0.02…0.42 edge lands on CLOUD_EDGE. */
+const CLOUD_RAW = { lo: -0.38, span: 1.0 } as const;
 
 const smooth = (a: number, b: number, x: number) => { const t = x <= a ? 0 : x >= b ? 1 : (x - a) / (b - a); return t * t * (3 - 2 * t); };
 const mix = (a: number, b: number, t: number) => a + (b - a) * t;
@@ -31,9 +37,10 @@ export class EarthBaker {
   readonly color: Uint8Array;
   readonly clouds: Uint8Array;
   readonly puff: Uint8Array;
-  /** Slices run so far, the longest one and the total (ms). */
-  slices = 0; maxSliceMs = 0; totalMs = 0;
-  /** Work cursor: pass 0 = half-resolution fields, 1 = colour, 2 = clouds, 3 = puff, 4 = done; `at` = texel index. */
+  /** Slices run so far, the longest one and the total (ms); `over`: slices that ran past their budget + 1 ms (the
+   *  clock is read every UNIT texels, so an overrun is a pause from outside: GC, the JIT, a busy machine). */
+  slices = 0; maxSliceMs = 0; totalMs = 0; over = 0;
+  /** Work cursor: pass 0 = clouds, 1 = puff, 2 = half-resolution fields, 3 = colour, 4 = done; `at` = texel index. */
   private pass = 0;
   private at = 0;
   private readonly land: Noise3;
@@ -59,23 +66,28 @@ export class EarthBaker {
   }
 
   get done(): boolean { return this.pass >= 4; }
-  /** 0…1 over the three passes (weighted by their cost). */
+  /** Each map is final once its pass is behind the cursor (the caller uploads it then). */
+  get cloudsDone(): boolean { return this.pass > 0; }
+  get puffDone(): boolean { return this.pass > 1; }
+  get colorDone(): boolean { return this.pass > 3; }
+  /** 0…1 over the four passes (weighted by their cost). */
   get progress(): number {
     if (this.done) return 1;
-    const sizes = [this.fw * this.fh * 3, this.w * this.h, this.cw * this.ch * 2, this.pw * this.pw * 2];
+    const n = this.passSize(this.pass), sizes = [this.cw * this.ch * 2, this.pw * this.pw * 2, this.fw * this.fh * 3, this.w * this.h];
     let doneW = 0, all = 0;
-    sizes.forEach((sz, i) => { all += sz; if (i < this.pass) doneW += sz; });
-    const n = [this.fw * this.fh, this.w * this.h, this.cw * this.ch, this.pw * this.pw][this.pass]!;
+    for (let i = 0; i < 4; i++) { all += sizes[i]!; if (i < this.pass) doneW += sizes[i]!; }
     return (doneW + (sizes[this.pass]! * this.at) / n) / all;
   }
+  private passSize(p: number): number { return p === 0 ? this.cw * this.ch : p === 1 ? this.pw * this.pw : p === 2 ? this.fw * this.fh : this.w * this.h; }
 
-  /** Bakes until `budgetMs` has passed (the clock is read every UNIT texels); true once both maps are complete. */
+  /** Bakes until `budgetMs` has passed (the clock is read every UNIT texels); true once every map is complete. */
   step(budgetMs: number, now: () => number): boolean {
     if (this.done) return true;
     const t0 = now();
     do this.unit(); while (!this.done && now() - t0 < budgetMs);
     const ms = now() - t0;
     this.slices++; this.totalMs += ms; this.maxSliceMs = Math.max(this.maxSliceMs, ms);
+    if (ms > budgetMs + 1) this.over++;
     return this.done;
   }
 
@@ -83,10 +95,10 @@ export class EarthBaker {
   bakeAll(): void { while (!this.done) this.unit(); }
 
   private unit(): void {
-    const n = this.pass === 0 ? this.fw * this.fh : this.pass === 1 ? this.w * this.h : this.pass === 2 ? this.cw * this.ch : this.pw * this.pw;
+    const n = this.passSize(this.pass);
     const end = Math.min(n, this.at + UNIT);
     for (let k = this.at; k < end; k++) {
-      if (this.pass === 0) this.field(k); else if (this.pass === 1) this.texel(k); else if (this.pass === 2) this.cloud(k); else this.puffAt(k);
+      if (this.pass === 0) this.cloud(k); else if (this.pass === 1) this.puffAt(k); else if (this.pass === 2) this.field(k); else this.texel(k);
     }
     this.at = end;
     if (end >= n) { this.pass++; this.at = 0; }
@@ -179,7 +191,8 @@ export class EarthBaker {
     const band = 0.55 + 0.45 * Math.cos(lat * 4.2);
     const wv = n.at(x * 2.2, y * 2.2 + 7.0, z * 2.2);
     const v = n.fbm((x + 0.45 * wv) * 2.6, (y + 0.2 * wv) * 4.2, (z - 0.4 * wv) * 2.6, 5, 0.55);
-    this.clouds[k] = Math.round(255 * smooth(0.02, 0.42, v + 0.22 * band - 0.18));
+    const f = (v + 0.22 * band - 0.18 - CLOUD_RAW.lo) / CLOUD_RAW.span;
+    this.clouds[k] = Math.round(255 * (f <= 0 ? 0 : f >= 1 ? 1 : f));
   }
 
   /** Billowy full-range noise (ridged a little toward the bright side) on a plane. */

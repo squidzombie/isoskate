@@ -72,11 +72,14 @@ export function wire(root: HTMLElement): Game {
     bandAt = t;
     const q = (sel: string) => root.querySelector<HTMLElement>(`#screens [data-screen="title"] ${sel}`)?.getBoundingClientRect() ?? null;
     const logo = q('.logo'), tap = q('.tap'), best = q('.title-best'), keys = q('.title-keys'), tabs = q('.tabs'), top = q('.title-top');
+    const block = q('.title-hero') ?? logo;              // logo + tagline: the scene darkens softly behind it
     if (!logo || !tap || !tabs) { bandVal = null; return null; }
     const under = Math.max(tap.bottom, best?.height ? best.bottom : 0, keys?.height ? keys.bottom : 0);
     const colR = Math.max(logo.right, tap.right, best?.width ? best.right : 0, keys?.width ? keys.right : 0);
     bandVal = tabs.top - under > 60
-      ? { top: under + 10, bottom: tabs.top - 10, heroTop: logo.top, heroBottom: tap.bottom, colR: colR + 16, sideTop: (top?.bottom ?? 0) + 16 } : null;
+      ? { top: under + 10, bottom: tabs.top - 10, heroTop: logo.top, heroBottom: tap.bottom, colR: colR + 16, sideTop: (top?.bottom ?? 0) + 16,
+        scrimX: block ? (block.left + block.right) / 2 : 0, scrimY: block ? (block.top + block.bottom) / 2 : 0,
+        scrimRx: block?.width ? block.width / 2 : 0, scrimRy: block?.height ? block.height / 2 : 0 } : null;
     return bandVal;
   };
   const title = new TitleScene(titleBand);
@@ -178,14 +181,15 @@ export function wire(root: HTMLElement): Game {
       }
       hero.update(f.dt);
       title.update(f.dt, viewport);
+      const diveFocus = title.worldPos(skater.object3d);  // world space, whatever the rider is parented to
       // A chunk built during the space phase is uploaded the frame after (a 1-pixel draw from high above), so the
       // first world frame of the dive does not upload them all at once.
       if (dv.phase === 'space' && uploadNext) {
         uploadNext = false;
-        TitleScene.warm(gfx.renderer, gfx.scene, title.handover.at(0, cameraRig.camera, skater.object3d.position, viewport.aspect));
+        TitleScene.warm(gfx.renderer, gfx.scene, title.handover.at(0, cameraRig.camera, diveFocus, viewport.aspect));
       }
       if (dv.phase === 'space' && worldView.stats().chunksBuilt !== before) uploadNext = true;
-      title.renderDive(gfx.renderer, dv, viewport, { scene: gfx.scene, camera: cameraRig.camera, focus: skater.object3d.position });
+      title.renderDive(gfx.renderer, dv, viewport, { scene: gfx.scene, camera: cameraRig.camera, focus: diveFocus });
     } else {
       title.endDive();
       gfx.renderer.render(gfx.scene, cameraRig.camera);

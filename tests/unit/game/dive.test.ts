@@ -127,7 +127,11 @@ function harness(o: { reduced?: boolean } = {}) {
     ui: { onIntent: (f: (i: UiIntent) => void) => { intent = f; return () => undefined; }, show: (s: string) => log.push(`show:${s}`), hud: { show: (on: boolean) => log.push(`hud:${on}`) } },
     meta: { loadout: () => ({}), catalog: () => [], applyRun: () => null },
     save: { data: { settings, onboarding: { runsStarted: 0 } }, mutate: (f: (s: unknown) => void) => f({ onboarding: { runsStarted: 0 } }), flush() {} },
-    audio: { setScene: (s: string) => log.push(`scene:${s}`), sfx: (id: string) => log.push(`sfx:${id}`), suspend() {}, resume() {} },
+    audio: {
+      setScene: (s: string) => log.push(`scene:${s}`), suspend() {}, resume() {},
+      sfx: (id: string, o?: { intensity?: number }) => log.push(o?.intensity === undefined ? `sfx:${id}` : `sfx:${id}@${+o.intensity.toFixed(2)}`),
+      music: { duck: (db: number, sec: number) => log.push(`duck:${db}/${+sec.toFixed(2)}`) },
+    },
     analytics: { track() {} },
     worldView: { attach() {} },
     skater: { setLoadout() {}, setMode() {}, setTurntable() {} },
@@ -156,8 +160,9 @@ describe('App: the dive', () => {
     expect(h.loop.running).toBe(false);
     expect(h.input.enabled).toBe(false);
     expect(h.loop.fast).toBe(true);
-    expect(h.log).toContain('sfx:dive');
+    expect(h.log).toContain('sfx:dive@1');                 // the full-length cue
     expect(h.log).toContain('scene:run');
+    expect(h.log).toContain(`duck:${DIVE.duckDb}/${+(DIVE.sec * DIVE.duckFrac).toFixed(2)}`);   // the song change dips under the swell
     for (let t = 0; t < DIVE.sec - 0.05; t += 1 / 60) h.app.frame(1 / 60);
     expect(h.lives()).toBe(0);
     for (let t = 0; t < 1; t += 1 / 60) h.app.frame(1 / 60);
@@ -180,6 +185,7 @@ describe('App: the dive', () => {
     expect(h.app.diving).toBe(false);
     expect(h.lives()).toBe(1);
     expect(stopped).toBe(true);
+    expect(h.log).toContain('sfx:dive@0');                 // the cue fades out with the skipped dive
     const k = harness();
     k.raise({ k: 'play' });
     window.dispatchEvent(Object.assign(new Event('keydown'), { code: 'KeyA', repeat: false, preventDefault() {} }));
@@ -189,6 +195,7 @@ describe('App: the dive', () => {
   it('reduced motion: the hand-over comes after 0.3 s', () => {
     const h = harness({ reduced: true });
     h.raise({ k: 'play' });
+    expect(h.log).toContain(`sfx:dive@${+(DIVE.reducedSec / DIVE.sec).toFixed(2)}`);   // a 0.3 s cue for the 0.3 s fade
     for (let i = 0; i < 17; i++) h.app.frame(1 / 60);
     expect(h.lives()).toBe(0);
     for (let i = 0; i < 3; i++) h.app.frame(1 / 60);
@@ -199,6 +206,7 @@ describe('App: the dive', () => {
     h.raise({ k: 'play' });
     h.app.frame(0.3);
     h.raise({ k: 'home' });
+    expect(h.log).toContain('sfx:dive@0');
     for (let t = 0; t < 3; t += 1 / 60) h.app.frame(1 / 60);
     expect(h.lives()).toBe(0);
     expect(h.app.current).toBe('title');

@@ -10,7 +10,7 @@ interface TitleTools {
   dive(): { frames: number; maxWorkMs: number; startedAt: number; liveAt: number; skipped: boolean | null };
   hold(t: number | null): void;
   bakeDone(): boolean;
-  scene: { camera: import('three').PerspectiveCamera; boardSlot: import('three').Object3D };
+  scene: { camera: import('three').PerspectiveCamera; boardSlot: import('three').Object3D; time: number };
 }
 
 async function boot(page: Page, errors: string[]): Promise<void> {
@@ -76,6 +76,20 @@ test('the Title draws the Earth in space with the equipped board clear of the UI
   expect(r.box.y0).toBeGreaterThan(0); expect(r.box.y1).toBeLessThan(r.h);
   expect(Math.max(r.box.x1 - r.box.x0, r.box.y1 - r.box.y0)).toBeGreaterThan(0.18 * Math.min(r.w, r.h));
   expect(r.overlaps).toEqual([]);
+  // The board spins at one constant rate (owner direction): the same angular speed over every interval.
+  const rates = await page.evaluate(async () => {
+    const S = (window as unknown as { __skateTitle: TitleTools }).__skateTitle.scene, out: number[] = [];
+    let a = S.boardSlot.parent!.rotation.y, t = S.time;
+    for (let i = 0; i < 8; i++) {
+      await new Promise((res) => setTimeout(res, 250));
+      const b = S.boardSlot.parent!.rotation.y, u = S.time;
+      if (u > t) out.push((((b - a) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) / (u - t));
+      a = b; t = u;
+    }
+    return out;
+  });
+  expect(rates.length).toBeGreaterThan(4);
+  for (const w of rates) expect(w).toBeCloseTo((2 * Math.PI) / 11, 3);
   expect(errors).toEqual([]);
 });
 

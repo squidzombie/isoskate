@@ -5,7 +5,7 @@ import { DIVE_CUE, EP, LEVEL_UP, SFX_LEVEL, VARIATION } from '../mix.config';
 import type { Graph } from '../graph';
 import { playEp, playMallet } from '../music/instruments';
 import { midiHz, pentatonicNote } from '../music/progressions';
-import { filter, gain, osc, perc, sweep, swell, vary, voice } from '../synth';
+import { filter, gain, osc, perc, sweep, swell, vary, voice, type VoiceOut } from '../synth';
 import { PRI } from '../voices';
 import { nz, tn, type CueOpts, type KeyInfo } from './oneshots';
 
@@ -14,6 +14,11 @@ function maj9(key: KeyInfo, octave: number): number[] {
   const r = pentatonicNote(key.area, 0, octave);
   return [r, r + 4, r + 7, r + 11, r + 14];
 }
+
+/** The dive cue playing on each graph (a skipped dive releases it). */
+const diveVoices = new WeakMap<Graph, VoiceOut>();
+/** How long a skipped dive's cue takes to fade out (s). */
+const D_REL = 0.25;
 
 export function playUi(g: Graph, id: string, t: number, o: CueOpts, key: KeyInfo): void {
   const L = SFX_LEVEL;
@@ -97,16 +102,29 @@ export function playUi(g: Graph, id: string, t: number, o: CueOpts, key: KeyInfo
     }
     case 'dive': {
       // Rising whoosh (band-pass noise 260 → 3.4 kHz, peaking at the cloud break) over a soft Maj9 pad swell.
-      const D = DIVE_CUE, s = v(D.sec + D.padRelease, L.dive); if (!s) return;
-      nz(g, s, s.out, t, D.sec, 'bandpass', D.whooshHz[0], 1.6, 0.55, 0, D.whooshHz[1], 'swell');
-      nz(g, s, s.out, t + 0.12, D.sec * 0.9, 'highpass', 2400, 0.7, 0.08, 0, undefined, 'swell');
+      // `intensity` = the dive's length as a fraction of the full one (1; reduced motion's 0.3 s fade ≈ 0.21: the
+      // same gesture, compressed); 0 = the dive ended early (a tap skipped it, or it was left): the cue fades out.
+      const k = Math.min(1, o.intensity ?? 1), prev = diveVoices.get(g);
+      if (prev && prev.v.end > t) {
+        const gn = prev.out.gain;
+        if (typeof gn.cancelAndHoldAtTime === 'function') gn.cancelAndHoldAtTime(t); else gn.cancelScheduledValues(t);
+        gn.setTargetAtTime(0, t, D_REL / 4);
+        prev.kill(t + D_REL);
+      }
+      diveVoices.delete(g);
+      if (k <= 0) return;
+      const D = DIVE_CUE, sec = D.sec * k, att = D.padAttack * k, rel = Math.max(0.15, D.padRelease * k);
+      const s = v(sec + rel, L.dive); if (!s) return;
+      diveVoices.set(g, s);
+      nz(g, s, s.out, t, sec, 'bandpass', D.whooshHz[0], 1.6, 0.55, 0, D.whooshHz[1], 'swell');
+      nz(g, s, s.out, t + 0.12 * k, sec * 0.9, 'highpass', 2400, 0.7, 0.08, 0, undefined, 'swell');
       const ctx = g.ctx, lp = filter(ctx, 'lowpass', D.padLpHz[0], 0.7, s.out);
-      sweep(lp.frequency, t, D.padLpHz[0], D.padLpHz[1], D.padAttack);
+      sweep(lp.frequency, t, D.padLpHz[0], D.padLpHz[1], att);
       const pad = gain(ctx, 0, lp);
-      swell(pad.gain, t, D.padGain, D.padAttack, D.padRelease + D.sec - D.padAttack);
+      swell(pad.gain, t, D.padGain, att, rel + sec - att);
       for (const [i, m] of maj9(key, 4).slice(0, 4).entries()) {
         const o = osc(ctx, i % 2 ? 'triangle' : 'sine', midiHz(m) * (1 + (i - 1.5) * 0.002), pad);
-        s.src(o, t, t + D.sec + D.padRelease + 0.05);
+        s.src(o, t, t + sec + rel + 0.05);
       }
       return;
     }

@@ -665,7 +665,7 @@ behaviour and is behind a flag.
 ### SfxId: 'dive'   (status: open; applied on pkg/title)
 - File / symbol: core/audio.ts › SfxId
 - Change: `| 'dive'` (one union member, after the @G0 internal cues).
-- Why: TAP TO ROLL plays a 1.45 s rising whoosh and a soft Maj9 pad swell under the dive (audio/sfx/ui.ts, `DIVE_CUE` in mix.config.ts; a UI cue on the SFX bus). The music already moves menu → run through `setScene('run')` at the dive's start, so the run song is in by the hand-over.
+- Why: TAP TO ROLL plays a 1.45 s rising whoosh and a soft Maj9 pad swell under the dive (audio/sfx/ui.ts, `DIVE_CUE` in mix.config.ts; a UI cue on the SFX bus). Its `intensity` option (already in the `sfx` signature) is the cue's length as a fraction of the full dive: 1 for TAP TO ROLL, 0.3 / 1.45 for the reduced-motion fade, and 0 when the dive ends early (a tap skips it, Home or another start cancels it): the playing cue then fades out in 0.25 s. The music moves menu → run through `setScene('run')` at the dive's start (the engine's cut on the next beat) under `music.duck(8, 0.6 × the dive)`, so the song change reads as a dip and swell rather than a cut and the run song is in by the hand-over. A true song-to-song crossfade for scene changes would be an audio-engine feature (not requested here).
 - Local workaround meanwhile: none needed (additive).
 
 ### Notes for the merge (no other core change)

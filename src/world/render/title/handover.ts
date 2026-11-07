@@ -40,10 +40,10 @@ export class HandoverCamera {
   constructor() { this.persp.matrixWorldAutoUpdate = true; this.ortho.matrixWorldAutoUpdate = true; }
 
   /** The camera to draw the world with at world-phase progress v (0…1). `target`: the run rig's camera, already
-   *  solved this frame; `focus`: the rider's world position; `aspect`: viewport width / height. */
+   *  solved this frame; `focus`: the rider's WORLD position; `aspect`: viewport width / height. */
   at(v: number, target: Camera, focus: Vector3, aspect: number): Camera {
     const T = target as Camera & { isOrthographicCamera?: boolean };
-    T.updateMatrixWorld();
+    T.updateWorldMatrix(true, false);                                       // its parents too (a rig may nest it)
     this.vpT.multiplyMatrices(T.projectionMatrix, T.matrixWorldInverse);
     // The focus under the run camera: its clip w, NDC, and the world height of the run frame at its depth.
     const c = this.c4.set(focus.x, focus.y, focus.z, 1).applyMatrix4(this.vpT);
