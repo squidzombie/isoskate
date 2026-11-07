@@ -332,6 +332,11 @@
   #screens .detail { padding-top: 6px; }
   #screens .scr-head .back-btn { min-height: 48px; }
 }
+@media (max-width: 374px) {
+  /* Narrow phones: a smaller pick thumbnail leaves the name ~52 px at 320 (showcase.ts shrinks a longer single word). */
+  #screens .featured .card { grid-template-columns: 22px minmax(0, 1fr); gap: 0 3px; }
+  #screens .featured .card .card-art { width: 22px; margin: 3px 0 0 2px; }
+}
 @media (max-width: 359px) {
   #screens .crate-card { grid-template-columns: 44px 1fr; gap: 6px 8px; }
   #screens .crate-card .crate-ico { width: 42px; height: 37px; flex-basis: 42px; }

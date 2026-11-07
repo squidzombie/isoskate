@@ -9,6 +9,7 @@ import type { CosmeticItem } from '../../core/cosmetics';
 import { FEATURED, isMetaExt, UNLOCK_LEVEL, type MetaExt } from '../../meta';
 import { h, setText } from '../h';
 import { icon } from '../icons';
+import { PICK_NAME } from '../ui.config';
 import { btn, coinTag, fmtN, header, itemCard, RARITY_LABEL, section, SLOT_LABEL, type Screen, type ScreenCtx } from './common';
 
 export function showcaseScreen(ctx: ScreenCtx, id: 'locker' | 'shop'): Screen {
@@ -28,7 +29,7 @@ export function showcaseScreen(ctx: ScreenCtx, id: 'locker' | 'shop'): Screen {
   const detail = h('div', { class: 'detail' }, h('div', { class: 'd-txt' }, dName, h('div', { class: 'd-sub' }, dRar, dInfo)), actWish, actBuy, actEquip);
   const tabs = h('div', { class: 'seg-tabs', role: 'tablist' });
   for (const s of ['skater', 'board', 'helmet'] as const) {
-    const b = btn(SLOT_LABEL[s], () => { slot = s; picked = null; fill(); }, ctx, 'seg-tab', undefined, 'toggle');
+    const b = btn(SLOT_LABEL[s], () => { slot = s; picked = null; fill(); grid.scrollTop = 0; }, ctx, 'seg-tab', undefined, 'toggle');
     b.dataset.slot = s; b.setAttribute('role', 'tab');
     tabs.append(b);
   }
@@ -111,10 +112,28 @@ export function showcaseScreen(ctx: ScreenCtx, id: 'locker' | 'shop'): Screen {
       const f = m.featured();
       featured.replaceChildren(...f.map((fid) => { const it = m.item(fid)!; return itemCard(it, footer(m, it), { onClick: () => { ctx.sfx('tap'); slot = it.slot; picked = it.id; fill(); pick(it); } }); }));
       featWrap.style.display = f.length ? '' : 'none';
+      fitPickNames();
       lockNote.style.display = m.unlocked('shop') ? 'none' : '';
       panel.classList.toggle('locked', !m.unlocked('shop'));
     }
     renderDetail();
+  };
+  /** A long single word ("Stickerbomb", "Sunflower") never breaks mid-word in a narrow pick card: that name shrinks a
+   *  little instead. Measured in the DOM (letter-spacing included) with a hidden probe: a menu screen, never a run. */
+  const fitPickNames = () => {
+    const names = [...featured.querySelectorAll<HTMLElement>('.card-name')];
+    const colW = names[0]?.clientWidth ?? 0;
+    if (!colW) return;
+    const probe = h('span', { 'aria-hidden': 'true', style: 'position:absolute;left:0;top:0;visibility:hidden;white-space:nowrap' });
+    for (const n of names) {
+      const words = (n.textContent ?? '').split(/\s+/).filter(Boolean);
+      n.style.fontSize = '';
+      n.append(probe);
+      let widest = 0;
+      for (const w of words) { probe.textContent = w; widest = Math.max(widest, probe.getBoundingClientRect().width); }
+      probe.remove();
+      if (widest > colW) n.style.fontSize = `${Math.max(PICK_NAME.minPx, Math.floor((PICK_NAME.px * colW * 0.97 / widest) * 10) / 10)}px`;
+    }
   };
   const buy = () => {
     const m = ext();
@@ -145,6 +164,7 @@ export function showcaseScreen(ctx: ScreenCtx, id: 'locker' | 'shop'): Screen {
     show() {
       picked = null;
       fill();
+      grid.scrollTop = 0;                                        // a fresh visit starts at the top of the list
       if (shop) ext()?.track('shop_view', { item: 'shop', rarity: 'none', price: 0, featured: false });
     },
     hide() { if (!shop) { const m = ext(); if (m) m.markSeen(m.data.unseen.filter((u) => m.item(u)?.slot === slot)); } },

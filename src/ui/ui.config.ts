@@ -21,6 +21,9 @@ export const RESULTS_ANIM = { scoreMs: 800, coinsAt: 450, coinsMs: 700, xpAt: 90
   revealDelayMs: 450 } as const;
 /** Lo-fi overlay (DESIGN §18.9): a 128² grain tile at plain alpha 0.05, moved at 8 fps; Neon scanlines at 4%. */
 export const LOFI = { tile: 128, alpha: 0.05, fps: 8, scanAlpha: 0.04 } as const;
+/** Shop "Today's picks" cards: the name size (as in screens.css) and the smallest a long single word ("Stickerbomb"
+ *  in a 320 px pick card) may shrink to rather than break mid-word. */
+export const PICK_NAME = { px: 10, minPx: 8 } as const;
 /** Toasts: default duration and the trick-discovery toast during runs (kept short: it sits over the far street). */
 export const TOAST = { defaultMs: 2000, discoveryMs: 1400, maxStacked: 2 } as const;
 /** Title: a crate reveal still waiting opens by itself this long after the Title appears (once per session). */
