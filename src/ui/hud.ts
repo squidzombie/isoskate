@@ -1,159 +1,266 @@
-// ui/hud.ts: the M0 debug HUD (DESIGN §13.8 at stub fidelity; MU replaces it in W3a).
-//   Band: 56 px + safe-area top (the camera solver excludes exactly that). Top-left score (26·k px, abbreviated from
-//   1M) with distance below (12·k px); top-centre the combo pill "1,240 × 6" (cream → amber ×5 → coral ×10 →
-//   magenta ×20, bumps on each link) with the last trick name below; top-right coins and the pause button (48 px
-//   visible, 56 px hit area). pointer-events:none except the pause button.
-//   Popup: at most one at a time, beside the skater (CameraRig.project anchor), ≤ 0.5 s (scale 0.6 → 1.1 → 1 in
-//   120 ms, then fade), coloured by type, coral while the predicted landing would be sketchy or a bail.
-// Text is written only when it changes and at most 15 Hz; per-frame work is transform/opacity only; no layout reads.
-// Every piece carries data-hud="…" (shots --hud and ui.spec measure those).
-import { LAND } from '../core/tuning';
+// ui/hud.ts: the run HUD (DESIGN §13.8, §9; TECH §9).
+//   Band: ≤ 56 px + safe-area top (the camera solver excludes exactly that), on an ink scrim so cream digits read over
+//   the light sidewalk. Columns are pure arithmetic (ui/fit.ts hudColumns), so nothing can overlap at 320–390 px:
+//     left   banked total (26·k px tabular digits, rolling up over 0.3 s, abbreviated from 1M) + "DIST 412 m" below;
+//     middle the combo pill "1,093 × 4" (cream → amber ×5 → coral ×10 → magenta ×20, bumps on each link) with a thin
+//            bank-timer ring, the last trick name only below it, and the instant-retry reward toast;
+//     right  coins and the pause button (48 px visible, 56 px hit area; the only touch target).
+//   Near the skater: at most one popup (ui/popups.ts). Below the band, briefly: the bank float ("+5,028", "SET
+//   BANKED!"), the speed-tier stamp (CRUISE / FLOW / FULL SEND) and the area card ("SUBURBS · +500 NEW GROUND").
+//   Thumb zone: only the first-runs hint (ui/hints.ts).
+// Rules: text is written only when it changes, in one batch at most 15 times a second (wall clock); per-frame work is
+// transform/opacity/class toggles only; no layout reads during a run (fonts are measured on a canvas). Every band
+// piece carries data-hud="score|dist|combo|trick|coins|pause" (shots --hud, smoke.spec and ui.spec measure them).
+import type { GameEvent } from '../core/events';
 import type { ScoreState, SkaterState } from '../core/sim';
 import type { HudApi, UiIntent } from '../core/ui';
-import { fmtScore, fmtShort } from './format';
+import { areaName, fmtScore, fmtShort, trickName } from './format';
+import { DISPLAY_FONT, fitPx, hudColumns, UI_FONT, type HudColumns } from './fit';
 import { h, setText } from './h';
+import { createHints, type Hints } from './hints';
+import { createPopups, type PopupKind, type Popups } from './popups';
+import { HUD_LAYOUT, HUD_TIMING } from './ui.config';
 
-export type PopupKind = 'flip' | 'grind' | 'manual' | 'gap' | 'perfect' | 'sketchy' | 'bonus';
-
-/** Hint chip texts (DESIGN §12.5; interim first-runs hints at G0, the M4 Lesson Line reuses the ids). `keys` is the
- *  desktop wording, used when the primary pointer is fine (mouse) rather than coarse (touch). */
-export const HINT_TEXT: Readonly<Record<string, { touch: string; keys: string }>> = {
-  drag: { touch: 'DRAG TO STEER', keys: 'A / D TO STEER' },
-  tap: { touch: 'TAP TO OLLIE', keys: 'SPACE TO OLLIE' },
-  grind: { touch: 'OLLIE ONTO THE LEDGE', keys: 'OLLIE ONTO THE LEDGE' },
-  avoid: { touch: 'STEER AROUND TALL STUFF', keys: 'STEER AROUND TALL STUFF' },
-};
-const POPUP_COLOR: Readonly<Record<PopupKind, string>> = {
-  flip: '#FFE3A3', grind: '#8FE3FF', manual: '#C3A8FF', gap: '#FF9E7A', perfect: '#FFC94A', sketchy: '#C9C2B8', bonus: '#7EE0B5',
-};
-const CORAL = '#FF5E6C';
-export const HUD_TIMING = { textHz: 15, popupSec: 0.5, trickHoldSec: 1.6, trickMinPx: 8 } as const;
+export { HUD_TIMING };
+const SPEED_STAMP = ['', 'CRUISE', 'FLOW', 'FULL SEND'] as const;
 
 /** HUD layout preview values (debug `__skate.ext.hud`). */
 export interface HudPreviewValues { score?: number; dist?: number; speed?: number; combo?: number; links?: number; coins?: number; trick?: string }
 
+export interface HudStats { batches: number; textWrites: number; minBatchGapMs: number; lastBatchAt: number }
+
 export interface HudExt extends HudApi {
-  /** Ticker under the combo pill: the last trick name only. */
-  lastTrick(name: string): void;
+  /** Ticker under the combo pill: the last trick name only (`decayed` > 0 shows "KICKFLIP ×0.45" in grey). */
+  lastTrick(name: string, decayed?: number): void;
   /** One popup beside the skater (replaces the visible one). `predicted` popups turn coral on a bad predicted landing. */
   popup(text: string, kind: PopupKind, predicted?: boolean): void;
   /** Debug: freeze the HUD on fake values (null = live again). */
   preview(v: HudPreviewValues | null): void;
+  /** Game events the HUD reacts to (popups, floats, stamps, cards). */
+  onGame(e: GameEvent): void;
+  /** The instant-retry reward toast in the band ("+34 coins · +410 XP · Level 6!"), gone by 3.0 s. */
+  rewardToast(text: string): void;
+  setFirstRuns(on: boolean): void;
+  /** Re-measure after a resize or a font load (allowed layout read, never per frame). */
+  relayout(vw: number, safeL: number, safeR: number): void;
+  readonly hints: Hints;
+  stats(): HudStats;
 }
 
 /** Combo pill tier by links (DESIGN §9 "Combo build"). */
 export const comboTier = (links: number) => (links >= 20 ? 'x20' : links >= 10 ? 'x10' : links >= 5 ? 'x5' : 'x1');
 
-/** Would the current flip/spin land sketchy or bail if nothing changes (DESIGN §13.8 popup tint)? */
-export function badLandingPredicted(cur: Readonly<SkaterState>): boolean {
-  if (cur.mode !== 'air') return false;
-  const p = (r: { t: number; dur: number } | null) => (r ? Math.min(1, (r.t + Math.max(0, cur.airLeft)) / Math.max(1e-6, r.dur)) : 1);
-  return Math.min(p(cur.flip), p(cur.spin)) < LAND.snap;
+export interface HudOptions {
+  raise: (i: UiIntent) => void;
+  coarse: () => boolean;
+  now?: () => number;
+  onHint?: (id: string) => void;
 }
 
-export function createHud(root: HTMLElement, raise: (i: UiIntent) => void): HudExt {
+export function createHud(root: HTMLElement, o: HudOptions): HudExt {
+  const now = o.now ?? (() => performance.now());
   const score = h('div', { class: 'hud-score', 'data-hud': 'score' }, '0');
   const dist = h('div', { class: 'hud-dist', 'data-hud': 'dist' }, '0 m');
-  const combo = h('div', { class: 'hud-combo', 'data-hud': 'combo' }, '');
+  const comboText = h('span', { class: 'pill-text' }, '');
+  const ring = h('i', { class: 'pill-ring', 'aria-hidden': 'true' });
+  const combo = h('div', { class: 'hud-combo', 'data-hud': 'combo' }, comboText, ring);
   const trick = h('div', { class: 'hud-trick', 'data-hud': 'trick' }, '');
-  const coins = h('div', { class: 'hud-coins', 'data-hud': 'coins' }, h('i', { class: 'coin-dot', 'aria-hidden': 'true' }), h('span', null, '0'));
-  const coinText = coins.lastChild as HTMLElement;
+  const reward = h('div', { class: 'hud-reward', 'aria-live': 'polite' }, '');
+  const coinIcon = h('i', { class: 'coin-dot', 'aria-hidden': 'true' });
+  const coinText = h('span', null, '0');
+  const coins = h('div', { class: 'hud-coins', 'data-hud': 'coins' }, coinIcon, coinText);
   const pause = h('button', { class: 'hud-pause', 'aria-label': 'Pause', type: 'button', 'data-hud': 'pause',
     onpointerdown: (e: Event) => e.stopPropagation(),
-    onclick: (e: Event) => { e.stopPropagation(); (e.currentTarget as HTMLElement).blur(); raise({ k: 'pause' }); } },
+    onclick: (e: Event) => { e.stopPropagation(); (e.currentTarget as HTMLElement).blur(); o.raise({ k: 'pause' }); } },
   h('span', { 'aria-hidden': 'true' }, h('i'), h('i')));
-  const pop = h('div', { class: 'hud-popup', 'aria-hidden': 'true' }, '');
-  // Hint chip: centred 13% above the bottom (DESIGN §13.8 allows first-run hints in the thumb zone), never a target.
-  const hintEl = h('div', { class: 'hud-hint', 'data-hint': '', role: 'status' }, '');
-  let hintId: string | null = null;
-  const coarse = () => typeof matchMedia === 'undefined' || matchMedia('(pointer: coarse)').matches;
-  root.replaceChildren(
-    h('div', { class: 'hud-band' },
-      h('div', { class: 'hud-left' }, score, dist),
-      h('div', { class: 'hud-mid' }, combo, trick),
-      h('div', { class: 'hud-right' }, coins, pause)),
-    pop, hintEl,
-  );
-  /** The trick name shrinks to fit the middle column (down to HUD_TIMING.trickMinPx; past that it ellipsizes),
-   *  measured only when the text changes. */
-  const setTrick = (text: string) => {
-    if (trick.textContent === text) return;
-    trick.textContent = text;
-    trick.style.fontSize = '';
-    if (!text || typeof getComputedStyle === 'undefined') return;
-    const w = trick.clientWidth, sw = trick.scrollWidth;
-    if (w > 0 && sw > w) {
-      const base = parseFloat(getComputedStyle(trick).fontSize) || 11;
-      trick.style.fontSize = `${Math.max(HUD_TIMING.trickMinPx, Math.floor(((base * w) / sw) * 10) / 10)}px`;
-    }
+  const band = h('div', { class: 'hud-band' },
+    h('div', { class: 'hud-left' }, score, dist),
+    h('div', { class: 'hud-mid' }, combo, trick, reward),
+    h('div', { class: 'hud-right' }, coins, pause));
+  const floatEl = h('div', { class: 'hud-float', 'aria-hidden': 'true' }, '');
+  const stamp = h('div', { class: 'hud-stamp', 'aria-hidden': 'true' }, '');
+  const cardTitle = h('b', null, ''), cardSub = h('span', null, '');
+  const card = h('div', { class: 'hud-card', 'aria-hidden': 'true' }, cardTitle, cardSub);
+  const popups: Popups = createPopups();
+  const hints = createHints(o.coarse, o.onHint);
+  root.replaceChildren(band, floatEl, stamp, card, ...popups.els, ...hints.els);
+
+  // Layout (arithmetic only). `vw` and the insets are refreshed by relayout() on resize, never read per frame.
+  let cols: HudColumns = hudColumns(390);
+  let vw = 390;
+  const fitCache = new Map<string, number>();
+  const applyCols = () => {
+    band.style.setProperty('--hud-l', `${cols.leftW}px`);
+    band.style.setProperty('--hud-m', `${cols.midW}px`);
+    band.style.setProperty('--hud-r', `${cols.rightW}px`);
+    band.style.setProperty('--hud-coin', `${cols.coinW}px`);
+    band.style.paddingLeft = `${cols.padL}px`;
+    band.style.paddingRight = `${cols.padR}px`;
+    fitCache.clear();
   };
-  let acc = 1;
-  let trickTtl = 0;
-  let lastLinks = -1, bumpFlip = false, lastTier = '';
-  let preview: HudPreviewValues | null = null;
-  // Popup state (animated every frame with transform/opacity only).
-  let popT = Infinity, popPredicted = false, popColor = '', popSide = 1;
-  let lastAnchorX = 0;
-  let vw = typeof window !== 'undefined' ? window.innerWidth : 390;
-  if (typeof window !== 'undefined') window.addEventListener('resize', () => { vw = window.innerWidth; });
+  const fit = (el: HTMLElement, text: string, family: string, weight: number, base: number, min: number, maxW: number) => {
+    const key = `${el.className}|${base}|${maxW}|${text}`;
+    let px = fitCache.get(key);
+    if (px === undefined) { px = fitPx(text, family, weight, base, min, maxW); if (fitCache.size > 300) fitCache.clear(); fitCache.set(key, px); }
+    const v = px >= base ? '' : `${px}px`;
+    if (el.style.fontSize !== v) el.style.fontSize = v;
+  };
+
+  // State.
+  let preview: HudPreviewValues | null = null, force = false;
+  let lastBatch = -1e9, batches = 0, textWrites = 0, minGap = Infinity;
+  let shownScore = 0, rollFrom = 0, rollTo = 0, rollT0 = 0;
+  let trickLabel = '', trickDecayed = 0, trickTtl = 0, trickDirty = false;
+  let lastLinks = -1, bumpFlip = false, lastTier = '', comboOn = false, ringWarn = false, ringScale = -1;
+  // The bank-timer ring is normalised by the longest bankIn seen since the last link (no scoring constants needed).
+  let ringLinks = -1, ringMax = 0;
+  let floatText: string | null = null, stampText: string | null = null, cardText: [string, string] | null = null, rewardText: string | null = null;
+  const flip: Record<string, boolean> = {};
+  let rewardUntil = Infinity;                     // wall clock: "gone by 3.0 s" is real time, even on slow frames
+  /** Restarts a CSS animation without a layout read: alternate between two identical keyframe classes. */
+  const restart = (el: HTMLElement, cls: string) => {
+    flip[cls] = !flip[cls];
+    el.classList.remove(`${cls}-a`, `${cls}-b`);
+    el.classList.add(`${cls}-${flip[cls] ? 'a' : 'b'}`);
+  };
+  const write = (el: HTMLElement, text: string) => { if (el.textContent !== text) { el.textContent = text; textWrites++; } };
+
+  const batch = (sc: Readonly<ScoreState>, t: number) => {
+    const v = preview;
+    // Score rolls up over 0.3 s.
+    const target = Math.max(0, Math.round(v?.score ?? sc.total));
+    if (target !== rollTo) { rollFrom = shownScore; rollTo = target; rollT0 = t; }
+    const u = v ? 1 : Math.min(1, (t - rollT0) / (HUD_TIMING.rollSec * 1000));
+    shownScore = Math.round(rollFrom + (rollTo - rollFrom) * u);
+    write(score, fmtScore(shownScore));
+    fit(score, fmtScore(rollTo), UI_FONT, 900, HUD_LAYOUT.scorePx * cols.k, HUD_LAYOUT.scoreMinPx, cols.leftW);
+    const d = Math.floor(v?.dist ?? sc.distancePts);
+    write(dist, `${d < 1e5 ? fmtScore(d) : fmtShort(d)} m`);
+    const coinStr = fmtShort(v?.coins ?? sc.coins + sc.coinPayouts);
+    write(coinText, coinStr);
+    fit(coinText, coinStr, UI_FONT, 900, HUD_LAYOUT.coinPx * cols.k, HUD_LAYOUT.coinMinPx, cols.coinW - HUD_LAYOUT.coinPx * cols.k);
+    // Combo pill.
+    const active = v ? (v.combo ?? 0) > 0 : sc.combo.active;
+    if (active !== comboOn) { comboOn = active; combo.classList.toggle('on', active); if (active) combo.classList.remove('lost'); }
+    if (active) {
+      const links = Math.max(1, v?.links ?? sc.combo.links);
+      const txt = `${fmtShort(v?.combo ?? sc.combo.pending)} × ${links}`;
+      write(comboText, txt);
+      fit(comboText, txt, UI_FONT, 900, HUD_LAYOUT.comboPx * cols.k, HUD_LAYOUT.comboMinPx, cols.midW - HUD_LAYOUT.comboPad);
+      const tier = comboTier(links);
+      if (tier !== lastTier) { combo.dataset.tier = tier; lastTier = tier; }
+      if (links !== lastLinks && lastLinks >= 0) { bumpFlip = !bumpFlip; combo.style.animationName = bumpFlip ? 'hud-bump-a' : 'hud-bump-b'; }
+      lastLinks = links;
+    } else lastLinks = -1;
+    // Trick ticker: the last trick only; decayed names in grey with their factor.
+    if (v?.trick !== undefined) {
+      write(trick, v.trick);
+      fit(trick, v.trick, DISPLAY_FONT, 400, HUD_LAYOUT.trickPx * cols.k, HUD_TIMING.trickMinPx, cols.midW);
+    } else if (trickDirty) {
+      trickDirty = false;
+      const txt = trickDecayed > 0 ? `${trickLabel} ×${trickDecayed}` : trickLabel;
+      write(trick, txt);
+      trick.classList.toggle('decayed', trickDecayed > 0);
+      fit(trick, txt, DISPLAY_FONT, 400, HUD_LAYOUT.trickPx * cols.k, HUD_TIMING.trickMinPx, cols.midW);
+    } else if (trickTtl <= 0 && !active && trick.textContent) write(trick, '');
+    // One-shot texts queued by events.
+    if (popups.flushText()) textWrites++;
+    if (floatText !== null) { write(floatEl, floatText); floatText = null; restart(floatEl, 'fl'); }
+    if (stampText !== null) { write(stamp, stampText); stampText = null; restart(stamp, 'st'); }
+    if (cardText !== null) { write(cardTitle, cardText[0]); write(cardSub, cardText[1]); cardText = null; restart(card, 'cd'); }
+    if (rewardText !== null) { write(reward, rewardText); rewardText = null; reward.classList.add('on'); band.classList.add('rewarding'); rewardUntil = t + HUD_TIMING.rewardSec * 1000; }
+  };
+
+  /** Clears the transient pieces under the band (bank float, speed stamp, area card) and the popup. */
+  const clearTransients = () => {
+    popups.clear();
+    floatText = stampText = null; cardText = null;
+    floatEl.classList.remove('fl-a', 'fl-b'); stamp.classList.remove('st-a', 'st-b'); card.classList.remove('cd-a', 'cd-b');
+  };
+  const resetRun = () => {
+    shownScore = rollFrom = rollTo = 0; trickLabel = ''; trickDecayed = 0; trickTtl = 0; trickDirty = true;
+    lastLinks = -1; lastTier = ''; comboOn = false; combo.classList.remove('on', 'lost'); ringLinks = -1; ringMax = 0;
+    clearTransients();
+    force = true;
+  };
 
   const hud: HudExt = {
-    show(on: boolean) { root.classList.toggle('on', on); if (!on) { popT = Infinity; pop.style.opacity = '0'; hud.hint(null); } },
-    update(sc: Readonly<ScoreState>, cur: Readonly<SkaterState>, dt: number, anchor: { x: number; y: number }) {
-      lastAnchorX = anchor.x;
-      // Popup: beside the skater, away from the nearer screen edge.
-      if (popT < HUD_TIMING.popupSec) {
-        popT += dt;
-        const t = popT, k = t < 0.06 ? 0.6 + (0.5 * t) / 0.06 : t < 0.12 ? 1.1 - (0.1 * (t - 0.06)) / 0.06 : 1;
-        const a = t < 0.3 ? 1 : Math.max(0, 1 - (t - 0.3) / (HUD_TIMING.popupSec - 0.3));
-        const x = anchor.x + popSide * 64, y = anchor.y - 34;
-        pop.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -50%) scale(${k.toFixed(3)})`;
-        pop.style.opacity = a.toFixed(3);
-        const c = popPredicted && badLandingPredicted(cur) ? CORAL : popColor;
-        if (pop.style.color !== c) pop.style.color = c;
-      } else if (pop.style.opacity !== '0') pop.style.opacity = '0';
-
-      acc += dt;
+    hints,
+    show(on: boolean) {
+      root.classList.toggle('on', on);
+      if (!on) { popups.clear(); hints.hide(); reward.classList.remove('on'); band.classList.remove('rewarding'); rewardUntil = Infinity; }
+      else force = true;
+    },
+    update(sc, cur: Readonly<SkaterState>, dt, anchor) {
+      // Per frame: transform / opacity / class toggles only.
+      popups.update(dt, anchor, cur, vw);
+      hints.update(cur.t, cur.mode === 'crashed');
       trickTtl -= dt;
-      if (acc < 1 / HUD_TIMING.textHz) return;
-      acc = 0;
-      const v = preview;
-      setText(score, fmtScore(v?.score ?? sc.total));
-      setText(dist, `${Math.floor(v?.dist ?? sc.distancePts)} m`);
-      setText(coinText, fmtShort(v?.coins ?? sc.coins));
-      const active = v ? (v.combo ?? 0) > 0 : sc.combo.active;
-      const links = Math.max(1, v?.links ?? sc.combo.links);
-      combo.classList.toggle('on', active);
-      if (active) {
-        setText(combo, `${fmtShort(v?.combo ?? sc.combo.pending)} × ${links}`);
-        const tier = comboTier(links);
-        if (tier !== lastTier) { combo.dataset.tier = tier; lastTier = tier; }
-        if (links !== lastLinks && lastLinks >= 0) { bumpFlip = !bumpFlip; combo.style.animationName = bumpFlip ? 'hud-bump-a' : 'hud-bump-b'; }
-        lastLinks = links;
-      } else lastLinks = -1;
-      if (v?.trick !== undefined) setTrick(v.trick);
-      else if (trickTtl <= 0 && !active) setTrick('');
+      const live = comboOn && !preview;
+      if (live) {
+        if (sc.combo.links !== ringLinks) { ringLinks = sc.combo.links; ringMax = 0; }
+        if (sc.combo.bankIn > ringMax) ringMax = sc.combo.bankIn;
+      } else ringLinks = -1;
+      const q = live && ringMax > 0 ? Math.round(Math.max(0, Math.min(1, sc.combo.bankIn / ringMax)) * 100) / 100 : 0;
+      if (q !== ringScale) { ringScale = q; ring.style.transform = `scaleX(${q})`; }
+      const warn = live && sc.combo.bankIn < HUD_TIMING.bankWarnSec;
+      if (warn !== ringWarn) { ringWarn = warn; combo.classList.toggle('warn', warn); }
+      // Text: one batch at most 15 times a second (wall clock).
+      const t = now();
+      if (t >= rewardUntil) { rewardUntil = Infinity; reward.classList.remove('on'); band.classList.remove('rewarding'); }
+      const gap = t - lastBatch;
+      if (!force && gap < 1000 / HUD_TIMING.textHz - 0.5) return;
+      if (!force && batches > 0) minGap = Math.min(minGap, gap);
+      force = false;
+      lastBatch = t;
+      batches++;
+      batch(sc, t);
     },
-    hint(id: string | null) {
-      // TODO(MU): ghost thumb / key caps and the "rest here" mark (DESIGN §12.3); this is the text chip only.
-      if (id === hintId) return;
-      hintId = id;
-      const t = id ? HINT_TEXT[id] : undefined;
-      if (t) { setText(hintEl, coarse() ? t.touch : t.keys); hintEl.dataset.hint = id!; }
-      hintEl.classList.toggle('on', !!t);
+    hint(id: string | null) { hints.set(id); },
+    lastTrick(name: string, decayed = 0) { trickLabel = name; trickDecayed = decayed; trickTtl = HUD_TIMING.trickHoldSec; trickDirty = true; },
+    popup(text, kind, predicted = false) { popups.show(text, kind, predicted); },
+    preview(p) { preview = p; force = true; trickDirty = !p; },
+    rewardToast(text) { rewardText = text; force = true; },
+    setFirstRuns(on) { hints.setFirstRuns(on); },
+    relayout(w, sl, sr) { vw = w; cols = hudColumns(w, sl, sr); applyCols(); force = true; },
+    stats: () => ({ batches, textWrites, minBatchGapMs: minGap, lastBatchAt: lastBatch }),
+    onGame(e) {
+      switch (e.t) {
+        case 'runStart': resetRun(); break;
+        case 'trickScored':
+          if (e.id !== 'ollie') hud.lastTrick(trickName(e.id).toUpperCase(), e.factor < 0.999 ? Math.round(e.factor * 100) / 100 : 0);
+          break;
+        case 'flipStart': hud.popup(trickName(e.id), 'flip', true); break;
+        case 'flipUpgrade': hud.popup(trickName(e.to), 'flip', true); break;
+        case 'spinStart': hud.popup(e.out ? `${trickName(e.id)} OUT` : trickName(e.id), 'flip', true); break;
+        case 'spinUpgrade': hud.popup(trickName(e.to), 'flip', true); break;
+        case 'grindStart': hud.popup(e.perfect ? 'PERFECT LOCK' : e.transfer ? `TRANSFER · ${trickName(e.id)}` : trickName(e.id), e.transfer ? 'gap' : 'grind'); break;
+        case 'grindSwitch': hud.popup(trickName(e.to), 'grind'); break;
+        case 'manualStart': hud.popup(trickName(e.kind), 'manual'); break;
+        case 'grabStart': hud.popup(trickName(e.id), 'flip'); break;
+        case 'revert': hud.popup('REVERT', 'bonus'); break;
+        case 'land': if (e.quality === 'perfect') hud.popup('PERFECT', 'perfect'); else if (e.quality === 'sketchy') hud.popup('SKETCHY', 'sketchy'); break;
+        case 'nearMiss': hud.popup('CLOSE!', 'bonus'); break;
+        case 'bonus':
+          if (e.id === 'newGround' || e.id === 'knock' || e.id === 'nearMiss') break;
+          hud.popup(`${e.name.toUpperCase()} +${e.pts}`, e.id === 'gap' || e.id === 'transfer' ? 'gap' : 'bonus');
+          break;
+        case 'comboBanked':
+          floatText = `${e.reason === 'gateway' ? 'SET BANKED! ' : ''}+${fmtScore(e.total)}${e.coins > 0 ? `  +${e.coins}●` : ''}`;
+          restart(score, 'bk');
+          break;
+        case 'comboLost': combo.classList.add('lost'); break;
+        case 'coin': restart(coinIcon, 'cp'); break;
+        case 'speedTier': if (e.tier > 0) stampText = SPEED_STAMP[e.tier]; break;
+        case 'areaEnter': if (e.tick > 1) cardText = [areaName(e.area).toUpperCase(), e.firstThisRun ? '+500 NEW GROUND' : 'WELCOME BACK']; break;
+        case 'crash': if (!e.god) { clearTransients(); hints.hide(); } break;   // BAILED! gets the screen to itself
+        default: break;
+      }
     },
-    lastTrick(name: string) { setTrick(name); trickTtl = HUD_TIMING.trickHoldSec; },
-    popup(text: string, kind: PopupKind, predicted = false) {
-      setText(pop, text);
-      popColor = POPUP_COLOR[kind];
-      pop.style.color = popColor;
-      popPredicted = predicted;
-      popT = 0;
-      popSide = lastAnchorX > vw * 0.5 ? -1 : 1;
-    },
-    preview(p) { preview = p; acc = 1; },
   };
+  applyCols();
   return hud;
 }
 
-export { fmtScore };
+export { fmtScore, setText };
+export { badLandingPredicted } from './popups';

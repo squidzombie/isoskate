@@ -1,5 +1,10 @@
-// ui/screens/: M0 screens at stub fidelity (DESIGN §17). MU replaces them in W3a.
-export { btn, section, type Raise, type Screen, type ScreenCtx, type ScreenParams } from './common';
+// ui/screens/: every DESIGN §17 screen. Each builds its <section data-screen> once; show() updates text and classes.
+export { btn, section, type Modal, type Raise, type Screen, type ScreenCtx, type ScreenParams, type Sfx } from './common';
 export { titleScreen } from './title';
-export { crashScreen, pauseScreen, resultsScreen } from './run';
-export { bootScreen, placeholderScreen, settingsScreen, showcaseScreen, statsScreen } from './menus';
+export { crashScreen, pauseScreen } from './run';
+export { resultsScreen } from './results';
+export { showcaseScreen } from './showcase';
+export { cratesScreen } from './crates';
+export { statsScreen } from './stats';
+export { settingsScreen } from './settings';
+export { bootScreen, rewardsScreen } from './menus';

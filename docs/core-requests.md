@@ -550,6 +550,67 @@ behaviour and is behind a flag.
 
 ## MU: Meta and UI (W3a)
 
+### App: open a menu screen from another menu screen   (status: open, for G3; no core change)
+- File / symbol: game/app.ts › onIntent('open') (INT)
+- Change: also accept `{ k: 'open', screen }` while the current screen is `locker`, `shop`, `crates`, `stats`, `rewards` (and `settings` when it was not opened over Pause), going through the same `open(screen)` path.
+- Why: Locker "Get more" → Shop, Shop → Crates, Crates → Shop and the Results reward rows link menus to each other (DESIGN §17.1).
+- Local workaround meanwhile: `ui/index.ts › ctx.go(screen)` raises `{ k: 'home' }` and then `{ k: 'open', screen }` when the current screen is a menu (both synchronous, so the Title never paints). It keeps working unchanged once the App accepts the direct open.
+
+### UI: the real monetization provider   (status: open, for G3)
+- File / symbol: game/wiring.ts (INT) › after `createUi(root)`; optionally core/ui.ts › `UiApi.setMonetization?(p: MonetizationProvider): void`
+- Change: `(ui as { setMonetization?(p: MonetizationProvider): void }).setMonetization?.(monetization);`
+- Why: DESIGN §20 / TECH §4.10: "the UI shows an offer only if eligible() && provider.isAdReady()". The UI runs the whole rewarded flow (Results `results_double_coins` slot: policy `meta/offers.ts` → `provider.showRewarded` → `MetaExt.grantOffer`), so App can keep ignoring `{ k: 'rewarded' }` (it is still raised).
+- Local workaround meanwhile: `ui/index.ts` makes its own provider with `platform › createMonetization({ fakeAds: readFlags().fakeAds })`: the NullProvider in production (no ad UI ever shows), the FakeProvider with `?fakeads=1`. Remove the fallback when wiring injects the shared one.
+
+### Back up / Restore performed by the UI   (status: info, for G3)
+- File / symbol: core/ui.ts › UiIntent `backup` / `restore` (no change)
+- Behaviour: Settings › Export shows `SaveStore.export()` (copy, download, share); Restore takes a pasted code or a picked file, asks once, calls `SaveStore.import(json)` through `MetaExt.importSave`, then **reloads the page** so every module (settings, loadout, audio volumes, quality) re-reads the restored save. Both intents are still raised for the App. G3: the App may keep ignoring them; if it handles `restore`, it must not import a second time (harmless, but pointless) and should not fight the reload.
+
+### SaveV1.daily: the day the rewarded gift bonus was used   (status: open; additive)
+- File / symbol: core/save.ts › SaveV1['daily']
+- Change: `giftBonusDay?: string | null;   // YYYY-MM-DD the daily_gift_bonus offer was granted (once per day, DESIGN §20)`
+- Why: `daily_gift_bonus` is "once per day"; `adsDay`/`adsCount` count every rewarded ad.
+- Local workaround meanwhile: `save/schema.ts › SaveDailyExt`, kept by `save/sanitize.ts` when present; `meta/offers.ts` reads it.
+
+### run_end with the DESIGN §21 properties   (status: open, for G3 / M4)
+- File / symbol: game/app.ts › onCrash / retry (INT)
+- Change: track `run_end` with `meta/index.ts › runEndProps(result, rewards, retryKind)` (score, distance_m, duration_s, area_reached, max_speed, best_combo, coins, xp, new_best, lost_combo, retry_kind). The retry kind is known at the retry tap ('instant') or at ROLL AGAIN ('results').
+- Why: the App tracks `run_end` with score and distance only. Meta/UI already track their own events: `level_up`, `trick_counts`, `shop_purchase`, `crate_open`, `equip`, `wishlist_set` (meta), and `crash`, `combo_banked` (aggregated per run), `area_reached`, `hint_shown`, `shop_view`, `rewarded_offer_shown/_accepted/_completed` (ui). `hint_learned` belongs to the onboarding driver (M4).
+
+### For GP / INT: a layout read on every touch-down   (status: open; no core change)
+- File / symbol: input/index.ts › `syncMetrics` (reads `window.innerHeight` on each pointer `down`)
+- Why: TECH §9 "nothing reads layout during a run"; the dev guard (`ui/guard.ts`, `window.__dusklaneUi.guard` in debug builds) counts it. `innerHeight` can force a style/layout flush. Suggest reading it from the viewport (`opts`) like `screenW`, refreshed on resize. ui.spec drives its guard run with keys for that reason.
+
+### Notes for the gate (behaviour other packages can rely on; no contract change)
+- **Hooks kept from M0-io / G0:** `data-hud="score|dist|combo|trick|coins|pause"` on the band pieces, `hud.preview(values | null)`, `hud.hint(id)` with `HINT_TEXT` (now in `ui/hints.ts`, re-exported from `ui/index.ts`; the G0 wording is unchanged, `keys` is still the full key sentence), the chip at `position: fixed` ~13% above the bottom with `pointer-events: none` and no `data-hud` (it rises above the "rest here" ring on touch in runs 1–3), the ink scrim and the DIST label, `ui/format.ts crashCause` (teaching lines unchanged). shots `--hud` passes at 320 / 360 / 390.
+- **HudExt additions** (duck-typed, `ui/hud.ts`): `onGame(e)` (popups, bank float, speed stamps, area card), `rewardToast(text)`, `setFirstRuns(on)`, `relayout(vw, safeL, safeR)`, `stats()`. `UiExt` (`createUiImpl`): `setMonetization(p)`, `guard`. The frozen factory still returns `UiApi`.
+- **MetaExt** (`meta/index.ts › isMetaExt`): a read view of the save plus unlocks, pity, offers, `lastRun()` (the instant-retry toast), `track()`, `exportSave / importSave / resetProgress`. The UI uses only this and the frozen MetaApi.
+- **Economy invariants:** `RunResult.coins` is pickups only and `coinPayouts` the combo payouts (as the M0 sim does; GP keep it). `applyRun` is idempotent per `runId` and flushes; the Level 2 "guaranteed Rare skater" crate is rolled at applyRun and written to `crates.pending` (pre-committed). **What a crate holds is granted when its reveal opens the lid** (`MetaApi.ackReveal`), never at the roll, so the Locker, the NEW badges and the toast can't spoil it; a result rolled while another reveal is still unopened is queued (`crates.queue`, below), never lost. Results opens the Level 2 crate by itself once the XP bar has filled (3 taps → "Equip now?" → Back to Results); ROLL AGAIN before that skips it, and the Title then opens it once per session ("Later" is honoured). M4's "the crate reveals a Rare skater + Equip now?" is this flow. The shop and crate purchases open at Level 3 (try-on stays free). `storage.persist()` is asked once after run 1 (`onboarding.persistAsked`); `onboarding.crashStreak` is maintained per run for M4's hint re-arming; `onboarding.lessonDone` is left to M4.
+- **App bus events the UI emits** (for AU): `ui {sfx}` on every button, `crateShake n`, `crateReveal`, `itemGranted`, `coinsChanged`, `purchase`, `levelUp` (when the Results XP bar crosses a level, not at applyRun), `settings {key}`.
+- **Settings the UI also applies itself:** `effects` / `reducedMotion` / `quality` drive the lo-fi overlay (`#lofi`, MU) directly; the App's `applySettings` still owns everything else. "Reduce effects" should also stop WA's speed lines (G3 wiring through `save.settings.effects`).
+- **Debug hook for the e2e:** debug builds expose `window.__dusklaneUi` (`guard`, `hudStats()`, `current()`, `reveal()`, `modalOpen()`); `tests/e2e/ui.spec.ts` uses it.
+
+### Area timeline constants in core   (status: open; additive)
+- File / symbol: core/tuning.ts (next to `ROLLOUT_SEC`, `LESSON_SEC`)
+- Change: `export const FIRST_VISIT_SEC = 40, VISIT_SEC = 35, GATEWAY_SEC = 4;   // DESIGN §12.1 area timeline (world/gen/areas.ts re-exports them)`
+- Why: the Results "next area" goal (`meta/results.ts › arrivalDistance`) needs the timeline; importing `world/gen` (WG's internals) from meta is a merge risk.
+- Local workaround meanwhile: `meta/results.ts › AREA_TIMELINE` mirrors 40 / 35 / 4; `tests/unit/meta/economy.test.ts` pins it against the frozen `WorldGen.areaAt`, so a WG change fails there, not silently on Results.
+
+### SaveV1.crates: reveals queued behind the pending one   (status: open; additive)
+- File / symbol: core/save.ts › SaveV1['crates']
+- Change: `queue?: { tier: CrateTier; rarity: string; item: ItemId | null; coins: number; dup: boolean }[];   // pre-committed results waiting behind pending (granted at their reveal)`
+- Why: crate contents are granted at the reveal, so a second rolled result (the Level 2 crate after an abandoned gift reveal) must persist, not overwrite or drop.
+- Local workaround meanwhile: `save/schema.ts › SaveCratesExt` (kept by `save/sanitize.ts`, at most 8, absent when empty); `meta/results.ts › pendingReveals / ackPending`.
+
+### After the review (appended; no core change)
+- **Fixed:** run 1's goal line said "Level 3 in 1 XP" (a level the held XP already guarantees is no longer a goal); the HUD bank ring no longer imports `tricks` `SCORE` (normalised by the longest `bankIn` since the last link); meta no longer imports `world/gen`; the Shop fits 320 × 568 (compact picks, one-line lock chip, a full card row above the detail bar); the goal line sits under the Results score; the crash clears the bank float / speed stamp / area card; the hint chip rises with a transform and hides under Pause; the reward toast never splits a chunk; `combo_banked` is sent once per run however it ends; Pause lists the active key preset; the `daily_gift_bonus` slot exists on Crates (eligible() && isAdReady(), so never with the NullProvider); menu backdrops are opaque.
+- **Mirrors pinned by tests** (save/ may not import meta/): `save/defaults.ts` crate meter `nextAt` 4000 = `CRATE_METER.first`, `save/sanitize.ts` Cardboard max 2 = `CRATE_HELD_MAX.cardboard`.
+- **For M4 (first-3-runs pacing, game/app.ts):** a fresh tap ≥ 0.6 s after run 1's crash still instant-retries, so that player meets the Level 2 crate on the Title (or the next Results row), not before run 2. If M4 wants "run 2 rides as the new skater" for everyone, skip the instant-retry window on the run whose rewards carry `RunRewardsExt.pending` (one `isRewardsExt(r) && r.pending` check in `onCrash`); the UI handles both paths already.
+
+### Final pass (appended; no core change)
+- **Crates prefer items no later level reward grants** (`meta/results.ts › reservedByLevels`, `rollCrate({ reserved })`): the Level 2 "guaranteed Rare skater" is Rook, Lark or Kofi, never Ines (the Level 15 reward) while one of those is unowned. Odds per rarity are unchanged; the fallback is any unowned item, then a duplicate.
+- **The first run of a new day refreshes today's Shop picks** at `applyRun` (same `featuredFor(day, owned)` the Shop uses), so the goal line, `RunRewards.wishlist.need` and the Results wishlist bar quote one price.
+
 ## AU: Audio (W3b)
 
 ### How AU uses the frozen hooks   (status: info)
