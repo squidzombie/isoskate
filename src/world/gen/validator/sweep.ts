@@ -36,7 +36,7 @@ export function precomputePlanes(r: Raster): void {
   const blk = NH_MAX * (KMAX + 2) * 2;
   for (let i = 0; i < r.n; i++) {
     // Most slices repeat the previous one (same thresholds and ground levels, no pits): copy its planes.
-    if (i > 0 && r.sameAsPrev(i)) { AB.copyWithin(i * blk, (i - 1) * blk, i * blk); AL.copyWithin(i * blk, (i - 1) * blk, i * blk); continue; }
+    if (i > 0 && r.same[i]) { AB.copyWithin(i * blk, (i - 1) * blk, i * blk); AL.copyWithin(i * blk, (i - 1) * blk, i * blk); continue; }
     for (let h = 0; h < r.nh; h++) {
       for (let k = 1; k <= KMAX + 1; k++) {
         const o = abo(i, h, k);
@@ -302,6 +302,14 @@ export const GUIDES: { i0: number; i1: number; c0: number; c1: number }[] = [];
 /** Local slice ranges where starting an action costs extra (a template's head and tail windows, DESIGN §10.5). */
 export const QUIET: { i0: number; i1: number }[] = [];
 const quiet = (i: number) => { for (const q of QUIET) if (i >= q.i0 && i <= q.i1) return 600; return 0; };
+function guidePen(i: number, c: number, nGuides: number): number {
+  let pen = 0;
+  for (let gI = 0; gI < nGuides; gI++) {
+    const g = GUIDES[gI]!;
+    if (i >= g.i0 && i <= g.i1) pen += DP_COST.guide * (c < g.c0 ? g.c0 - c : c > g.c1 ? c - g.c1 : 0);
+  }
+  return pen;
+}
 
 export interface PathStep { i: number; c: number; air: boolean; h: number; k: number }
 export interface DpResult {
@@ -375,68 +383,87 @@ export function ollieMacro(r: Raster, i: number, c: number): number {
 export function minActionPath(r: Raster, iS: number, cS: number, d0: -1 | 0 | 1): DpResult | null {
   const n = r.n, last = n - 1;
   prepareMacros(r);
-  // Hold runs and comfort penalties.
-  for (let c = 0; c < NC; c++) HOLD[last * NC + c] = 0;
+  // One backward pass: hold runs, comfort penalties and the cost-to-go (direction index d + 1).
+  const nGuides = GUIDES.length;
+  const A = DP_COST.action, PC = DP_COST.perCell, EDGE = DP_COST.edge, LATE = DP_COST.late, LS = DP_COST.lateSlices;
+  COST.fill(INF, iS * NC * 3, n * NC * 3);
   for (let i = last; i >= iS; i--) {
     const vl = VG[i * 2]!, vh = VG[i * 2 + 1]!, row = i * NC;
-    for (let c = 0; c < NC; c++) {
-      const ok = c < 32 ? (vl >>> c) & 1 : (vh >>> (c - 32)) & 1;
-      HOLD[row + c] = ok ? 1 + (i < last ? HOLD[row + NC + c]! : 0) : 0;
-    }
-  }
-  const nGuides = GUIDES.length;
-  for (let i = iS; i <= last; i++) {
-    const vl = VG[i * 2]!, vh = VG[i * 2 + 1]!, row = i * NC;
-    for (let c = 0; c < NC; c++) {
-      const ok = c < 32 ? (vl >>> c) & 1 : (vh >>> (c - 32)) & 1;
-      if (!ok) { PEN[row + c] = 0; continue; }
-      let pen = 0;
-      if (c === 0 || c === NC - 1 || !vgOK(i, c - 1) || !vgOK(i, c + 1)) pen += DP_COST.edge;
-      const hold = HOLD[row + c]!;
-      if (hold < DP_COST.lateSlices && i + hold < last) pen += DP_COST.late * (DP_COST.lateSlices - hold);
-      for (let gI = 0; gI < nGuides; gI++) {
-        const g = GUIDES[gI]!;
-        if (i >= g.i0 && i <= g.i1) pen += DP_COST.guide * (c < g.c0 ? g.c0 - c : c > g.c1 ? c - g.c1 : 0);
+    // Viable neighbours on both sides (edge penalty) as masks: cell c has both iff bit c of `inner` is set.
+    const innerLo = vl & ((vl >>> 1) | (vh << 31)) & (vl << 1), innerHi = vh & (vh >>> 1) & ((vh << 1) | (vl >>> 31));
+    let gLo = 0;
+    for (let gI = 0; gI < nGuides; gI++) { const g = GUIDES[gI]!; if (i >= g.i0 && i <= g.i1) gLo = 1; }
+    if (i === last) {
+      for (let c = 0; c < NC; c++) {
+        const ok = c < 32 ? (vl >>> c) & 1 : (vh >>> (c - 32)) & 1;
+        HOLD[row + c] = ok;
+        if (!ok) { PEN[row + c] = 0; continue; }
+        let pen = 0;
+        if (c === 0 || c === NC - 1 || !(c < 32 ? (innerLo >>> c) & 1 : (innerHi >>> (c - 32)) & 1)) pen += EDGE;
+        if (gLo) pen += guidePen(i, c, nGuides);
+        PEN[row + c] = pen;
+        const o = (row + c) * 3;
+        COST[o] = 0; COST[o + 1] = 0; COST[o + 2] = 0;
       }
-      PEN[row + c] = pen;
+      continue;
     }
-  }
-  // Cost-to-go.
-  COST.fill(INF, iS * NC * 3, n * NC * 3);
-  for (let c = 0; c < NC; c++) if (vgOK(last, c)) for (let d = 0; d < 3; d++) COST[(last * NC + c) * 3 + d] = 0;
-  const A = DP_COST.action, PC = DP_COST.perCell;
-  for (let i = last - 1; i >= iS; i--) {
     const j = r.j0 + i, ng = nG(j);
     const sl = r.slope[i * 2]!, sh = r.slope[i * 2 + 1]!;
-    const qi = quiet(i);
-    const vl = VG[i * 2]!, vh = VG[i * 2 + 1]!, nl = VG[(i + 1) * 2]!, nh = VG[(i + 1) * 2 + 1]!;
-    const row = i * NC, nrow = (i + 1) * NC;
+    const qi = quiet(i), AQ = A + qi;
+    const nl = VG[(i + 1) * 2]!, nh = VG[(i + 1) * 2 + 1]!;
+    const nrow = (i + 1) * NC;
     for (let c = 0; c < NC; c++) {
-      if (!(c < 32 ? (vl >>> c) & 1 : (vh >>> (c - 32)) & 1)) continue;
-      const pen = PEN[row + c]!;
+      const ok = c < 32 ? (vl >>> c) & 1 : (vh >>> (c - 32)) & 1;
+      if (!ok) { HOLD[row + c] = 0; PEN[row + c] = 0; continue; }
+      const hold = 1 + HOLD[nrow + c]!;
+      HOLD[row + c] = hold;
+      let pen = 0;
+      if (c === 0 || c === NC - 1 || !(c < 32 ? (innerLo >>> c) & 1 : (innerHi >>> (c - 32)) & 1)) pen += EDGE;
+      if (hold < LS && i + hold < last) pen += LATE * (LS - hold);
+      if (gLo) pen += guidePen(i, c, nGuides);
+      PEN[row + c] = pen;
       const onSlope = (c < 32 ? (sl >>> c) & 1 : (sh >>> (c - 32)) & 1) === 1;
       const okS = (c < 32 ? (nl >>> c) & 1 : (nh >>> (c - 32)) & 1) === 1;
-      const okL = c > 0 && (c - 1 < 32 ? (nl >>> (c - 1)) & 1 : (nh >>> (c - 33)) & 1) === 1;
-      const okR = c + 1 < NC && (c + 1 < 32 ? (nl >>> (c + 1)) & 1 : (nh >>> (c - 31)) & 1) === 1;
       const canMove = ng === 1 && !onSlope;
+      const no = (nrow + c) * 3;
       // Successor costs (independent of the current direction except for the action charge).
-      const cS0 = okS ? COST[(nrow + c) * 3 + 1]! : INF;          // straight, direction reset (ng = 1)
-      const cL = canMove && okL ? COST[(nrow + c - 1) * 3]! : INF; // moving left (dir −1 → index 0)
-      const cR = canMove && okR ? COST[(nrow + c + 1) * 3 + 2]! : INF;
-      let macroCost = INF;
-      if (!onSlope && HOLD[row + c]! < 26) {
+      let s0 = INF, s1 = INF, s2 = INF;
+      if (okS) { if (ng) { s0 = s1 = s2 = COST[no + 1]!; } else { s0 = COST[no]!; s1 = COST[no + 1]!; s2 = COST[no + 2]!; } }
+      if (canMove) {
+        const okL = c > 0 && (c - 1 < 32 ? (nl >>> (c - 1)) & 1 : (nh >>> (c - 33)) & 1) === 1;
+        const okR = c + 1 < NC && (c + 1 < 32 ? (nl >>> (c + 1)) & 1 : (nh >>> (c - 31)) & 1) === 1;
+        if (okL) {
+          const cL = COST[no - 3]!;                                   // (c − 1, dir −1 → index 0)
+          if (cL < INF) {
+            const keep = PC + cL, turn = PC + AQ + cL;
+            if (keep < s0) s0 = keep;
+            if (turn < s1) s1 = turn;
+            if (turn < s2) s2 = turn;
+          }
+        }
+        if (okR) {
+          const cR = COST[no + 3 + 2]!;                               // (c + 1, dir +1 → index 2)
+          if (cR < INF) {
+            const keep = PC + cR, turn = PC + AQ + cR;
+            if (turn < s0) s0 = turn;
+            if (turn < s1) s1 = turn;
+            if (keep < s2) s2 = keep;
+          }
+        }
+      }
+      if (!onSlope && hold < 26) {
         const m = ollieMacro(r, i, c);
-        if (m >= 0) macroCost = A + qi + COST[(m * NC + c) * 3 + 1]!;
+        if (m >= 0) {
+          const mc = AQ + COST[(m * NC + c) * 3 + 1]!;
+          if (mc < s0) s0 = mc;
+          if (mc < s1) s1 = mc;
+          if (mc < s2) s2 = mc;
+        }
       }
-      for (let di = 0; di < 3; di++) {
-        const d = di - 1;
-        let best = INF;
-        if (okS) best = ng ? cS0 : COST[(nrow + c) * 3 + di]!;
-        if (cL < INF) { const v = PC + (d !== -1 ? A + qi : 0) + cL; if (v < best) best = v; }
-        if (cR < INF) { const v = PC + (d !== 1 ? A + qi : 0) + cR; if (v < best) best = v; }
-        if (macroCost < best) best = macroCost;
-        COST[(row + c) * 3 + di] = best >= INF ? INF : best + pen;
-      }
+      const o = (row + c) * 3;
+      COST[o] = s0 >= INF ? INF : s0 + pen;
+      COST[o + 1] = s1 >= INF ? INF : s1 + pen;
+      COST[o + 2] = s2 >= INF ? INF : s2 + pen;
     }
   }
   if (COST[(iS * NC + cS) * 3 + d0 + 1]! >= INF) return null;

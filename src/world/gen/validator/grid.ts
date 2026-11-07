@@ -83,6 +83,13 @@ export class Raster {
   readonly lvN = new Int32Array(MAX_SLICES);
   readonly lvY = new Float32Array(MAX_SLICES * LV_CAP);
   readonly lvM = new Int32Array(MAX_SLICES * LV_CAP * 2);
+  /** Per slice: may its ground row differ from the previous slice's (a slab, pit or extension boundary, a slope)? */
+  readonly dirty = new Uint8Array(MAX_SLICES + 1);
+  /** Per slice: same thresholds and ground levels as the previous slice, no pits (sameAsPrev, cached by build). */
+  readonly same = new Uint8Array(MAX_SLICES);
+  /** Per slice: cells past LV_CAP levels (per-cell path). */
+  private readonly rest = new Int32Array(MAX_SLICES * 2);
+  private readonly extDy = new Float64Array(NC);
   /** Ground classes (take-off heights) and, per slice, the flat non-slope non-pit cells of each class. */
   nh = 0;
   readonly classes = new Float64Array(NH_MAX);
@@ -119,63 +126,78 @@ export class Raster {
     exit: readonly (readonly [number, number])[] }, t0: number, t1: number): void {
     this.j0 = j0; this.n = n; this.extFrom = extFrom; this.t0 = t0; this.t1 = t1;
     const nn = n * NC;
-    this.gy.fill(-1000, 0, nn);
-    this.slope.fill(0, 0, n * 2); this.pit.fill(0, 0, n * 2); this.hard.fill(0, 0, n * 2); this.soft.fill(0, 0, n * 2);
+    const gy = this.gy, slope = this.slope, dirty = this.dirty;
+    gy.fill(-1000, 0, nn);
+    slope.fill(0, 0, n * 2); this.pit.fill(0, 0, n * 2); this.hard.fill(0, 0, n * 2); this.soft.fill(0, 0, n * 2);
     this.entN.fill(0, 0, n);
+    dirty.fill(0, 0, n + 1);
+    dirty[0] = 1;
     for (let i = 0; i < n; i++) { const t = (j0 + i) * SLICE; this.t[i] = t; this.s[i] = sAt(t); this.v[i] = speedAt(t); }
     // 1. Ground: the highest datum slab top under each cell centre at the slice centre (stairs / inclines interpolate);
-    //    pits where no slab covers the centre (anywhere in the slice interval: conservative).
+    //    pits where no slab covers the centre (anywhere in the slice interval: conservative). A slice whose set of
+    //    covering slabs (and pits) is the previous slice's has the same ground row: `dirty` marks the others.
+    this.datumSlabs.length = 0;
     for (const ob of obstacles) {
       for (const sl of ob.slabs) {
         if (sl.layer !== 0 || BODY_TOPS.has(sl)) continue;
+        this.datumSlabs.push(sl);
         const sloped = sl.y0 !== sl.y1;
-        const c0 = Math.ceil((sl.x0 - X_MIN) / CELL - 1e-9), c1 = Math.floor((sl.x1 - X_MIN) / CELL + 1e-9);
-        for (let i = this.firstSlice(sl.s0); i < n && this.s[i]! < sl.s1; i++) {
+        const c0 = Math.max(0, Math.ceil((sl.x0 - X_MIN) / CELL - 1e-9)), c1 = Math.min(NC - 1, Math.floor((sl.x1 - X_MIN) / CELL + 1e-9));
+        let i = this.firstSlice(sl.s0), first = -1;
+        for (; i < n && this.s[i]! < sl.s1; i++) {
           const s = this.s[i]!;
           if (s < sl.s0) continue;
-          const y = slabYAt(sl, s);
-          for (let c = Math.max(0, c0); c <= Math.min(NC - 1, c1); c++) {
-            const k = i * NC + c;
-            if (y > this.gy[k]!) {
-              this.gy[k] = y;
-              if (sloped) this.setBit(this.slope, i, c); else this.clearBit(this.slope, i, c);
-            }
+          if (first < 0) { first = i; dirty[i] = 1; } else if (sloped) dirty[i] = 1;
+          if (c0 > c1) continue;
+          const y = sloped ? slabYAt(sl, s) : sl.y0;
+          const row = i * NC;
+          let chLo = 0, chHi = 0;
+          for (let c = c0; c <= c1; c++) {
+            if (y > gy[row + c]!) { gy[row + c] = y; if (c < 32) chLo |= 1 << c; else chHi |= 1 << (c - 32); }
+          }
+          if (chLo | chHi) {
+            if (sloped) { slope[i * 2] = slope[i * 2]! | chLo; slope[i * 2 + 1] = slope[i * 2 + 1]! | chHi; }
+            else { slope[i * 2] = slope[i * 2]! & ~chLo; slope[i * 2 + 1] = slope[i * 2 + 1]! & ~chHi; }
           }
         }
+        if (first >= 0) dirty[i] = 1;
       }
     }
     // Extension: the base street at the exit datum where nothing else is there.
-    for (let i = extFrom; i < n; i++) {
+    if (extFrom < n) {
+      dirty[extFrom] = 1;
+      const dyC = this.extDy;
       for (let c = 0; c < NC; c++) {
-        const k = i * NC + c;
-        if (this.gy[k]! > -999) continue;
         const x = cellX(c);
         let dy = 0;
         for (const bd of ext.layout.bands) if (x >= bd.x0 && x < bd.x1) dy = bd.dy;
-        this.gy[k] = ext.datum + dy;
+        dyC[c] = dy;
+      }
+      for (let i = extFrom; i < n; i++) {
+        const row = i * NC;
+        for (let c = 0; c < NC; c++) if (gy[row + c]! <= -999) gy[row + c] = ext.datum + dyC[c]!;
       }
     }
-    this.datumSlabs.length = 0;
-    for (const ob of obstacles) for (const sl of ob.slabs) if (sl.layer === 0 && !BODY_TOPS.has(sl)) this.datumSlabs.push(sl);
     for (const ob of obstacles) {
       for (const pt of ob.pits) {
         const c0 = Math.ceil((pt.x0 - X_MIN) / CELL - 1e-9), c1 = Math.floor((pt.x1 - X_MIN) / CELL + 1e-9);
         for (let i = this.firstSlice(pt.s0 - this.v[0]! * SLICE); i < n; i++) {
           const half = this.v[i]! * SLICE / 2, s = this.s[i]!;
-          if (s - half >= pt.s1) break;
+          if (s - half >= pt.s1) { dirty[i] = 1; break; }
           if (s + half <= pt.s0) continue;
+          dirty[i] = 1;
           for (let c = Math.max(0, c0); c <= Math.min(NC - 1, c1); c++) {
             // Covered by a datum slab (a plank) over the whole slice interval? Then no pit.
             if (this.coveredAt(obstacles, s - half, s + half, cellX(c), pt.s0, pt.s1)) continue;
             this.setBit(this.pit, i, c);
             this.setBit(this.soft, i, c);
             const k = i * NC + c;
-            if (this.gy[k]! < pt.lipY) this.gy[k] = pt.lipY;
+            if (gy[k]! < pt.lipY) gy[k] = pt.lipY;
           }
         }
       }
     }
-    for (let k = 0; k < nn; k++) if (this.gy[k]! < -999) this.gy[k] = 0;      // implicit street datum (y = 0)
+    for (let k = 0; k < nn; k++) if (gy[k]! < -999) gy[k] = 0;      // implicit street datum (y = 0)
     // 2. Solids → threshold entries.
     this.caps.length = 0;
     for (const ob of obstacles) {
@@ -189,16 +211,27 @@ export class Raster {
         const thr = so.top === 'crash' ? bx.y1 - iy : bx.y1 - STEP_UP;
         const c0 = Math.ceil((xa - X_MIN) / CELL - 1e-9), c1 = Math.floor((xb - X_MIN) / CELL + 1e-9);
         if (c1 < 0 || c0 > NC - 1 || c0 > c1) continue;
+        const cl = Math.max(0, c0), ch = Math.min(NC - 1, c1);
+        let mLo = 0, mHi = 0;
+        for (let c = cl; c <= ch; c++) { if (c < 32) mLo |= 1 << c; else mHi |= 1 << (c - 32); }
         const tall = so.tall || bx.y1 - bx.y0 > HEIGHT.lowMax + 0.05;
+        const gm = tall ? this.hard : this.soft;
         for (let i = this.firstSlice(sa - this.v[0]! * SLICE); i < n; i++) {
           const half = this.v[i]! * SLICE / 2, s = this.s[i]!;
           if (s - half >= sb) break;
           if (s + half <= sa) continue;
-          this.addEntry(i, thr, bx.y0, c0, c1);
+          this.addEntryM(i, thr, bx.y0, mLo | 0, mHi | 0);
           // Greedy masks: only solids a grounded board would touch.
-          if (bx.y0 < this.gyMinRange(i, c0, c1) + HITBOX.h) for (let c = Math.max(0, c0); c <= Math.min(NC - 1, c1); c++) {
-            if (thr <= this.gy[i * NC + c]! + 1e-6) continue;
-            this.setBit(tall ? this.hard : this.soft, i, c);
+          const row = i * NC;
+          let gmin = Infinity;
+          for (let c = cl; c <= ch; c++) { const g = gy[row + c]!; if (g < gmin) gmin = g; }
+          if (bx.y0 < gmin + HITBOX.h) {
+            let bl = 0, bh = 0;
+            for (let c = cl; c <= ch; c++) {
+              if (thr <= gy[row + c]! + 1e-6) continue;
+              if (c < 32) bl |= 1 << c; else bh |= 1 << (c - 32);
+            }
+            gm[i * 2] = gm[i * 2]! | bl; gm[i * 2 + 1] = gm[i * 2 + 1]! | bh;
           }
         }
       }
@@ -210,27 +243,52 @@ export class Raster {
     // 3. Per slice: ground levels (distinct heights with their cell masks), the ground OK mask (per level: one
     //    threshold pass instead of one per cell), the class table and the flat-class masks. Classes are the distinct
     //    flat take-off heights (1 cm) in order of first appearance; more than NH_MAX → extra ones get no class (no
-    //    take-off there: conservative). Cells past LV_CAP levels in a slice take the per-cell path.
+    //    take-off there: conservative). Cells past LV_CAP levels in a slice take the per-cell path. A slice with the
+    //    previous one's ground row copies its levels, and with its thresholds too, its masks (`same`).
     this.nh = 0;
     let minG = Infinity;
-    const gy = this.gy, lvY = this.lvY, lvM = this.lvM, entThr = this.entThr, entBot = this.entBot, entM = this.entM;
-    this.flat.fill(0, 0, n * NH_MAX * 2);
+    const lvY = this.lvY, lvM = this.lvM, entThr = this.entThr, entBot = this.entBot, entM = this.entM, flat = this.flat;
+    const same = this.same;
+    flat.fill(0, 0, n * NH_MAX * 2);
     for (let i = 0; i < n; i++) {
       const l0 = i * LV_CAP, row = i * NC;
-      let nl = 0, last = -1, restLo = 0, restHi = 0;
-      for (let c = 1; c < NC - 1; c++) {
-        const y = gy[row + c]!;
-        if (y < minG) minG = y;
-        let l = -1;
-        if (last >= 0 && Math.abs(lvY[l0 + last]! - y) < 1e-4) l = last;
-        else for (let q = 0; q < nl; q++) if (Math.abs(lvY[l0 + q]! - y) < 1e-4) { l = q; break; }
-        if (l < 0 && nl < LV_CAP) { l = nl++; lvY[l0 + l] = y; lvM[(l0 + l) * 2] = 0; lvM[(l0 + l) * 2 + 1] = 0; }
-        if (l < 0) { if (c < 32) restLo |= 1 << c; else restHi |= 1 << (c - 32); continue; }
-        last = l;
-        if (c < 32) lvM[(l0 + l) * 2] = lvM[(l0 + l) * 2]! | (1 << c); else lvM[(l0 + l) * 2 + 1] = lvM[(l0 + l) * 2 + 1]! | (1 << (c - 32));
+      same[i] = 0;
+      if (!dirty[i] && this.lvN[i - 1]! < LV_CAP) {
+        const nl = this.lvN[i - 1]!, p0 = (i - 1) * LV_CAP;
+        this.lvN[i] = nl;
+        for (let l = 0; l < nl; l++) { lvY[l0 + l] = lvY[p0 + l]!; lvM[(l0 + l) * 2] = lvM[(p0 + l) * 2]!; lvM[(l0 + l) * 2 + 1] = lvM[(p0 + l) * 2 + 1]!; }
+        if (this.sameAsPrev(i)) {
+          same[i] = 1;
+          this.gOK[i * 2] = this.gOK[i * 2 - 2]!; this.gOK[i * 2 + 1] = this.gOK[i * 2 - 1]!;
+          const f0 = i * NH_MAX * 2;
+          for (let q = 0; q < NH_MAX * 2; q++) flat[f0 + q] = flat[f0 - NH_MAX * 2 + q]!;
+          continue;
+        }
+      } else {
+        let nl = 0, last = -1, restLo = 0, restHi = 0;
+        for (let c = 1; c < NC - 1; c++) {
+          const y = gy[row + c]!;
+          if (y < minG) minG = y;
+          let l = -1;
+          if (last >= 0 && Math.abs(lvY[l0 + last]! - y) < 1e-4) l = last;
+          else for (let q = 0; q < nl; q++) if (Math.abs(lvY[l0 + q]! - y) < 1e-4) { l = q; break; }
+          if (l < 0 && nl < LV_CAP) { l = nl++; lvY[l0 + l] = y; lvM[(l0 + l) * 2] = 0; lvM[(l0 + l) * 2 + 1] = 0; }
+          if (l < 0) { if (c < 32) restLo |= 1 << c; else restHi |= 1 << (c - 32); continue; }
+          last = l;
+          if (c < 32) lvM[(l0 + l) * 2] = lvM[(l0 + l) * 2]! | (1 << c); else lvM[(l0 + l) * 2 + 1] = lvM[(l0 + l) * 2 + 1]! | (1 << (c - 32));
+        }
+        this.lvN[i] = nl;
+        this.rest[i * 2] = restLo; this.rest[i * 2 + 1] = restHi;
+        if (i > 0 && this.sameAsPrev(i)) {
+          same[i] = 1;
+          this.gOK[i * 2] = this.gOK[i * 2 - 2]!; this.gOK[i * 2 + 1] = this.gOK[i * 2 - 1]!;
+          const f0 = i * NH_MAX * 2;
+          for (let q = 0; q < NH_MAX * 2; q++) flat[f0 + q] = flat[f0 - NH_MAX * 2 + q]!;
+          continue;
+        }
       }
-      this.lvN[i] = nl;
-      const pl = this.pit[i * 2]!, ph = this.pit[i * 2 + 1]!, sl = this.slope[i * 2]!, sh = this.slope[i * 2 + 1]!;
+      const nl = this.lvN[i]!, restLo = nl >= LV_CAP ? this.rest[i * 2]! : 0, restHi = nl >= LV_CAP ? this.rest[i * 2 + 1]! : 0;
+      const pl = this.pit[i * 2]!, ph = this.pit[i * 2 + 1]!, sl = slope[i * 2]!, sh = slope[i * 2 + 1]!;
       const e0 = i * ENT_CAP, ne = this.entN[i]!;
       let okLo = 0, okHi = 0;
       for (let l = 0; l < nl; l++) {
@@ -244,7 +302,7 @@ export class Raster {
         const fl = ml & ~sl & ~pl, fh = mh & ~sh & ~ph;
         if (!(fl | fh)) continue;
         const q = this.classOf(Math.round(y * 100) / 100);
-        if (q >= 0) { const o = (i * NH_MAX + q) * 2; this.flat[o] = this.flat[o]! | fl; this.flat[o + 1] = this.flat[o + 1]! | fh; }
+        if (q >= 0) { const o = (i * NH_MAX + q) * 2; flat[o] = flat[o]! | fl; flat[o + 1] = flat[o + 1]! | fh; }
       }
       if (restLo | restHi) {
         for (let c = 1; c < NC - 1; c++) {
@@ -253,7 +311,7 @@ export class Raster {
           if (!this.blockedAt(i, c, y)) { if (c < 32) okLo |= 1 << c; else okHi |= 1 << (c - 32); }
           if (bitTest(sl, sh, c) || bitTest(pl, ph, c)) continue;
           const q = this.classOf(Math.round(y * 100) / 100);
-          if (q >= 0) this.setBitW(this.flat, (i * NH_MAX + q) * 2, c);
+          if (q >= 0) this.setBitW(flat, (i * NH_MAX + q) * 2, c);
         }
       }
       this.gOK[i * 2] = okLo & ~pl; this.gOK[i * 2 + 1] = okHi & ~ph;
@@ -356,11 +414,6 @@ export class Raster {
     while (lo < hi) { const m = (lo + hi) >> 1; if (this.s[m]! < s) lo = m + 1; else hi = m; }
     return Math.max(0, lo - 1);
   }
-  private gyMinRange(i: number, c0: number, c1: number): number {
-    let m = Infinity;
-    for (let c = Math.max(0, c0); c <= Math.min(NC - 1, c1); c++) m = Math.min(m, this.gy[i * NC + c]!);
-    return m === Infinity ? 0 : m;
-  }
   private coveredAt(_obstacles: readonly Obstacle[], sa: number, sb: number, x: number, p0: number, p1: number): boolean {
     for (const sl of this.datumSlabs) {
       // The board centre must stay PIT_MARGIN inside a plank (the exact check's centre margin plus tracking).
@@ -369,10 +422,8 @@ export class Raster {
     }
     return false;
   }
-  private addEntry(i: number, thr: number, bot: number, c0: number, c1: number): void {
+  private addEntryM(i: number, thr: number, bot: number, lo: number, hi: number): void {
     const e0 = i * ENT_CAP;
-    let lo = 0, hi = 0;
-    for (let c = Math.max(0, c0); c <= Math.min(NC - 1, c1); c++) { if (c < 32) lo |= 1 << c; else hi |= 1 << (c - 32); }
     const n = this.entN[i]!;
     for (let e = 0; e < n; e++) {
       if (Math.abs(this.entThr[e0 + e]! - thr) < 0.005 && Math.abs(this.entBot[e0 + e]! - bot) < 0.005) {
