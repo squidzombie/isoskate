@@ -419,7 +419,8 @@ test('two-thumb hints: rings with a hovering trick ghost, wrong-side pulses, Set
   await page.waitForFunction(() => !!window.__skate && !!window.__dusklaneUi);
   await run();
   await expect.poll(() => cls('#hud .zone-cue')).toMatch(/\blabelled\b.*\bon\b|\bon\b.*\blabelled\b/);
-  await expect(page.locator('#hud .zone-pad.steer > b')).toHaveText('STEER ↔');
+  await expect(page.locator('#hud .zone-pad.steer > b')).toHaveText('STEER');   // the ↔ is drawn (BRAND §2.1: arrows are never typed)
+  await expect(page.locator('#hud .zone-pad.steer > b svg.arr')).toHaveAttribute('aria-label', 'left or right');
   expect(errors).toEqual([]);
 });
 
@@ -459,7 +460,7 @@ test('Back up → Restore round-trips through Settings', async ({ page }) => {
   await page.locator('.modal-card textarea.code').fill('{"hello":"world"}');
   await page.locator('.modal-card').getByRole('button', { name: 'Restore', exact: true }).click();
   await page.locator('.modal-card').getByRole('button', { name: 'Restore', exact: true }).click();
-  await expect(page.locator('#toasts')).toContainText('not a Dusklane backup');
+  await expect(page.locator('#toasts')).toContainText('not an Isoskate backup');
   expect((await save(page)).wallet.coins).toBe(4321);
   expect(errors).toEqual([]);
 });

@@ -233,8 +233,11 @@ export const SFX_LEVEL = {
   pop: 0.55, whoosh: 1.3, catch: 0.6, land: 0.6, sketchy: 0.45, perfect: 0.42, perfectLock: 0.22, stair: 0.7,
   bump: 0.7, knock: 0.55, nearMiss: 1.1, hazardTick: 0.9, crash: 0.34, grindEntry: 0.45, grindExit: 0.8,
   spin: 1.6, revert: 1.5, pickChime: 0.22, rewind: 0.55, needle: 0.45, newBest: 0.22, newArea: 0.18, birdFlutter: 0.5, reverseChirp: 1,
-  ui: 1.8, purchase: 1.1, crate: 0.5, crateOpen: 0.9, reveal: 0.26, levelUp: 0.3,
+  ui: 1.8, purchase: 1.1, crate: 0.5, crateOpen: 0.9, reveal: 0.26, levelUp: 0.3, dive: 0.5,
 } as const;
+/** The Title → run dive (1.45 s): a rising band-pass whoosh that peaks as the camera breaks through the clouds, and a
+ *  soft pad swell on the key's Maj9 under it, released as the run begins. */
+export const DIVE_CUE = { sec: 1.45, whooshHz: [260, 3400] as const, padAttack: 0.85, padRelease: 0.7, padGain: 0.07, padLpHz: [500, 2600] as const } as const;
 export const LEVEL_UP = { noteMs: 70, holdSec: 1.2, shimmerHz: 6000, shimmerSec: 0.6, duckDb: 3, duckSec: 1.6, epGain: 0.5 } as const;
 export const COMBO_BANK = { noteMs: 50, gain: 0.26 } as const;
 

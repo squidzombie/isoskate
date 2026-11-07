@@ -215,3 +215,30 @@ describe('store: writes', () => {
     expect(s.data.stats.runs).toBe(0);
   });
 });
+
+describe('the rename to Isoskate (BRAND §1.3): saves survive', () => {
+  it('a save the previous build wrote under the old key loads with the same level, coins and items', () => {
+    // Written by hand under the literal key the Dusklane builds used, so a change to GAME_ID or SAVE_KEY fails here.
+    const old = makeDefaults(Date.UTC(2026, 10, 1), 3);
+    old.wallet.coins = 1240;
+    old.xp = { total: 900, level: 4, intoLevel: 120, held: 0 };
+    old.owned.push('sk_rook', 'bd_sunset_stripe');
+    old.equipped.board = 'bd_sunset_stripe';
+    old.stats.best = 12480;
+    const b = fakeStorage();
+    b.setItem('dusklane.save', JSON.stringify(old));
+    expect(SAVE_KEY).toBe('dusklane.save');
+    expect(BACKUP_KEY).toBe('dusklane.save.bak');
+    const s = storeOn(b);
+    expect(s.loadedFrom).toBe('main');
+    expect(s.data.wallet.coins).toBe(1240);
+    expect(s.data.xp.level).toBe(4);
+    expect(s.data.owned).toEqual(expect.arrayContaining(['sk_rook', 'bd_sunset_stripe']));
+    expect(s.data.equipped.board).toBe('bd_sunset_stripe');
+    expect(s.data.stats.best).toBe(12480);
+    // An old backup file (dusklane-progress-*.json) imports by its content alone.
+    const t = storeOn(fakeStorage());
+    expect(t.import(JSON.stringify(old))).toBe(true);
+    expect(t.data.wallet.coins).toBe(1240);
+  });
+});

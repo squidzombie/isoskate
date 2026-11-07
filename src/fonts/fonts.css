@@ -1,5 +1,5 @@
-/* Self-hosted fonts (TECH §1): woff2 straight from the @fontsource packages, hashed by Vite.
-   No third-party requests. Bungee for display text, Nunito 700/800/900 (tabular-nums) for UI. */
+/* Self-hosted fonts (TECH §1, BRAND §2): woff2 straight from the @fontsource packages, hashed by Vite. No third-party requests.
+   Bungee 400: logo, headings, buttons, static display numbers >= 28 px, trick names. Nunito 700/800/900 (tabular-nums): everything else. */
 @font-face {
   font-family: 'Bungee';
   font-style: normal;

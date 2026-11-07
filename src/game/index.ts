@@ -9,7 +9,7 @@ export function boot(root: HTMLElement | null = document.getElementById('app')):
   if (!compat.ok) {
     const card = document.getElementById('boot-fail');
     if (card) {
-      card.textContent = `This browser is too old for Dusklane (missing ${compat.missing.join(', ')}). Try a current Safari, Chrome, Edge or Firefox.`;
+      card.textContent = `This browser is too old for Isoskate (missing ${compat.missing.join(', ')}). Try a current Safari, Chrome, Edge or Firefox.`;
       card.style.display = 'flex';
     }
     return null;

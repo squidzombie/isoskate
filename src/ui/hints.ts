@@ -14,8 +14,9 @@
 //     slow sideways drag on the trick side pulses the STEER ring (ui/index.ts feeds the touch pointers);
 //   - keys (fine pointer): chunky key caps in the chip instead ("[A] [D] TO STEER").
 // Everything is transform / opacity / class toggles; nothing here reads layout.
-import { h, setText } from './h';
+import { h } from './h';
 import { REST_MARK_SEC, WRONG_SIDE, ZONE_CUE } from './ui.config';
+import { setArrowText, withArrows } from './arrows';
 
 export type Gesture = 'drag' | 'tap' | 'swipeL' | 'swipeD' | 'swipeUR' | 'hold';
 /** Which thumb a hint is about in the two-thumb layout. */
@@ -85,7 +86,7 @@ export function createHints(coarse: () => boolean, onShown?: (id: string) => voi
   const restT = h('div', { class: 'rest-mark two trick', 'data-zone': 'trick', 'aria-hidden': 'true' },
     h('span', null, 'TRICKS', h('small', null, 'TAP · FLICK · HOLD')), h('i', { class: 'hover-shadow' }), ghostT);
   const cue = h('div', { class: 'zone-cue labelled', 'aria-hidden': 'true' },
-    h('i', { class: 'zone-pad steer' }, h('b', null, 'STEER ↔')), h('i', { class: 'zone-mid' }), h('i', { class: 'zone-pad trick' }, h('b', null, 'TRICKS')));
+    h('i', { class: 'zone-pad steer' }, h('b', null, ...withArrows('STEER ↔'))), h('i', { class: 'zone-mid' }), h('i', { class: 'zone-pad trick' }, h('b', null, 'TRICKS')));
   let id: string | null = null, firstRuns = false, restOn = false, cueOn = false, touch = true, runs = 0;
   let controls: Controls = 'two', swap = false;
   const two = () => controls === 'two';
@@ -130,8 +131,8 @@ export function createHints(coarse: () => boolean, onShown?: (id: string) => voi
       const t = next ? HINT_TEXT[next] : undefined;
       if (t) {
         touch = coarse();
-        caps.replaceChildren(...(touch ? [] : t.caps.map((c) => h('kbd', { class: c.length > 1 ? 'wide' : '' }, c))));
-        setText(text, touch ? touchText(t, controls, swap) : t.caps.length ? t.keysLabel : t.keys);
+        caps.replaceChildren(...(touch ? [] : t.caps.map((c) => h('kbd', { class: c.length > 1 ? 'wide' : '' }, ...withArrows(c)))));
+        setArrowText(text, touch ? touchText(t, controls, swap) : t.caps.length ? t.keysLabel : t.keys);
         chip.dataset.hint = next!;
         onShown?.(next!);
       }

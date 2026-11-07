@@ -22,6 +22,7 @@ import { icon } from '../icons';
 import type { Reveal } from '../reveal';
 import { bar, btn, coinTag, fmtN, RARITY_LABEL, section, type Screen, type ScreenCtx } from './common';
 import { RESULTS_ANIM } from '../ui.config';
+import { arrowIcon } from '../arrows';
 
 export { RESULTS_ANIM };
 const ease = (u: number) => 1 - (1 - u) ** 3;
@@ -53,12 +54,12 @@ export function resultsScreen(ctx: ScreenCtx, hooks: ResultsHooks): Screen {
   const wishRow = h('div', { class: 'res-track' }, icon('heartFull', 'trk-heart'), h('div', { class: 'trk' }, wishText, wishBar.el));
   const goal = h('div', { class: 'res-goal' }, '');
   const goalText = h('span', null, '');
-  goal.append(h('i', { class: 'goal-arrow', 'aria-hidden': 'true' }, '→'), goalText);
+  goal.append(h('i', { class: 'goal-arrow', 'aria-hidden': 'true' }, arrowIcon('→')), goalText);
   const offerBtn = btn('', () => void watchOffer(), ctx, 'offer-btn');
   const offer = h('div', { class: 'offer-slot', 'data-placement': 'results_double_coins' }, offerBtn);
   offer.hidden = true;
   const install = h('div', { class: 'install-hint' },
-    h('span', null, 'Add Dusklane to your Home Screen: it opens full-screen and keeps your progress safe.'),
+    h('span', null, 'Add Isoskate to your Home Screen: it opens full-screen and keeps your progress safe.'),
     btn('✕', () => { install.hidden = true; ext()?.markInstallHint(); }, ctx, 'x', 'Dismiss', 'back'));
   install.hidden = true;
   const card = h('div', { class: 'res-card' },

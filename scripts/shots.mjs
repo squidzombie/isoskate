@@ -110,6 +110,9 @@ async function defaultMode() {
       report.push({ file, tick: snap.tick, t: +snap.t.toFixed(2), area: snap.area, speed: +snap.speed.toFixed(2),
         H: +cam.H.toFixed(2), yawDeg: +cam.yawDeg.toFixed(1), lookAheadSec: +cam.lookAheadSec.toFixed(2), ...extra });
     };
+    // The Title's Earth maps bake in idle slices after boot: shoot it once they are up (a preview Earth until then).
+    await page.waitForFunction(() => !window.__skateTitle || window.__skateTitle.bakeDone(), null, { timeout: 60000, polling: 250 })
+      .catch(() => fail(`[${vp.name}] the Title's Earth maps did not finish baking`));
     await shot(`title-${vp.name}.png`);
     // Run frames.
     await page.evaluate((s) => { window.__skate.start({ seed: s, god: true }); window.__skate.manual(true); }, seed);
@@ -267,7 +270,7 @@ async function cosmeticsMode() {
     const x = c.getContext('2d');
     x.fillStyle = '#fff4e3'; x.fillRect(0, 0, c.width, c.height);
     x.fillStyle = '#2b2140'; x.font = '700 16px Nunito, sans-serif';
-    x.fillText(`DUSKLANE cosmetics · ${list.length} items · turntable views on a plain background; in-run crops at native pixels (DPR 2)`, 10, 22);
+    x.fillText(`ISOSKATE cosmetics · ${list.length} items · turntable views on a plain background; in-run crops at native pixels (DPR 2)`, 10, 22);
     for (let i = 0; i < list.length; i++) await drawCell(x, list[i], (i % cols) * CW, 34 + Math.floor(i / cols) * CH);
     return { sheet: c.toDataURL('image/png'), per };
   }, [cells, COSMETIC_BG]);

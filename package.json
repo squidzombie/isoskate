@@ -2,7 +2,7 @@
   "name": "dusklane",
   "private": true,
   "version": "0.0.1",
-  "description": "Dusklane: a mobile-first isometric endless street-skating web game.",
+  "description": "Isoskate: a mobile-first endless street-skating web game.",
   "type": "module",
   "engines": {
     "node": ">=20"

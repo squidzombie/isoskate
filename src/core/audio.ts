@@ -7,7 +7,8 @@ export type SfxId = 'pop' | 'whoosh' | 'catch' | 'land' | 'sketchy' | 'perfect' 
   | 'newArea' | 'grindEntry' | 'grindExit' | 'uiTap' | 'uiBack' | 'uiToggle' | 'uiError' | 'purchase'
   | 'levelUp' | 'crateShake' | 'crateOpen' | 'revealCommon' | 'revealRare' | 'revealEpic' | 'revealLegendary'
   | 'spin' | 'revert' | 'pickChime' | 'rewind' | 'needle' | 'grindSwitch'   // internal cues, added @G0
-  | 'birdFlutter' | 'reverseChirp';   // RECLAIM ambience one-shots (perched birds take off; the self-parking car reverses), added @theme T5
+  | 'birdFlutter' | 'reverseChirp'    // RECLAIM ambience one-shots (perched birds take off; the self-parking car reverses), added @theme T5
+  | 'dive';                                                                    // Title → run dive (core-requests: TITLE)
 export interface AudioEngine {
   unlock(): Promise<boolean>; readonly unlocked: boolean;
   suspend(): void; resume(): void;

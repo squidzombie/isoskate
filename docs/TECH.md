@@ -1,4 +1,4 @@
-# DUSKLANE: Technical Architecture
+# ISOSKATE: Technical Architecture
 
 **Status:** v1.1, authoritative (after the Player, Feasibility and Mobile reviews). `DESIGN.md` owns the gameplay numbers. This document owns how the game is built.
 
@@ -128,8 +128,8 @@ isoskate/
 ---
 
 ## 3. Naming and environment
-- `core/ids.ts` exports `GAME_ID = 'dusklane'`, `GAME_NAME = 'Dusklane'` and `BUILD` (injected by Vite define: `{ version, hash, mode }`). Every user-visible name and storage key derives from these.
-- **Storage keys:**
+- `core/ids.ts` exports `GAME_ID = 'dusklane'`, `GAME_NAME = 'Isoskate'` and `BUILD` (injected by Vite define: `{ version, hash, mode }`). Every user-visible name and storage key derives from these.
+- **Storage keys** (they keep `GAME_ID` through the rename to Isoskate, BRAND §1.3, so existing saves, backups and the analytics ring load unchanged; import validates a backup by its content, never its file name):
   - `dusklane.save` (current)
   - `dusklane.save.bak` (backup)
   - `dusklane.analytics`
@@ -154,7 +154,7 @@ Created verbatim in M0. Everything is exported. There are no runtime dependencie
 ### 4.1 `core/ids.ts`: identifiers
 ```ts
 export const GAME_ID = 'dusklane';
-export const GAME_NAME = 'Dusklane';
+export const GAME_NAME = 'Isoskate';
 declare const __BUILD__: { version: string; hash: string; mode: 'development' | 'production' | 'single' };
 export const BUILD = __BUILD__;      // Vite `define` (also set in vitest.config.ts)
 
@@ -937,7 +937,8 @@ export type SfxId = 'pop' | 'whoosh' | 'catch' | 'land' | 'sketchy' | 'perfect' 
   | 'newArea' | 'grindEntry' | 'grindExit' | 'uiTap' | 'uiBack' | 'uiToggle' | 'uiError' | 'purchase'
   | 'levelUp' | 'crateShake' | 'crateOpen' | 'revealCommon' | 'revealRare' | 'revealEpic' | 'revealLegendary'
   | 'spin' | 'revert' | 'pickChime' | 'rewind' | 'needle' | 'grindSwitch'
-  | 'birdFlutter' | 'reverseChirp';   // RECLAIM ambience one-shots, added @theme T5 (docs/core-requests.md THEME)   // internal cues, added @G0
+  | 'birdFlutter' | 'reverseChirp'    // RECLAIM ambience one-shots, added @theme T5 (docs/core-requests.md THEME)
+  | 'dive';                           // the Title → run dive cue, added @title (docs/core-requests.md TITLE; merged at G1b)
 export interface AudioEngine {
   unlock(): Promise<boolean>; readonly unlocked: boolean;
   suspend(): void; resume(): void;
@@ -1517,6 +1518,8 @@ A `steer` touch never enters HOLD, never emits `press`, `tap`, `swipe`, `holdSta
 - **Global instanced layers:** decals (`polygonOffset`), coins (`InstancedMesh`, capacity 256; collected coins are hidden by matrix), lantern spheres, and the bank-timer arc.
 - **Time slicing.** At most 1 chunk built per frame with a 4 ms budget, never in a frame that generates a segment. A chunk is built ≥ 2 chunks before it becomes visible. The window keeps `CHUNK_WINDOW` = 1 chunk behind and 3 ahead (96 m, inside the 12 s generation lead). The Roll-out's chunks are cached across runs (not yet implemented at G0: WA).
   - **Exception (G0): the first frame of a run** builds the three chunks the camera sees (the one under the skater, the one behind it, the next one ahead) and nothing else, so a retry never shows empty fog behind the start. The one-per-frame scheduler resumes on the next frame. Until the Roll-out cache lands, that frame costs 3 builds (~3–9 ms).
+  - **The Title dive** (pkg/title): a run started by TAP TO ROLL is reset at the tap, so that first frame (3 builds or cache restores) lands on the dive's first frame, under the space scene, and the rest stream in during its first ~0.7 s. From its second frame the Title warms the world under the space scene: it builds the Roll-out chunks once (so the dive's first frame restores them from the cache), compiles the world's programs (`compileAsync` where KHR_parallel_shader_compile exists; otherwise synchronously, the cost the old diorama's first frame paid) and draws the world once into a 1-pixel scissor in both camera modes (uploads, shadow programs, run-only layers); a chunk built during the dive's space half is uploaded by a 1-pixel draw the frame after. No dive frame builds more than the normal one chunk.
+- **Title space scene** (world/render/title/): the Earth (72×48 sphere), clouds, atmosphere shell, sky sphere, 900 star points and the hero board (2 calls): 7 draw calls, ~19k triangles + points, no allocation per frame, 30 fps. Its Earth maps are baked on the CPU, all in idle slices of ≤ 3 ms (requestIdleCallback with its deadline; a slice starts only with 5 ms of idle time left, at most 4 slices per callback, else setTimeout; the slice clock is read every 32 texels; held while the space backdrop is not drawn), so boot never waits on them: the first Title frames show a plain shaded ocean sphere, then a 256×128 colour / 256×128 clouds preview (~40–55 ms of work with a cold JIT, landing ~0.1–0.15 s after the first frame), then the full maps in bake order clouds (512×256) → wash noise (256²) → colour (1024×512), each uploaded as soon as its pass is done and cross-faded in over 0.6 s. The clouds are stored before their threshold (the shaders threshold after filtering), so a dive started before the full maps land still magnifies the preview into soft clouds, never texel squares.
 - **No opaque overhead.** Overhead decor is thin (lantern strings ≤ 0.3 m on screen, the maglev as two thin beams on the far facade line, `kits/decor.ts maglevX`, never along the median world/gen gives it), and overhead spans fade over the look-ahead zone (above).
 - **Desaturate.** A shared `uDesat` uniform in every world and skater material (crash: 0.4); no CSS filter on the canvas.
 - **Crash outline flash.** On a `crash` event, the renderer redraws the obstacle `obstacleId` once more with a coral inverted-hull outline for 0.6 s.
@@ -1643,7 +1646,7 @@ A `steer` touch never enters HOLD, never emits `press`, `tap`, `swipe`, `holdSta
 - **Eviction.** Safari deletes script-writable storage after 7 days of Safari use without a visit. So: after run 1, call `navigator.storage.persist()` once (feature-detected; `onboarding.persistAsked`); Settings offers **Back up / Restore progress** through `SaveStore.export()` / `import()` (copy, share or download a JSON file; paste or pick to restore); installed PWAs are not subject to the 7-day rule, which is one more reason for the calm install hint after run 3.
 
 ### 10.6 PWA and service worker (INT, **M4**)
-- **Manifest.** `public/manifest.webmanifest`: name "Dusklane", `display: standalone`, `orientation: portrait`, `theme_color #2B2140`, `background_color #FFF4E3`, and icons 192, 512 and 512-maskable.
+- **Manifest.** `public/manifest.webmanifest`: `name` and `short_name` "Isoskate", `display: standalone`, `orientation: portrait`, `theme_color #1B1D3F`, `background_color #1B1D3F`, and icons 192, 512 and 512-maskable (the procedural recipe in BRAND §3.5).
 - **iOS tags.** `<link rel="apple-touch-icon" href="icons/180.png">`, `<meta name="apple-mobile-web-app-capable" content="yes">` and `<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">`.
 - **Service worker generation.** A ~40-line Vite plugin (`swPlugin` in `vite.config.ts`) emits `dist/sw.js` with the build hash as the cache name and the precache list of hashed assets. The worker itself is about 60 lines of hand-written template.
 - **Caching:**
@@ -1659,7 +1662,7 @@ A `steer` touch never enters HOLD, never emits `press`, `tap`, `swipe`, `holdSta
 
 ### 10.8 Browser support (`platform/compat.ts`, INT)
 - **Minimum:** iOS / Safari 15.4+, Chrome / Edge / Firefox from 2022 on. WebKit cannot be tested on this machine (only Chromium is installed), so every newer API is feature-detected rather than assumed.
-- **Boot check:** WebGL2, `structuredClone` and `AudioContext`. If any is missing, show a friendly "This browser is too old for Dusklane" card instead of a broken game.
+- **Boot check:** WebGL2, `structuredClone` and `AudioContext`. If any is missing, show a friendly "This browser is too old for Isoskate" card instead of a broken game.
 - **Feature-detected:** `PointerEvent.getCoalescedEvents`, `inert` (15.5), `dvh` (fallback `100%`), `navigator.audioSession`, `navigator.wakeLock`, `navigator.storage.persist`, `requestFullscreen`.
 - **M5** includes a real-device check on an iPhone in Safari and installed (ROADMAP).
 

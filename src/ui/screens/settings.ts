@@ -61,7 +61,7 @@ export function settingsScreen(ctx: ScreenCtx): Screen {
   const dimSwap = () => swapRow.classList.toggle('dim', cur.controls === 'one');
   refresh.push(dimSwap);
 
-  const storageWarn = h('div', { class: 'warn' }, 'This browser is not letting Dusklane save: progress won’t be saved after you close it. Use Back up to keep a copy.');
+  const storageWarn = h('div', { class: 'warn' }, 'This browser is not letting Isoskate save: progress won’t be saved after you close it. Use Back up to keep a copy.');
   const resetBtn = btn('Reset progress', () => resetTap(), ctx, 'danger small', undefined, 'back');
   let resetArmed = 0;
   const resetTap = () => {
@@ -151,7 +151,7 @@ export function settingsScreen(ctx: ScreenCtx): Screen {
       if (!m || !json) { setText(msg, 'Paste a code or pick a file first.'); ctx.sfx('error'); return; }
       ctx.modal.close();
       confirmBox('Replace your progress?', 'The progress on this device is replaced by the backup.', 'Restore', () => {
-        if (!m.importSave(json)) { ctx.toast('That code is not a Dusklane backup'); ctx.sfx('error'); return; }
+        if (!m.importSave(json)) { ctx.toast('That code is not an Isoskate backup'); ctx.sfx('error'); return; }
         ctx.raise({ k: 'restore', json });
         ctx.toast('Progress restored. Restarting…', 1500);
         setTimeout(() => location.reload(), 600);

@@ -16,7 +16,7 @@ import type { ScoreState, SkaterState } from '../core/sim';
 import type { HudApi, UiIntent } from '../core/ui';
 import { areaName, fmtScore, fmtShort, trickName } from './format';
 import { AREA_SUBTITLES } from './copy';
-import { DISPLAY_FONT, fitPx, hudColumns, UI_FONT, type HudColumns } from './fit';
+import { fitPx, hudColumns, UI_FONT, type HudColumns } from './fit';
 import { h, setText } from './h';
 import { createHints, type Hints } from './hints';
 import { createPopups, type PopupKind, type Popups } from './popups';
@@ -108,6 +108,16 @@ export function createHud(root: HTMLElement, o: HudOptions): HudExt {
     const v = px >= base ? '' : `${px}px`;
     if (el.style.fontSize !== v) el.style.fontSize = v;
   };
+  /** The trick ticker (BRAND §2.4: Nunito 900 caps, `letter-spacing: .04em`, fitted with that tracking). The decay
+   *  factor is dropped when the whole line would go under the 11 px floor: the grey colour still says it decayed. */
+  const setTrick = (txt: string, name: string) => {
+    const base = Math.max(HUD_LAYOUT.trickPx, HUD_LAYOUT.trickPx * cols.k);
+    const room = (t: string) => cols.midW - t.length * HUD_LAYOUT.trickTrack * base;
+    let t = txt;
+    if (t !== name && fitPx(t.toUpperCase(), UI_FONT, 900, base, 0, room(t)) < HUD_LAYOUT.trickPx) t = name;
+    write(trick, t);
+    fit(trick, t.toUpperCase(), UI_FONT, 900, base, HUD_TIMING.trickMinPx, room(t));
+  };
 
   // State.
   let preview: HudPreviewValues | null = null, force = false;
@@ -146,7 +156,7 @@ export function createHud(root: HTMLElement, o: HudOptions): HudExt {
     write(dist, `${d < 1e5 ? fmtScore(d) : fmtShort(d)} m`);
     const coinStr = fmtShort(v?.coins ?? sc.coins + sc.coinPayouts);
     write(coinText, coinStr);
-    fit(coinText, coinStr, UI_FONT, 900, HUD_LAYOUT.coinPx * cols.k, HUD_LAYOUT.coinMinPx, cols.coinW - HUD_LAYOUT.coinPx * cols.k);
+    fit(coinText, coinStr, UI_FONT, 900, HUD_LAYOUT.coinPx * cols.k, HUD_LAYOUT.coinMinPx, cols.coinW - HUD_LAYOUT.coinPx * cols.k - HUD_LAYOUT.coinChip);
     // Combo pill.
     const active = v ? (v.combo ?? 0) > 0 : sc.combo.active;
     if (active !== comboOn) { comboOn = active; combo.classList.toggle('on', active); if (active) combo.classList.remove('lost'); }
@@ -161,15 +171,11 @@ export function createHud(root: HTMLElement, o: HudOptions): HudExt {
       lastLinks = links;
     } else lastLinks = -1;
     // Trick ticker: the last trick only; decayed names in grey with their factor.
-    if (v?.trick !== undefined) {
-      write(trick, v.trick);
-      fit(trick, v.trick, DISPLAY_FONT, 400, HUD_LAYOUT.trickPx * cols.k, HUD_TIMING.trickMinPx, cols.midW);
-    } else if (trickDirty) {
+    if (v?.trick !== undefined) setTrick(v.trick, v.trick);
+    else if (trickDirty) {
       trickDirty = false;
-      const txt = trickDecayed > 0 ? `${trickLabel} ×${trickDecayed}` : trickLabel;
-      write(trick, txt);
       trick.classList.toggle('decayed', trickDecayed > 0);
-      fit(trick, txt, DISPLAY_FONT, 400, HUD_LAYOUT.trickPx * cols.k, HUD_TIMING.trickMinPx, cols.midW);
+      setTrick(trickDecayed > 0 ? `${trickLabel} ×${trickDecayed}` : trickLabel, trickLabel);
     } else if (trickTtl <= 0 && !active && trick.textContent) write(trick, '');
     // One-shot texts queued by events.
     if (popups.flushText()) textWrites++;

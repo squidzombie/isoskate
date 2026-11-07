@@ -1,14 +1,14 @@
-// ui/screens/title.ts: Title (DESIGN §17.2). The 3D diorama (WA) shows through. Bungee logo with a sunset fill and an
-// ink stroke, "TAP TO ROLL" pulsing every 1.2 s (Space / Enter on desktop), level chip with its XP bar, best score,
+// ui/screens/title.ts: Title (DESIGN §17.2, BRAND §3). The Earth-in-space scene shows through. The Bungee wordmark
+// (ui/logo.ts) over the Earth's limb, the tagline on a night chip, "TAP TO ROLL" as a pulsing moss pill (Space / Enter on desktop), level chip with its XP bar, best score,
 // coins, and the bottom tab bar Play / Locker / Shop / Crates / Stats + the Settings gear, with calm badges (NEW items,
 // a ready daily gift, crates to open). A tap anywhere outside the bar and the chips plays (the middle of the screen is
 // never a button, so a first tap always rolls). A crate reveal still waiting (the Level 2 crate after an instant retry,
 // or a reveal interrupted by a reload) opens by itself once per session, with "Later".
-import { GAME_NAME } from '../../core/ids';
 import { isMetaExt, UNLOCK_LEVEL } from '../../meta';
 import { fmtScore } from '../format';
 import { icon, type IconName } from '../icons';
 import { h, setText } from '../h';
+import { logoEl } from '../logo';
 import type { Reveal } from '../reveal';
 import { TITLE } from '../ui.config';
 import { bar, btn, coinTag, finePointer, fmtN, section, type Screen, type ScreenCtx } from './common';
@@ -29,7 +29,7 @@ export function titleScreen(ctx: ScreenCtx, getReveal?: () => Reveal): Screen {
   const gear = btn(icon('gear', 'tab-ico'), () => ctx.go('settings'), ctx, 'tab gear', 'Settings');
   const tabs = h('nav', { class: 'tabs', 'aria-label': 'Menu', onclick: (e: Event) => e.stopPropagation() }, play, locker, shop, crates, stats, gear);
   const top = h('div', { class: 'title-top', onclick: (e: Event) => e.stopPropagation() }, level, coins);
-  const logo = h('h1', { class: 'logo', 'aria-label': GAME_NAME }, ...GAME_NAME.toUpperCase().split('').map((ch, i) => h('span', { style: `--i:${i}` }, ch)));
+  const logo = logoEl();
   const el = section('title', 'title',
     top,
     h('div', { class: 'title-hero' }, logo, h('div', { class: 'tagline' }, 'The city’s quiet. The streets are\u00a0yours.')),
