@@ -1,13 +1,14 @@
-// Debug run camera variants (world/render/camVariants.ts, ?debug=1&cam=<id>): every variant keeps the DESIGN §8
-// guarantees the production default (A) is tested for in camera.test.ts: ≥ 2.5 s of full corridor width below the
-// HUD band at every viewport and speed, the anchor at 74%, a monotonic eased framing, and the minimum on-screen grind
-// edge width at the farthest readable depth. Measured through the live rig camera (real projections).
+// Run camera specs (world/render/camVariants.ts): the production perspective camera P, the pre-@cam ortho camera A
+// (`?debug=1&cam=A`) and custom debug specs each keep the DESIGN §8 guarantees camera.test.ts holds the production
+// camera to: ≥ 2.5 s of full corridor width below the HUD band at every viewport and speed, the anchor at 74%, a
+// monotonic eased framing, and the minimum on-screen grind edge width at the farthest readable depth. Measured through
+// the live rig camera (real projections).
 import { afterEach, describe, expect, it } from 'vitest';
 import { CAMERA, CORRIDOR_HALF, LOOKAHEAD_MIN, speedAt } from '../../../src/core/tuning';
 import type { RenderFrame, Viewport } from '../../../src/core/view';
 import {
-  CAM_VARIANTS, buildOptionsFor, camVariant, createCameraRig, farMetresPerPx, groundAt, parseCamVariant, setCamVariant,
-  solveFraming, type Framing,
+  CAM_VARIANTS, DEFAULT_CAM_VARIANT, buildOptionsFor, camVariant, createCameraRig, edgeHalfAt, farMetresPerPx, groundAt, parseCamVariant,
+  setCamVariant, solveFraming, type Framing,
 } from '../../../src/world/render';
 
 const vp = (w: number, h: number, safeTop = 0, safeBottom = 0, coarse = true): Viewport =>
@@ -17,7 +18,7 @@ const VIEWPORTS: [string, Viewport][] = [
   ['412×780', vp(412, 780)], ['360×840', vp(360, 840)], ['360×640', vp(360, 640)], ['768×1024', vp(768, 1024)],
   ['1280×800', vp(1280, 800, 0, 0, false)], ['1920×1080', vp(1920, 1080, 0, 0, false)], ['2560×1080', vp(2560, 1080, 0, 0, false)],
 ];
-const IDS = Object.keys(CAM_VARIANTS);
+const IDS = [...Object.keys(CAM_VARIANTS), 'p35y0f22', 'o30y8'];
 type Rig = ReturnType<typeof createCameraRig> & { last: Framing };
 const frame = (t: number, tick: number, v: Viewport, dt = 1 / 60): RenderFrame => {
   const st = { tick, t, p: { s: 0, x: 0, y: 0 }, vel: { s: speedAt(t), x: 0, y: 0 }, groundY: 0 };
@@ -25,16 +26,18 @@ const frame = (t: number, tick: number, v: Viewport, dt = 1 / 60): RenderFrame =
     speed: speedAt(t), area: 'downtown', blend: null, viewport: v } as unknown as RenderFrame;
 };
 
-afterEach(() => { setCamVariant('A'); });
+afterEach(() => { setCamVariant(DEFAULT_CAM_VARIANT); });
 
-describe('camera variants: table and parsing', () => {
-  it('A is the production default and matches DESIGN §8 (pitch 35°, ψ 0 in portrait)', () => {
-    expect(camVariant().id).toBe('A');
-    expect(CAM_VARIANTS.A).toMatchObject({ proj: 'ortho', pitchDeg: CAMERA.pitchDeg, yawMinDeg: 0 });
-    expect(IDS.length).toBeLessThanOrEqual(8);
+describe('camera specs: table and parsing', () => {
+  it('P (CAMERA) is the production default; A is the pre-@cam ortho camera (pitch 35°, ψ 0 in portrait)', () => {
+    expect(camVariant().id).toBe('P');
+    expect(DEFAULT_CAM_VARIANT).toBe(CAM_VARIANTS.P);
+    expect(CAM_VARIANTS.P).toMatchObject({ proj: CAMERA.proj, pitchDeg: CAMERA.pitchDeg, yawMinDeg: CAMERA.yawMinDeg, fovDeg: CAMERA.fovDeg });
+    expect(CAM_VARIANTS.A).toMatchObject({ proj: 'ortho', pitchDeg: 35, yawMinDeg: 0 });
+    expect(Object.keys(CAM_VARIANTS)).toEqual(['P', 'A']);
   });
   it('parses table ids and custom specs, rejects anything else', () => {
-    expect(parseCamVariant('e')?.id).toBe('E');
+    expect(parseCamVariant('a')?.id).toBe('A');
     expect(parseCamVariant('p33y4f20')).toMatchObject({ proj: 'persp', pitchDeg: 33, yawMinDeg: 4, fovDeg: 20 });
     expect(parseCamVariant('o28y6')).toMatchObject({ proj: 'ortho', pitchDeg: 28, yawMinDeg: 6 });
     for (const bad of ['', 'Z', 'p90y0f20', 'x35y0', 'p35y0f2']) expect(parseCamVariant(bad)).toBeNull();
@@ -42,7 +45,7 @@ describe('camera variants: table and parsing', () => {
 });
 
 for (const id of IDS) {
-  describe(`variant ${id} (${CAM_VARIANTS[id]!.label})`, () => {
+  describe(`spec ${id} (${parseCamVariant(id)!.label})`, () => {
     it('solver: ≥ 2.5 s of full corridor width below the HUD band at every viewport and speed', () => {
       setCamVariant(id);
       for (const [name, v] of VIEWPORTS) {
@@ -92,17 +95,18 @@ for (const id of IDS) {
       for (const [name, v] of VIEWPORTS) {
         const rig = createCameraRig() as Rig;
         rig.update(frame(160, 9601, v));
-        const f = rig.last, w = 2 * buildOptionsFor(v).edgeHalfW;
+        const f = rig.last;
         const span = f.proj === 'ortho' ? f.H : f.tanH;
         const g = groundAt(f, f.xCentre, (f.anchorY - f.hudTop) * span);
+        const DEG = Math.PI / 180, cosT = Math.cos(f.pitchDeg * DEG), cosP = Math.cos(f.yawDeg * DEG), sinP = Math.sin(f.yawDeg * DEG);
         // Across the stripe on screen (perpendicular to the edge's own screen direction), centre and both sides.
+        // Ortho specs build the floor width (view.ts buildOptionsFor); perspective ones widen per depth.
         for (const x0 of [-4.3, 0, 4.3]) {
+          const w = f.proj === 'ortho' ? 2 * buildOptionsFor(v).edgeHalfW
+            : 2 * edgeHalfAt(f, v, f.D + g.s * cosT * cosP - x0 * cosT * sinP).cream;
           const a = rig.project({ s: g.s, x: x0 - w / 2, y: 0 }), b = rig.project({ s: g.s, x: x0 + w / 2, y: 0 });
           const t = rig.project({ s: g.s + 1, x: x0 - w / 2, y: 0 }), tl = Math.hypot(t.x - a.x, t.y - a.y);
           const px = Math.abs((b.x - a.x) * (t.y - a.y) - (b.y - a.y) * (t.x - a.x)) / tl;
-          // The production default sizes the stripe from H alone (DESIGN §8), which ψ > 0 foreshortens across the
-          // stripe (2.0 px at 1280×800, ψ 30°): asserted for portrait only. Every other variant: everywhere.
-          if (id === 'A' && v.aspect > 0.75) continue;
           expect(px, `${name} x ${x0}: edge ${px.toFixed(2)} px across on the HUD line`).toBeGreaterThanOrEqual(CAMERA.minEdgePx - 0.05);
         }
         expect(farMetresPerPx(f, v)).toBeGreaterThan(0);

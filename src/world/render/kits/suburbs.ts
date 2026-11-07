@@ -1,6 +1,7 @@
 // world/render/kits/suburbs.ts: Suburbs kinds (DESIGN §10.3, §18.6 kit: picket fences, round hedges, mailboxes,
 // driveway curbs, parked cars, bins, hoops, a bus shelter). Tall hazards stay ink-dark with one saturated accent
 // (the fence's picket-white caps, the mailbox flag, the bin lids), so they read against the light sidewalks.
+import { CAMERA } from '../../../core/tuning';
 import type { Obstacle } from '../../../core/world';
 import { COLORS, shade } from '../palette';
 import { PAT } from '../textures/ground';
@@ -23,12 +24,12 @@ const gardenWall: KitFn = (c, ob) => {
   contact(c, b.x0, b.x1, Math.max(b.s0, c.s0), Math.min(b.s1, c.s1), b.y0 + 0.01, 0.4, 0.2);
 };
 
-/** Hedge (long, tall): a dark clipped hedge bulk with a lumpy lighter top, x-ray above 1.6 m. */
+/** Hedge (long, tall): a dark clipped hedge bulk with a lumpy lighter top, x-ray above CAMERA.xrayCapY (1.2 m). */
 const hedge: KitFn = (c, ob) => {
   const K = c.K;
   for (const so of ob.solids) {
     const b = so.box;
-    K.capY = b.y0 + 1.6;
+    K.capY = b.y0 + CAMERA.xrayCapY;
     K.lit(PAT.grass, 0, HZ).col(0x1b2b22);
     K.chamfer(b.x0, b.y0, b.s0, b.x1, b.y1 - 0.1, b.s1, 0.12, 0x2a4232);
     for (let s = Math.max(b.s0, c.s0) + 0.35; s < Math.min(b.s1, c.s1) - 0.2; s += 0.7) {
@@ -44,7 +45,7 @@ const picketFence: KitFn = (c, ob) => {
   const K = c.K;
   for (const so of ob.solids) {
     const b = so.box, xm = (b.x0 + b.x1) / 2;
-    K.capY = b.y0 + 1.6;
+    K.capY = b.y0 + CAMERA.xrayCapY;
     const a = Math.max(b.s0, c.s0), z = Math.min(b.s1, c.s1);
     body(c, 0x1d1628);
     K.box(xm - 0.015, b.y0, a, xm + 0.015, b.y1 - 0.15, z, FACE.sides5);
@@ -146,13 +147,13 @@ const speedHump: KitFn = (c, ob) => {
   for (let x = b.x0 + 0.3; x < b.x1 - 0.4; x += 0.9) K.quad(x, b.y0 + h * 0.55, sm - 0.55, x + 0.35, b.y0 + h * 0.55, sm - 0.55, x + 0.35, b.y0 + h + 0.004, sm, x, b.y0 + h + 0.004, sm);
 };
 
-/** Hoop pole 0.2 × 0.2 × 3.0 (tall, x-ray above 1.6): a post, a backboard facing the camera and an orange rim. */
+/** Hoop pole 0.2 × 0.2 × 3.0 (tall, x-ray above CAMERA.xrayCapY): a post, a backboard facing the camera and an orange rim. */
 const hoopPole: KitFn = (c, ob) => {
   const K = c.K, b = boxOf(ob);
   if (!b) return;
   const x = (b.x0 + b.x1) / 2, s = (b.s0 + b.s1) / 2;
   contact(c, b.x0, b.x1, b.s0, b.s1, b.y0 + 0.01, 0.6, 0.2);
-  K.capY = b.y0 + 1.6;
+  K.capY = b.y0 + CAMERA.xrayCapY;
   body(c); K.box(b.x0, b.y0, b.s0, b.x1, b.y1 - 0.2, b.s1);
   K.lit(0, 0, HZ).col(c.hz.accent).box(b.x0 - 0.01, b.y0 + 0.9, b.s0 - 0.01, b.x1 + 0.01, b.y0 + 1.0, b.s1 + 0.01);
   body(c, 0x2a2238); K.box(x - 0.6, b.y1 - 0.75, s - 0.25, x + 0.6, b.y1, s - 0.2);
@@ -165,7 +166,7 @@ const busShelter: KitFn = (c, ob) => {
   const K = c.K, b = boxOf(ob);
   if (!b) return;
   contact(c, b.x0, b.x1, b.s0, b.s1, b.y0 + 0.01, 0.62, 0.3);
-  K.capY = b.y0 + 1.6;
+  K.capY = b.y0 + CAMERA.xrayCapY;
   body(c);
   for (const [x, s] of [[b.x0, b.s0], [b.x1 - 0.06, b.s0], [b.x0, b.s1 - 0.06], [b.x1 - 0.06, b.s1 - 0.06]] as const) K.box(x, b.y0, s, x + 0.06, b.y1 - 0.1, s + 0.06);
   K.lit(0, 0, HZ).col(0x3c3a62);

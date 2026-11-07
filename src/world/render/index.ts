@@ -12,10 +12,10 @@ export function createCameraRig(): CameraRig {
   return createCameraRigImpl();
 }
 
-export { solveFraming, lookAheadFor, lookAheadPersp, yawForAspect, hudTopOf, edgeMetresPerPx, farMetresPerPx, framePx, groundAt, groundDepthAt, RIG_STATE, type Framing } from './camera';
-export { CAM_VARIANTS, camVariant, isDefaultCam, parseCamVariant, setCamVariant, type CamVariant } from './camVariants';
+export { solveFraming, lookAheadFor, lookAheadPersp, yawForAspect, hudTopOf, edgeHalfAt, edgeMetresPerPx, edgeWidening, farMetresPerPx, framePx, groundAt, groundDepthAt, OCCLUSION_DEBUG, RIG_STATE, RIG_UNIFORMS, type Framing } from './camera';
+export { CAM_VARIANTS, DEFAULT_CAM_VARIANT, camVariant, parseCamVariant, setCamVariant, type CamVariant } from './camVariants';
 export { heightClass } from './chunkBuilder';
 export { COLORS, SURFACE_COLOR, CONTACT, PRESETS, HAZARD, ACCENTS, samplePalette, blendWeight } from './palette';
-export { buildOptionsFor, worldAmbient, VIEW, type WorldViewDebug } from './view';
+export { buildOptionsFor, coinFloorOf, worldAmbient, VIEW, type WorldViewDebug } from './view';
 export { QUALITY } from './render.config';
 export type { AmbientRec } from './kits/decor';

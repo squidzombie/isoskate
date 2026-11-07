@@ -9,7 +9,8 @@
 //     one of its own grind edges along its top) is aimed at, not avoided: it is held to the edge rule only. Vs the ground
 //     ring around it (the hull dilated by RING_PX, minus every solid): mean relative luminance, contrast ratio
 //     (L1 + 0.05) / (L2 + 0.05). Gate ≥ 2.5:1.
-//   - edge: every visible grind edge. At 5 points along it, a patch across the projected edge (5 px along it): the
+//   - edge: every visible grind edge (a sample behind a nearer solid or raised deck of another obstacle is hidden, not
+//     measured). At 5 points along it, a patch across the projected edge (5 px along it): the
 //     cream stripe is the run of offsets around the brightest one that stays above halfway to the surface, the ink
 //     underline the same around the darkest (a run that fills the search window to its end is a surface, not a
 //     stripe, and counts as no stripe); each stripe's value is the median of all its pixels (not one extreme
@@ -147,6 +148,16 @@ function measureFrame(host: DebugHost): ContrastReport {
       shapes.push({ poly, s0: b.s0, y1: b.y1, top: grind ? 'grind' : so.top, kind: o.kind, id: o.id, bb: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)], box: b });
     }
   }
+  // Raised decks (a slab top ≥ 0.5 m: skywalks, terraces, harbor decks) are gameplay geometry too: a grind edge behind
+  // one, as the camera sees it, is hidden, not unreadable (the perspective camera sees more ground hidden behind them).
+  const decks: { poly: P[]; s0: number; y1: number; id: number }[] = [];
+  for (const o of obs) for (const sl of o.slabs) {
+    const top = Math.max(sl.y0, sl.y1);
+    if (top < 0.5) continue;
+    const pts: P[] = [];
+    for (let i = 0; i < 8; i++) pts.push(proj({ s: i & 4 ? sl.s1 : sl.s0, x: i & 1 ? sl.x1 : sl.x0, y: i & 2 ? top : 0 }));
+    decks.push({ poly: hull(pts), s0: sl.s0, y1: top, id: o.id });
+  }
   const items: ContrastItem[] = [];
 
   // The world point under every pixel (same scene, same camera), for the silhouette test.
@@ -205,6 +216,7 @@ function measureFrame(host: DebugHost): ContrastReport {
         const c = proj(p), q = proj({ ...p, x: p.x + 1 }), t2 = proj(at(Math.min(1, u + 0.5 / span)));
         // Hidden behind a nearer, taller solid of another obstacle (a parked car in front of a curb): not visible.
         if (shapes.some((o) => o.id !== e.obstacleId && o.s0 < p.s - 0.01 && o.y1 > p.y + 0.02 && inside(o.poly, c[0], c[1]))) continue;
+        if (decks.some((o) => o.id !== e.obstacleId && o.s0 < p.s - 0.01 && o.y1 > p.y + 0.02 && inside(o.poly, c[0], c[1]))) continue;
         let nx = q[0] - c[0], ny = q[1] - c[1];
         const pxPerM = Math.hypot(nx, ny);
         let tx = t2[0] - c[0], ty = t2[1] - c[1];

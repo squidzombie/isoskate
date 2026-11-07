@@ -8,7 +8,7 @@ import { CHUNK_LEN, ORIGIN_REBASE } from '../../../src/core/tuning';
 import type { GfxContext, RenderFrame, Viewport } from '../../../src/core/view';
 import type { Chunk } from '../../../src/core/world';
 import { GOLDEN, sharedUniforms } from '../../../src/gfx';
-import { buildOptionsFor, createWorldView, solveFraming, type WorldViewDebug } from '../../../src/world/render';
+import { DEFAULT_CAM_VARIANT, buildOptionsFor, createWorldView, edgeHalfAt, groundDepthAt, setCamVariant, solveFraming, type WorldViewDebug } from '../../../src/world/render';
 import { CAMERA } from '../../../src/core/tuning';
 import { emptyChunk, fakeGen, obstacleOf, place, resetIds } from './fixtures';
 
@@ -158,10 +158,21 @@ describe('WorldView streaming', () => {
   });
 
   it('edges stay ≥ minEdgePx wide on screen at every viewport, even fully zoomed out (10.5 m/s)', () => {
+    // Perspective (production): built at the physical width, widened per depth by the lit material, so the widened
+    // half-width on the HUD line (the farthest readable depth) meets the floor; camera.test.ts measures it on screen.
     for (const v of [vp(390, 844), vp(390, 664), vp(375, 548), vp(393, 852, 59), vp(1280, 800)]) {
-      const o = buildOptionsFor(v);
-      expect((2 * o.edgeHalfW * v.hCss) / solveFraming(10.5, v).H, `${v.wCss}×${v.hCss}`).toBeGreaterThanOrEqual(CAMERA.minEdgePx - 1e-9);
+      const o = buildOptionsFor(v), f = solveFraming(10.5, v);
+      expect(o.edgeHalfW).toBeCloseTo(0.035, 9);
+      const dep = groundDepthAt(f, (f.anchorY - f.hudTop) * f.tanH);
+      expect((2 * edgeHalfAt(f, v, dep).cream * v.hCss) / (f.tanH * dep), `${v.wCss}×${v.hCss}`).toBeGreaterThanOrEqual(CAMERA.minEdgePx - 1e-9);
     }
+    // Ortho specs (debug) still build the floor from H.
+    setCamVariant('A');
+    try {
+      for (const v of [vp(390, 844), vp(375, 548), vp(1280, 800)]) {
+        expect((2 * buildOptionsFor(v).edgeHalfW * v.hCss) / solveFraming(10.5, v).H, `A ${v.wCss}×${v.hCss}`).toBeGreaterThanOrEqual(CAMERA.minEdgePx - 1e-9);
+      }
+    } finally { setCamVariant(DEFAULT_CAM_VARIANT); }
     void emptyChunk;
   });
 });

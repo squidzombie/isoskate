@@ -9,7 +9,7 @@
 //   uEmis             emissive scale (neon, windows, rims: blue hour → 1.0)
 //   uWindowLit 0..1   share of lit windows (golden 0.2 → blue hour 0.6)
 //   uGlow      0..1   glow-card strength (neon glow toward blue hour)
-//   uHideNear  0/1    hide the camera-side tall decor (landscape ψ > 0: it would stand over the corridor)
+//   uHideNear  0/1    unused since @cam (world/render/camera.ts RIG_UNIFORMS.uCut clips camera-side decor instead)
 //   uWarn      0..1   the full-width hazard warning flash (chevrons)
 //   uSky*             sky gradient (zenith, mid, horizon; linear) for puddles, water and shop glass
 import type { IUniform } from 'three';

@@ -2,6 +2,7 @@
 // (cream top stripe over a wider ink underline, DESIGN §18.4), safety chevrons, contact shadows, ground slabs by
 // surface and pits that read as holes (lit lip, visible far wall, darker floor).
 // Kits draw in TRACK space: the brush frame is the track origin (x, y, s), the Kit maps to chunk-local axes.
+import { CAMERA } from '../../../core/tuning';
 import type { AreaId, Surface } from '../../../core/ids';
 import { lerp } from '../../../core/math';
 import { hash32 } from '../../../core/rng';
@@ -75,15 +76,21 @@ export function surfaceLook(surface: Surface, area: AreaId): { color: number; pa
 
 // ── grind edges ─────────────────────────────────────────────────────────────────────────────────────────────────
 /** Cream top stripe over a wider ink underline, following the edge's slope and lateral drift (noFog: the haze never
- *  touches it). Drawn in every chunk the edge overlaps, clipped to the chunk. */
+ *  touches it). Drawn in every chunk the edge overlaps, clipped to the chunk. Both are `stripe`s: under the
+ *  perspective run camera the lit material widens them per view depth to a constant on-screen width (the cream
+ *  CAMERA.minEdgePx × EDGE_WIDEN.px, the ink VIEW.inkPadPx beside it; camera.ts edgeWidening), so near edges do not
+ *  grow fat and far ones never drop under the floor. The ink band reaches 0.06 m down the faces, so the cream lip
+ *  borders ink on every side the camera sees (DESIGN §18.4 "the pair reads" from any angle). */
 export function grindEdge(c: KitCtx, e: GrindEdge): void {
   const K = c.K;
   if (e.b.s <= c.s0 || e.a.s >= c.s1) return;
   const hw = c.opts.edgeHalfW, ink = hw + c.opts.inkPad;
   K.reset(); K.clip0 = c.s0; K.clip1 = c.s1;
   K.lit(0, 0, FX.noFog);
-  K.col(COLORS.ink).beam(e.a.x, e.a.y, e.a.s, e.b.x, e.b.y, e.b.s, ink, -0.05, 0.006);
-  K.col(COLORS.edgeCream).lit(0, 0, FX.noFog, 0.2).beam(e.a.x, e.a.y, e.a.s - 0.004, e.b.x, e.b.y, e.b.s + 0.004, hw, -0.02, 0.014);
+  // The ink top sits above any top face that meets the edge (a curb stone band at +0.008, a bench or ledge top), so
+  // its pad shows on both sides of the cream lip.
+  K.col(COLORS.ink).stripe(e.a.x, e.a.y, e.a.s, e.b.x, e.b.y, e.b.s, ink, -0.07, 0.011, 2);
+  K.col(COLORS.edgeCream).lit(0, 0, FX.noFog, 0.2).stripe(e.a.x, e.a.y, e.a.s - 0.004, e.b.x, e.b.y, e.b.s + 0.004, hw, -0.012, 0.017, 1);
   K.reset();
 }
 export function edgesOf(c: KitCtx, ob: Obstacle): void { for (const e of ob.edges) grindEdge(c, e); }
@@ -217,7 +224,7 @@ export function solidsFallback(c: KitCtx, ob: Obstacle): void {
     const hazard = so.top === 'crash';
     const col = so.top === 'knock' ? COLORS.knock : h > 0.6 && h < 1.15 ? COLORS.forbidden : hazard ? c.hz.body : COLORS.lowLandable;
     K.lit(0, 0, hazard ? FX.noFog | FX.matte : 0).col(col);
-    if (so.tall) K.capY = b.y0 + 1.6;
+    if (so.tall) K.capY = b.y0 + CAMERA.xrayCapY;
     K.chamfer(b.x0, b.y0, b.s0, b.x1, b.y1, b.s1, 0.03, hazard ? c.hz.top : shade(col, 0.15));
   }
   K.reset();

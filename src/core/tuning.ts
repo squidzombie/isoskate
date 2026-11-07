@@ -71,9 +71,12 @@ export const T_SHIFT = (dx: number) => 0.35 + Math.abs(dx) / (SAFE_LATERAL_FRACT
 export const VALIDATOR = { safeMargin: 0.10, dilateX: HITBOX.w / 2, dilateS: HITBOX.l / 2, exitBand: 2.0,
   deadEndMaxSec: 2.0, ollieWindowRequired: 0.25, ollieWindowOptional: 0.15, historyMinSec: 1.0,
   myopic: { lookSec: 1.5, reaction: 0.35, latFrac: 0.75 } } as const;
-export const CAMERA = { pitchDeg: 35, yawMinDeg: 0, yawMaxDeg: 30, yawAspect0: 0.75, yawAspect1: 1.25,
+/** The run camera (DESIGN §8, decision row 67 @cam): a telephoto PERSPECTIVE camera (vertical FOV `fovDeg` of the
+ *  window), pitch 34°, yaw 9° on every portrait screen rising to 30° at aspect ≥ 1.25; the solver picks the camera
+ *  distance. Before @cam it was orthographic, pitch 35°, yaw 0° in portrait (still `?debug=1&cam=A`). */
+export const CAMERA = { proj: 'persp', fovDeg: 24, pitchDeg: 34, yawMinDeg: 9, yawMaxDeg: 30, yawAspect0: 0.75, yawAspect1: 1.25,
   anchorFromTop: 0.74, hudPx: 56, marginX: 0.3, behind: 1.5, headroom: 0.8, zoomTau: 2.0,
-  vertTau: 0.3, latFollow: 0.15, xrayCapY: 1.6, minEdgePx: 2.5, minCoinPx: 12 } as const;
+  vertTau: 0.3, latFollow: 0.15, latTau: 0.4, xrayCapY: 1.2, minEdgePx: 2.5, minCoinPx: 12 } as const;
   // hudTop is not a constant: hudTop = (viewport.safeTop + hudPx) / viewport.hCss (§8.3)
 export const CHUNK_LEN = 32, GEN_AHEAD_SEC = 12, ORIGIN_REBASE = 512;
 export const CHUNK_WINDOW = { behind: 1, ahead: 3 } as const;

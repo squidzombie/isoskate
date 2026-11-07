@@ -7,6 +7,7 @@
 import { DECOR_BRANDS, DECOR_KINDS, NEON_SIGN_WORDS, isDecorKind, type DecorKind } from '../../../core/decor';
 import type { AreaId } from '../../../core/ids';
 import type { Decor } from '../../../core/world';
+import { OCCLUSION } from '../render.config';
 import { ACCENTS, shade } from '../palette';
 import { PAT } from '../textures/ground';
 import { DECAL, type DecalId } from '../textures/decals';
@@ -384,13 +385,14 @@ const sprinkler: DecorFn = (c, d) => {
 
 // ── overhead ─────────────────────────────────────────────────────────────────────────────────────────────────────
 /** Catenary of instanced emissive spheres (#FF5A3C / #FFD39A) across the street, swaying at 0.5 Hz; lowest point
- *  ≥ 3.2 m (DESIGN §8). The wire is a thin dark bar (casts a thin shadow). */
+ *  ≥ 3.2 m (DESIGN §8). The wire is a thin dark bar (casts a thin shadow). Wire and bulbs fade over the look-ahead
+ *  zone (x-ray target, fx `over`; the lantern layer does the same per bulb; render.config.ts OCCLUSION). */
 const lanternString: DecorFn = (c, d) => {
   const K = c.K, x0 = num(d, 'x0', -6), x1 = num(d, 'x1', 6), sag = Math.max(0, num(d, 'sag', 0.6));
   const n = Math.max(6, Math.min(24, num(d, 'count', 12))), pal = num(d, 'palette', 0);
   const yLow = Math.max(3.2, d.y), yEnd = yLow + sag;
   const yAt = (u: number) => yEnd - sag * Math.sin(Math.PI * u);
-  K.reset().to('b').lit(0, 0, 0).col(0x2b2140);
+  K.reset().to('x').lit(0, 0, FX.over).col(0x2b2140);
   const segs = 8;
   for (let k = 0; k < segs; k++) {
     const u0 = k / segs, u1 = (k + 1) / segs;
@@ -406,7 +408,7 @@ const lanternString: DecorFn = (c, d) => {
 const overheadWire: DecorFn = (c, d) => {
   const K = c.K, x0 = num(d, 'x0', -6), x1 = num(d, 'x1', 6), sag = num(d, 'sag', 0.3), n = Math.max(1, Math.min(4, num(d, 'count', 2)));
   const y0 = Math.max(3.2, d.y);
-  K.reset().to('b').lit(0, 0, 0).col(0x2b2140);
+  K.reset().to('x').lit(0, 0, FX.over).col(0x2b2140);
   for (let w = 0; w < n; w++) {
     const ds = w * 0.35, yy = y0 + sag + w * 0.12;
     const segs = 6;
@@ -417,17 +419,21 @@ const overheadWire: DecorFn = (c, d) => {
   }
 };
 
-/** Sora Line guideway at y = 7: two thin edge beams (≤ 0.3 m wide), never a deck over the corridor. */
+/** Sora Line guideway at y = 7: two thin edge beams (≤ 0.3 m wide), never a deck over the corridor. world/gen lays
+ *  it along the median (x = 0); the run camera would see it as two extra lane lines and the train streak across the
+ *  skater, so it is drawn hugging the far (−x) facade line (OCCLUSION.maglevX), clear of the corridor on screen. */
+export const maglevX = (x: number) => (Math.abs(x) < OCCLUSION.cutX + 1 ? OCCLUSION.maglevX : x);
 const maglevBeam: DecorFn = (c, d) => {
-  const K = c.K, len = num(d, 'len', 32), gap = num(d, 'gap', 1.6), y = Math.max(7, d.y);
+  const K = c.K, len = num(d, 'len', 32), y = Math.max(7, d.y), x = maglevX(d.x);
+  const gap = x === d.x ? num(d, 'gap', 1.6) : OCCLUSION.maglevGap;
   K.reset();
   for (const dx of [-gap / 2, gap / 2]) {
-    K.to('b').lit(0, 0, 0).col(0x3a3466).box(d.x + dx - 0.09, y, d.s, d.x + dx + 0.09, y + 0.3, d.s + len, FACE.all);
+    K.to('b').lit(0, 0, 0).col(0x3a3466).box(x + dx - 0.07, y, d.s, x + dx + 0.07, y + 0.3, d.s + len, FACE.all);
     // Small signal lights along the outer faces (never a continuous bright line: from the run camera a beam along s
     // projects as a long line, which must not read as a lane marking).
     K.to('e').glowing(1.4, -1, 0);
     // Magenta and paper (cyan is reserved for sparks, rail-body glow and the contact glow, DESIGN §18.4).
-    for (let s = d.s + 1; s < d.s + len; s += 4) K.col(s % 8 < 4 ? 0xffd39a : 0xff3fa4).box(d.x + dx - 0.095, y + 0.1, s, d.x + dx + 0.095, y + 0.18, s + 0.25, FACE.left | FACE.right | FACE.front | FACE.top);
+    for (let s = d.s + 1; s < d.s + len; s += 4) K.col(s % 8 < 4 ? 0xffd39a : 0xff3fa4).box(x + dx - 0.075, y + 0.1, s, x + dx + 0.075, y + 0.18, s + 0.25, FACE.left | FACE.right | FACE.front | FACE.top);
     K.to('b');
   }
 };

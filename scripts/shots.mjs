@@ -314,12 +314,13 @@ async function contrastMode() {
     for (const cs of cases) {
       // Every preset / blend frame set must measure at least one hazard and one grind edge (G1): when the default
       // start shows none, the same palette is retried from slightly earlier / later starts (previewArea's run time
-      // ± 1.2 s; blends: the same gateway, ≤ 0.3 of blend weight away), else the case fails with "no hazard".
+      // ± 0.6 … 2.4 s; blends: the same gateway, ≤ 0.3 of blend weight away), else the case fails with "no hazard".
       const { items: r, worst, offset } = await page.evaluate(({ area, blend, samples, gate }) => {
         const ARRIVAL = { downtown: 161, suburbs: 44, docks: 83, neon: 122 };
         const t0 = blend === undefined ? (area === 'downtown' ? 10 : ARRIVAL[area] + 10) : ARRIVAL[area] - 6 + 8 * blend;
         let items = [], worst = null, offset = 0;
-        for (const off of [0, -1.2, 1.2, -2.4, 2.4]) {
+        // (@cam: the finer offsets come last, so a case that already measured both classes keeps its frames.)
+        for (const off of [0, -1.2, 1.2, -2.4, 2.4, -0.6, 0.6, -1.8, 1.8]) {
           if (off === 0) window.__skate.previewArea(area, blend);
           else { window.__skate.start({ startT: Math.max(0, t0 + off), god: true }); window.__skate.manual(true); window.__skate.step(1); }
           items = []; worst = null; offset = off;

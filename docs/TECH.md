@@ -275,9 +275,9 @@ export const T_SHIFT = (dx: number) => 0.35 + Math.abs(dx) / (SAFE_LATERAL_FRACT
 export const VALIDATOR = { safeMargin: 0.10, dilateX: HITBOX.w / 2, dilateS: HITBOX.l / 2, exitBand: 2.0,
   deadEndMaxSec: 2.0, ollieWindowRequired: 0.25, ollieWindowOptional: 0.15, historyMinSec: 1.0,
   myopic: { lookSec: 1.5, reaction: 0.35, latFrac: 0.75 } } as const;
-export const CAMERA = { pitchDeg: 35, yawMinDeg: 0, yawMaxDeg: 30, yawAspect0: 0.75, yawAspect1: 1.25,
+export const CAMERA = { proj: 'persp', fovDeg: 24, pitchDeg: 34, yawMinDeg: 9, yawMaxDeg: 30, yawAspect0: 0.75, yawAspect1: 1.25,
   anchorFromTop: 0.74, hudPx: 56, marginX: 0.3, behind: 1.5, headroom: 0.8, zoomTau: 2.0,
-  vertTau: 0.3, latFollow: 0.15, xrayCapY: 1.6, minEdgePx: 2.5, minCoinPx: 12 } as const;
+  vertTau: 0.3, latFollow: 0.15, latTau: 0.4, xrayCapY: 1.2, minEdgePx: 2.5, minCoinPx: 12 } as const;   // @cam (DESIGN row 67)
   // hudTop is not a constant: hudTop = (viewport.safeTop + hudPx) / viewport.hCss (§8.3)
 export const CHUNK_LEN = 32, GEN_AHEAD_SEC = 12, ORIGIN_REBASE = 512;
 export const CHUNK_WINDOW = { behind: 1, ahead: 3 } as const;
@@ -1394,23 +1394,30 @@ frames.ts: queue of timestamped gestures → InputFrame per tick:
 - **Shared offset.** The skater, camera, shadow camera and VFX all use `s − originS`.
 - **Seamless UVs.** Ground UVs are chunk-local, and `CHUNK_LEN` (32) is a multiple of every ground texture repeat (4 m).
 
-### 8.3 Camera rig (`world/render/camera.ts`, WA; M0 ships the solver)
-- **Solver** (pure, unit-tested; DESIGN §8):
+### 8.3 Camera rig (`world/render/camera.ts`, WA; M0 ships the solver; perspective since @cam, DESIGN row 67)
+- **Solver** (pure, unit-tested; DESIGN §8). Production is a telephoto perspective camera (`CAMERA.proj 'persp'`):
   ```
-  yaw ψ = lerp(0°, 30°, clamp((aspect − 0.75)/(1.25 − 0.75), 0, 1)); pitch θ = 35°
+  yaw ψ = lerp(9°, 30°, clamp((aspect − 0.75)/(1.25 − 0.75), 0, 1)); pitch θ = 34°; window tanH = 2·tan(24°/2)
   hudTop = (vp.safeTop + CAMERA.hudPx) / vp.hCss          // the real HUD band, never a constant
-  required corners: s ∈ {−1.5, L = 2.6·v} × x ∈ {±(4.5 + 0.3)}; screen X = x·cosψ + s·sinψ;
-                    Y = s·sinθ·cosψ − x·sinψ·sinθ
-  H = max( (Xmax − Xmin)/aspect,  (Ymax + 0.8)/(0.74 − hudTop),  −Ymin/(1 − 0.74) )
-  centre X on the corridor; skater ground point at 74% from top; H eased with τ = 2 s, monotonic within a run
+  a track point (s, x, y) relative to the target (the skater's ground point, x − lat):
+    X = x·cosψ + s·sinψ,  Y = −x·sinθ·sinψ + y·cosθ + s·sinθ·cosψ,  depth = D + s·cosθ·cosψ − x·cosθ·sinψ − y·sinθ
+    window coordinates u = X/depth, v = Y/depth
+  required corners: s ∈ {−1.5, L = 2.6·v} × x ∈ {±(4.5 + 0.3)}, headroom 0.8 m
+  tanH needed(D) = max( (umax − umin)/aspect, vmax(+headroom)/(0.74 − hudTop), −vmin/(1 − 0.74) ) falls with D:
+  D = the smallest D with tanH needed(D) ≤ tanH (bisection), solved for lat = ±15%·4.5 m when ψ > 0 (the worst follow)
+  off-axis window centred on the required region (u), the skater ground point at 74% from the top (v)
+  D eased with τ = 2 s toward the framing for the speed 2 s ahead, monotonic within a run
+  look-ahead = the largest s whose corridor corners (x ± 4.8) are inside the window below the HUD line (bisection)
   rotate = coarse pointer && min(wCss, hCss) < 500 && aspect > 1      // phone in landscape → rotate card, no 30° layout
   ```
-- **Test table.** Asserts look-ahead ≥ 2.5 s **below the HUD band** at 7.0 and 10.5 m/s for 393×852 (safeTop 59, safeBottom 34), 390×844, 390×664, 375×548, 412×780, 360×840, 360×640, 768×1024, 1280×800, 1920×1080 and 2560×1080. The expected values from DESIGN §8 must match within ±0.1 m (H) and ±0.03 s. It also asserts ψ = 0 for every portrait phone row and `rotate` for 844×390 with a coarse pointer.
-- **Minimum on-screen sizes.** Grind edges are drawn at least `CAMERA.minEdgePx` (2.5 CSS px) wide and coins at least `minCoinPx` (12 px): the kit widens them in a vertex shader from the current ortho scale.
-- **Camera placement.** `OrthographicCamera` 60 m back along the view direction, `near 1`, `far 200`. The vertical target is the ground height under the skater (τ 0.3). Forward follow is rigid. Lateral follow is 15% only when ψ > 0.
+  The ortho solver (`H = max((Xmax − Xmin)/aspect, (Ymax + 0.8)/(0.74 − hudTop), −Ymin/(1 − 0.74))` with X, Y above at depth-free scale) stays for the debug specs (`?debug=1&cam=A` = the pre-@cam camera: ortho, pitch 35°, ψ 0 in portrait; `o<p>y<y>`, `p<p>y<y>f<fov>` custom specs; `world/render/camVariants.ts`).
+- **Test table** (`tests/unit/render/camera.test.ts`). Asserts the DESIGN §8 table (D ±0.1 m, H ±0.05 m, look-ahead ±0.03 s) for 393×852 (safeTop 59, safeBottom 34), 390×844, 390×664, 375×548, 412×780, 360×640 and 1280×800; look-ahead ≥ 2.5 s **below the HUD band** at 7.0–10.5 m/s for those plus 360×840, 768×1024, 1920×1080, 2560×1080, 412×915 and 430×932 (safe 59); through the rig, the corners of the 2.5 s corridor on screen below the HUD band with the skater at x = −4.3, 0 and 4.3, and the anchor at 74%; the skater ≥ 40 px on every phone (≥ 30 at 375×548), a 1 m hazard 2.5 s ahead ≥ 20 px and growing as it nears, the grind stripe ≥ 2.5 px (and ≤ 4 px where floored) and coins ≥ 12 px from the HUD line to the skater, the resting thumb band (bottom 22%) clear of the skater, the top of the screen inside the chunk window, ψ = 9° on every portrait row, 30° at aspect ≥ 1.25, no roll, D monotonic and the guarantee kept under game-time steps. `camera-variants.test.ts` holds P, A and two custom specs to the same guarantees.
+- **Minimum on-screen sizes, per view depth.** Grind-edge stripes (`Kit.stripe`: each vertex carries its lateral side in `auv = (−2, ±1 cream | ±2 ink)`) are widened in the opaque material's vertex shader to `max(physical, 3.0 px)` at their own view depth (`camera.ts edgeWidening`, uniform `uEdge`), the ink pad to 1.6 px beside it; coins scale by `max(1, k·depth)` (`view.ts coinFloorOf`, `layers.ts COIN_DEPTH_K`). Ortho specs keep the build-time floor from H (`view.ts buildOptionsFor`).
+- **Camera placement.** `PerspectiveCamera` `D` metres back along the view direction from the target (the ground height under the skater, τ 0.3, and 15% of its lateral offset when ψ > 0, τ 0.4), `near max(1, D − 60)`, `far D + 600`, the window set with `setViewOffset` (off-axis). Forward follow is rigid. Ortho specs: `OrthographicCamera` 60 m back, `near 1`, `far 200`.
+- **Occlusion uniforms** (`RIG_UNIFORMS`, written by the rig right before the frame renders, so no lag): `uCut` the camera-side cut plane (through x = 4.5 at the street datum and the camera, lowered 0.6 m so near-camera facades lying almost in the plane never leak a wedge over the street; ortho: the view direction), `uCutBand` the dark section band along the cut (10 CSS px, measured as an angle from the plane: distance to the plane / distance to the camera), `uOver` / `uOverDir` the overhead-span fade (the ground point under each vertex along the camera ray: inside the corridor between 2.5 m behind the skater and the HUD line → 25% screen door), `uEdge` the stripe widening. Menus switch them off. `__camLab.occlusion({ cut, fade })` (debug) turns the cut and the fade off for before/after shots.
 - **Effects.** Shake and punch are additive offsets, off when reduced motion is set.
 - **Menu camera.** Title (static diorama) and Locker modes use a `PerspectiveCamera` (FOV 35°, 1.4 m high), show the sky dome and render at 30 fps.
-- **Debug camera variants (prototype, DESIGN §23 item 1).** `?debug=1&cam=<id>` (debug builds only, read at boot by `platform/env.ts`, applied in `game/wiring.ts` before any world material compiles) picks a run camera from `world/render/camVariants.ts`; production always runs A (the solver above). Ortho variants change the pitch and the portrait yaw. Perspective variants keep a fixed window (vertical tangent span `2·tan(fov/2)`, off-axis so the anchor stays at 74%) and solve the smallest camera distance `D` that fits the same required region; `D` eases and only grows like `H`. For any non-default variant the grind-edge stripe is sized across the stripe on screen at the farthest readable depth (the HUD line), perspective coins get a per-coin depth floor in the vertex shader, and the shadow box grows to the ground the variant shows. `tests/unit/render/camera-variants.test.ts` holds every variant to the look-ahead, anchor, easing and edge-width guarantees; `window.__camLab` (debug/camLab.ts) measures on-screen sizes; `scripts/shots.mjs --cam <id>` runs any mode with a variant.
+- **Debug camera specs.** `?debug=1&cam=<id>` (debug builds only, read at boot by `platform/env.ts`, applied in `game/wiring.ts` before any world material compiles) picks a run camera spec from `world/render/camVariants.ts` (P = production, A = pre-@cam ortho, or a custom spec). `window.__camLab` (debug/camLab.ts) measures on-screen sizes; `scripts/shots.mjs --cam <id>` runs any mode with a spec.
 
 ### 8.4 Budgets (mid-range phone, e.g. Pixel 6a or iPhone 11, quality `med`)
 
@@ -1448,28 +1455,28 @@ frames.ts: queue of timestamped gestures → InputFrame per tick:
 - **Prop library.** At boot, `kits/*.ts` build non-indexed, flat-shaded `BufferGeometry` (position, normal, colour, and an optional `fx` attribute for x-ray, emissive mask and sway) per `kind × variant`. Size-parametric kinds (ledges, rails, walls) are built from unit pieces and scaled or tiled.
 - **Per chunk, 5 merged meshes from pooled buffers** (preallocated `Float32Array`s of 40k vertices, with `setDrawRange` and update ranges):
   1. opaque lit (**no `discard`** in its shader, so tile-based GPUs keep early depth rejection)
-  2. x-ray parts: the above-1.6 m parts of in-corridor tall solids, with the 4×4 Bayer screen-door discard
+  2. x-ray parts: the parts of in-corridor tall solids above `CAMERA.xrayCapY` (1.2 m), with the 4×4 Bayer screen-door discard (50%); overhead spans (fx flag 32) too, at 25% over the look-ahead zone
   3. emissive (neon, windows, coins excluded)
   4. additive glow cards (`depthWrite: false`)
-  5. buildings and off-screen shadow casters
-- **Per-vertex `fx` flags** in the shared material: emissive mask, sway, and **`noFog`** (hazards and grind edges skip the haze).
+  5. buildings and off-screen shadow casters (its own lit material: the camera-side cut is a fragment discard here, exact for big facades; **the one opaque mesh with a discard**, @cam. The emissive and glow materials cut the same way; opaque and x-ray clamp the vertices of camera-side verge props instead)
+- **Per-vertex `fx` flags** in the shared material: emissive mask, sway, and **`noFog`** (hazards and grind edges skip the haze). The emissive material does not sway (its `fx.y` is the window random; before @cam tall tower windows swayed up to ±0.7 m off their walls). Camera-side cuts test the drawn (post-sway) position (`vCut`).
 - **Global instanced layers:** decals (`polygonOffset`), coins (`InstancedMesh`, capacity 256; collected coins are hidden by matrix), lantern spheres, and the bank-timer arc.
 - **Time slicing.** At most 1 chunk built per frame with a 4 ms budget, never in a frame that generates a segment. A chunk is built ≥ 2 chunks before it becomes visible. The window keeps `CHUNK_WINDOW` = 1 chunk behind and 3 ahead (96 m, inside the 12 s generation lead). The Roll-out's chunks are cached across runs (not yet implemented at G0: WA).
   - **Exception (G0): the first frame of a run** builds the three chunks the camera sees (the one under the skater, the one behind it, the next one ahead) and nothing else, so a retry never shows empty fog behind the start. The one-per-frame scheduler resumes on the next frame. Until the Roll-out cache lands, that frame costs 3 builds (~3–9 ms).
-- **No opaque overhead.** Overhead decor is thin (lantern strings ≤ 0.3 m on screen, maglev as two edge beams), so there is no overhead dither pass.
+- **No opaque overhead.** Overhead decor is thin (lantern strings ≤ 0.3 m on screen, the maglev as two thin beams on the far facade line, `kits/decor.ts maglevX`, never along the median world/gen gives it), and overhead spans fade over the look-ahead zone (above).
 - **Desaturate.** A shared `uDesat` uniform in every world and skater material (crash: 0.4); no CSS filter on the canvas.
 - **Crash outline flash.** On a `crash` event, the renderer redraws the obstacle `obstacleId` once more with a coral inverted-hull outline for 0.6 s.
 - **Palette.** `PaletteSample` updates the light colours and intensities, fog, emissive scale (blue hour → 1.0), window-lit ratio (a uniform threshold on a per-window random attribute) and the DOM sky-glow CSS variables, every frame during blends and otherwise on area change.
 
 ### 8.7 Lighting and shadows (WA)
 - **Lights.** `HemisphereLight` (sky/ground from the palette) plus one `DirectionalLight` from behind-left of the camera (azimuth 35° left of straight-behind, elevation from the palette).
-- **Shadow camera.** An ortho box `x ±10`, `s ∈ [s_p − 6, s_p + 34]`, snapped to texels. 2048 (high), 1024 (med), off (low).
+- **Shadow camera.** An ortho box `x ±10`, `s ∈ [s_p − 6, s_p + 34]`, grown in 2 m steps to the ground the run camera shows at this viewport (far side clamped to 120 m; `camera.ts shadowBoxFor`; about s − 2 … s + 66 and x ±14 at 390×844), snapped to texels. 2048 (high), 1024 (med), off (low).
 - **Casters.** The skater, props and buildings. Decals, coins and glow never cast.
 - **Contact shadow.** Always drawn: a radial-gradient quad under the board, opacity 0.6 on the ground falling to 0.25 at 2 m. When the local ground luminance is low (Neon, blue hour), it switches to an **additive cyan glow** at opacity 0.5.
 
 ### 8.8 VFX (WA)
 - **Particles.** One additive `InstancedMesh` of camera-facing quads with a CPU ring buffer: sparks, dust, petals, coin stars, rings.
-- **Speed lines** (from 9.0 m/s) are quads in the same system placed **outside the corridor only**, alpha ≤ 0.15, plus parallax streaks on side dressing.
+- **Speed lines** (from 9.0 m/s) are quads in the same system placed **outside the corridor only**, alpha ≤ 0.15, plus parallax streaks on side dressing. On the camera side they stay below the camera-side cut plane (`RIG_UNIFORMS.uCut`, @cam), so a streak never lies over the corridor on screen.
 - **DOM effects.** Trick popups and the "BAILED!" sticker are DOM, owned by MU. Desaturation is the `uDesat` uniform (§8.6), not DOM.
 
 ### 8.9 Quality tiers and auto-adjust (`world/render/quality.ts`)
@@ -1610,7 +1617,7 @@ frames.ts: queue of timestamped gestures → InputFrame per tick:
 | Module | Must cover |
 |---|---|
 | core (INT) | `speedAt` is monotone, equals 7.0 for t ≤ 20 and 10.5 for t ≥ 150. `sAt`/`tAt` round-trip within 1e-6. RNG golden values. Bus ordering. |
-| camera (INT → WA) | The solver table (§8.3), including the safe-area and toolbar viewports. Look-ahead ≥ 2.5 s below the HUD band at every viewport and speed. ψ = 0 on every portrait phone. H is monotonic within a run. |
+| camera (INT → WA) | The solver table (§8.3), including the safe-area and toolbar viewports. Look-ahead ≥ 2.5 s below the HUD band at every viewport and speed, wherever the skater is. ψ = 9° on every portrait phone. D is monotonic within a run. The minimum sizes (skater, 2.5 s hazard, stripes, coins) and the thumb band. |
 | input (GP) | §7.4 |
 | sim (GP) | Flat ollie airtime 0.600 ± 1 tick and apex 0.99 ± 0.01 at 7 and 10.5 m/s. 2 m line change ≤ 0.50 s. Soft walls. Step-up 0.18 is a bump and 0.19 is a frontal crash. **Skim** onto a landable top; a `crash` top 0.05 m above the board is a slam; a flat ollie never clears a 1.15 m bin. Side contact is a bump. **Pit at lip level** (rolling over it falls). Raised slabs have bodies. Stairs are sticky. Every landing band, Perfect at 0.12 s. Magnet moves `targetX` (≤ 3 m/s) and is cancelled by 15 px of non-consumed drag only. `pickOnly` edges need a pick. Pick window takes every swipe. Perfect Lock, switch directions and limits. Spins, 360 upgrade, revert. Manual start rules and budgets. Coyote and jump buffer. Swipe cancel only for consumed swipes. Rewind. Determinism replay and snapshot/restore. |
 | tricks (GP) | Every gesture (with every label combination) in every state maps to exactly one intent (exhaustive table test). Combo formula: the worked example in DESIGN §13.6 = 5,028 with per-trick rounding. Ollies add no link. Heat banks a combo after 2.5 s without a link-adding trick; ollie-hopping every 0.7 s banks within 2.5 s; heat pauses in grinds and manuals. Gateway bank. Revert links only after a linked spin. Decay factors. Variety cap. ×30 cap. Bank on sketchy. Lost on crash. Near miss outside a combo = +25. |
@@ -1731,7 +1738,7 @@ frames.ts: queue of timestamped gestures → InputFrame per tick:
 | Risk | Mitigation |
 |---|---|
 | Parallel agents collide or drift | Frozen `core/`, stub-first M0, folder ownership, `docs/core-requests.md` as the only shared edit, INT-only wiring, and full tests at every merge gate |
-| Portrait view too narrow, unreadable or "not iso" | The camera solver is tested against a look-ahead guarantee. ψ = 0 in portrait is a deliberate choice, with a fallback of ψ ≤ 4° (DESIGN §23). The x-ray cap, the height-band contract and the colour hierarchy. Screenshots are reviewed every wave. |
+| Portrait view too narrow, unreadable or "not iso" | The camera solver is tested against a look-ahead guarantee. Since @cam a perspective camera at ψ 9° in portrait (DESIGN row 67; fallback ψ 4–6°, DESIGN §23). The camera-side cut, the overhead fade, the x-ray cap, the height-band contract and the colour hierarchy. Screenshots are reviewed every wave. |
 | Unfair at top speed | Seconds-based generation, the validator floors, validator geometry matched to sim collision (conformance bot), dead-end and greedy-player rules, a delayed-reaction safe bot (200 seeds per gate, 400 at release), the myopic bot's median-survival gate, and `crash` analytics events with state and kind |
 | Steer vs flick conflicts | A pure recognizer that labels swipes, the steering-stroke rule in the sim, misfire trace tests, cancel only for consumed swipes, re-fire and lift-off rules, a second-finger tap, and the thumb bot through the real recognizer |
 | Readability (dark Neon, light sidewalks, toolbars) | Inverted Neon hazards, cream-over-ink grind edges, the `--contrast` pixel gate, `noFog` hazards, a HUD-band-aware camera solver and minimum on-screen edge widths |

@@ -377,7 +377,10 @@ export function cityGlow(c: KitCtx, d: Decor): void {
   const w = num(d, 'w', 30), h = num(d, 'h', 15), k = num(d, 'intensity', 0.6);
   if (c.glowLeft <= 0) return;
   c.glowLeft--;
-  c.K.reset().col(0xff7ab8).fxs(0, 0, k * 0.6, 0).card(d.x, d.y + h / 2, d.s, w, h);
+  // A backdrop glow behind the street walls: its inner edge stays at |x| ≥ 6 (world/gen centres a 30 m card at
+  // |x| 16, which reached the corridor once the camera-side walls are cut away), and the camera side is cut too.
+  const x = (Math.sign(d.x) || 1) * Math.max(Math.abs(d.x), 6 + w / 2);
+  c.K.reset().col(0xff7ab8).fxs(0, 0, k * 0.6, x > 0 ? FX.near : 0).card(x, d.y + h / 2, d.s, w, h);
 }
 
 /** Shadow-only silhouette: drawn into the shadow map, collapsed in the main pass (box, gable, crown, crane arm). */

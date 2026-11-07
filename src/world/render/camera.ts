@@ -1,36 +1,58 @@
 // world/render/camera.ts: the run camera rig with the full framing solver (TECH §8.3, DESIGN §8).
 // The solver is pure and unit-tested (tests/unit/render/camera.test.ts); its maths and guarantees are frozen with the
-// test table. W2a adds: shake and the Perfect zoom punch driven by GameEvents (DESIGN §8 table, SHAKE in
+// test table. Since @cam (DESIGN decision row 67) production runs a telephoto perspective camera (CAMERA.proj
+// 'persp': pitch 34°, portrait yaw 9°, window FOV 24°) whose distance D is solved per frame; the ortho solver stays
+// for `?debug=1&cam=A` (the pre-@cam camera) and custom ortho specs (camVariants.ts). W2a adds: shake and the Perfect zoom punch driven by GameEvents (DESIGN §8 table, SHAKE in
 // render.config.ts; off with reduced motion), and the menu cameras: the static Title diorama ('title') and the
 // Locker / Shop ('locker'), low perspective cameras (FOV 35°, 1.4 m high) that also see the sky layer (sky.ts).
-import { OrthographicCamera, PerspectiveCamera, Vector3 } from 'three';
+import { OrthographicCamera, PerspectiveCamera, Vector3, Vector4 } from 'three';
 import { clamp, lerp } from '../../core/math';
 import { CAMERA, CORRIDOR_HALF, DT, LOOKAHEAD_TARGET, V_MAX, speedAt } from '../../core/tuning';
 import type { CameraMode, CameraRig, RenderFrame, Viewport } from '../../core/view';
 import { originOf } from '../../gfx';
 import { camVariant, type CamProj, type CamVariant } from './camVariants';
-import { SHAKE } from './render.config';
+import { OCCLUSION, SHAKE } from './render.config';
 
 /** What the rig did this frame, for the WorldView of the same module (sky layer, haze mode, hidden camera-side decor).
  *  The world view updates before the rig in a frame, so it reads the previous frame's state (one frame of lag). */
 export const RIG_STATE = { mode: 'run' as CameraMode, yawDeg: 0, hudTop: 0.066, menu: false, H: 20.8, camera: null as OrthographicCamera | PerspectiveCamera | null,
   /** The track s and origin the camera was last placed for (the world view extrapolates the visible range). */
   playerS: 0, originS: 0, placed: false,
-  /** Debug camera variants (camVariants.ts): the run pitch, and the shadow box when it is not the default one. */
+  /** The run pitch, and the shadow box grown to the ground the run camera shows (view.ts). */
   pitchDeg: CAMERA.pitchDeg as number, shadowBox: null as ShadowBox | null };
+/** Camera-derived uniforms the world materials (materials.ts) and the lantern layer (layers.ts) read, written by the
+ *  rig in its update, i.e. right before the frame renders (no lag). OCCLUSION in render.config.ts has the rules.
+ *    uCut     (cutX, ground y, slope, on): camera-side decor (fx `near`) keeps y ≤ ground + (x − cutX)·slope − margin
+ *    uCutBand the dark band along the cut (width, darkness, 1/√(1 + slope²), ortho)
+ *    uOver    (skater world z, ground y, HUD-line ground distance ahead m, faded alpha): the overhead-span fade
+ *    uOverDir (view direction xyz, 1 ortho | 0 perspective): ortho rays are parallel, perspective rays start at the
+ *             camera position (three's cameraPosition) */
+export const RIG_UNIFORMS = {
+  /** Grind-edge stripes (writer.ts stripe): (cream half-width built, ink pad built, cream half-width per metre of view
+   *  depth, ink pad per metre of depth); 0 per-depth terms keep the built widths (ortho specs, menus). */
+  uEdge: { value: new Vector4(0.035, 0.02, 0, 0) },
+  uCut: { value: new Vector4(OCCLUSION.cutX, 0, 0, 0) },
+  /** The cut's dark edge band: (width as an angle from the cut plane, tangent units | ortho: metres, the darkest
+   *  factor, 1 / √(1 + slope²), 1 ortho | 0 perspective). */
+  uCutBand: { value: new Vector4(0, 1, 1, 0) },
+  uOver: { value: new Vector4(0, 0, 30, 1) },
+  uOverDir: { value: new Vector4(0, -1, 0, 1) },
+};
+/** Debug only (`__camLab.occlusion()`, before/after shots): switch the camera-side cut and the overhead fade off. */
+export const OCCLUSION_DEBUG = { cut: true, fade: true, all: false };
 /** Layer of the sky dome, clouds, birds and skyline strips (sky.ts): only the menu cameras enable it. */
 const SKY_LAYER = 1;
 
 const DEG = Math.PI / 180;
 const HALF_W = CORRIDOR_HALF + CAMERA.marginX;        // 4.8 m: corridor plus margin
 const CAM_DIST = 60;
-/** Perspective variants: the search range of the camera distance D (m) and the look-ahead search cap (m). */
+/** Perspective cameras: the search range of the camera distance D (m) and the look-ahead search cap (m). */
 const PERSP_D = { min: 4, max: 4000, iters: 48 } as const;
 const LOOK_CAP_M = 600;
 
 export interface Framing { H: number; yawDeg: number; lookAheadSec: number; anchorY: number; hudTop: number; rotate: boolean;
   /** Screen-X centre of the required region relative to the anchor, m (0 in portrait); perspective: tangent units. */ xCentre: number;
-  /** Debug camera variants (camVariants.ts). Ortho: D = tanH = 0. Perspective: the camera sits D m from the skater's
+  /** The projection (camVariants.ts; production 'persp'). Ortho: D = tanH = 0. Perspective: the camera sits D m from the skater's
    *  ground point along the view direction and the window spans tanH (2·tan(fov/2)) vertically; H = tanH·D is the
    *  frame height in metres at the skater's depth. */
   proj: CamProj; pitchDeg: number; D: number; tanH: number }
@@ -59,7 +81,7 @@ export function lookAheadFor(H: number, speed: number, vp: Viewport, yawDeg: num
   return Math.max(0, sMax) / speed;
 }
 
-// ── perspective variants ────────────────────────────────────────────────────────────────────────────────────────
+// ── perspective ────────────────────────────────────────────────────────────────────────────────────────
 // A track point (s, x, y) relative to the target (the skater's ground point, x = lat) has camera-frame coordinates
 //   X = x·cosψ + s·sinψ,  Y = −x·sinθ·sinψ + y·cosθ + s·sinθ·cosψ,  depth = D + s·cosθ·cosψ − x·cosθ·sinψ − y·sinθ
 // (the ortho screen coordinates are X, Y); the perspective window coordinates are u = X / depth, v = Y / depth.
@@ -78,7 +100,7 @@ function perspExtents(D: number, L: number, sinT: number, cosT: number, cosP: nu
 }
 const tanHOf = (e: typeof EXT, aspect: number, hudTop: number) => Math.max((e.uMax - e.uMin) / aspect,
   e.vMaxH / (CAMERA.anchorFromTop - hudTop), -e.vMin / (1 - CAMERA.anchorFromTop));
-/** The window's vertical tangent span of a perspective variant. */
+/** The window's vertical tangent span of a perspective camera. */
 export const tanHOfVariant = (v: CamVariant) => 2 * Math.tan((v.fovDeg * DEG) / 2);
 
 /** Smallest camera distance D at which the required region fits the variant's fixed window (perspective). */
@@ -116,8 +138,8 @@ export function lookAheadPersp(D: number, tanH: number, uc: number, speed: numbe
 }
 
 /** Pure framing solver (TECH §8.3). `out` (optional) is filled and returned instead of a new object (the rig's
- *  per-frame call). Ortho variants (A, the production default) solve the smallest H; perspective variants the
- *  smallest D at their fixed window. */
+ *  per-frame call). Perspective (production) solves the smallest camera distance D at the fixed window; ortho specs
+ *  (debug, `?cam=A`) the smallest H. */
 export function solveFraming(speed: number, vp: Viewport, out?: Framing): Framing {
   const v = camVariant();
   const yawDeg = yawForAspect(vp.aspect, v);
@@ -141,7 +163,10 @@ export function solveFraming(speed: number, vp: Viewport, out?: Framing): Framin
     xCentre = (xMin + xMax) / 2;
     lookAheadSec = lookAheadFor(H, speed, vp, yawDeg, xCentre, v.pitchDeg);
   } else {
-    D = solvePerspD(speed, vp, yawDeg, v);
+    // With ψ > 0 the rig follows 15% of the skater's offset (|x| ≤ CORRIDOR_HALF), which slides the window sideways:
+    // D is solved for the worst follow offset, so the guarantee holds wherever the skater is (≈ 1.5% skater size).
+    const latMax = yawDeg > 0 ? CAMERA.latFollow * CORRIDOR_HALF : 0;
+    D = latMax > 0 ? Math.max(solvePerspD(speed, vp, yawDeg, v, latMax), solvePerspD(speed, vp, yawDeg, v, -latMax)) : solvePerspD(speed, vp, yawDeg, v);
     tanH = tanHOfVariant(v);
     H = tanH * D;
     xCentre = perspCentre(D, speed, yawDeg, v.pitchDeg, 0);
@@ -178,8 +203,8 @@ export function framePx(f: Framing, vp: Viewport, s: number, x: number, y: numbe
 }
 /** Metres per CSS px ACROSS a grind edge (an edge along +s, its width along x) at the farthest readable ground (the
  *  HUD line: window centre and both sides, |x| ≤ 4.3 m), i.e. including the on-screen foreshortening of the stripe
- *  under yaw and the convergence of perspective. Debug camera variants use it for the edge stripe width; the
- *  production default keeps H / hCss (DESIGN §8). */
+ *  under yaw and the convergence of perspective (the ortho edge-width floor; perspective floors every edge at its own
+ *  depth, view.ts EDGE_DEPTH). */
 export function edgeMetresPerPx(f: Framing, vp: Viewport): number {
   const span = f.proj === 'ortho' ? f.H : f.tanH, vh = (f.anchorY - f.hudTop) * span, half = (vp.aspect * span) / 2;
   let best = Infinity;
@@ -205,8 +230,25 @@ export function groundAt(f: Framing, u: number, v: number, capS = LOOK_CAP_M): {
   const s = X * sinP + Y * sinT * cosP + Z * cosP * cosT;
   return { s: Math.min(s, capS), x };
 }
-/** Shadow box for a non-default variant: the default (x ±10, s − 6 … s + 34) grown to the ground footprint the
- *  widest run framing shows (viewport corners, far side clamped to 120 m), in 2 m steps (stable texel size). */
+/** Grind-edge stripe widening of the perspective run camera (DESIGN §8 minimum sizes, judged at @cam): the cream
+ *  stripe keeps EDGE_WIDEN.px × CAMERA.minEdgePx across at its own view depth, the ink pad EDGE_WIDEN.inkPx beside
+ *  it; below the depth where the built (physical) width is wider, the built width stays. Per metre of depth: the
+ *  frame height there is tanH·depth, and ψ > 0 narrows an x-width by cos ψ on screen (EDGE_WIDEN.tilt covers the
+ *  convergence tilt of a stripe at the corridor sides). Ortho specs build their floor instead (view.ts). */
+export const EDGE_WIDEN = { px: 1.2, inkPx: 1.6, tilt: 1.12, hw0: 0.035, pad0: 0.02 } as const;
+export function edgeWidening(f: Framing, vp: Viewport): { hw0: number; pad0: number; kHalf: number; kPad: number } {
+  if (f.proj !== 'persp') return { hw0: EDGE_WIDEN.hw0, pad0: EDGE_WIDEN.pad0, kHalf: 0, kPad: 0 };
+  const per = (f.tanH / Math.max(1, vp.hCss)) * (EDGE_WIDEN.tilt / Math.cos(f.yawDeg * DEG));
+  return { hw0: EDGE_WIDEN.hw0, pad0: EDGE_WIDEN.pad0, kHalf: ((CAMERA.minEdgePx * EDGE_WIDEN.px) / 2) * per, kPad: EDGE_WIDEN.inkPx * per };
+}
+/** The stripe half-widths at a view depth (m), as the lit material draws them (materials.ts VERT_EDGE). */
+export function edgeHalfAt(f: Framing, vp: Viewport, depth: number): { cream: number; ink: number } {
+  const e = edgeWidening(f, vp), cream = Math.max(e.hw0, e.kHalf * depth);
+  return { cream, ink: cream + Math.max(e.pad0, e.kPad * depth) };
+}
+
+/** Shadow box of the run camera: the default (x ±10, s − 6 … s + 34) grown to the ground footprint the widest run
+ *  framing shows (viewport corners, far side clamped to 120 m), in 2 m steps (stable texel size). */
 export function shadowBoxFor(vp: Viewport, base: ShadowBox): ShadowBox {
   const f = solveFraming(V_MAX, vp), w = f.proj === 'ortho' ? (vp.aspect * f.H) / 2 : (vp.aspect * f.tanH) / 2;
   const top = f.anchorY * (f.proj === 'ortho' ? f.H : f.tanH), bot = -(1 - f.anchorY) * (f.proj === 'ortho' ? f.H : f.tanH);
@@ -221,12 +263,13 @@ export function shadowBoxFor(vp: Viewport, base: ShadowBox): ShadowBox {
 }
 
 /** The run camera rig. Forward follow is rigid; vertical follows the ground height (τ 0.3 s); lateral follows 15%
- *  only when ψ > 0; H eases with τ = 2 s toward the framing for the speed 2 s ahead and never shrinks within a run.
+ *  (τ 0.4 s) only when ψ > 0; D (ortho: H) eases with τ = 2 s toward the framing for the speed 2 s ahead and never
+ *  shrinks within a run.
  *  The follow easings run on game time (sim ticks elapsed, or the frame dt if larger), so manual stepping
  *  (`__skate.step(3600)`) frames exactly like real-time play. Shake and punch run on the frame dt. */
 /** The M0 Locker / Shop camera (DESIGN §8 "non-run cameras"): a low perspective camera (FOV 35°, 1.4 m high) behind
  *  the skater looking down the street, with the skater's mid-body at 33% from the top (the turntable sits in the top
- *  half, above the item panel). TODO(WA): the Title diorama, sky dome and skyline strips. */
+ *  half, above the item panel). The Title diorama has its own camera (TITLE_CAM). */
 export const LOCKER_CAM = { fovDeg: 35, height: 1.4, dist: 11, targetY: 0.9, anchorFromTop: 0.33 } as const;
 /** The static Title diorama camera (DESIGN §8): low, behind and to the right of the idling skater, looking down the
  *  street toward the horizon (the skater sits in the lower third, the sunset sky fills the top). */
@@ -238,9 +281,9 @@ export const TITLE_CAM = { fovDeg: 35, height: 1.4, back: 4.6, side: 0.55, lookA
 export class RunCameraRig implements CameraRig {
   readonly runCamera = new OrthographicCamera(-1, 1, 1, -1, 1, 200);
   readonly menuCamera = new PerspectiveCamera(LOCKER_CAM.fovDeg, 1, 0.1, 400);
-  /** The run camera of a perspective debug variant (camVariants.ts); unused by the production default (ortho). */
-  readonly runPersp = new PerspectiveCamera(24, 1, 1, 400);
-  /** The camera to render with: the run camera of the active variant, or the perspective menu camera. */
+  /** The production run camera (perspective); `runCamera` (ortho) serves the debug ortho specs (camVariants.ts). */
+  readonly runPersp = new PerspectiveCamera(CAMERA.fovDeg, 1, 1, 400);
+  /** The camera to render with: the run camera of the active spec, or the perspective menu camera. */
   get camera(): OrthographicCamera | PerspectiveCamera {
     return this.mode === 'run' ? (camVariant().proj === 'persp' ? this.runPersp : this.runCamera) : this.menuCamera;
   }
@@ -278,6 +321,7 @@ export class RunCameraRig implements CameraRig {
     const vp = f.viewport;
     this.vp = vp;
     RIG_STATE.mode = this.mode; RIG_STATE.menu = this.mode !== 'run'; RIG_STATE.hudTop = hudTopOf(vp); RIG_STATE.camera = this.camera;
+    if (this.mode !== 'run') { RIG_UNIFORMS.uCut.value.w = 0; RIG_UNIFORMS.uOver.value.w = 1; RIG_UNIFORMS.uEdge.value.z = 0; RIG_UNIFORMS.uEdge.value.w = 0; }
     if (this.mode === 'locker') { this.placeLocker(f); return; }
     if (this.mode === 'title') { this.placeTitle(f); return; }
     this.events(f);
@@ -303,7 +347,7 @@ export class RunCameraRig implements CameraRig {
       this.H = Math.max(this.H, this.H + (goal - this.H) * (1 - Math.exp(-dtE / CAMERA.zoomTau)));
       this.groundY += (gy - this.groundY) * (1 - Math.exp(-dtE / CAMERA.vertTau));
       const latWant = want.yawDeg > 0 ? CAMERA.latFollow * px : 0;
-      this.lat += (latWant - this.lat) * (1 - Math.exp(-dtE / 0.4));
+      this.lat += (latWant - this.lat) * (1 - Math.exp(-dtE / CAMERA.latTau));
     }
     this.yawDeg = want.yawDeg;
     this.xCentre = persp ? perspCentre(this.H, lead, want.yawDeg, want.pitchDeg, this.lat) : want.xCentre;
@@ -334,6 +378,35 @@ export class RunCameraRig implements CameraRig {
     if (persp) this.placePersp(f.playerS, this.lat, this.groundY, zoom, shx, shy);
     else this.place(f.playerS, this.lat, this.groundY, zoom, shx, shy);
     RIG_STATE.playerS = f.playerS; RIG_STATE.originS = this.originS; RIG_STATE.placed = true;
+    this.occlusionUniforms(persp);
+  }
+
+  /** The camera-side cut plane and the overhead-span fade for this frame (RIG_UNIFORMS, DESIGN §8 occlusion). Shake
+   *  and the punch move the window, not the camera, so neither moves the cut. */
+  private occlusionUniforms(persp: boolean): void {
+    // The street datum or the skater's ground, whichever is lower (on a raised deck, the corridor floor beside it
+    // still stays clear).
+    const u = RIG_UNIFORMS, gy = Math.min(0, this.groundY), lim = OCCLUSION.cutX, f = this.last;
+    let slope = 0, on = false;
+    if (persp) {
+      // The plane through the line (x = lim, y = gy) and the camera: points above it project onto the corridor side.
+      const c = this.runPersp.position;
+      on = c.x > lim + 0.05; slope = on ? (c.y - gy) / (c.x - lim) : 0;
+    } else if (this.yawDeg > 0) {
+      const yaw = this.yawDeg * DEG, th = camVariant().pitchDeg * DEG;
+      on = true; slope = Math.sin(th) / (Math.sin(yaw) * Math.cos(th));
+    }
+    u.uCut.value.set(lim, gy, slope, on && OCCLUSION_DEBUG.cut ? 1 : 0);
+    // A dark band along the cut, OCCLUSION.edgePx wide on screen: the street wall reads as a cutaway section and a
+    // light hazard at the corridor edge never stands against a lit facade.
+    u.uCutBand.value.set((OCCLUSION.edgePx * (persp ? f.tanH : f.H)) / Math.max(1, this.vp.hCss), OCCLUSION.edgeDark, 1 / Math.hypot(1, slope), persp ? 0 : 1);
+    if (OCCLUSION_DEBUG.all) u.uCut.value.set(lim, -1000, 0, 1);
+    const span = persp ? f.tanH : f.H;
+    const ahead = groundAt(f, f.xCentre, (f.anchorY - f.hudTop) * span).s;
+    u.uOver.value.set(this.target.z, this.groundY, Math.max(0, ahead), OCCLUSION_DEBUG.fade ? OCCLUSION.overAlpha : 1);
+    u.uOverDir.value.set(this.dir.x, this.dir.y, this.dir.z, persp ? 0 : 1);
+    const ew = edgeWidening(f, this.vp);
+    u.uEdge.value.set(ew.hw0, ew.pad0, ew.kHalf, ew.kPad);
   }
 
   private grinding = false;
@@ -391,7 +464,7 @@ export class RunCameraRig implements CameraRig {
     cam.updateMatrixWorld();
   }
 
-  /** Perspective debug variant: the camera D (this.H) metres back along the view direction from the anchor (s, x =
+  /** Perspective (production): the camera D (this.H) metres back along the view direction from the anchor (s, x =
    *  lat, y = ground), with an off-axis window (tangent units) that puts the anchor 74% from the top and centres the
    *  required region; shake is converted from metres at the skater's depth, the punch scales the window. */
   private placePersp(playerS: number, latX: number, groundY: number, zoom: number, shx: number, shy: number): void {

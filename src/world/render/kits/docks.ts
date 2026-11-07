@@ -1,6 +1,7 @@
 // world/render/kits/docks.ts: Industrial Docks kinds (DESIGN §10.3, §18.6 kit: stacked containers, loading docks,
 // pallets, drums, cable spools, mooring bollards, the dock lip, embedded rail tracks). The apron is light concrete,
 // so the container colours can stay deep (rust, container blue, patina) and still clear the gate.
+import { CAMERA } from '../../../core/tuning';
 import type { Obstacle } from '../../../core/world';
 import { COLORS, mixHex, shade } from '../palette';
 import { PAT } from '../textures/ground';
@@ -12,14 +13,14 @@ const HZ = FX.noFog | FX.matte;
 const boxOf = (ob: Obstacle) => ob.solids[0]?.box;
 const CONTAINER = [0x2a100c, 0x0b1622, 0x0f1d16, 0x200e16, 0x20180a] as const;
 
-/** Shipping container 6.1 × 2.4 × 2.6 (tall, x-ray above 1.6): a ribbed box with corner posts and doors (locking
+/** Shipping container 6.1 × 2.4 × 2.6 (tall, x-ray above CAMERA.xrayCapY): a ribbed box with corner posts and doors (locking
  *  bars) on the camera-facing end. */
 export const container: KitFn = (c, ob) => {
   const K = c.K, b = boxOf(ob);
   if (!b) return;
   const col = c.hz.inverted ? c.hz.body : CONTAINER[(ob.id + ob.variant) % CONTAINER.length]!;
   contact(c, b.x0, b.x1, b.s0, b.s1, b.y0 + 0.01, 0.7, 0.3);
-  K.capY = b.y0 + 1.6;
+  K.capY = b.y0 + CAMERA.xrayCapY;
   K.lit(PAT.ribsV, 0, HZ, c.hz.inverted ? c.hz.glow : 0).col(col).box(b.x0 + 0.04, b.y0, b.s0 + 0.04, b.x1 - 0.04, b.y1 - 0.04, b.s1 - 0.04);
   // The roof a clear value step above the ink sides, so the box reads as a volume (G1 review).
   K.lit(0, 0, HZ).col(c.hz.inverted ? shade(col, 0.12) : mixHex(col, c.hz.top, 0.65)).box(b.x0, b.y1 - 0.06, b.s0, b.x1, b.y1, b.s1, FACE.top | FACE.front | FACE.back | FACE.left | FACE.right);
@@ -191,7 +192,7 @@ const forklift: KitFn = (c, ob) => {
   const K = c.K, b = boxOf(ob);
   if (!b) return;
   contact(c, b.x0, b.x1, b.s0, b.s1, b.y0 + 0.01, 0.7, 0.3);
-  K.capY = b.y0 + 1.6;
+  K.capY = b.y0 + CAMERA.xrayCapY;
   body(c, 0x3a3020); K.chamfer(b.x0, b.y0 + 0.2, b.s0 + 0.5, b.x1, b.y0 + 1.1, b.s1, 0.05, c.hz.top);
   body(c); for (const x of [b.x0 + 0.05, b.x1 - 0.1]) for (const s of [b.s0 + 0.55, b.s1 - 0.1]) K.box(x, b.y0 + 1.1, s, x + 0.05, b.y1 - 0.1, s + 0.05);
   body(c, c.hz.top); K.box(b.x0, b.y1 - 0.1, b.s0 + 0.5, b.x1, b.y1, b.s1);

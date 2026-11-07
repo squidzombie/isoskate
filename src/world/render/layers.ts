@@ -9,7 +9,9 @@ import {
 import type { GfxContext } from '../../core/view';
 import type { Coin } from '../../core/world';
 import { GRADING_PARS, sharedUniforms } from '../../gfx';
+import { RIG_UNIFORMS } from './camera';
 import { camVariant } from './camVariants';
+import { bayerKeep, overFadeGlsl } from './materials';
 import type { DecalRec, LanternRec } from './kits/common';
 import { COLORS } from './palette';
 import { DECAL_GRID } from './textures/decals';
@@ -183,10 +185,11 @@ export class LanternLayer {
     const mat = new MeshBasicMaterial({ color: 0xffffff });
     mat.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, { uTime: u.uTime, uDesat: u.uDesat, uEmis: u.uEmis, uHaze: u.uHaze, uHazeAmt: u.uHazeAmt, uHazeY0: u.uHazeY0,
-        uHazeMode: u.uHazeMode, uHazeNear: u.uHazeNear, uHazeFar: u.uHazeFar, uRes: u.uRes });
+        uHazeMode: u.uHazeMode, uHazeNear: u.uHazeNear, uHazeFar: u.uHazeFar, uRes: u.uRes, uOver: RIG_UNIFORMS.uOver, uOverDir: RIG_UNIFORMS.uOverDir });
+      // Bulbs fade over the look-ahead zone like their wire (DESIGN §8 occlusion, materials.ts dlOverFade), per bulb.
       sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nattribute vec4 aCol;\nattribute float aPhase;\nuniform float uTime;\nvarying vec4 vCol;\nvarying vec3 vViewPosition;')
-        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCol = aCol;\ntransformed.y += 0.0;')
+        .replace('#include <common>', `#include <common>\nattribute vec4 aCol;\nattribute float aPhase;\nuniform float uTime;\nvarying vec4 vCol;\nvarying vec3 vViewPosition;\nvarying float vLa;\n${overFadeGlsl()}`)
+        .replace('#include <begin_vertex>', `#include <begin_vertex>\nvCol = aCol;\n#ifdef USE_INSTANCING\nvLa = dlOverFade((modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz);\n#else\nvLa = 1.0;\n#endif`)
         .replace('#include <project_vertex>', `vec4 mvPosition = vec4( transformed, 1.0 );
 #ifdef USE_INSTANCING
 mvPosition = instanceMatrix * mvPosition;
@@ -197,8 +200,8 @@ mvPosition = modelViewMatrix * mvPosition;
 gl_Position = projectionMatrix * mvPosition;
 vViewPosition = - mvPosition.xyz;`);
       sh.fragmentShader = sh.fragmentShader
-        .replace('#include <common>', `#include <common>\nuniform float uEmis;\nvarying vec4 vCol;\nvarying vec3 vViewPosition;\n${GRADING_PARS}`)
-        .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb = vCol.rgb * vCol.a * uEmis;')
+        .replace('#include <common>', `#include <common>\nuniform float uEmis;\nvarying vec4 vCol;\nvarying vec3 vViewPosition;\nvarying float vLa;\n${GRADING_PARS}`)
+        .replace('#include <color_fragment>', `#include <color_fragment>\n${bayerKeep('vLa')}\ndiffuseColor.rgb = vCol.rgb * vCol.a * uEmis;`)
         .replace('#include <colorspace_fragment>', '#include <colorspace_fragment>\ngl_FragColor.rgb = dlGrade(gl_FragColor.rgb, 0.0, length(vViewPosition));');
     };
     mat.customProgramCacheKey = () => 'dl-lanterns';
@@ -235,9 +238,9 @@ vViewPosition = - mvPosition.xyz;`);
 
 // ── coins ───────────────────────────────────────────────────────────────────────────────────────────────────────
 export const COIN = { capacity: 256, diameter: 0.32, spinHz: 3, bob: 0.1, minWidth: 0.35 } as const;
-/** Perspective debug camera variants only (camVariants.ts): the coin scale floor per metre of view depth,
- *  CAMERA.minCoinPx · tanH / (hCss · diameter), applied per coin in the vertex shader (each coin ≥ minCoinPx at its own
- *  depth, without inflating near coins). The ortho default keeps the instance-matrix scale (setScale). */
+/** Perspective run camera (production): the coin scale floor per metre of view depth,
+ *  CAMERA.minCoinPx · tanH / (hCss · diameter · cos ψ), applied per coin in the vertex shader (each coin ≥ minCoinPx at
+ *  its own depth, without inflating near coins). Ortho specs (debug) keep the instance-matrix scale (setScale). */
 export const COIN_DEPTH_K = { value: 0 };
 
 export class CoinLayer {

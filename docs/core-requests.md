@@ -659,3 +659,18 @@ behaviour and is behind a flag.
   `const r = await page.evaluate(() => window.__skate!.renderAudio!('downtown', 1)); expect(r!.sec).toBeCloseTo(1, 2); expect(r!.peak).toBeGreaterThan(0.01); expect(r!.peak).toBeLessThan(0.9);`
 - Why: AU ships `renderOffline` (TECH §4.13, as the debug.ts doc comment anticipates: "resolves null until AU ships"), so this one assertion fails on pkg/au in both projects; every other smoke test passes with audio on. AU may not edit smoke.spec.
 - Local workaround meanwhile: none (the assertion contradicts the deliverable); tests/unit/audio/render-check.mjs covers renderAudio.
+
+## CAM: Run camera (pkg/cam, owner playtest: "angled", "closer"; DESIGN decision row 67)
+
+### CAMERA: the perspective run camera   (status: applied on pkg/cam; the gate that merges pkg/cam into DEV re-checks it)
+- File / symbol: core/tuning.ts › CAMERA
+- Change: `proj: 'persp'`, `fovDeg: 24` and `latTau: 0.4` added; `pitchDeg: 35 → 34`, `yawMinDeg: 0 → 9`, `xrayCapY: 1.6 → 1.2`. Every other field unchanged.
+- Why: the portrait camera read top-down and 2D on phones (owner); the winning camera of the @cam prototype and three judges is a telephoto perspective camera at pitch 34°, portrait yaw 9° (30° at aspect ≥ 1.25), window FOV 24°, D solved per frame. Perspective hides more ground behind an in-corridor solid, so the x-ray cap comes down to 1.2 m. The sim, the generator and the validator read none of these fields (the generator's 2.5 s assumption and `LOOKAHEAD_*` are unchanged), so the course is unchanged on every device.
+- Local workaround meanwhile: none needed; `world/render/camVariants.ts` builds the production spec `P` from CAMERA and keeps the pre-@cam ortho camera as the debug spec `A`.
+
+### Notes for the gate (no contract change)
+- **Shaders read camera uniforms.** `world/render/camera.ts › RIG_UNIFORMS` (`uEdge`, `uCut`, `uOver`, `uOverDir`) is bound by every world material and the lantern layer; the rig writes it in `update()`. The buildings, emissive and glow materials now `discard` camera-side fragments above the cut plane (TECH §8.6); the opaque material still has no discard.
+- **`gfx/uniforms.ts › uHideNear`** is no longer read (the comment says so); removing the field is safe once nothing outside world/render uses it.
+- **`chunkBuilder.ts`** lost `NEAR` / `nearKeep` / `settleNear` (the cut replaced the whole-record hide); `BuildOptions.yawDeg` stays (hazard pools).
+- **`world/gen/generator.ts`** carries G1's mid-gateway start fix (6323753) verbatim, so `shots --contrast` can run here; the merge sees the identical hunk.
+- **`debug/contrast.ts`**: a grind-edge sample behind a raised deck (slab top ≥ 0.5 m) of another obstacle is hidden, like one behind another obstacle's solid (the perspective camera sees skywalk decks hide the kerb beyond them).

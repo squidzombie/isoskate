@@ -14,7 +14,7 @@ import { lerp } from '../core/math';
 import { Sfc32 } from '../core/rng';
 import type { GfxContext, RenderFrame, Vfx } from '../core/view';
 import { originOf } from '../gfx';
-import { RIG_STATE, SURFACE_COLOR, worldAmbient } from '../world/render';
+import { RIG_STATE, RIG_UNIFORMS, SURFACE_COLOR, worldAmbient } from '../world/render';
 import { Particles, SHAPE } from './particles';
 import { Rings } from './rings';
 import { VFX } from './vfx.config';
@@ -136,7 +136,10 @@ class VfxImpl implements VfxExt {
         const side = this.r.chance(0.5) ? -1 : 1, far = this.r.chance(0.35);
         const lx = side * (far ? this.r.range(5.6, VFX.speedLines.xMax) : this.r.range(VFX.speedLines.xMin, 5.6));
         const len = this.r.range(VFX.speedLines.len[0], VFX.speedLines.len[1]);
-        this.parts.spawn({ s: s + this.r.range(-2, 20), x: lx, y: this.r.range(0.2, far ? 4 : 2.2), vs: -f.speed * (far ? 0.6 : 1.4), vx: 0, vy: 0,
+        // Camera side: below the camera-side cut plane (world/render camera.ts uCut), so a streak never lies over the
+        // corridor on screen whatever the yaw and camera distance (DESIGN §18.4: speed lines outside the corridor).
+        const cut = RIG_UNIFORMS.uCut.value, yMax = side > 0 && cut.w > 0.5 ? Math.max(0.15, (lx - cut.x) * cut.z * 0.9) : Infinity;
+        this.parts.spawn({ s: s + this.r.range(-2, 20), x: lx, y: Math.min(yMax, this.r.range(0.2, far ? 4 : 2.2)), vs: -f.speed * (far ? 0.6 : 1.4), vx: 0, vy: 0,
           life: 0.35, size: 0.05, color: VFX.speedLines.color, alpha: VFX.speedLines.alpha * (0.5 + 0.5 * k), shape: SHAPE.streak, stretch: len / 0.05 });
       }
     }
