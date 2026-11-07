@@ -82,12 +82,29 @@ describe('left (steering) thumb: steers, never tricks', () => {
 
   it('several left touches: the first that drags owns steering; the others never tap, and steering passes to the next one that becomes a DRAG', () => {
     const owner = new Trace(1, 0, LX, Y).move(30, 0, 150).rest(200).up();               // lifts at 350 ms
-    const other = new Trace(2, 100, LX - 40, Y - 60).move(-20, 0, 100).rest(100).move(-25, 0, 100).up();   // a DRAG already
+    const other = new Trace(2, 100, LX - 40, Y - 60).move(-20, 0, 100).rest(300).up();  // a DRAG already, still after 200 ms
     const tapper = new Trace(3, 120, LX + 20, Y + 40).rest(80).up();
     const next = new Trace(4, 450, LX, Y).move(-12, 0, 60).up();                         // becomes a DRAG after the lift
     const g = run(makeRec2(), [...owner.samples, ...other.samples, ...tapper.samples, ...next.samples]);
     expect(tricky(g)).toEqual([]);
     expect(steerSum(g)).toBeCloseTo(30 - 12, 6);
+  });
+
+  it('hand-over: when the owner lifts, a left DRAG already down takes steering on its next move, from where it is', () => {
+    // A grip contact drags first and owns steering; the real thumb lands and drags while it is down (no steering yet).
+    const grip = new Trace(1, 0, 8, Y).move(12, 0, 60).rest(240).up();                  // lifts at 300 ms
+    const thumb = new Trace(2, 100, LX, Y).move(-20, 0, 100).rest(140).move(36, 0, 120).rest(100).up();
+    const g = run(makeRec2(), [...grip.samples, ...thumb.samples]);
+    expect(tricky(g)).toEqual([]);
+    // The grip's 12 px, then only the thumb's motion after the grip let go (still at the lift, then 36 px from 340 ms).
+    expect(steerSum(g)).toBeCloseTo(12 + 36, 6);
+    // A still contact that dragged earlier never takes over: lifting the owner holds the line.
+    const still = run(makeRec2(), [...new Trace(1, 0, LX, Y).move(30, 0, 100).rest(100).up().samples,
+      ...new Trace(2, 50, LX - 60, Y).move(-15, 0, 60).rest(600, 0).up().samples]);
+    expect(steerSum(still)).toBeCloseTo(30, 6);
+    // One thumb keeps "the next touch that becomes a DRAG" (no hand-over to a DRAG already down).
+    const one = run(makeRec(), [...grip.samples, ...thumb.samples]);
+    expect(steerSum(one)).toBeCloseTo(12, 6);
   });
 
   it('pointercancel frees steering for the next left touch that drags', () => {

@@ -55,7 +55,7 @@ export function makeDefaults(now: number = Date.now(), seed: number = random32()
       longestGrind: 0, tricks: {}, areaVisits: {},
     },
     trickBook: [], postcards: [],          // Downtown's postcard is granted on run 1 (DESIGN §14.3)
-    onboarding: { lessonDone: false, runsStarted: 0, learned: {}, crashStreak: null, persistAsked: false, installHintShown: false },
+    onboarding: { lessonDone: false, runsStarted: 0, learned: {}, crashStreak: null, persistAsked: false, installHintShown: false, twoThumbIntro: 0 },
     settings: { ...DEFAULT_SETTINGS },
     entitlements: { adFree: false, supporter: false, purchases: [] },
     shop: { featuredDay: null, featured: [] },

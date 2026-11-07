@@ -95,6 +95,17 @@ describe('sanitize', () => {
     expect(sanitize({ v: 1, wallet: {}, settings: { controls: 'one', swapSides: true } }, d).settings).toMatchObject({ controls: 'one', swapSides: true });
     expect(sanitize({ v: 1, wallet: {}, settings: { controls: 'three', swapSides: 'yes' } }, d).settings).toMatchObject({ controls: 'two', swapSides: false });
   });
+  it('two-thumb re-teach: due (-1) for a played profile saved before the controls setting existed, else 0; kept as stored', () => {
+    expect(d.onboarding.twoThumbIntro).toBe(0);
+    const old = sanitize({ v: 1, wallet: {}, onboarding: { runsStarted: 12 }, settings: { music: 0.5 } }, d);
+    expect(old.onboarding.twoThumbIntro).toBe(-1);
+    expect(sanitize({ v: 1, wallet: {}, onboarding: { runsStarted: 2 }, settings: {} }, d).onboarding.twoThumbIntro).toBe(0);   // runs 3 teaches
+    expect(sanitize({ v: 1, wallet: {}, onboarding: { runsStarted: 12 }, settings: { controls: 'two' } }, d).onboarding.twoThumbIntro).toBe(0);
+    expect(sanitize({ v: 1, wallet: {}, onboarding: { runsStarted: 12, twoThumbIntro: 13 }, settings: {} }, d).onboarding.twoThumbIntro).toBe(13);
+    expect(sanitize({ v: 1, wallet: {}, onboarding: { runsStarted: 12, twoThumbIntro: -7 } }, d).onboarding.twoThumbIntro).toBe(-1);
+    // Re-saved by this build (controls now stored), the due flag survives until the re-teach run.
+    expect(sanitize(JSON.parse(JSON.stringify(old)), d).onboarding.twoThumbIntro).toBe(-1);
+  });
   it('a well-formed save survives unchanged', () => {
     const good: SaveV1 = { ...makeDefaults(5, 3), owned: ['sk_juno', 'bd_plain_maple', 'hm_classic', 'sk_rook'], trickBook: ['ollie'], postcards: ['downtown'] };
     good.equipped.skater = 'sk_rook';

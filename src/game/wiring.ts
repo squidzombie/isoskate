@@ -75,7 +75,9 @@ export function wire(root: HTMLElement): Game {
   ui.attach(gameBus, appBus, meta);
   bindHaptics(gameBus, haptics, () => save.data.settings.haptics);
   const session = createRunSession(save, flags.seed);
-  const hints = new FirstRunHints(ui.hud, gameBus);
+  const hints = new FirstRunHints(ui.hud, gameBus, {
+    save, touch: () => typeof matchMedia !== 'function' || matchMedia('(pointer: coarse)').matches,   // the UI's `coarse`
+  });
 
   // Slides (boardslide family) vs grinds (truck locks), for the grind sound; precomputed so render() never allocates.
   const SLIDE_GRINDS: ReadonlySet<string> = new Set(TRICKS.grinds.filter((d) => d.slide).map((d) => d.id));

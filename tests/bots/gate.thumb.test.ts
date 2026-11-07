@@ -4,14 +4,17 @@
 //   - two thumbs (the default): the left thumb steers with tremor, ~100 nervous vertical twitches, sideways dodges in
 //     the air and re-grips; the right thumb taps (60–260 ms) and flicks ↑ (±25°) for the ollies;
 //   - one thumb (classic): the G1 bot (one steering thumb, second-finger taps).
+// Measured, not gated: two thumbs with a right thumb that RESTS on the glass between tricks. A still trick thumb is a
+// HOLD, so it grabs in an ollie's air and manuals on landing (the same gesture as a deliberate hold-to-grab; DESIGN §4.4
+// rule 3): the report gives those rates per ollie, and the hints teach a hovering right thumb.
 // A control keeps the gate honest: the two-thumb traces read with the one-thumb grammar must misfire (the twitches and
 // air dodges are exactly the strokes the old grammar turned into ollies, impossible flips, shove-its and kickflips).
 import { describe, expect, it } from 'vitest';
 import { describeCrash, runBot, type BotRun, type ThumbBot } from '../../src/debug/bots';
 import { MIN, PLATEAU_T, crashOf, seedsFor, writeReport } from './suites';
 
-const run = (seed: number, layout: 'two' | 'one', grammar?: 'two' | 'one') =>
-  runBot('thumb', seed, { ticks: 4 * MIN, startT: PLATEAU_T, bot: { layout, ...(grammar ? { grammar } : {}) } });
+const run = (seed: number, layout: 'two' | 'one', grammar?: 'two' | 'one', rest = false) =>
+  runBot('thumb', seed, { ticks: 4 * MIN, startT: PLATEAU_T, bot: { layout, ...(grammar ? { grammar } : {}), ...(rest ? { rest } : {}) } });
 const unintendedOf = (runs: readonly BotRun[]) => runs.flatMap((r) => r.unintended.map((u) => ({ seed: r.seed, t: +u.t.toFixed(3), ev: u.ev })));
 const gestures = (runs: readonly BotRun[]) => {
   const sum = (k: 'taps' | 'flicks' | 'twitches' | 'regrips') => runs.reduce((a, r) => a + (r.bot as ThumbBot)[k], 0);
@@ -44,6 +47,24 @@ describe('bots gate: thumb', () => {
     });
     expect(runs.filter((r) => r.crash).map((r) => `seed ${r.seed}: ${describeCrash(r)}`)).toEqual([]);
     expect(unintended).toEqual([]);
+  });
+
+  it('two thumbs, a right thumb resting between tricks (measured trade-off, 20 seeds): 0 crashes, no flips or spins, grab and manual rates reported', () => {
+    const runs = seedsFor(20).map((seed) => run(seed, 'two', undefined, true));
+    const unintended = unintendedOf(runs);
+    const ollies = runs.reduce((a, r) => a + (r.events.ollie ?? 0), 0);
+    const count = (ev: string) => unintended.filter((u) => u.ev === ev).length;
+    const rate = (n: number) => Math.round((n / Math.max(1, ollies)) * 1000) / 1000;
+    const rests = runs.reduce((a, r) => a + (r.bot as ThumbBot).rests, 0);
+    writeReport('thumb-rest', {
+      bot: 'thumb', layout: 'two', rest: true, seeds: runs.length, minutes: 4, startT: PLATEAU_T, crashes: runs.filter((r) => r.crash).map(crashOf),
+      ollies, rests, grabs: count('grabStart'), manuals: count('manualStart'), grabsPerOllie: rate(count('grabStart')), manualsPerOllie: rate(count('manualStart')),
+      flips: count('flipStart'), spins: count('spinStart'),
+    });
+    expect(rests).toBeGreaterThan(runs.length * 5);
+    expect(runs.filter((r) => r.crash).map((r) => `seed ${r.seed}: ${describeCrash(r)}`)).toEqual([]);   // resting never kills
+    // A resting thumb is never a flip or a spin (it never moves past the slop); grabs and manuals are the trade-off.
+    expect(count('flipStart') + count('spinStart')).toBe(0);
   });
 
   it('control: the two-thumb traces read with the one-thumb grammar misfire (5 seeds)', () => {

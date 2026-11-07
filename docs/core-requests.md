@@ -676,6 +676,10 @@ recognizer, so the frozen `InputFrame`, the sim, scoring, the generator, replays
 - `core/save.ts › SaveV1.settings.controls?: 'two' | 'one'; swapSides?: boolean`. `save/defaults.ts` DEFAULT_SETTINGS
   `controls: 'two', swapSides: false`; `save/sanitize.ts` fills both for every save (older saves get the defaults; junk
   falls back). The App's settings intent writes them like any other key (they are always present after sanitize).
+- `core/save.ts › SaveV1.onboarding.twoThumbIntro?: number` (review fix, the one-run re-teach, DESIGN §12.5): −1 = due,
+  n > 0 = shown in run n, 0 / absent = not needed. `save/sanitize.ts` sets −1 for a stored save with
+  `onboarding.runsStarted > 3` and no `settings.controls` (a profile from before two thumbs), else keeps the stored value
+  (clamped ≥ −1) or 0; `save/defaults.ts` new profiles 0.
 
 ### Rules (DESIGN §4.1–4.4; one thumb in §4.7)
 - At `down` each touch gets a role from `roleOf(x, pointerType, config)`: `both` for `controls: 'one'` or a mouse / pen
@@ -686,22 +690,33 @@ recognizer, so the frozen `InputFrame`, the sim, scoring, the generator, replays
 - `trick`: the full tap / hold / long-tap / swipe / press machine, but never owns steering, so its swipes carry `dxPx` 0
   and `steer` false (normal thresholds and sectors; arc compensation kept). Nothing for the sim to subtract.
 
+- Steering hand-over (review fix, DESIGN §4.2 Multi-touch): once the owner lifts or cancels, a `steer` DRAG that is
+  already down takes ownership on its next sideways move, from where it is then (`one` keeps "the next touch to cross
+  SLOP").
+
 ### Files touched
-- input: `recognizer.ts` (roles, `roleOf`, config), `pointer.ts` (pointerType), `index.ts` (`setControls`, exports).
-- game: `wiring.ts` (`applySettings` → `input.setControls?.(st.controls ?? 'two', st.swapSides ?? false)`).
+- input: `recognizer.ts` (roles, `roleOf`, config, the steer-zone hand-over), `pointer.ts` (pointerType), `index.ts`
+  (`setControls`, exports).
+- game: `wiring.ts` (`applySettings` → `input.setControls?.(st.controls ?? 'two', st.swapSides ?? false)`; the
+  `FirstRunHints` gets `{ save, touch }`), `onboarding.ts` (`FirstRunOptions`, the two-thumb re-teach that marks
+  `onboarding.twoThumbIntro`, `isTwoThumbIntroRun`).
 - debug: `api.ts` (`syncSynth` copies controls / swapSides / splitFrac from the live pipeline: manual-mode
   `__skate.pointer()` follows the setting); `bots/thumb.ts` (two profiles), `bots/registry.ts` (`BotOptions.layout`,
   `grammar`), `bots/harness.ts` (`BotRun.bot`: the gate reports the ThumbBot's gesture counts).
 - save: `defaults.ts`, `sanitize.ts`. ui: `hints.ts` (two rings, two-thumb wording `HINT_TEXT[id].twoThumb` / `side`,
-  `touchText()`, the zone cue), `hud.ts` (`HudExt.setControls`), `index.ts` (reads the setting at every runStart),
-  `screens/settings.ts` (Touch controls, Swap sides; rows carry `data-setting`), `ui.config.ts` (`ZONE_CUE`),
+  `touchText()`, the zone cue and its "STEER ↔" / "TRICKS" pad labels, the hovering trick ghost, `Hints.pointer` for
+  the wrong-side pulses), `hud.ts` (`HudExt.setControls`), `index.ts` (syncs the setting at attach, every runStart and
+  every `settings` app event for `controls` / `swapSides`; the re-teach run's rings and toasts; passive window-capture
+  touch listeners feeding `hints.pointer`), `screens/settings.ts` (Touch controls "touch screens only", Swap sides
+  dimmed with One thumb; rows carry `data-setting`), `ui.config.ts` (`ZONE_CUE`, `WRONG_SIDE`, `TOAST.introMs`),
   `index.ts` also exposes `__dusklaneUi.hint(id)` in debug builds (screenshots of any hint),
   `styles/hud.css`, `styles/screens.css`.
 - tests: `unit/input/twothumb.test.ts`, `unit/integration/twothumb.test.ts` (new); `unit/input/trace.ts` (`makeRec` is
   now the one-thumb recognizer, `makeRec2` the two-thumb one), `recognizer.test.ts` / `frames.test.ts` /
   `integration/labels.test.ts` run with `controls: 'one'`; `unit/save/save.test.ts`, `unit/ui/hud.test.ts`;
-  `bots/gate.thumb.test.ts` (both layouts + control); `e2e/touch.spec.ts`, `e2e/smoke.spec.ts` (the real-time
-  synthetic tap moved to the right half).
+  `bots/gate.thumb.test.ts` (both layouts, the measured `rest` habit, the control); `unit/integration/hints.test.ts`
+  (re-teach); `e2e/touch.spec.ts` (swap sides, right hold → grab → manual, hard left flick in the air), `e2e/ui.spec.ts`
+  (two-thumb hints and the re-teach, mobile), `e2e/smoke.spec.ts` (the real-time synthetic tap moved to the right half).
 
 ### What the gate (and every later package) must know
 - **Any test or script that taps, drags or flicks** must put taps / swipes / holds on the right half and drags on the
@@ -709,8 +724,12 @@ recognizer, so the frozen `InputFrame`, the sim, scoring, the generator, replays
   a tap at a fixed x = 195 does not on the desktop project (1280 px: that is the left half). Unit tests that build
   `InputPipeline` / `createRecognizerImpl` without `controls` get two thumbs; `tests/unit/input/trace.ts › makeRec`
   and `ONE_THUMB` give the one-thumb grammar. Mouse input (desktop e2e, shots) is unchanged.
-- **Thumb bot** (`BOTS.thumb`): two thumbs by default (`{ layout: 'one' }` for the G1 profile). It imports
-  `createRecognizer`, `FrameBuilder`, `steerMetresPerPx` from `input/index.ts` as before and passes `controls`.
+- **Thumb bot** (`BOTS.thumb`): two thumbs by default (`{ layout: 'one' }` for the G1 profile; `{ rest: true }` the
+  measured resting-right-thumb habit, reported in `artifacts/bots/thumb-rest.json`, gated only on 0 crashes and 0 flips / spins). It
+  imports `createRecognizer`, `FrameBuilder`, `steerMetresPerPx` from `input/index.ts` as before and passes `controls`.
+- **A resting right thumb is a HOLD** (DESIGN §4.4 rule 3): 0.36 grabs and 1.0 manual per ollie in the `rest` habit (282
+  ollies, 20 seeds × 4 min), 0 crashes. Accepted as a trade-off (the same gesture as hold-to-grab); the hints teach a hovering right thumb. Revisit
+  only with real-phone data.
 - **Hints:** `HINT_TEXT[id].touch` keeps the G0 one-thumb wording (hud.test pins it); two-thumb wording is
   `twoThumb` with `{S}` / `{T}` side tokens. The Lesson Line (M4) should call `hud.hint(id)` as before; the HUD picks
   the wording, the rings and the cue from `SaveV1.settings` at each runStart. `ZONE_CUE.firstOfSession` also shows the
@@ -718,5 +737,9 @@ recognizer, so the frozen `InputFrame`, the sim, scoring, the generator, replays
 - **Two touches in e2e:** CDP `Input.dispatchTouchEvent` releases one of two points only with a `touchEnd` that lists
   that point (a `touchMove` that leaves it out releases nothing); `touch.spec.ts › Multi` does it. Queue a tap's down
   and up together (an awaited round trip under SwiftShader can turn it into a hold).
-- **Not done here:** a one-time re-teach of the two-thumb layout for profiles past run 3 (they get the zone cue but no
-  hint chips; M4's hint re-arming could add it); gamepad unaffected.
+- **Re-teach:** profiles from before two thumbs get it once (`onboarding.twoThumbIntro`); M4's Lesson Line should keep
+  `FirstRunHints.start` deciding it (or move the same rule into its own arming) and keep `hud.setFirstRuns(true)` for
+  that run (ui/index.ts reads `twoThumbIntro === runsStarted`).
+- **Not done here:** Android / iOS edge back gestures near the left edge (the steering thumb may start there): needs a
+  real-device check (a web page cannot exclude system gesture areas; the STEER ring sits 24% in from the edge);
+  gamepad unaffected.

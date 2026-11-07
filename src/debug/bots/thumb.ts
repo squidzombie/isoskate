@@ -14,6 +14,12 @@
 //    would start a manual: an open combo window or a prop top under the board), never pressed down in the pre-press
 //    window before a touchdown; on flat ground about a third of them as ↑ flicks instead (40–70 px at 0.9–1.6 px/ms,
 //    within ±25° of vertical: the ollie fires on recognition).
+//  - `rest: true` (a measured habit, not a gate profile): after every tap or flick the right thumb comes back down on
+//    the glass 80–300 ms later and stays there, still, until it lifts 30–80 ms before the next tap. A still trick
+//    thumb is a HOLD (DESIGN §4.4 rule 3): a grab when it lands early in an ollie's air, a pre-press or a held grab
+//    becoming a manual on landing, a manual in a combo's link window; and a rest lifted ≤ 600 ms after it went down
+//    reads as a (long) tap. The gate holds it to 0 crashes, flips and spins, and reports its grab and manual rates
+//    (the design trade-off of two thumbs) instead of gating them.
 // `layout: 'one'`: the one-thumb grammar (the G1 bot, unchanged): one steering thumb in the middle, down for the whole
 //  run (plan tracking and tremor, no twitches or re-grips), and second-finger taps at the right.
 // Both: 0.25 s of total latency (the plan is decided 0.27 s ahead; a tap fires on its finger's lift). The plan asks for
@@ -50,6 +56,8 @@ export interface ThumbOptions {
   seed?: number; latency?: number; layout?: ThumbLayout;
   /** The recognizer's grammar (default: the layout's). The gate's control reads two-thumb traces with 'one'. */
   grammar?: ThumbLayout;
+  /** Two thumbs: the right thumb rests on the glass between tricks (see the header; its grabs / manuals are measured). */
+  rest?: boolean;
 }
 
 /** A twitch of the steering thumb: out along (ux, uy) by `amp` px at `speed` px/ms, a short stop, and back. */
@@ -79,8 +87,11 @@ export class ThumbBot {
   private liftedUntil = -1;                         // re-grip: the thumb is off the glass until this time (s)
   private tapId = 100;
   private airDodgeAt = Infinity;                    // two thumbs: a sideways dodge planned in the air of our ollie
-  /** Taps and ↑ flicks sent (trick thumb), twitches and re-grips (steering thumb), for the harness. */
-  taps = 0; flicks = 0; twitches = 0; regrips = 0;
+  private readonly restOn: boolean;
+  private readonly rrng: Sfc32;                     // the resting right thumb's own stream (the gate profiles never draw it)
+  private resting: { id: number; downMs: number } | null = null;
+  /** Taps and ↑ flicks sent (trick thumb), twitches and re-grips (steering thumb), rests (`rest`), for the harness. */
+  taps = 0; flicks = 0; twitches = 0; regrips = 0; rests = 0;
   /** The steering thumb's x range (px), for the harness. */
   minX = Infinity; maxX = -Infinity;
 
@@ -94,6 +105,31 @@ export class ThumbBot {
     this.tremor = [this.rng.float() * 6.28, this.rng.float() * 6.28, 0.6 + this.rng.float() * 0.4, 1.6 + this.rng.float() * 0.8];
     this.jrng = new Sfc32(hash32(o.seed ?? 1, 0x7b0d));
     this.nextTwitch = 1 + this.jrng.float() * 2;
+    this.restOn = this.layout === 'two' && !!o.rest;
+    this.rrng = new Sfc32(hash32(o.seed ?? 1, 0x7b0e));
+  }
+
+  /** `rest`: the resting right thumb lifts 30–80 ms before a tap that goes down at `downMs` (or never comes down). */
+  private liftRest(downMs: number, nowMs: number): void {
+    const r = this.resting;
+    if (!r) return;
+    this.resting = null;
+    const upMs = Math.max(nowMs, downMs - 30 - this.rrng.float() * 50);
+    if (r.downMs >= upMs - 1) {                   // it had not come down yet: it never does
+      const i = this.queue.findIndex((q) => q.id === r.id);
+      if (i >= 0) this.queue.splice(i, 1);
+      this.rests--;
+      return;
+    }
+    this.push({ id: r.id, tMs: upMs, x: this.home.tapX, y: this.home.tapY + 2, phase: 'up' });
+  }
+
+  /** `rest`: the right thumb comes back down 80–300 ms after a tap or flick lifted at `upMs`, still. */
+  private comeToRest(upMs: number): void {
+    const id = this.tapId++, downMs = upMs + 80 + this.rrng.float() * 220;
+    this.push({ id, tMs: downMs, x: this.home.tapX + (this.rrng.float() - 0.5) * 8, y: this.home.tapY + 2, phase: 'down' });
+    this.resting = { id, downMs };
+    this.rests++;
   }
 
   private push(s: PointerSample): void {
@@ -230,6 +266,7 @@ export class ThumbBot {
       const down = tLand - dur;
       if (land > 0 && down > land - 0.32 && down < land + 0.02) dur = Math.max(0.06, Math.min(dur, tLand - land - 0.03));
       const jx = (this.rng.float() - 0.5) * 2, jy = (this.rng.float() - 0.5) * 2;
+      if (this.restOn) this.liftRest(Math.min(tLand - dur, tLand - 0.034 / 0.9) * 1000 - 1, msNow);   // before a tap's or a flick's down
       const id = two ? this.tapId++ : 2;
       if (two && c.mode === 'roll' && !this.onTop(sim) && tLand - 0.06 > land + 0.1 && this.jrng.float() < 0.34) {
         // ↑ within ±25°: ≥ 32 px inside the 80 ms window fires the swipe (the ollie) on recognition, at tLand.
@@ -239,10 +276,12 @@ export class ThumbBot {
         this.push({ id, tMs: t0, x: x0, y: y0, phase: 'down' });
         for (let ms = 8; ms < len / v; ms += 8) this.push({ id, tMs: t0 + ms, x: x0 + ux * v * ms, y: y0 + uy * v * ms, phase: 'move' });
         this.push({ id, tMs: t0 + len / v, x: x0 + ux * len, y: y0 + uy * len, phase: 'up' });
+        if (this.restOn) this.comeToRest(t0 + len / v);
         this.flicks++;
       } else {
         this.push({ id, tMs: (tLand - dur) * 1000 - 1, x: H.tapX + jx, y: H.tapY + jy, phase: 'down' });
         this.push({ id, tMs: tLand * 1000 - 1, x: H.tapX + jx, y: H.tapY + jy, phase: 'up' });
+        if (this.restOn) this.comeToRest(tLand * 1000 - 1);
         this.taps++;
       }
       // Touchdown of this ollie (flat-ground estimate; the plan's own landing is in the safe bot).

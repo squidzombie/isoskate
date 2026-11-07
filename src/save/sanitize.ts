@@ -118,6 +118,8 @@ export function sanitize(input: unknown, defaults: SaveV1, known: KnownIds = KNO
     onboarding: {
       lessonDone: bool(ob.lessonDone, false), runsStarted: int(ob.runsStarted, 0), learned, crashStreak,
       persistAsked: bool(ob.persistAsked, false), installHintShown: bool(ob.installHintShown, false),
+      // A profile that played before the two-thumb controls (no settings.controls stored) gets them re-taught once.
+      twoThumbIntro: int(ob.twoThumbIntro, int(ob.runsStarted, 0) > 3 && se.controls === undefined ? -1 : 0, -1),
     },
     settings: {
       music: num(se.music, d.settings.music, 0, 1), sfx: num(se.sfx, d.settings.sfx, 0, 1),

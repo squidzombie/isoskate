@@ -20,14 +20,17 @@ export type BotKind = 'safe' | 'myopic' | 'thumb' | 'straight' | 'trick' | 'conf
 export interface BotOptions { lane?: number; reaction?: number; seed?: number;
   /** Thumb bot: Settings "Touch controls" (two thumbs by default, DESIGN §4.1), and the recognizer grammar it is
    *  read with (default: the same; the thumb gate's control reads two-thumb traces with the one-thumb grammar). */
-  layout?: 'two' | 'one'; grammar?: 'two' | 'one' }
+  layout?: 'two' | 'one'; grammar?: 'two' | 'one';
+  /** Thumb bot, two thumbs: the right thumb rests on the glass between tricks (its grabs / manuals are measured). */
+  rest?: boolean }
 export interface Bot { frame(sim: Sim): Partial<InputFrame> }
 export type BotFactory = (opts: BotOptions) => Bot;
 
 export const BOTS: Partial<Record<BotKind, BotFactory>> = {
   safe: (o) => new SafeBot({ seed: o.seed ?? 1, ...(o.reaction !== undefined ? { reaction: o.reaction } : {}) }),
   myopic: (o) => new MyopicBot({ seed: o.seed ?? 1 }),
-  thumb: (o) => new ThumbBot({ seed: o.seed ?? 1, ...(o.layout ? { layout: o.layout } : {}), ...(o.grammar ? { grammar: o.grammar } : {}) }),
+  thumb: (o) => new ThumbBot({ seed: o.seed ?? 1, ...(o.layout ? { layout: o.layout } : {}), ...(o.grammar ? { grammar: o.grammar } : {}),
+    ...(o.rest ? { rest: true } : {}) }),
   trick: (o) => new TrickBot({ seed: o.seed ?? 1 }),
   conformance: () => new SafeKeyFollower(),
   straight: (o) => new StraightBot(o.lane ?? 0),

@@ -68,6 +68,14 @@ async function setControls(page: Page, name: 'Two thumbs' | 'One thumb'): Promis
   await page.evaluate(() => window.__skate!.ui('title'));
 }
 
+/** Settings › Swap sides (steer right, tricks left) through the Settings screen. */
+async function setSwap(page: Page, on: boolean): Promise<void> {
+  await page.evaluate(() => { window.__skate!.ui('title'); window.__skate!.ui('settings'); });
+  await screenOn(page, 'settings').locator('[data-setting="swapSides"]').getByRole('button', { name: on ? 'On' : 'Off' }).click();
+  await expect.poll(() => page.evaluate(() => window.__skate!.save.get().settings.swapSides)).toBe(on);
+  await page.evaluate(() => window.__skate!.ui('title'));
+}
+
 const events = (page: Page, since = 0) => page.evaluate((s) => window.__skate!.events(s), since);
 const kinds = (ev: GameEvent[]) => ev.map((e) => e.t);
 const snap = (page: Page) => page.evaluate(() => window.__skate!.snapshot());
@@ -222,6 +230,50 @@ test.describe('real touch', () => {
     expect(errors).toEqual([]);
   });
 
+  test('a hard left-thumb flick ← in the air is only steering: no flip, and the skater moves left', async ({ page }) => {
+    const errors: string[] = [];
+    await boot(page, errors);
+    const vp = page.viewportSize()!, touch = await Touch.of(page);
+    await liveRun(page, 1, touch);
+    await page.evaluate(() => window.__skate!.timeScale(0.3));     // as in the kickflip case: the flick lands in the air
+    const x0 = (await snap(page)).p.x;
+    const t0 = (await snap(page)).tick;
+    await touch.tap(vp.width * 0.75, vp.height * 0.7);               // right tap: the ollie
+    await airborneFor(page, t0, 7);
+    await touch.flick(vp.width * 0.4, vp.height * 0.7, -90, 0);      // the same hard ← that kickflips on the right
+    await expect.poll(async () => kinds(await events(page, t0)), { timeout: 15000 }).toContain('land');
+    await page.evaluate(() => window.__skate!.timeScale(1));
+    expect(kinds(await events(page, t0)).filter((k) => k === 'flipStart' || k === 'spinStart' || k === 'grabStart')).toEqual([]);
+    // 90 px of steering at S = 9 / (0.55·W) m per px (a few cm of it in the air's low lateral authority, the rest after
+    // touchdown); 60% of it is enough to tell it from nothing.
+    const want = (-90 * 9) / (0.55 * vp.width);
+    await expect.poll(async () => (await snap(page)).p.x - x0, { timeout: 4000 }).toBeLessThan(want * 0.6);
+    expect(errors).toEqual([]);
+  });
+
+  test('swap sides, real touch: a left tap ollies, a right tap does nothing and a right drag steers', async ({ page }) => {
+    const errors: string[] = [];
+    await boot(page, errors);
+    await setSwap(page, true);
+    const vp = page.viewportSize()!, touch = await Touch.of(page);
+    await liveRun(page, 1, touch);
+    const tR = (await snap(page)).tick;
+    await touch.tap(vp.width * 0.75, vp.height * 0.7);
+    await expect.poll(async () => (await snap(page)).tick, { timeout: 10000 }).toBeGreaterThan(tR + 30);
+    expect(kinds(await events(page, tR))).not.toContain('ollie');
+    const t0 = (await snap(page)).tick;
+    await touch.tap(vp.width * 0.25, vp.height * 0.7);
+    await expect.poll(async () => kinds(await events(page, t0)), { timeout: 3000 }).toContain('ollie');
+    await expect.poll(async () => kinds(await events(page, t0)), { timeout: 15000 }).toContain('land');   // sim time (load)
+    const x0 = (await snap(page)).p.x, y = vp.height * 0.6;
+    await touch.start(vp.width * 0.8, y);
+    for (let i = 1; i <= 12; i++) { await touch.move(vp.width * 0.8 - i * 10, y); await page.waitForTimeout(16); }
+    await touch.end();
+    await expect.poll(async () => (await snap(page)).p.x - x0, { timeout: 3000 }).toBeLessThan(-1.0);
+    expect(kinds(await events(page, t0)).filter((k) => k === 'flipStart')).toEqual([]);
+    expect(errors).toEqual([]);
+  });
+
   test('mouse drag behaves like touch (steer) and a click ollies', async ({ page }, info) => {
     test.skip(!!info.project.use.hasTouch, 'desktop pointer');
     const errors: string[] = [];
@@ -326,6 +378,33 @@ test.describe('synthetic traces through the real recognizer (__skate.pointer, ma
     }, [left, tap(R, 500, 40, 60), flick(R, 480, -80, 0, 220, 48, 7)] as const);
     expect(flipsOf(r.ev, t1)).toEqual(['kickflip']);
     expect(r.x - x0).toBeCloseTo((-50 * 9) / (0.55 * w), 1);       // every pixel steered, none taken back
+    expect(errors).toEqual([]);
+  });
+
+  test('right thumb: a HOLD in the air grabs (Indy) and, held through touchdown, manuals; a left hold does neither', async ({ page }) => {
+    const errors: string[] = [];
+    await boot(page, errors);
+    await manualRun(page);
+    const { L, R } = sides(page);
+    const t1 = (await snap(page)).tick;
+    const r = await page.evaluate(([a, b]) => {
+      window.__skate!.pointer(a); window.__skate!.step(4);         // right tap → ollie
+      window.__skate!.pointer(b); window.__skate!.step(90);        // the right thumb back down at once, held 1 s
+      return window.__skate!.events();
+    }, [tap(R, 500, 0, 60), tap(R, 500, 0, 1000, 11)] as const);
+    const after = r.filter((e) => e.tick > t1);
+    expect(after.map((e) => e.t)).toEqual(expect.arrayContaining(['ollie', 'grabStart', 'manualStart']));
+    expect(after.find((e) => e.t === 'grabStart')).toMatchObject({ id: 'indy' });
+    await page.evaluate(() => window.__skate!.step(60));
+    const t2 = (await snap(page)).tick;
+    const l = await page.evaluate(([a, b]) => {
+      window.__skate!.pointer(a); window.__skate!.step(4);
+      window.__skate!.pointer(b); window.__skate!.step(90);        // the same hold with the left (steering) thumb
+      return window.__skate!.events();
+    }, [tap(R, 500, 0, 60, 12), tap(L, 500, 0, 1000, 13)] as const);
+    const after2 = l.filter((e) => e.tick > t2).map((e) => e.t);
+    expect(after2).toContain('ollie');
+    expect(after2.filter((k) => k === 'grabStart' || k === 'manualStart')).toEqual([]);
     expect(errors).toEqual([]);
   });
 

@@ -34,8 +34,9 @@
 // Two-thumb controls (owner playtest, DESIGN §4.1–4.2): with `controls: 'two'` (the default) each touch gets a role
 // at touch-down from where it went down, kept for its whole life (it may slide across the midline):
 //   - steering zone (x < splitFrac·screenW; the right half with swapSides): steer only. It can own steering (the first
-//     steering-zone touch to cross SLOP, counted from touch-down, as before) and never emits tap, swipe, hold, long
-//     tap or press, however it moves or rests;
+//     steering-zone touch to cross SLOP, counted from touch-down, as before; once the owner lifts, also a steering-zone
+//     DRAG already down that moves, from where it is) and never emits tap, swipe, hold, long tap or press, however it
+//     moves or rests;
 //   - trick zone: tap / swipe / hold / press exactly as before, but it never steers and never owns steering, so its
 //     swipes carry dxPx 0 and steer false (normal thresholds, no owner sectors; arc compensation kept).
 // `controls: 'one'` (and every mouse or pen pointer, whatever the setting) keeps the one-thumb grammar: role 'both'.
@@ -287,6 +288,11 @@ export function createRecognizerImpl(partial?: Partial<RecognizerConfigExt>): Re
       tc.state = 'drag';
       tc.dragMs = t;
       if (owner === null && tc.role !== 'trick') { owner = tc.id; tc.steerX = tc.x0; }
+    } else if (owner === null && tc.role === 'steer' && tc.state === 'drag' && dx !== 0) {
+      // Two thumbs: steering is free (its owner lifted or cancelled) and a steering-zone DRAG that never owned it moves:
+      // it takes over from where it was, so a thumb blocked by a grip contact that dragged first steers as soon as that
+      // contact lets go (no re-grip needed), while a still contact never takes steering.
+      owner = tc.id; tc.steerX = tc.x - dx;
     }
     if (tc.state === 'drag' && owner === tc.id && tc.x !== tc.steerX) {
       out.push({ k: 'steer', tMs: t, dxPx: tc.x - tc.steerX });

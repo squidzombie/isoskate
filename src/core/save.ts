@@ -32,7 +32,11 @@ export interface SaveV1 {
   trickBook: TrickId[]; postcards: AreaId[];
   onboarding: { lessonDone: boolean; runsStarted: number; learned: Partial<Record<HintId, boolean>>;
                 crashStreak: { kind: string; runs: number } | null;
-                persistAsked: boolean; installHintShown: boolean };
+                persistAsked: boolean; installHintShown: boolean;
+                /** added @ctl: the one-run re-teach of the two-thumb controls for a profile from before them (DESIGN
+                 *  §12.5): -1 = due (sanitize: runsStarted > 3 and no settings.controls in the stored save), n > 0 = shown
+                 *  in run n (its runsStarted), 0 / absent = not needed (new profiles learn them in runs 1–3). */
+                twoThumbIntro?: number };
   settings: {
     music: number; sfx: number; haptics: 'off' | 'key' | 'all'; shake: boolean; reducedMotion: boolean; effects: boolean;
     quality: 'auto' | 'low' | 'med' | 'high'; batterySaver: boolean; steerSensitivity: number; simpleTricks: boolean;
