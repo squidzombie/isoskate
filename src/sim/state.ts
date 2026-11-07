@@ -2,23 +2,34 @@
 // SkaterState / ScoreState are the frozen contract (core/sim.ts); SimState adds the bookkeeping the contract does not
 // expose. Everything here is plain data (structuredClone-able), so snapshot() is one clone (TECH §6.7).
 import type { AreaId, Dir8, FlipId, GatewayId, PropKind } from '../core/ids';
+import type { InputFrameExt } from '../tricks';
 import type { GameEvent } from '../core/events';
 import type { RunConfig, ScoreState, SkaterMode, SkaterState } from '../core/sim';
 import type { TrickTables } from '../core/tricks';
-import { sAt, speedAt } from '../core/tuning';
+import { REWIND, sAt, speedAt } from '../core/tuning';
 import type { Coin, GroundHit, GroundSlab, Obstacle, WorldGen, WorldQuery } from '../core/world';
 import { emptyCombo } from '../tricks';
 
 /** Per-air bookkeeping (reset at every take-off). */
 export interface AirExt {
   reason: 'pop' | 'rollOff' | 'grindEnd';
+  takeoffTick: number;                  // tick of the take-off (a grab HOLD must have gone down after it)
   takeoffY: number;                     // board bottom at take-off (dropH)
+  takeoffS: number; takeoffX: number;   // where the air started (gaps)
+  fromOb: number;                       // obstacle the board left (its slab top or its edge), −1: the street (gaps)
   doneFlips: { id: FlipId; doubleUp: boolean }[];   // flips finished earlier in this air (scored at touchdown)
   flipDoubleUp: boolean;                // the rotating flip is a Double-up (2nd separate flip)
   lastDoneTick: number;                 // tick the last rotation finished (−1: none) → Perfect window
   steerAway: number;                    // magnet cancel: net steering away from the magnet edge this jump (m)
+  steerNet: number;                     // net steering applied this jump, after consumed swipes (m, + right)
   fromEdgeOb: number;                   // obstacle id of the edge we left (−1) → Transfer
+  popEdge: number; popOb: number;       // the edge / obstacle a pop-out left (−1): no re-capture (RULES.popOutSkipsOwnEdge)
+  popX: number;                         // x at that pop-out ("steering toward" the edge)
   spinOut: boolean;                     // the spin is a 180 Out
+  grabbed: boolean;                     // a grab happened in this air (one per air)
+  grabDur: number;                      // seconds the grab of this air was held (scored at touchdown / capture)
+  grabHeldToLand: boolean;              // the grab's hold is still down: rolls into a manual on touchdown
+  spinYaw0: number; spinT0: number;     // spin pose continuity across the 180 → 360 upgrade (deg, s)
 }
 /** Grind pick window (TECH §6.6): picks made while it is open. */
 export interface PickExt {
@@ -32,14 +43,41 @@ export interface PredExt {
   magnetEdge: number; magnetX: number;    // magnet candidate (−1) and its axis x at the crossing
 }
 
+/** What the last swipe started (keyboard amend, DESIGN §4.6). */
+export interface StartExt { kind: 'ollie' | 'popOut' | 'flip' | 'pick' | 'switch'; tick: number }
+
+/** Near-miss tracking (DESIGN §7): crash-top obstacles the board came close to (or touched) while passing them, until
+ *  it has passed their far end. Fixed capacity, plain arrays (snapshot-friendly, no allocation per tick). */
+export interface NearExt { ids: number[]; sEnd: number[]; side: number[]; contact: boolean[] }
+export const NEAR_CAP = 8;
+
 export interface SimState {
   cfg: RunConfig; startT: number; s0: number;
   cur: SkaterState; prev: SkaterState; score: ScoreState;
   air: AirExt; pick: PickExt; pred: PredExt;
   flipFrom: { roll: number; yaw: number; pitch: number };  // board angle (deg) the rotating flip eases from (upgrades)
   grindSnap: { dx: number; dy: number; entry: number };   // lock offsets (eased out over CAPTURE.snapT), combo entry idx
+  grindPartT0: number;                  // grind time when the current part (after a switch) began
   manualEntry: number;                  // combo entry index of the running manual (−1)
   manualLatch: boolean;                 // the hold / key that started a manual is still down: no restart until released
+  manualSrc: 'hold' | 'key' | 'prePress' | 'grab' | null;   // what started the running manual
+  manualPartT0: number;                 // manual time when the running part began (0, the Nose Manual switch, a gateway cut)
+  manualsSinceAir: number;              // manuals started since the last take-off (back-to-back manuals keep the heat)
+  manualHeat: boolean;                  // the running manual keeps the combo heat running (RULES.backToBackManualPausesHeat)
+  timedCarry: boolean;                  // the running grind / manual part is the rest of one a gateway bank cut (no entry pts)
+  lastStart: StartExt | null;           // keyboard amend
+  sw: { tick: number; dir: Dir8 | null };   // the last grind switch on this edge
+  pressDown: boolean;                   // the press level of the previous frame (pressRiseTick edge)
+  near: NearExt;
+  gapped: Set<number>;                  // gap obstacles already paid this run
+  landmarksPaid: string[];              // landmarks paid this area visit
+  rewindsLeft: number;
+  revertTick: number;                   // last revert (pose keeps fakie visible a few ticks)
+  shadowY: number;                      // ground under the board (pose height in the air)
+  wallSide: -1 | 0 | 1;                 // soft wall currently touched (bump on entry)
+  /** Only inside a snapshot: the Lesson rewind ring at that moment (the live ring is kept by the Sim, not the state),
+   *  so snapshot → restore replays rewinds exactly too. */
+  ring?: SimState[];
   landTick: number; landDrop: number;   // last touchdown tick and its drop (pose landImpulse)
   slabKind: GroundSlab['kind']; stairStep: number; groundOb: number;   // ground under the board (stickiness, stairs, pads)
   tier: 0 | 1 | 2 | 3; area: AreaId; gateway: GatewayId | null; bestPassed: boolean;
@@ -58,11 +96,15 @@ export interface Ctx {
   readonly gen: WorldGen;
   readonly tables: TrickTables;
   readonly ev: GameEvent[];
+  /** This tick's input frame (levels the touchdown rules read: press, hold, grab, manualKey). */
+  f: Readonly<InputFrameExt>;
   /** Obstacles in [s − 2, s + 20] for this tick (collision, warnings, magnet and align candidates). */
   obs: readonly Obstacle[];
   /** world.groundAt without allocating: the result lives in scratch `slot` until the next call with that slot
    *  (slot 0: this tick's ground and touchdown checks; slot 1: the air prediction loop). */
   ground(s: number, x: number, yMax: number, slot?: 0 | 1): GroundHit;
+  /** Obstacles overlapping [s0, s1] without allocating (valid until the next call; not `obs`). */
+  obstaclesIn(s0: number, s1: number): readonly Obstacle[];
   /** world.coins without allocating (valid until the next call). */
   coinsNear(s0: number, s1: number): readonly Coin[];
   /** The area and gateway at s (gen.areaAt's area / gateway) without allocating. */
@@ -88,8 +130,11 @@ export function initScore(startArea: AreaId): ScoreState {
   };
 }
 
-export const freshAir = (): AirExt => ({ reason: 'pop', takeoffY: 0, doneFlips: [], flipDoubleUp: false, lastDoneTick: -1,
-  steerAway: 0, fromEdgeOb: -1, spinOut: false });
+export const freshAir = (): AirExt => ({ reason: 'pop', takeoffTick: -1, takeoffY: 0, takeoffS: 0, takeoffX: 0, fromOb: -1, doneFlips: [],
+  flipDoubleUp: false, lastDoneTick: -1, steerAway: 0, steerNet: 0, fromEdgeOb: -1, popEdge: -1, popOb: -1, popX: 0,
+  spinOut: false, grabbed: false, grabDur: 0, grabHeldToLand: false, spinYaw0: 0, spinT0: 0 });
+
+const freshNear = (): NearExt => ({ ids: [], sEnd: [], side: [], contact: [] });
 
 export function initState(cfg: RunConfig): SimState {
   const startT = cfg.startT ?? 0;
@@ -99,7 +144,10 @@ export function initState(cfg: RunConfig): SimState {
     cfg, startT, s0: cur.p.s, cur, prev: initSkater(startT), score: initScore(startArea),
     air: freshAir(), pick: { open: false, edgeId: -1, dirs: [], tick: -1, miss: 0 },
     pred: { tLand: 0, landY: 0, captureEdge: -1, tCapture: Infinity, magnetEdge: -1, magnetX: 0 },
-    flipFrom: { roll: 0, yaw: 0, pitch: 0 }, grindSnap: { dx: 0, dy: 0, entry: -1 }, manualEntry: -1, manualLatch: false,
+    flipFrom: { roll: 0, yaw: 0, pitch: 0 }, grindSnap: { dx: 0, dy: 0, entry: -1 }, grindPartT0: 0, manualEntry: -1, manualLatch: false,
+    manualSrc: null, manualPartT0: 0, manualsSinceAir: 0, manualHeat: false, timedCarry: false, lastStart: null, sw: { tick: -1, dir: null }, pressDown: false, near: freshNear(),
+    gapped: new Set(), landmarksPaid: [], rewindsLeft: Math.max(0, Math.min(REWIND.max, Math.floor(cfg.rewinds ?? 0))),
+    revertTick: -1, shadowY: 0, wallSide: 0,
     landTick: -1, landDrop: 0, slabKind: 'flat', stairStep: -1, groundOb: -1,
     tier: 0, area: startArea, gateway: null, bestPassed: false,
     collected: new Set(), knocked: new Set(), ghosted: new Set(), warned: new Set(),

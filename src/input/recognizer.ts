@@ -26,6 +26,12 @@
 //     stays sideways steering instead of a ↗/↖ pop. Parked-then-flicked thumbs and other fingers keep ±15°.
 //   - Sloppy tap: a touch that drifted past SLOP but stayed within sloppyTapMaxPx of its start (and sloppyTapMaxDxPx
 //     sideways), fired no swipe and lifted ≤ sloppyTapMs after touch-down is also a tap (its drift already steered).
+// W1a (GP) amendment, the open G0 item "a 350–600 ms press does nothing": a still touch lifted after tapMaxMs but
+// ≤ longTapMaxMs after touch-down (a HOLD that never moved) ends its hold with `release: true` (HoldEndExt). It is not
+// a `tap` (the 349 / 351 ms boundary stays); the frame builder turns it into InputFrame `longTap` and the sim reads it
+// as a TAP wherever the hold started nothing (tricks/interpret.ts). Filed in docs/core-requests.md (GP). The design
+// target is 600 ms; it ships at 400 ms until tests/e2e/touch.spec.ts's pipeline-priming touch (a still press of
+// 400 ms + delivery, meant to do nothing) holds longer (request 1 in the GP section).
 import type { Dir8 } from '../core/ids';
 import type { Gesture, GestureRecognizer, PointerSample, RecognizerConfig } from '../core/input';
 
@@ -36,6 +42,9 @@ export interface RecognizerConfigExt extends RecognizerConfig {
   ownerDiagonalHalfDeg: number;
   /** Sloppy tap: lifted ≤ this many ms after touch-down ... */
   sloppyTapMs: number;
+  /** Long tap: a still touch lifted ≤ this many ms after touch-down (and after tapMaxMs) marks its holdEnd `release`.
+   *  Design target 600; 400 until the e2e priming touch holds ≥ 700 ms (docs/core-requests.md GP request 1). */
+  longTapMaxMs: number;
   /** ... having never moved more than this from the touch-down point (·k) ... */
   sloppyTapMaxPx: number;
   /** ... nor more than this sideways (·k: ≤ ~0.6 m of steering), and no swipe fired. */
@@ -62,7 +71,11 @@ export const DEFAULT_RECOGNIZER: Readonly<RecognizerConfigExt> = {
   screenW: 0, screenH: 0,
   ownerDiagonalHalfDeg: 10,
   sloppyTapMs: 250, sloppyTapMaxPx: 20, sloppyTapMaxDxPx: 15,
+  longTapMaxMs: 400,
 };
+
+/** holdEnd of a still touch lifted tapMaxMs–longTapMaxMs after touch-down (core Gesture plus `release`; GP request). */
+export interface HoldEndExt { k: 'holdEnd'; tMs: number; release?: true }
 
 /** Measurement windows (how the grammar's speeds are measured, not grammar tunables): the speed used for the
  *  re-fire peak and dip; the speed used for rest detection (longer, so ±3 px of thumb tremor still reads as
@@ -253,8 +266,17 @@ export function createRecognizerImpl(partial?: Partial<RecognizerConfigExt>): Re
       tc.steerX = tc.x;
     }
 
-    // Rest tracking (fromRest). A parked thumb sends no samples, so a slow segment since the previous sample means
-    // the rest began at that sample.
+    // Rest tracking (fromRest). A parked thumb sends no samples (input/pointer.ts feeds every hardware sample,
+    // coalesced ones included), so a slow segment since the previous sample means the rest began at that sample, and
+    // a gap of more than restWinMs with no sample at all was a rest that ended about one sample interval before this
+    // one: a thumb parked 60 ms then flicked hard is `fromRest` even though its first flick sample is fast (DESIGN
+    // §4.2; without this it needed ~110 ms at 60 Hz). Tremor samples keep the 40 ms speed window (a dodge's
+    // turnaround must not read as a rest).
+    const gap = t - prevT;
+    if (tc.moving && gap > RECOGNIZER_INTERNALS.restWinMs && tc.trail.length >= 3) {
+      const iv = Math.min(RECOGNIZER_INTERNALS.speedWinMs, Math.max(4, prevT - tc.trail[tc.trail.length - 3]!.t));
+      tc.lastRestLen = gap - iv; tc.motionStart = t - iv;
+    }
     const vr = speed(tc, RECOGNIZER_INTERNALS.restWinMs);
     if (vr < config.restSpeed * k) {
       if (tc.moving) {
@@ -288,8 +310,13 @@ export function createRecognizerImpl(partial?: Partial<RecognizerConfigExt>): Re
     fire(tc, t, wx, wy, ws, out);
   }
 
-  function end(tc: Touch, t: number, out: Gesture[]): void {
-    if (tc.state === 'hold') out.push({ k: 'holdEnd', tMs: t });
+  function end(tc: Touch, t: number, out: Gesture[], lifted = false): void {
+    if (tc.state === 'hold') {
+      const held = t - tc.downMs;
+      const g: HoldEndExt = lifted && held > config.tapMaxMs && held <= config.longTapMaxMs ? { k: 'holdEnd', tMs: t, release: true }
+        : { k: 'holdEnd', tMs: t };
+      out.push(g);
+    }
     if (tc.press) { tc.press = false; out.push({ k: 'press', tMs: t, down: false }); }
     if (owner === tc.id) owner = null;
     touches.delete(tc.id);
@@ -330,7 +357,7 @@ export function createRecognizerImpl(partial?: Partial<RecognizerConfigExt>): Re
       // Sloppy tap: a short jab that drifted a little past SLOP (thumbs roll on the glass) is still an ollie.
       if (tc.state === 'drag' && tc.fires === 0 && t - tc.downMs <= config.sloppyTapMs
         && tc.maxD < config.sloppyTapMaxPx * config.k && tc.maxDx < config.sloppyTapMaxDxPx * config.k) out.push({ k: 'tap', tMs: t });
-      end(tc, t, out);
+      end(tc, t, out, true);
       return out;
     },
     tick(nowMs: number): Gesture[] {

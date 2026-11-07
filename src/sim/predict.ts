@@ -6,6 +6,7 @@
 import type { GrindEdge } from '../core/world';
 import { CAPTURE, DT, G, HITBOX, MAGNET, sAt } from '../core/tuning';
 import type { Ctx } from './state';
+import { popSkip } from './grind';
 
 export const PREDICT_MAX_STEPS = 90;
 /** Capture starts when the front half of the board reaches the edge start: centre s ≥ a.s − HITBOX.l/2 (u clamps to 0).
@@ -66,16 +67,18 @@ export function predict(k: Ctx): void {
   for (const ob of k.obs) {
     for (const e of ob.edges) {
       if (e.b.s < c.p.s || e.a.s > c.p.s + c.vel.s * tLand + 0.5) continue;
+      if (popSkip(k, e, false)) continue;                 // GP request: no re-capture after a pop-out (grind.ts)
+      const mag = magnet && !popSkip(k, e, true);
       const sRef = Math.max(c.p.s, e.a.s);
       const dx = Math.abs(edgeX(e, sRef) - c.p.x);
-      if (dx > captureReach(e, magnet, c.transferArmed)) continue;
+      if (dx > captureReach(e, mag, c.transferArmed)) continue;
       const j = captureStep(k, e, c.p.y, c.vel.y, jLand, c.p.s);
       if (j < 0) continue;
       const tc = j * DT;
       if (tc < pr.tCapture) { pr.tCapture = tc; pr.captureEdge = e.id; }
       if (!e.pickOnly) {
-        if (magnet && dx < bestDx) { bestDx = dx; pr.magnetEdge = e.id; pr.magnetX = edgeX(e, sAt(tAhead(k, j))); }
-        if ((magnet || dx <= CAPTURE.lat) && tc < tAir) tAir = tc;
+        if (mag && dx < bestDx) { bestDx = dx; pr.magnetEdge = e.id; pr.magnetX = edgeX(e, sAt(tAhead(k, j))); }
+        if ((mag || dx <= CAPTURE.lat) && tc < tAir) tAir = tc;
       }
     }
   }

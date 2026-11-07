@@ -1,9 +1,12 @@
 // sim/pickups.ts: coins and the run markers (TECH §6.3 step 8): hazard warnings (warnAtS), area and gateway entry
-// (a gateway entry banks the combo; arriving in a new area pays New Ground), the BEST line and speed tiers.
+// (a gateway entry banks the combo, the part of a grind / manual ridden so far included, and the rest of it scores into
+// a new combo; arriving in a new area pays New Ground), the BEST line and speed tiers.
 import { SPEED_TIERS } from '../core/tuning';
 import { SCORE, addBonus, bank } from '../tricks';
 import { COIN_CHAIN_TICKS, COIN_VOLUME } from './consts';
 import type { Ctx } from './state';
+import { carryGrind, grindEntryNow } from './grind';
+import { carryManual, manualEntryNow } from './manual';
 
 const PRUNE_EVERY = 600;
 
@@ -23,7 +26,7 @@ export function pickups(k: Ctx): void {
   }
   // Ids are only ever looked up near the skater: forget the ones far behind now and then (bounded snapshots).
   if (c.tick % PRUNE_EVERY === 0) {
-    for (const set of [st.collected, st.warned, st.knocked, st.ghosted]) {
+    for (const set of [st.collected, st.warned, st.knocked, st.ghosted, st.gapped]) {
       if (set.size < 64) continue;
       const keep = new Set<number>();
       for (const ob of k.obs) if (set.has(ob.id)) keep.add(ob.id);
@@ -50,11 +53,15 @@ export function markers(k: Ctx): void {
     st.gateway = a.gateway;
     if (a.gateway) {
       k.ev.push({ t: 'gatewayEnter', tick: c.tick, gateway: a.gateway });
+      const g = grindEntryNow(k), m = manualEntryNow(k);
       bank(sc, k.ev, c.tick, 'gateway');
+      if (g) carryGrind(k, g);
+      else if (m) carryManual(k, m);
     }
   }
   if (a.area !== st.area) {
     st.area = a.area;
+    st.landmarksPaid.length = 0;                  // landmarks pay once per area visit
     // Arrivals through a gateway count; the starting area never counts as "reached" (DESIGN §12.1).
     const first = !sc.areasReached.includes(a.area) && a.area !== (st.cfg.startArea ?? 'downtown');
     if (first) sc.areasReached.push(a.area);

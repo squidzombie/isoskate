@@ -42,7 +42,9 @@ function rig() {
   until(500);
   base = clock;
   const play = (...ts: Trace[]) => { for (const t of ts) pipe.schedule(t.samples, base); };
-  return { sim, events, swipes, until, play };
+  /** A key press at `ms` (edges only; levels follow keyDown / keyUp immediately). */
+  const key = (code: string, ms: number) => pipe.keyDown(code, base + ms);
+  return { sim, events, swipes, until, play, key, pipe };
 }
 const flips = (ev: readonly GameEvent[]) => ev.filter((e): e is Extract<GameEvent, { t: 'flipStart' }> => e.t === 'flipStart').map((e) => e.id);
 const ollies = (ev: readonly GameEvent[]) => ev.filter((e) => e.t === 'ollie');
@@ -84,6 +86,17 @@ describe('recognizer labels → sim (DESIGN §4.3 steering-stroke rule)', () => 
     r.until(1300);
     expect(r.swipes.at(-1)).toMatchObject({ dir: 'l', fromRest: true, steer: true });
     expect(flips(r.events)).toEqual(['kickflip']);
+  });
+
+  it('a park of ~70 ms is enough (DESIGN §4.2: parked ≥ 60 ms); a 30 ms hesitation is still steering', () => {
+    for (const [park, want] of [[70, ['kickflip']], [30, []]] as const) {
+      const r = rig();
+      const thumb = new Trace(1, 0, 195, 700).move(50, 0, 300, 16).rest(park).flick(1.0, 180, 70, 16);
+      r.play(thumb, tapAt(240));
+      r.until(1300);
+      expect(r.swipes.at(-1), `park ${park}`).toMatchObject({ dir: 'l', fromRest: park >= 60, steer: true });
+      expect(flips(r.events), `park ${park}`).toEqual(want);
+    }
   });
 
   it('a hard ↓ from a steering thumb that is still moving pop shove-its', () => {
@@ -154,4 +167,72 @@ describe('recognizer labels → sim (DESIGN §4.3 steering-stroke rule)', () => 
     hard.until(1300);
     expect(flips(hard.events)).toEqual(['kickflip']);
   });
+
+  // ── W1a (GP) traces: the open G0 items, through the real recognizer and frames ──
+  it('a 390 ms still press outside a combo pops an ollie on release (it felt like nothing at G0); 700 ms does nothing', () => {
+    const mid = rig();
+    mid.play(new Trace(3, 0, 200, 500).rest(390).up());
+    mid.until(700);
+    expect(ollies(mid.events)).toHaveLength(1);
+    expect(mid.events.some((e) => e.t === 'manualStart')).toBe(false);
+    const long = rig();
+    long.play(new Trace(3, 0, 200, 500).rest(700).up());
+    long.until(1000);
+    expect(ollies(long.events)).toHaveLength(0);
+  });
+
+  it('a thumb that comes to rest right after a landing manuals only 0.30 s later, and a tap inside that 0.30 s just ollies', () => {
+    const r = rig();
+    r.play(tapAt(0));
+    r.until(700);                                                    // landed at ≈ 0.6 s
+    const landT = r.events.find((e) => e.t === 'land')!.tick;
+    r.play(new Trace(4, landT + 30 - 0, 220, 520).rest(500).up());   // ms relative to base: rests 30 ms after landing
+    r.until(landT + 600);
+    const m = r.events.find((e) => e.t === 'manualStart');
+    expect(m).toBeDefined();
+    expect(m!.tick - (landT + 30)).toBeGreaterThanOrEqual(290);       // ≥ 0.30 s of stillness
+  });
+
+  it('a steering thumb\'s fast ← in the air is no flip and its steering stays; a parked thumb\'s ← kickflips and gives the flick back', () => {
+    const steer = rig();
+    steer.play(new Trace(1, 0, 195, 700).move(-30, 0, 200).flick(1.0, 180, 40).rest(100).up(), tapAt(140));
+    steer.until(1200);
+    expect(flips(steer.events)).toEqual([]);
+    expect(steer.sim.cur.targetX).toBeCloseTo(-70 * 9 / (0.55 * 390), 1);   // all 70 px steered
+    const parked = rig();
+    parked.play(new Trace(1, 0, 195, 700).move(-30, 0, 200).rest(150).flick(1.0, 180, 40).rest(100).up(), tapAt(140));
+    parked.until(1200);
+    expect(flips(parked.events)).toEqual(['kickflip']);
+    expect(parked.sim.cur.targetX).toBeGreaterThan(steer.sim.cur.targetX + 1.0);   // the flick's dx was given back
+  });
+
+  it('keyboard preset A amend through the real mapper and frames: ↑ then → 60 ms later is a FS 180 ollie; ← then ↓ a Varial', () => {
+    const a = rig();
+    a.key('ArrowUp', 0); a.key('ArrowRight', 60);
+    a.until(900);
+    expect(ollies(a.events)).toHaveLength(1);
+    expect(a.events.filter((e) => e.t === 'spinStart').map((e) => (e as { id: string }).id)).toEqual(['fs180']);
+    const b = rig();
+    b.key('Space', 0); b.key('ArrowLeft', 200); b.key('ArrowDown', 260);
+    b.until(900);
+    expect(flips(b.events)).toEqual(['kickflip']);
+    expect(b.events.filter((e) => e.t === 'flipUpgrade').map((e) => (e as { to: string }).to)).toEqual(['varialKickflip']);
+    const c = rig();                                                  // 100 ms apart: two separate swipes
+    c.key('Space', 0); c.key('ArrowLeft', 200); c.key('ArrowDown', 300);
+    c.until(900);
+    expect(c.events.some((e) => e.t === 'flipUpgrade')).toBe(false);
+  });
+
+  it('keyboard preset B: O on the ground is a FS 180 ollie, N in the air a Varial Kickflip, Shift held manuals', () => {
+    const r = rig();
+    r.pipe.keys.preset = 'B';
+    r.key('KeyO', 0); r.key('KeyN', 200);
+    r.until(900);
+    expect(r.events.filter((e) => e.t === 'spinStart').map((e) => (e as { id: string }).id)).toEqual(['fs180']);
+    expect(flips(r.events)).toEqual(['varialKickflip']);
+    r.pipe.keyDown('ShiftLeft', 0, false, false);
+    r.until(1200);
+    expect(r.events.some((e) => e.t === 'manualStart')).toBe(true);
+  });
 });
+

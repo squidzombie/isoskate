@@ -160,7 +160,7 @@ describe('contacts (frozen, TECH §6.4)', () => {
     expect(crashOf(ev)).toBeUndefined();
     expect(ev.filter((e) => e.t === 'airborne').length).toBe(1);
     expect(ev.filter((e) => e.t === 'land').length).toBe(1);
-    expect(ev.filter((e) => e.t === 'bump').length).toBe(0);
+    expect(ev.filter((e) => e.t === 'bump' && e.kind !== 'wall').length).toBe(0);   // steerAxis 1 reaches the soft wall
     expect(sim.cur.p.y).toBe(0);
   });
 

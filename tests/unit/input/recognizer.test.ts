@@ -23,6 +23,25 @@ describe('tap / hold / drag boundaries', () => {
     expect(kinds(run(makeRec(), new Trace(1, 0, CX, CY).rest(120).up().samples))).toEqual(['press+', 'tap', 'press-']);
   });
 
+  it('long tap (W1a): a still release 350–400 ms after down (600 at the design target) marks its holdEnd `release`; a drag, a cancel or a longer press do not', () => {
+    const holdEnd = (ms: number, end: 'up' | 'cancel' = 'up', longTapMaxMs?: number) => {
+      const tr = new Trace(1, 0, CX, CY).rest(ms);
+      const g = run(makeRec(longTapMaxMs ? { longTapMaxMs } : {}), (end === 'up' ? tr.up() : tr.cancel()).samples);
+      return g.find((x) => x.k === 'holdEnd') as { release?: true } | undefined;
+    };
+    expect(DEFAULT_RECOGNIZER.longTapMaxMs).toBe(400);
+    expect(holdEnd(351)?.release).toBe(true);
+    expect(holdEnd(400)?.release).toBe(true);
+    expect(holdEnd(401)?.release).toBeUndefined();                         // the e2e priming touch (≥ 400 ms + delivery)
+    expect(holdEnd(600, 'up', 600)?.release).toBe(true);
+    expect(holdEnd(601, 'up', 600)?.release).toBeUndefined();
+    expect(holdEnd(300)?.release).toBeUndefined();                        // ≤ 350 ms is a real tap
+    expect(holdEnd(380, 'cancel')?.release).toBeUndefined();
+    expect(kinds(run(makeRec(), new Trace(1, 0, CX, CY).rest(380).up().samples))).toEqual(['press+', 'holdStart', 'holdEnd', 'press-']);
+    const drag = run(makeRec(), new Trace(1, 0, CX, CY).rest(250).move(12, 0, 40).rest(100).up().samples);
+    expect(drag.some((x) => x.k === 'holdEnd' && (x as { release?: true }).release)).toBe(false);
+  });
+
   it('SLOP: 9 px of travel stays still (tap), 11 px is a DRAG (steering from touch-down)', () => {
     const still = run(makeRec(), new Trace(1, 0, CX, CY).move(9, 0, 60).up().samples);
     expect(kinds(still)).toEqual(['press+', 'tap', 'press-']);
@@ -181,6 +200,16 @@ describe('misfire traces (Mobile review)', () => {
     // Without the park it is not fromRest.
     const s = swipes(run(makeRec(), new Trace(1, 0, 150, CY).flick(0.3, 0, 300).flick(1.2, 180, 60).up().samples));
     expect(s.at(-1)).toMatchObject({ dir: 'l', fromRest: false });
+  });
+
+  it('a still park (no samples, as on hardware) of ~60 ms is enough at 60 and 120 Hz; 40 ms is not (DESIGN §4.2)', () => {
+    // The first flick sample after a sample-less park is fast: the gap itself was the rest (review: it needed ~110 ms).
+    const go = (park: number, step: number) => swipes(run(makeRec(),
+      new Trace(1, 0, 150, CY).flick(0.3, 0, 320, step).rest(park).flick(1.2, 180, 64, step).up().samples))[0];
+    for (const step of [16, 8]) {
+      expect(go(70, step), `70 ms @ ${step}`).toMatchObject({ dir: 'l', steer: true, fromRest: true, fast: true });
+      expect(go(40, step), `40 ms @ ${step}`).toMatchObject({ dir: 'l', steer: true, fromRest: false });
+    }
   });
 });
 

@@ -65,7 +65,8 @@ export function rail(o: { s: number; x: number; len: number; hgt: number }): Obs
 /** s where the skater centre is at run time t (on the speed schedule). */
 export const sAtT = (t: number): number => sAt(t);
 
-export function fixtureWorld(obstacles: Obstacle[], coins: Coin[] = []): SimDeps {
+/** `gatewayS`: a Greenway gateway from that s on (a gateway bank there), else none. */
+export function fixtureWorld(obstacles: Obstacle[], coins: Coin[] = [], o: { gatewayS?: number } = {}): SimDeps {
   const sorted = obstacles.slice().sort((a, b) => a.s - b.s);
   const edgeById = new Map<number, GrindEdge>();
   for (const ob of sorted) for (const e of ob.edges) edgeById.set(e.id, e);
@@ -84,7 +85,7 @@ export function fixtureWorld(obstacles: Obstacle[], coins: Coin[] = []): SimDeps
         },
         release: () => {},
         segments: () => [],
-        areaAt: () => ({ area: 'downtown', blend: null, gateway: null, first: true }),
+        areaAt: (s: number) => ({ area: 'downtown', blend: null, gateway: o.gatewayS !== undefined && s >= o.gatewayS ? 'greenway' : null, first: true }),
         stats: () => ({ segments: 0, rerolls: 0, fallbacks: 0, rejections: {}, trickCoinShare: 1, msPerSegment: 0 }),
       };
       const world: WorldQuery = {
