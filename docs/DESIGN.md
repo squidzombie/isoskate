@@ -917,7 +917,7 @@ All bots drive the real `Sim` only through `InputFrame`s (TECH §11). Seed count
 | **Thumb bot** (real touch path) | The safe bot's plan rendered as synthetic pointer traces with human jerk and thumb arc, run through the real recognizer: taps 60–260 ms, ±3 px tremor, ±25° flick arcs, 0.25 s total latency, a resting thumb between moves, and air dodges with the steering thumb | Gates: 20 seeds × 4 min at the plateau. Release: 50 seeds. **0 crashes, and 0 unintended flips, spins, grabs or manuals.** |
 | **Conformance** | A perfect SafeKey follower (exact `targetX`, ollie on the key tick) | 50 seeds × 4 min from t = 0: **0 crashes**. Proves validator geometry and sim collision agree. |
 | **Straight bot** | Holds a constant x (each of 9 lanes) and taps ollie at every full-width hazard | From t = 0: **100%** of lanes and seeds crash by t ≤ 20 s. From the plateau: within 10 s. |
-| **Trick bot** | Greedy: takes trick lines and flicks the highest-value trick that fits | Doubles fit rail pop-offs and stairs, triples fit the ≥ 2.0 m drops, and a 360 spin fits a flat ollie, at 7 and 10.5 m/s. No trick-line deaths in 50 seeds × 5 min. **p95 combo duration ≤ 45 s.** |
+| **Trick bot** | Greedy: takes trick lines and flicks the highest-value trick that fits; keeps combos going like a good player (an extra flip pop after 60% of landings when the plan holds its line and the air is clear, a bridging manual up to the plan's next ollie) and pops off the 2.0 m decks for the long air (G1) | Doubles fit rail pop-offs and stairs, triples fit the ≥ 2.0 m drops, and a 360 spin fits a flat ollie, at 7 and 10.5 m/s. No trick-line deaths in 50 seeds × 5 min. **p95 combo duration ≤ 45 s.** Its score lands in the §13.7 good-play band (20–35k pts/min). |
 | **Score ratio** | Survival-only bot vs trick bot at the plateau | ≤ 10% |
 | **Static asserts** | Over the gate's seeds × first 3,000 m | Every hazard visible ≥ 2.5 s. Decision time ≥ 1.2 s. Required-action spacing ≥ `R_MIN`. Required ollie windows ≥ 0.25 s. Dead ends die within 2.0 s. No forbidden-band solids. Every area datum closes to y = 0. Coin share on trick lines ≥ 75%. |
 
@@ -937,6 +937,7 @@ Density figures are **targets for measured outputs** (±25%), not inputs: the ge
 | **Plateau** | 150+ | **10.5 flat** | **6** | ~1.4 / **0.9** | 5 | T1 15, T2 40, T3 35, T4 10 | 4 s every 20–30 s | **4 s** | 8–12 s |
 
 - Gateways (4 s, §12.2) count as breathers.
+- **Breather placement (G1, owner playtest: "parts feel like waiting"):** one 3.5 s breather near the middle of each 35 s visit (16–20 s after the gateway), never within 8 s of the next gateway, so no gap between breathers exceeds ~20 s and no empty stretch is longer than one breather. A breather ≥ 3.4 s carries the optional flat bar off the line (75%).
 - At the plateau, difficulty comes from density, tier mix and area variety, never from speed. The plateau is deliberately one notch calmer than "maximum", so long runs stay chill and possible.
 - Movers are deferred (§10.9); when added they come in at ≤ 1 per 10 s (warm), 8 s (build) and 6 s (plateau).
 
@@ -1452,7 +1453,7 @@ The palette lerps over 8 s, centred on each gateway. Palettes are looked up by `
 | Asphalt | `#7F7890` (lightened from `#5B5466`, then `#6B6478` at G0, `#79728A` at G1, so ink hazards reach ≥ 2.5:1 in building shadows and against sun-lit faces) |
 | Wet neon asphalt | `#352F55` |
 | Neon hazard body | `#7A6FB0` (mid-value, lighter than the road; see §18.4) |
-| Ink hazard body / top (Downtown, Suburbs, Docks) | `#170F24` / `#4A3B6B` (G1: darker than the `#2B2140` ink so bodies hold 2.5:1 in shadow; tops one value step lighter so tall props read as volumes) |
+| Ink hazard body / top (Downtown, Suburbs, Docks) | `#170F24` / `#5C4B84` (G1: darker than the `#2B2140` ink so bodies hold 2.5:1 in shadow; tops two value steps lighter so a tall prop reads as a solid box from the near-top-down portrait camera, not a slab) |
 | Sidewalk / concrete | `#D9C3AE` |
 | Curb top | `#E8D6C2` |
 | Granite | `#B9A9A0` |
@@ -1526,7 +1527,8 @@ The **sky dome** (3-stop gradient, sun disc, glow falloff, 5–8 lozenge clouds 
 - **Crash hazards (Downtown, Suburbs, Docks):** dark ink `#2B2140` body with one saturated area accent.
 - **Crash hazards (Neon):** on dark wet asphalt a dark body would vanish, so Neon hazards invert: a **mid-value `#7A6FB0` body** with a 0.03 m **emissive accent rim** (magenta `#FF3FA4` or lantern red `#FF5A3C`, emissive 1.2) on the top and front edges. Cyan is reserved for sparks, rail-body glow and the contact glow.
 - **Full-width hazards:** add safety chevrons `#F2B630` / `#2B2140` in every area, the holo gate included (on its solid base).
-- **Grindable edges:** in **every** area, a cream top edge `#FFF1D6` (emissive 0.2) drawn over a **0.02 m ink underline**, so the pair reads on light sidewalks and dark neon roads alike. It brightens during the pick window. Never cyan.
+- **Grindable edges: one grind signature, identical in every area and palette** (G1, owner playtest): a polished cream-chrome coping strip `#FFF8EC` (was cream `#FFF1D6`) along every grindable edge (rail tubes, ledge, bench, curb, planter and dock lips, Neon rails), 1.25× the minimum on-screen stripe, drawn over a **0.02 m ink underline** so the pair reads on light sidewalks and dark neon roads alike. It carries a fixed self-lit sheen (stronger on its top face, the same under every palette) and a slow glint band travelling along the street every 8 m (`RENDER.grind`, fx flag `grind`). It brightens during the pick window. Never cyan.
+- **Nothing that is not grindable uses the signature:** no non-grindable prop, decor, trim or light strip is cream or carries the glint, and emissive trim (Neon rims, light bars, vending fronts) is never a thin cream line. "Grind this" = the cream-chrome strip; "ollie this" = a full-width hazard with chevrons; "steer around this" = a tall ink (Neon: lavender) volume.
 - **Coins** glow gold.
 - **Decor** never uses chevrons or the cream edge.
 
@@ -1553,6 +1555,7 @@ On landscape (ψ = 30°) the left-side facades also show.
 **Occlusion**
 - In-corridor solids get the x-ray cap above 1.6 m (§8).
 - No opaque structure crosses over the corridor; overhead decor stays thin (§8).
+- **Nothing bright crosses the look-ahead zone** (G1, owner playtest: lantern strings read as low chains to ollie): lantern-string bulbs hang only beyond |x| ≥ 4.6 (over the sidewalks and facades); over the corridor a string is its thin dark wire. Overhead strings and wires are sparse (Neon one every 48 m, Suburbs wires every 40 m).
 
 ### 18.5 Models
 
@@ -2019,4 +2022,13 @@ Every MUST-FIX was applied. The rows below record decisions where critiques conf
 | 63 | Pop-out re-capture | The magnet re-locked the ledge a pop-out left, so you could not get off a ledge | **No re-capture of that edge** (GP, on): after a pop-out the magnet skips the edge it left, and capture skips every edge of that obstacle when its top is landable, unless you steer toward it. Rails and beams keep re-capture. |
 | 64 | `Decor.y` | WG gave awnings / signs / banners their mounting height in `y`, WA added its own again (awnings at ~5.9 m) | **One convention:** `y` is the surface an element stands on or hangs from; hung kinds carry a `mount` param (lowest point = `y + mount`). Only overhead kinds give their lowest point in `y` (TECH §4.14). |
 | 65 | Palette values | WA's gate tuning moved three colours | **Accepted:** asphalt `#7F7890`, Neon hemi sky `#A69CD8`, ink hazard bodies `#170F24` with `#4A3B6B` tops (§18.1). The pixel gate (`shots --contrast`, silhouette measured) is the source of truth. |
-| 66 | Board identity at 31 px | The grip hides the board graphic in runs | **Accepted:** a thin palette-coloured grip border, one tunable in `skater.config.ts`, default on (M5 if not built earlier). |
+| 66 | Board identity at 31 px | The grip hides the board graphic in runs | **Accepted:** a thin palette-coloured grip border, one tunable in `skater.config.ts`, default on (M5 if not built earlier). **Built at G1 tune** (`GRIP_BORDER`: the palette colour farthest from the grip, 13% of the grip width). |
+
+### G1 tune (owner playtest and the gate's measured outputs)
+
+| # | Topic | Finding | Resolution |
+|---|---|---|---|
+| 67 | Grindable vs not (owner) | "Very hard to differentiate grindable things vs not" | **One grind signature** (§18.4): the cream-chrome coping with a fixed sheen and a travelling glint on every grindable edge in every area; nothing else uses cream or the glint. Hazard tops two value steps lighter (`#5C4B84`) so steer-around volumes read as boxes. Things that looked like the signature lost it: white picket-fence decor is a painted blue-grey, the speed lines peach. Surfaces a grind edge borders are mid-value so the stripe reads against them: manual pad tops (`PAD_TOP`) and the elevated tiled decks outside Neon (`COLORS.deckTile`, the Harbor Bridge deck read as a blown-out light bar beside the vending banks). The contrast gate passes every preset and blend at both viewports. |
+| 68 | Neon clutter over the street (owner) | Lantern strings across the road read as chains; overhead decor every 26 m | Lantern bulbs only beyond \|x\| ≥ 4.6; strings every 48 m (Neon), wires every 40 m (Suburbs) (§18.4 occlusion). |
+| 69 | Dead stretches (owner, §11) | 85% of the anti-straight row segments (S_GATE, half of all run time) and every A3 hazard carried no trick element; warm/build breathers ran straight into the gateway (8–9 s of empty road) | **Template fill:** a manual pad in the row opening's lane (threading the gap is a manual line), A3 hazards land into a manual pad (50%), the single-element templates (DT_LEDGE, SB_WALL, IN_BEAM, NE_RAIL) get a second beat (pad, bench or flat bar, 70%), breathers carry the optional flat bar; breathers mid-visit (§11). Trick elements / 10 s 3.0 / 1.5 / 1.9 / 1.3 → 3.8 / 2.0 / 2.4 / 2.2 (opening / warm / build / plateau). The §11 targets (4–5 trick elements, 4–6 actions / 10 s) need rows hosted by template trick props instead of S_GATE (still ~50% of run time): M5 content work. |
+| 70 | Score ratio and combo gates | The trick bot only flipped on the plan's own ollies (4k pts/min, ratio 0.42) | The trick bot keeps combos like a good player (§10.11): 23.7k pts/min, ratio 0.072, p95 combo 6.3 s, 100 triples (deck pops) in 50 seeds × 5 min. Scoring unchanged. A frame-perfect chain (a pop after every landing) reaches ~270k pts/min: the ×30 multiplier over a whole visit; watch it in M5 balance. |

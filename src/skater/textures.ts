@@ -6,7 +6,7 @@ import type { BoardLook, BoardPattern, Hex, HelmetLook, SkaterLook } from '../co
 import { SKIN_TONES } from '../core/cosmetics';
 import { hash32, Sfc32 } from '../core/rng';
 import { mix, shade } from './parts';
-import { SHADE, TEX } from './skater.config';
+import { GRIP_BORDER, SHADE, TEX } from './skater.config';
 
 type Ctx = CanvasRenderingContext2D;
 const css = (h: Hex, a = 1) => a >= 1 ? `#${h.toString(16).padStart(6, '0')}` : `rgba(${(h >> 16) & 255},${(h >> 8) & 255},${h & 255},${a})`;
@@ -607,6 +607,15 @@ function drawGripAndPly(c: Ctx, look: BoardLook): void {
   else drawGripNoise(c, gx0, gy0, W, 64);
   if (look.gripGlow !== undefined) {
     c.strokeStyle = css(look.gripGlow); c.lineWidth = 5; c.strokeRect(gx0 + 6, gy0 + 6, W - 12, 52);
+  } else if (GRIP_BORDER.on) {
+    // The palette colour farthest in luminance from the grip (G1 board identity at 31 px).
+    const lum = (h: Hex) => 0.2126 * ((h >> 16) & 255) + 0.7152 * ((h >> 8) & 255) + 0.0722 * (h & 255);
+    const col = look.palette.reduce((a, b) => (Math.abs(lum(b) - lum(look.grip)) > Math.abs(lum(a) - lum(look.grip)) ? b : a), look.palette[0]);
+    // (inside the grip's UV rect, BOARD_UV.grip: x 4..W−4, rows 132..188)
+    const y0 = gy0 + 4, h = 56, x0 = gx0 + 4, w = W - 8, bw = Math.max(2, Math.round(h * GRIP_BORDER.frac));
+    c.fillStyle = css(col);
+    c.fillRect(x0, y0, w, bw); c.fillRect(x0, y0 + h - bw, w, bw);
+    c.fillRect(x0, y0, bw * 2, h); c.fillRect(x0 + w - bw * 2, y0, bw * 2, h);
   }
   // Ply edge: 7 stripes of natural maple (dyed middle ply in the palette's second colour).
   const plies = [0xe8c9a0, 0xc9a27a, 0xe8c9a0, look.palette[1], 0xe8c9a0, 0xc9a27a, 0xe8c9a0];

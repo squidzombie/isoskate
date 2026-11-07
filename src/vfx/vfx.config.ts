@@ -8,7 +8,8 @@ export const VFX = {
   perfectRing: { life: 0.25, r0: 0.3, r1: 1.0, color: 0xffc94a },
   coin: { stars: 6, life: 0.4, speed: 2.4, color: 0xffe27a },
   crashStars: { n: 5, life: 1.1, r: 0.32, color: 0xfff1c9 },
-  speedLines: { from: 9.0, alpha: 0.15, rate: 18, len: [2.5, 5] as const, color: 0xfff1d6, xMin: 4.7, xMax: 7.5 },
+  // (G1: peach, not the grind cream #FFF1D6, which only grindable edges use, DESIGN §18.4)
+  speedLines: { from: 9.0, alpha: 0.15, rate: 18, len: [2.5, 5] as const, color: 0xffd2b0, xMin: 4.7, xMax: 7.5 },
   ambient: { rate: 6, petal: 0xffb7d0, leaf: [0xd9765a, 0xc9a15a, 0xb5645a] as const },
   bankArc: { r: 0.62, width: 0.07, segments: 40, cream: 0xfff1d6, coral: 0xff5e6c, pulseLast: 0.25 },
   /** Upper two-thirds of the screen is the look-ahead zone: VFX there stay ≤ 25% alpha (DESIGN §18.4). */

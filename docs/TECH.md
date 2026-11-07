@@ -1425,6 +1425,7 @@ frames.ts: queue of timestamped gestures → InputFrame per tick:
 | Bundle | ≤ 350 KB gzip (`scripts/size-check.mjs` in CI) |
 
 **Bundle decision (G1, orchestrator).** At the G1 merge the production build is 410 KB gzip JS + CSS (fonts excluded; 399 KB JS + 11.5 KB CSS), against 268 KB at M0. M4's performance pass trims what is cheap and safe (dead code, duplicated tables, unused three imports, debug-only code). If the honest total is still above 350 KB after that, the budget becomes **420 KB gzip JS + CSS** (fonts excluded): a ~400 KB game loads in about a second on 4G and the PWA caches it. Visible quality cuts are not made to meet 350.
+**G1 tune measurement.** The debug API and the bots now load as a separate chunk only with `?debug=1` (`game/wiring.ts` dynamic import, 18.5 KB gzip). Production bundle: **396 KB gzip** by Vite's report (384.6 JS + 11.5 CSS; 386 KB at gzip -9). By source folder (sourcemap, gzip share): three 161, world/render 53, world/gen 34, skater 27, audio 24, ui 23, sim 13, core 7, meta 6, game 5, vfx 4.5, tricks 4, input 4. Under the 420 KB decision budget; the M4 pass owns the rest (three's shader chunks are the bulk).
 
 ### 8.5 Skater rendering (SK)
 - **Body.** One **rigid-skinned** `SkinnedMesh`: every vertex is weighted 1.0 to one bone of the DESIGN §18.5 hierarchy.

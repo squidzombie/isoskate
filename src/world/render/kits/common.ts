@@ -7,9 +7,10 @@ import { lerp } from '../../../core/math';
 import { hash32 } from '../../../core/rng';
 import type { GrindEdge, GroundSlab, Obstacle, Pit } from '../../../core/world';
 import { ObTag } from '../../../core/world';
-import { COLORS, HAZARD, NEON_SURFACE, SURFACE_COLOR, shade, type HazardLook } from '../palette';
+import { COLORS, HAZARD, NEON_SURFACE, PAD_TOP, SURFACE_COLOR, shade, type HazardLook } from '../palette';
 import { PAT, type PatternId } from '../textures/ground';
 import { DECAL, type DecalId } from '../textures/decals';
+import { RENDER } from '../render.config';
 import { FACE, FX, type Kit } from '../writer';
 
 /** Edge stripe widths (m): cream half-width ≥ CAMERA.minEdgePx / 2 on screen at the widest framing, ink pad beside. */
@@ -79,11 +80,13 @@ export function surfaceLook(surface: Surface, area: AreaId): { color: number; pa
 export function grindEdge(c: KitCtx, e: GrindEdge): void {
   const K = c.K;
   if (e.b.s <= c.s0 || e.a.s >= c.s1) return;
-  const hw = c.opts.edgeHalfW, ink = hw + c.opts.inkPad;
+  // (G1 grind signature: the coping is RENDER.grind.halfW × the minimum on-screen stripe, the same in every area)
+  const hw = c.opts.edgeHalfW * RENDER.grind.halfW, ink = hw + c.opts.inkPad * RENDER.grind.inkW;
   K.reset(); K.clip0 = c.s0; K.clip1 = c.s1;
   K.lit(0, 0, FX.noFog);
-  K.col(COLORS.ink).beam(e.a.x, e.a.y, e.a.s, e.b.x, e.b.y, e.b.s, ink, -0.05, 0.006);
-  K.col(COLORS.edgeCream).lit(0, 0, FX.noFog, 0.2).beam(e.a.x, e.a.y, e.a.s - 0.004, e.b.x, e.b.y, e.b.s + 0.004, hw, -0.02, 0.014);
+  // (the underline's top clears a sidewalk or deck surface the edge borders, so it shows on that side too, G1)
+  K.col(COLORS.ink).beam(e.a.x, e.a.y, e.a.s, e.b.x, e.b.y, e.b.s, ink, -0.05, 0.013);
+  K.col(COLORS.edgeCream).lit(0, 0, FX.noFog | FX.grind, 0.2).beam(e.a.x, e.a.y, e.a.s - 0.004, e.b.x, e.b.y, e.b.s + 0.004, hw, -0.02, 0.022);
   K.reset();
 }
 export function edgesOf(c: KitCtx, ob: Obstacle): void { for (const e of ob.edges) grindEdge(c, e); }
@@ -131,7 +134,10 @@ export function slab(c: KitCtx, sl: GroundSlab, lift = 0, colorOverride?: number
   const K = c.K;
   if (sl.s1 <= c.s0 || sl.s0 >= c.s1) return;
   const look = surfaceLook(sl.surface, c.lookAt((sl.s0 + sl.s1) / 2));
-  const col = colorOverride ?? look.color;
+  // (G1: an elevated tiled deck, the skywalk or the Harbor Bridge, is a mid-value plate under the golden / sunset light:
+  // the light plaza tile there read as a blown-out light bar beside the hazards and the grind edges)
+  const deck = sl.layer === 1 && sl.surface === 'tile' && c.lookAt((sl.s0 + sl.s1) / 2) !== 'neon';
+  const col = colorOverride ?? (deck ? COLORS.deckTile : look.color);
   K.reset(); K.clip0 = c.s0; K.clip1 = c.s1;
   K.lit(look.pat).col(col);
   const bottom = Math.min(sl.y0, sl.y1, 0) - 0.3;
@@ -229,6 +235,6 @@ export function groundOfObstacle(c: KitCtx, ob: Obstacle, skipFlatUnderSolids = 
   for (const sl of ob.slabs) {
     if (skipFlatUnderSolids && ob.solids.length && sl.kind === 'flat' && ob.solids.some((so) => so.box.y1 >= sl.y0 - 1e-3 && so.box.x0 <= sl.x0 + 1e-3 && so.box.x1 >= sl.x1 - 1e-3)) continue;
     const overPit = ob.pits.some((p) => sl.s0 < p.s1 && sl.s1 > p.s0 && sl.x0 < p.x1 && sl.x1 > p.x0);
-    slab(c, sl, overPit ? 0.004 : 0);
+    slab(c, sl, overPit ? 0.004 : 0, ob.kind === 'manual_pad' ? PAD_TOP[c.lookAt((sl.s0 + sl.s1) / 2)] : undefined);
   }
 }

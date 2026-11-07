@@ -37,6 +37,7 @@ import { scheduleWarmup } from './warmup';
 export const VIEW = {
   coinCapacity: COIN.capacity, coinDiameter: COIN.diameter,
   inkPadPx: 1.6,             // the ink underline shows ≥ this many CSS px beside the cream stripe (reads on light tops)
+  trainColor: 0xffb7d0, trainOpacity: 0.22,   // the maglev light streak over the corridor (≤ 25 % in the look-ahead zone)
 } as const;
 
 type Target = keyof KitTargets;
@@ -190,8 +191,10 @@ class WorldViewImpl implements WorldView {
     this.blob.renderOrder = 2; this.glow.renderOrder = 2;
     this.glow.visible = false;
     ctx.scene.add(this.blob, this.glow);
-    // Maglev train: a long light streak (additive) along the guideway.
-    this.train = new Mesh(new BoxGeometry(0.5, 0.45, 1), new MeshBasicMaterial({ color: 0xbff9ff, transparent: true, opacity: 0.9,
+    // Maglev train: a long light streak (additive) along the guideway. (G1, owner playtest: at 0.9 opacity in cyan-white
+    // the 40 m streak over the corridor read as a blown-out light bar across the look-ahead zone beside the hazards;
+    // DESIGN §18.4: ≤ 25 % alpha there, and cyan is reserved.)
+    this.train = new Mesh(new BoxGeometry(0.5, 0.45, 1), new MeshBasicMaterial({ color: VIEW.trainColor, transparent: true, opacity: VIEW.trainOpacity,
       blending: AdditiveBlending, depthWrite: false }));
     this.train.name = 'maglevTrain'; this.trainMat().visible = false; this.train.frustumCulled = false;
     ctx.scene.add(this.train);

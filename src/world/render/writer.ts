@@ -14,7 +14,7 @@ import { Vector3 } from 'three';
 import type { PooledGeo } from './pools';
 
 /** fx.z bits of the lit materials ('o', 'x', 'b'). */
-export const FX = { noFog: 1, shadowOnly: 2, near: 4, matte: 8 } as const;
+export const FX = { noFog: 1, shadowOnly: 2, near: 4, matte: 8, grind: 32 } as const;
 
 export const srgbToLinear = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
 

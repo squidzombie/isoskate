@@ -11,6 +11,7 @@ import { ACCENTS, shade } from '../palette';
 import { PAT } from '../textures/ground';
 import { DECAL, type DecalId } from '../textures/decals';
 import { signRect } from '../textures/signs';
+import { RENDER } from '../render.config';
 import { FACE, FX } from '../writer';
 import { CAR_BODIES, drawCar } from './car';
 import { rnd, surfaceLook, type KitCtx } from './common';
@@ -105,8 +106,9 @@ const fenceRun: DecorFn = (c, d) => {
   const K = c.K, len = num(d, 'len', 8), h = num(d, 'h', 1.0), style = num(d, 'style', 0), nf = nearOf(d);
   K.reset().to('b');
   if (style === 1) { K.lit(PAT.grass, 0, nf).col(0x4f6e44).chamfer(d.x - 0.3, d.y, d.s, d.x + 0.3, d.y + h, d.s + len, 0.12, 0x6f8f4e); return; }
-  if (style === 2) { K.lit(PAT.brickWall, 0, nf).col(0xc9a48a).box(d.x - 0.15, d.y, d.s, d.x + 0.15, d.y + h, d.s + len); K.lit(0, 0, nf).col(0xe3d9cc).box(d.x - 0.18, d.y + h, d.s, d.x + 0.18, d.y + h + 0.06, d.s + len); return; }
-  K.lit(0, 0, nf).col(0xf7efe3);
+  if (style === 2) { K.lit(PAT.brickWall, 0, nf).col(0xc9a48a).box(d.x - 0.15, d.y, d.s, d.x + 0.15, d.y + h, d.s + len); K.lit(0, 0, nf).col(0xb7a898).box(d.x - 0.18, d.y + h, d.s, d.x + 0.18, d.y + h + 0.06, d.s + len); return; }
+  // (G1: a painted blue-grey picket, not cream: its long rails along the street must not read as a grind rail)
+  K.lit(0, 0, nf).col(0xb9c7d3);
   K.box(d.x - 0.03, d.y + 0.25, d.s, d.x + 0.03, d.y + 0.32, d.s + len); K.box(d.x - 0.03, d.y + h - 0.3, d.s, d.x + 0.03, d.y + h - 0.23, d.s + len);
   for (let s = d.s + 0.05; s < d.s + len - 0.05; s += 0.16) {
     K.box(d.x - 0.015, d.y, s, d.x + 0.015, d.y + h - 0.08, s + 0.09);
@@ -397,9 +399,12 @@ const lanternString: DecorFn = (c, d) => {
     K.bar(x0 + (x1 - x0) * u0, yAt(u0) + 0.25, d.s, x0 + (x1 - x0) * u1, yAt(u1) + 0.25, d.s, 0.012);
   }
   for (let i = 0; i < n; i++) {
-    const u = (i + 0.5) / n;
+    const u = (i + 0.5) / n, x = x0 + (x1 - x0) * u;
+    // (G1, owner playtest: a row of bright bulbs across the road read as a low chain to ollie) Bulbs hang only over
+    // the sidewalks and facades; over the corridor the string is its thin dark wire.
+    if (Math.abs(x) < RENDER.overhead.bulbClearX) continue;
     const col = pal === 1 ? 0xffd39a : pal === 2 ? 0xff5a3c : i % 2 ? 0xffd39a : 0xff5a3c;
-    c.lantern({ x: x0 + (x1 - x0) * u, y: yAt(u) + 0.08, s: d.s, r: 0.13, color: col, phase: u * 3 + rnd(d.s) * 6, glow: 1.6 });
+    c.lantern({ x, y: yAt(u) + 0.08, s: d.s, r: 0.13, color: col, phase: u * 3 + rnd(d.s) * 6, glow: 1.6 });
   }
 };
 

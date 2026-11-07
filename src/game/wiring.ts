@@ -9,7 +9,7 @@ import { CHUNK_LEN, GEN_AHEAD_SEC, sAt, V_MAX } from '../core/tuning';
 import type { RenderFrame, Viewport } from '../core/view';
 import { createAudio, renderOffline } from '../audio';
 import { CATALOG } from '../content';
-import { installDebugApi, type DebugHost } from '../debug';
+import type { DebugHost } from '../debug';
 import { createGfx, onViewportChange, readViewport, redrawCanvasTextures, setGfxQuality } from '../gfx';
 import { createInput } from '../input';
 import { createAnalytics, createMeta, runEndProps } from '../meta';
@@ -175,11 +175,14 @@ export function wire(root: HTMLElement): Game {
       renderAudio: renderOffline,
       setQuality: (q) => { tier = q === 'auto' ? autoTier : q; setQuality(tier); },
     };
-    installDebugApi(host);
+    // (G1 bundle) The debug API and the bots load only with ?debug=1: a separate chunk, not in the game's bundle.
+    void import('../debug').then(({ installDebugApi }) => {
+      installDebugApi(host);
+      if (flags.bot && window.__skate) { app.startRun(); window.__skate.bot(flags.bot as Parameters<NonNullable<Window['__skate']>['bot']>[0]); }
+    });
   }
 
   app.boot();
-  if (flags.bot && window.__skate) { app.startRun(); window.__skate.bot(flags.bot as Parameters<NonNullable<Window['__skate']>['bot']>[0]); }
   analytics.track('session_start', { installDay: save.data.installDay, runsTotal: save.data.stats.runs, platform: 'web', quality: startTier });
   return { app, loop };
 }

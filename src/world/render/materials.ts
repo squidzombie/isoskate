@@ -9,7 +9,9 @@
 // Flag bits (writer.ts FX): 1 noFog (hazards, grind edges skip the haze), 2 shadow-only (collapsed in the main pass,
 // still drawn by the default depth material in the shadow pass), 4 camera-side decor (hidden when uHideNear),
 // 8 matte (hazard bodies: direct sun scaled by MATTE so a sun-lit ink front stays dark), 16 warn (chevrons flash with
-// the full-width hazard warning, uWarn).
+// the full-width hazard warning, uWarn), 32 grind (G1, DESIGN §18.4 grind signature: the polished cream-chrome coping
+// of every grindable edge: a fixed self-lit sheen, the same under every palette, and a slow glint travelling along
+// the street; nothing else may use it).
 // Every material reads the shared uniforms (gfx sharedUniforms): uDesat, the haze, uTime, uEmis, uWindowLit, uGlow.
 import {
   AdditiveBlending, DoubleSide, MeshBasicMaterial, MeshLambertMaterial, type IUniform, type Material, type Texture,
@@ -85,7 +87,7 @@ function patchLit(m: MeshLambertMaterial, u: SharedUniforms, tex: WorldTextures,
       .replace('#include <begin_vertex>', `#include <begin_vertex>\n${VERT_SWAY}`)
       .replace('#include <project_vertex>', `#include <project_vertex>\n${VERT_HIDE}`);
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\nuniform sampler2D uGround;\nuniform sampler2D uSigns;\nuniform float uMatte;\nuniform float uEmis;\nuniform float uWarn;\n${FRAG_PARS}`)
+      .replace('#include <common>', `#include <common>\nuniform sampler2D uGround;\nuniform sampler2D uSigns;\nuniform float uMatte;\nuniform float uEmis;\nuniform float uWarn;\nuniform float uTime;\n${FRAG_PARS}`)
       .replace('vec4 diffuseColor = vec4( diffuse, opacity );', `vec4 diffuseColor = vec4( diffuse, opacity );\n${xray ? BAYER : ''}`)
       .replace('#include <color_fragment>', /* glsl */`#include <color_fragment>
 if (vFx.x > 0.5) {
@@ -99,7 +101,12 @@ if (vFx.x > 0.5) {
 if (vAuv.x >= 0.0) { vec4 p = texture2D(uSigns, vAuv); diffuseColor.rgb = mix(diffuseColor.rgb, p.rgb, p.a); }`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
 totalEmissiveRadiance += diffuseColor.rgb * vFx.w * uEmis;
-{ int fl = int(vFx.z + 0.5); if ((fl & 16) != 0) totalEmissiveRadiance += diffuseColor.rgb * uWarn * 1.4; }`)
+{ int fl = int(vFx.z + 0.5); if ((fl & 16) != 0) totalEmissiveRadiance += diffuseColor.rgb * uWarn * 1.4;
+  if ((fl & 32) != 0) {
+    float gl = pow(0.5 + 0.5 * sin(vLocal.z * ${(2 * Math.PI / RENDER.grind.glintPeriod).toFixed(5)} + uTime * ${RENDER.grind.glintSpeed.toFixed(3)}), ${RENDER.grind.glintSharp.toFixed(1)});
+    float top = step(0.5, vObjN.y);
+    totalEmissiveRadiance += vec3(1.0, 0.97, 0.9) * (${RENDER.grind.sheen.toFixed(3)} + ${RENDER.grind.topSheen.toFixed(3)} * top + ${RENDER.grind.glint.toFixed(3)} * gl);
+  } }`)
       .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>\n{ int fl = int(vFx.z + 0.5); if ((fl & 8) != 0) reflectedLight.directDiffuse *= uMatte; }`)
       .replace('#include <colorspace_fragment>', `#include <colorspace_fragment>\n${GRADE}`);
   };

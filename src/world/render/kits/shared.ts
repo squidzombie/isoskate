@@ -4,7 +4,7 @@
 // shadows under every obstacle. Long kinds are drawn per chunk (clipped); compact kinds once, in their anchor chunk.
 import type { AreaId } from '../../../core/ids';
 import type { Chunk, GroundSlab, Obstacle, Pit } from '../../../core/world';
-import { ACCENTS, COLORS, LOOK, mixHex, shade } from '../palette';
+import { ACCENTS, COLORS, LOOK, PAD_TOP, mixHex, shade } from '../palette';
 import { PAT } from '../textures/ground';
 import { FACE, FX } from '../writer';
 import { WARN, chevrons, contact, groundChevrons, groundOf, isFull, rnd, setArea, solidsFallback, type KitCtx } from './common';
@@ -182,11 +182,12 @@ const bench: KitFn = (c, ob) => {
   }
 };
 
-/** Manual pad: a low concrete pad with a chamfered top (curb-class edges drawn by the dispatcher). */
+/** Manual pad: a low concrete pad with a chamfered top (curb-class edges drawn by the dispatcher). The top is a
+ *  mid-value concrete (G1: on a light pad the cream-chrome edge stripe had nothing to read against). */
 const manualPad: KitFn = (c, ob) => {
   const K = c.K, b = ob.solids[0]?.box ?? (ob.slabs[0] ? { x0: ob.slabs[0].x0, x1: ob.slabs[0].x1, s0: ob.slabs[0].s0, s1: ob.slabs[0].s1, y0: groundOf(ob) - 0.15, y1: ob.slabs[0].y0 } : null);
   if (!b) return;
-  const col = c.area === 'neon' ? 0x9a91b8 : c.area === 'docks' ? 0xc2b4a2 : 0xd9c3ae;
+  const col = PAD_TOP[c.area];
   K.lit(PAT.slabs).col(col).chamfer(b.x0, Math.min(b.y0, 0), b.s0, b.x1, b.y1, b.s1, 0.03);
 };
 

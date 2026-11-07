@@ -115,6 +115,11 @@ export const SHADE = {
   glossSpec: 0.85,
 } as const;
 
+/** Board identity at run scale (G1, orchestrator decision on SK's open question): the grip hides the deck graphic in
+ *  runs, so the grip gets a thin border in the board's own palette colour (the one that stands out most from the grip),
+ *  `frac` of the grip's width on each long edge and at the ends. Boards with a glowing grip edge keep theirs. */
+export const GRIP_BORDER = { on: true, frac: 0.13 } as const;
+
 /** Blink every 3–6 s (DESIGN §18.5). */
 export const BLINK = { min: 3, max: 6, dur: 0.12 } as const;
 

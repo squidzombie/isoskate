@@ -2,6 +2,15 @@
 import type { QualityTier } from '../../core/ids';
 
 export const RENDER = {
+  /** The grind signature (G1, DESIGN §18.4): every grindable edge's cream-chrome coping (the edge stripe, fx flag
+   *  `grind`): a fixed self-lit sheen on all faces (the same in every palette), more on the top face (the polished
+   *  coping catching the sky), and a glint band every glintPeriod m travelling along the street. `halfW` scales the
+   *  stripe over its minimum on-screen width, `inkW` the ink underline's margin beside it (so the dark line reads on
+   *  light sidewalks and pad tops at desktop scale too). */
+  /** Overhead decor over the corridor (G1, owner playtest): lantern-string bulbs only beyond |x| ≥ bulbClearX (the
+   *  corridor is ±4.5); the wire crossing it is thin and dark. */
+  overhead: { bulbClearX: 4.6 },
+  grind: { sheen: 0.6, topSheen: 0.4, glint: 0.85, glintPeriod: 8, glintSpeed: 2.2, glintSharp: 24, halfW: 1.25, inkW: 1.0 },
   /** Direct-sun scale on hazard bodies (fx flag `matte`): a sun-lit ink front stays dark enough for the 2.5:1 gate
    *  (DESIGN §18.4) while the top, lit by the sky, still reads lighter than the front. */
   matte: 0.28,

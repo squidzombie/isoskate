@@ -55,7 +55,7 @@ export const COLORS = {
   pitWall: 0x6a5a8c, pitShadow: 0x1c1530, pitFloor: 0x251d38, pitLip: 0xb7a6c9,
   bump: 0xcfc3b8, lowLandable: 0xa99cc0, lowCrash: 0x2b2140, chevron: 0xf2b630, knock: 0xff8a5b,
   forbidden: 0xff00ff, tall: 0x2b2140, tallTop: 0x352a4c, tallAccent: 0xd9765a,
-  edgeCream: 0xfff1d6, ink: 0x2b2140,
+  edgeCream: 0xfff8ec, ink: 0x2b2140, deckTile: 0x8f86a3,   // (G1 grind signature: cream-chrome #FFF8EC, was #FFF1D6)
   /** DESIGN §18.1 / §18.8: coins are emissive #FFC94A (drawn unlit and not tone-mapped, so they stay gold). */
   coin: 0xffc94a,
   lampHead: 0xffd39a, pole: 0x4a3b6b, foliage: 0x7f9a5a,
@@ -72,11 +72,12 @@ export interface HazardLook { body: number; top: number; accent: number; accent2
   /** Emissive add on the body (Neon: the inverted body glows softly so it stays mid-value under the moon fill). */
   glow: number }
 // Ink bodies sit at ~#160F22 (a sun-lit or shadowed ink face must stay ≤ 2.5× darker than asphalt in a building's
-// shadow), tops one step lighter, accents thin: the gate leaves ~8–12% of a silhouette for anything lighter.
+// shadow), tops two steps lighter (G1: a top-down portrait view must read a solid box, not a slab), accents thin: the
+// gate leaves ~8–12% of a silhouette for anything lighter.
 export const HAZARD: Readonly<Record<AreaId, Readonly<HazardLook>>> = {
-  downtown: { body: 0x170f24, top: 0x4a3b6b, accent: 0xd9765a, accent2: 0x3e8e8a, rim: 0, rimEmissive: 0, inverted: false, glow: 0 },
-  suburbs: { body: 0x170f24, top: 0x4a3b6b, accent: 0x8fb8de, accent2: 0xb5645a, rim: 0, rimEmissive: 0, inverted: false, glow: 0 },
-  docks: { body: 0x170f24, top: 0x4a3b6b, accent: 0xf2b630, accent2: 0xb5552f, rim: 0, rimEmissive: 0, inverted: false, glow: 0 },
+  downtown: { body: 0x170f24, top: 0x5c4b84, accent: 0xd9765a, accent2: 0x3e8e8a, rim: 0, rimEmissive: 0, inverted: false, glow: 0 },
+  suburbs: { body: 0x170f24, top: 0x5c4b84, accent: 0x8fb8de, accent2: 0xb5645a, rim: 0, rimEmissive: 0, inverted: false, glow: 0 },
+  docks: { body: 0x170f24, top: 0x5c4b84, accent: 0xf2b630, accent2: 0xb5552f, rim: 0, rimEmissive: 0, inverted: false, glow: 0 },
   neon: { body: 0x7a6fb0, top: 0x9489c8, accent: 0xff3fa4, accent2: 0xff5a3c, rim: 0xff3fa4, rimEmissive: 1.2, inverted: true, glow: 1.6 },
 };
 
@@ -93,6 +94,9 @@ export const SURFACE_COLOR: Readonly<Record<Surface, number>> = {
   asphalt: 0x7f7890, wetAsphalt: 0x352f55, concrete: 0xd9c3ae, tile: 0xd7c4b5, granite: 0xb9a9a0, wood: 0xa9744f,
   metal: 0x9ba3b5, grass: 0x9db36b,
 };
+/** Manual pad tops (G1): a mid-value concrete, so the cream-chrome curb edges along them read against the top (a pad
+ *  in light sidewalk concrete gave the edge stripe nothing to read against). */
+export const PAD_TOP: Readonly<Record<AreaId, number>> = { downtown: 0x857683, suburbs: 0x857683, docks: 0x86786e, neon: 0x7d7499 };
 /** Neon surfaces: the tiled sidewalk reads darker and cooler at blue hour (it is lit by the moon fill only). */
 export const NEON_SURFACE: Readonly<Partial<Record<Surface, number>>> = { tile: 0x4f4972, concrete: 0x504a72, granite: 0x56507a, asphalt: 0x352f55 };
 

@@ -42,7 +42,7 @@ describe('palette presets', () => {
   });
 
   it('readability colours are the DESIGN §18.4 contract in every area', () => {
-    expect(COLORS.edgeCream).toBe(0xfff1d6);
+    expect(COLORS.edgeCream).toBe(0xfff8ec);   // the G1 cream-chrome grind signature (DESIGN §18.4)
     expect(COLORS.ink).toBe(0x2b2140);
     expect(COLORS.chevron).toBe(0xf2b630);
     expect(COLORS.coin).toBe(0xffc94a);
