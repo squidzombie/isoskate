@@ -666,7 +666,7 @@ The owner played the G1 build on a phone and asked for "steering on the left thu
 swiping the way it works now" (DESIGN §24 row 71). Built on `pkg/ctl` from DEV `f543ced`. The split lives in the
 recognizer, so the frozen `InputFrame`, the sim, scoring, the generator, replays and golden hashes are untouched.
 
-### Core additions (additive, optional; status: applied @ctl as instructed, for the gate to confirm; TECH §4.4 / §4.9 updated)
+### Core additions (additive, optional; status: applied @ctl, confirmed and merged into DEV at G1b; TECH §4.4 / §4.9 updated)
 - `core/input.ts › PointerSample.pointerType?: 'mouse' | 'touch' | 'pen'` (input/pointer.ts stamps it; absent = touch,
   so synthetic traces and bots are touches).
 - `core/input.ts › RecognizerConfig.controls?: 'two' | 'one'; swapSides?: boolean; splitFrac?: number` (absent = two,
@@ -746,7 +746,7 @@ recognizer, so the frozen `InputFrame`, the sim, scoring, the generator, replays
 
 ## STEER (owner playtest after G1: direct touch steering, pkg/steer)
 
-### core/tuning.ts: STEER_LEAD_MAX, STEER_FAST and STEER_BRAKE (additive), and a frozen steering behaviour changed   (status: applied @steer; DESIGN §4.2, §5.2, row 72; TECH §4.2, §6.3)
+### core/tuning.ts: STEER_LEAD_MAX, STEER_FAST and STEER_BRAKE (additive), and a frozen steering behaviour changed   (status: applied @steer, merged into DEV at G1b; DESIGN §4.2, §5.2, row 72; TECH §4.2, §6.3)
 - File / symbol: core/tuning.ts › STEER_LEAD_MAX (0.8), STEER_FAST `{ vMax: 7.0, accel: 80 }`, STEER_BRAKE `{ stopM: 0.03, jitterM: 0.012, restLead: 0.2, ground: 66, air: 40, reach: 0.2, winMax: 4 }`; sim/kinematics.ts › applySteer, touchSteer, noteAssist, lateral; sim/state.ts › SimState.steer (SteerExt, freshSteer); sim/step.ts (step 4 reports what the magnet / ground align moved to noteAssist; a consumed air swipe gives back at most the lead its direction still has).
 - Change: touch `steerDx` never puts targetX more than 0.8 m ahead of the skater (never pulling back a target the magnet or ground align moved); a drag the cap held back runs the skater at up to 7 m/s (80 m/s² on the ground) until it stops; then a release brake stops it within ~0.35 m (TECH §6.3 steps 2 and 4). `steerAxis`, `V_LAT_MAX`, `A_LAT_*`, `STEER_P`, `T_SHIFT` and the validator are unchanged.
 - Why: owner playtest ("it will continue to turn even when I take my finger off it"): a quick slide threw targetX 2.5–5 m ahead and the skater kept sliding 2.3–3.6 m (0.45–0.8 s) after the thumb stopped or lifted. The fast thumb (fix pass) gives quick slides back part of the reach the cap took (60 px / 120 ms: 0.45 → 0.6–0.8 m; 120 px / 250 ms: 1.0–1.4 → 1.2–1.8 m).
@@ -769,3 +769,12 @@ recognizer, so the frozen `InputFrame`, the sim, scoring, the generator, replays
 - **`debug/contrast.ts`**: a grind-edge sample behind a raised deck (slab top ≥ 0.5 m) of another obstacle is hidden, like one behind another obstacle's solid (the perspective camera sees skywalk decks hide the kerb beyond them); hazards and edges are measured up to the HUD-line ground when that is beyond look-ahead + 8 m. `scripts/shots.mjs --contrast` also retries ±0.6 / ±1.8 s starts (after the existing ones).
 - **`tests/e2e/audio.spec.ts`** (AU's): @cam scaled the per-rendered-frame audio bound by 30 / fps; at the G1b merge the G1 tune's form was kept instead (the budget asserted per 60 Hz frame, per rendered frame only at ≥ 25 fps), which covers the slower perspective render too.
 - **`tests/e2e/smoke.spec.ts`**: the landscape → portrait test expects the portrait yaw 9° (was 0°).
+
+### G1b integration (how the merge met the G1 tune; no contract change)
+- **fx flags:** 32 stays the G1 grind signature (sheen + glint); @cam's overhead-span fade moved to **64** (`FX.over`).
+- **Grind edges:** @cam's constant-on-screen stripes carry the grind flag; `RENDER.grind.halfW` (1.25) is the one
+  width factor (the cream ≈ 3.1 px, replacing `EDGE_WIDEN.px` 1.2); a perspective build keeps @cam's physical floor
+  (0.035 m), an ortho build scales its floor; the cream's palette emissive is the tune's 0.2 under the fixed sheen.
+- **Maglev:** @cam's far-facade guideway, the tune's paper-magenta streak at 22 % (`OCCLUSION.trainAlpha`).
+- **Steering tests:** `steer.test` traces run on the steering half (two thumbs is the default); `twothumb.test` judges
+  "all of the steering" against the same traces with swipes removed (the lead cap limits fast strokes).

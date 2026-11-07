@@ -246,10 +246,11 @@ test.describe('real touch', () => {
     await expect.poll(async () => kinds(await events(page, t0)), { timeout: 15000 }).toContain('land');
     await page.evaluate(() => window.__skate!.timeScale(1));
     expect(kinds(await events(page, t0)).filter((k) => k === 'flipStart' || k === 'spinStart' || k === 'grabStart')).toEqual([]);
-    // 90 px of steering at S = 9 / (0.55·W) m per px (a few cm of it in the air's low lateral authority, the rest after
-    // touchdown); 60% of it is enough to tell it from nothing.
-    const want = (-90 * 9) / (0.55 * vp.width);
-    await expect.poll(async () => (await snap(page)).p.x - x0, { timeout: 4000 }).toBeLessThan(want * 0.6);
+    // Direct touch steering (DESIGN §4.2, @steer): a flick steers as far as the skater can go while the thumb moves,
+    // then the release brake leaves the target at most 0.2 m ahead, so the 90 px flick is a short hop left (≥ 0.15 m),
+    // never the 3.8 m throw that the drawn distance would give (the owner's "it keeps turning after I let go").
+    await expect.poll(async () => (await snap(page)).p.x - x0, { timeout: 4000 }).toBeLessThan(-0.15);
+    expect((await snap(page)).p.x - x0).toBeGreaterThan((-90 * 9) / (0.55 * vp.width) / 2);
     expect(errors).toEqual([]);
   });
 
@@ -366,20 +367,27 @@ test.describe('synthetic traces through the real recognizer (__skate.pointer, ma
   test('both thumbs in one trace: the left steers while the right flicks ← in the air (flip and steering)', async ({ page }) => {
     const errors: string[] = [];
     await boot(page, errors);
-    await manualRun(page);
-    const { w, L, R } = sides(page);
-    const x0 = (await snap(page)).p.x;
-    const t1 = (await snap(page)).tick;
+    const { L, R } = sides(page);
     const left: S[] = [{ id: 3, tMs: 0, x: L, y: 600, phase: 'down' }];
     for (let i = 1; i <= 25; i++) left.push({ id: 3, tMs: i * 16, x: L - i * 2, y: 600, phase: 'move' });   // 50 px left in 400 ms
     left.push({ id: 3, tMs: 420, x: L - 50, y: 600, phase: 'up' });
+    // Direct touch steering (DESIGN §4.2, @steer) limits how far a stroke the airborne skater cannot keep up with goes,
+    // so "every pixel" is judged against the same run with the right flick left out (the pure steering reference).
     const r = await page.evaluate(([a, b, c]) => {
-      window.__skate!.pointer([...a, ...b, ...c]);
-      window.__skate!.step(120);
-      return { ev: window.__skate!.events(), x: window.__skate!.snapshot().p.x };
+      const go = (samples: typeof a) => {
+        window.__skate!.start({ seed: 1, god: true }); window.__skate!.manual(true);
+        const s0 = window.__skate!.step(30);
+        window.__skate!.pointer(samples);
+        const s1 = window.__skate!.step(120);
+        return { t0: s0.tick, dx: s1.p.x - s0.p.x, ev: window.__skate!.events(s0.tick) };
+      };
+      const pure = go([...a, ...b]), both = go([...a, ...b, ...c]);
+      return { pure, both };
     }, [left, tap(R, 500, 40, 60), flick(R, 480, -80, 0, 220, 48, 7)] as const);
-    expect(flipsOf(r.ev, t1)).toEqual(['kickflip']);
-    expect(r.x - x0).toBeCloseTo((-50 * 9) / (0.55 * w), 1);       // every pixel steered, none taken back
+    expect(flipsOf(r.pure.ev, r.pure.t0)).toEqual([]);
+    expect(flipsOf(r.both.ev, r.both.t0)).toEqual(['kickflip']);
+    expect(r.both.dx).toBeCloseTo(r.pure.dx, 3);                    // every pixel the left steered stands, none taken back
+    expect(r.both.dx).toBeLessThan(-0.3);
     expect(errors).toEqual([]);
   });
 

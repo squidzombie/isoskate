@@ -211,6 +211,7 @@ Only the integrator merges into `main`, at gates.
 3. Wire the debug overlays: safe-line heatmap, pick window and heat.
 4. Play in the browser on both projects. Tune only via config files.
 5. Tag `m1`.
+6. **G1b (owner phone playtest after `m1`):** merge `pkg/fix-locker` (a Locker tap equips; try-ons per slot), `pkg/ctl` (two thumbs: left steers, right tricks; DESIGN row 71), `pkg/steer` (direct touch steering: lead cap, fast thumb, release brake; row 72) and `pkg/cam` (telephoto perspective run camera and occlusion cure; row 73) onto the G1 tune, re-run every gate, and record the result as the base of the approved re-theme ("Reclaim").
 
 ---
 
