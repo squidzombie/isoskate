@@ -267,10 +267,13 @@ describe('decor renderers', () => {
           const ch = emptyChunk(2, area);
           ch.obstacles = [];
           ch.decor = [decorOf(kind, area, 2 * CHUNK_LEN + 4, side, 3)];
+          // (RECLAIM, owner note 8: a road arrow is painted only before a crossing, so it is checked with one ahead.)
+          if (kind === 'road_arrow') ch.decor.unshift(decorOf('crosswalk', area, 2 * CHUNK_LEN + 14, side, 3));
           const { g, out, tris } = build(ch, area);
           const base = baseline(area);
           if (def.zone === 'ambient') { expect(out.ambient.length + (kind === 'maglev_train' ? 1 : 0)).toBeGreaterThan(0); continue; }
           expect(tris - base + out.decals.length + out.lanterns.length, `${kind} ${area}`).toBeGreaterThan(0);
+          if (kind === 'road_arrow') expect(out.decals.some((d) => d.id === DECAL.arrowS || d.id === DECAL.slow), `${kind} ${area}: arrow painted`).toBe(true);
           for (const t of TARGETS) for (let i = 0; i < g[t].count; i++) {
             expect(isCol(g[t], i, COLORS.edgeCream), `${kind}: cream edge colour`).toBe(false);
             expect(isCol(g[t], i, COLORS.chevron), `${kind}: chevron amber`).toBe(false);

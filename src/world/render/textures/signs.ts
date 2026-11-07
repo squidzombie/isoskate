@@ -332,6 +332,34 @@ export function signRect(key: string): SignRect {
   return SIGN_RECTS.get(key) ?? SIGN_RECTS.get('b:downtown:0')!;
 }
 
+// ── RECLAIM: faded and peeling (theme §4, §5) ──────────────────────────────────────────────────────────────────
+/** Painted (unlit) signs outside Neon are sun-faded at the source, so every board, blade and billboard that uses them
+ *  fades alike: 25% toward the dusty verge tone #CDB8A3, then 20% less saturation (palette.ts fadePaint). Neon's art
+ *  stays vivid (live signs glow; dead ones are drawn with the tubes dark, the same art with the emissive mask off). */
+export const SIGN_FADE = { to: [0xcd, 0xb8, 0xa3] as const, k: 0.25, desat: 0.2, peel: 0.3, board: '#9a938c' } as const;
+export const isFadedSign = (key: string) => !key.includes('neon') && !key.startsWith('holo') && !key.startsWith('vend') && !key.startsWith('w')
+  && key !== 'stripe' && !key.startsWith('picto') && !key.startsWith('robot');
+function fadeRect(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): void {
+  if (typeof c.getImageData !== 'function') return;
+  const img = c.getImageData(x, y, w, h), p = img.data, [tr, tg, tb] = SIGN_FADE.to;
+  for (let i = 0; i < p.length; i += 4) {
+    const r = p[i]! + (tr - p[i]!) * SIGN_FADE.k, g = p[i + 1]! + (tg - p[i + 1]!) * SIGN_FADE.k, b = p[i + 2]! + (tb - p[i + 2]!) * SIGN_FADE.k;
+    const l = 0.299 * r + 0.587 * g + 0.114 * b;
+    p[i] = r + (l - r) * SIGN_FADE.desat; p[i + 1] = g + (l - g) * SIGN_FADE.desat; p[i + 2] = b + (l - b) * SIGN_FADE.desat;
+  }
+  c.putImageData(img, x, y);
+}
+/** Billboards peel at the corners only (≤ 30% of the width): the grey board shows through. */
+function peel(c: CanvasRenderingContext2D, w: number, h: number, seed: number): void {
+  const r = new Sfc32(hash32(0x9ee1, seed));
+  c.fillStyle = SIGN_FADE.board;
+  for (const [cx, cy, sx, sy] of [[0, 0, 1, 1], [w, h, -1, -1], [w, 0, -1, 1]] as const) {
+    if (!r.chance(0.6)) continue;
+    const a = w * SIGN_FADE.peel * r.range(0.35, 1), b = h * r.range(0.2, 0.45);
+    c.beginPath(); c.moveTo(cx, cy); c.lineTo(cx + sx * a, cy); c.lineTo(cx + sx * a * 0.45, cy + sy * b * 0.5); c.lineTo(cx, cy + sy * b); c.closePath(); c.fill();
+  }
+}
+
 /** Draws the atlas (the canvasTexture callback). */
 export function drawSignAtlas(c: CanvasRenderingContext2D): void {
   c.clearRect(0, 0, SIGN_ATLAS, SIGN_ATLAS);
@@ -341,6 +369,8 @@ export function drawSignAtlas(c: CanvasRenderingContext2D): void {
     c.beginPath(); c.rect(r.px.x, r.px.y, r.px.w, r.px.h); c.clip();
     c.translate(r.px.x, r.px.y);
     e.draw(c, e.w, e.h);
+    if (e.key.startsWith('bb:')) peel(c, e.w, e.h, e.key.length * 31 + e.key.charCodeAt(e.key.length - 1));
     c.restore();
+    if (isFadedSign(e.key)) fadeRect(c, r.px.x, r.px.y, r.px.w, r.px.h);
   }
 }

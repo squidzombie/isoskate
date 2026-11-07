@@ -3,7 +3,7 @@
 // pick-window chime, rewind, needle lift, new best, new area). Short, soft and pitched in key; each one is one voice
 // with ±3% pitch and ±1.5 dB variation (§19.2).
 import type { EdgeMaterial } from '../../core/ids';
-import { COIN, COMBO_BANK, FEEDBACK, GRIND_MATERIAL, SFX_LEVEL, VARIATION, type AreaMusic, type ChordSpec } from '../mix.config';
+import { COIN, COMBO_BANK, FEEDBACK, FLUTTER, GRIND_MATERIAL, REVERSE_CHIRP, SFX_LEVEL, THUNK, VARIATION, type AreaMusic, type ChordSpec } from '../mix.config';
 import type { Graph } from '../graph';
 import { playMallet } from '../music/instruments';
 import { coinMidi, feedbackMidi, midiHz, pentatonicNote, tuneHz } from '../music/progressions';
@@ -189,6 +189,27 @@ export function playOneShot(g: Graph, id: string, t: number, o: CueOpts, key: Ke
       }
       const whir = tuneHz(key.area, key.chord, 900);
       tn(g, s.v, s.d, t, 0.5, 'triangle', whir, 0.06, 0.01, whir * 0.78);   // wheels spinning down from a chord tone
+      // RECLAIM (theme §8): into a vehicle, a low hollow body-panel thunk under it (a 110 Hz tom body, 120 ms, and a
+      // muffled knock). No glass breaking and no alarms.
+      if (o.variant === 'vehicle') {
+        tn(g, s.v, s.d, t + 0.004, THUNK.sec, 'sine', THUNK.hz, THUNK.gain, 0.002, THUNK.toHz, THUNK.sec);
+        tn(g, s.v, s.d, t + 0.004, THUNK.sec * 0.6, 'triangle', THUNK.hz * 2.1, THUNK.gain * 0.25, 0.002, THUNK.toHz * 2.1, THUNK.sec * 0.6);
+        nz(g, s.v, s.d, t, 0.06, 'lowpass', 420, 0.8, 0.5, 0.002);
+      }
+      return;
+    }
+    case 'birdFlutter': {
+      // Perched birds taking off: noise bursts with 12 Hz AM over 0.35 s, wings thinning out as they go.
+      const s = sfxVoice(g, t, FLUTTER.sec + 0.1, L.birdFlutter, o); if (!s) return;
+      const n = Math.round(FLUTTER.sec * FLUTTER.amHz);
+      for (let i = 0; i < n; i++) nz(g, s.v, s.d, t + i / FLUTTER.amHz + g.rng.float() * 0.008, 0.035, 'bandpass', FLUTTER.bp + g.rng.float() * 400 - 150, 1.1, 0.5 * (1 - i / (n + 1)));
+      return;
+    }
+    case 'reverseChirp': {
+      // The self-parking car reversing (the caller repeats it every REVERSE_CHIRP.every s while it moves): a soft sine
+      // near 1.1 kHz on a chord tone.
+      const s = sfxVoice(g, t, REVERSE_CHIRP.sec + 0.05, L.reverseChirp, o); if (!s) return;
+      tn(g, s.v, s.d, t, REVERSE_CHIRP.sec, 'sine', tuneHz(key.area, key.chord, REVERSE_CHIRP.hz), REVERSE_CHIRP.gain, 0.004);
       return;
     }
     case 'grindEntry': case 'grindSwitch': {
