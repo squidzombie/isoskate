@@ -250,6 +250,48 @@ The first block is the frozen behaviour later packages (GP, WG, WA, the bots) ca
   world/gen/decor.ts. Backdrop buildings keep their parameter ranges (w 6–14, d 8–30, h 6–40 m).
 - Why: hand-off. Local workaround: n/a.
 
+### After the WG review (appended; supersedes the gate-row numbers above; no core change)   (status: info for the G1 gate)
+- File / symbol: world/gen/rows.ts, generator.ts (row overlays), schedule.ts, gen.config.ts › GEN.gate / GEN.a3; tests/bots/*.
+- Change: none to core. What the gate should know:
+  - **Anti-straight rows by lanes** (rows.ts): a row's *lanes* are the board-centre x ranges a straight roller passes
+    it through (openings and any side gap beside a template obstacle, scanned from the solids); every row's lanes are
+    disjoint from the previous row's. Rows ≤ `GEN.gate.gap` apart (8 / 6.3 / 6.3 / 6.3 s); a long template may still
+    slip the deadline by ≤ its length outside a run's first 12 s and with 2 s left before a gateway. Rows are drawn
+    from a mixed palette of the area kit (DT news box, trash can, café set, kiosk; SB mailbox, bin pair; IN tall
+    pallet, 2- and 3-drum skids; NE lantern stand, 1- and 2-machine vending banks, food cart), all `ObTag.Filler`.
+  - **Rows inside templates** first where the template's own line already passes (opening at the line), else as a
+    tail after its content (the segment grows), else with one forced move; never beside a grind edge a rider is still
+    on, and only where a rider leaving any template edge (±0.8 m) reaches an opening (T_SHIFT + 0.5 s). S_GATE is the
+    fallback (≈ 42 % of run time, as before the review: the row cadence is the binding constraint).
+  - **Straight-bot guarantee** (gate.straight): t = 0 → all lanes dead by 17.2 s; startT 150 / 165 → ≤ 10 s. Beyond the
+    acceptance, measured: plateau starts every 10 s from 150–460 s → 2.2 % of lanes live > 10 s, worst 12.8 s (all
+    next to a gateway: 4 s of T0 between two rows); switching to straight mid-run → 4.5 % > 10 s, worst ~17 s (same
+    cause). A1 per-column periods (4 s at the plateau) are measured, not enforced; A2 likewise (wander wall when due).
+  - **A3**: never before its minimum (8 s; 12 s in the opening) except the last slot before a gateway (≤ 2.5 s early,
+    `a3PreGwEarly`); the maximum may slip ≤ 2 s when a long template lands on it.
+  - **Rejection metrics** (gate.static, artifacts/bots.json): validator re-rolls per segment (the < 5 % gate),
+    fallbacks per segment (< 1 %), every failed `validate()` incl. row-overlay probes and edge trims
+    (`validationFailRate`, ≈ 11–14 %, gated < 20 %), and scheduling re-plans per segment (`replanRate`, reported).
+  - **Bench** (tests/unit/gen/bench.test.ts): world/gen bundled with Vite's production build (Rollup) and run by plain
+    Node in a child process, fastest of 3 passes per segment, p95 ≤ 3 ms. Vitest's module transform costs this code
+    ~2.5×; the old in-vitest bench measured that.
+  - **Docks lip** starts `GEN.lipLead` (1.8 s) into a visit, not 0.8 s (a line by the right wall after the Level
+    Crossing steers off first; otherwise the lip's magnet captured it).
+  - **Rule (h)** has no slice tolerance any more (dead ends ≤ 2.0 s on the grid).
+  - **Content**: landmarks are drawn 4× until seen in a visit; NE_GAUNTLET also fills Neon A3 slots from T3; DT_RUSH
+    reworked (cars from 1.5 s in); the Harbor Bridge deck stands on every visit (incline from 0.4 s in).
+- Why: review fixes B1, B2 (partly), M1 (partly), M2, M3, M4, M7.
+- Local workaround meanwhile: n/a.
+
+### Merge risks for the gate (WG ↔ GP / WA)   (status: info for G1; no core change)
+- The thumb bot imports `FrameBuilder` and `steerMetresPerPx` from `input/index.ts` (not frozen; TECH §11.2 names
+  `frames.ts`). If GP renamed them, re-point debug/bots/thumb.ts at the new names (no behaviour change needed).
+- The trick bot now reads the frozen `TRICKS` tables (core TrickTables), not `FLIPS` / `SPINS`.
+- GP's sim bench records with `BOTS.safe` (the planner): see the G1 notes (make the bench time the sim only).
+- WA: the row palette above uses existing PropKinds only; `Decor.y` for awnings / blade signs / banners is the
+  mounting height (sidewalk + 2.4–3 m), see the G1 decision on Decor.y semantics. Overhead decor is sparser now
+  (Neon lantern strings ~26 m apart, Suburbs wires ~32 m: `GEN.decorOverhead`).
+
 ## WA: World art (W2a)
 
 ## SK: Skater and cosmetics (W2b)

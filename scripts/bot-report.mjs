@@ -23,10 +23,11 @@ for (const [name, s] of Object.entries(suites).sort(([a], [b]) => a.localeCompar
   if (s.medianMin !== undefined) parts.push(`median ${s.medianMin} min (p10 ${s.p10Min}, capped ${s.survivedCap})`);
   if (s.unintended) parts.push(`unintended ${n(s.unintended)}`);
   if (s.alive) parts.push(`alive lanes ${n(s.alive)} worst ${JSON.stringify(s.worstSurvivalSec)}`);
+  if (s.plateauStarts) parts.push(`plateau starts ${JSON.stringify(s.plateauStarts)} mid-run ${JSON.stringify(s.midRunSwitch)}`);
   if (s.scorePerMin) parts.push(`score/min trick ${s.scorePerMin.trick} survival ${s.scorePerMin.survival} ratio ${s.scorePerMin.ratio}`);
   if (s.comboSec) parts.push(`combo p95 ${s.comboSec.p95} s`);
   if (s.feasible) parts.push(`feasible ${JSON.stringify(s.feasible)}`);
-  if (s.rerollRate !== undefined) parts.push(`rerolls ${(s.rerollRate * 100).toFixed(2)} % fallbacks ${(s.fallbackRate * 100).toFixed(2)} % coins ${s.coinShare} decision ${s.decisionMin} window ${s.windowMin} deadEnd ${s.deadEndMax}`);
+  if (s.rerollRate !== undefined) parts.push(`rerolls ${(s.rerollRate * 100).toFixed(2)} % fallbacks ${(s.fallbackRate * 100).toFixed(2)} % failed validations ${((s.validationFailRate ?? 0) * 100).toFixed(1)} % re-plans ${((s.replanRate ?? 0) * 100).toFixed(1)} % coins ${s.coinShare} decision ${s.decisionMin} window ${s.windowMin}/${s.windowMinIndep ?? '–'} deadEnd ${s.deadEndMax}`);
   console.log(parts.join(' | '));
 }
 console.log(`bot-report: ${Object.keys(suites).length} suites → artifacts/bots.json`);
