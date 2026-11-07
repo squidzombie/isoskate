@@ -2,7 +2,7 @@
 // and 390 px; popups last ≤ 0.5 s with the 120 ms 0.6 → 1.1 → 1 pop; every core HintId has touch and key wording.
 import { describe, expect, it } from 'vitest';
 import { fitPx, hudColumns } from '../../../src/ui/fit';
-import { HINT_TEXT, REST_MARK_SEC } from '../../../src/ui/hints';
+import { HINT_TEXT, REST_MARK_SEC, touchText, ZONE_CUE } from '../../../src/ui/hints';
 import { popupCurve, POPUP } from '../../../src/ui/popups';
 import { HUD_TIMING } from '../../../src/ui/hud';
 import { fmtScore, fmtShort } from '../../../src/ui/format';
@@ -70,5 +70,25 @@ describe('hints', () => {
     expect(HINT_TEXT.tap).toMatchObject({ touch: 'TAP TO OLLIE', keys: 'SPACE TO OLLIE' });
     expect(HINT_TEXT.grind!.touch).toBe('OLLIE ONTO THE LEDGE');
     expect(REST_MARK_SEC).toBeGreaterThan(0);
+  });
+  it('two thumbs (the default controls): every hint names a side and has two-thumb wording; Swap sides swaps the words', () => {
+    for (const id of HINT_IDS) {
+      const t = HINT_TEXT[id]!;
+      expect(['steer', 'trick'], id).toContain(t.side);
+      expect(t.side === 'steer', id).toBe(t.gesture === 'drag');
+      for (const swap of [false, true]) {
+        const s = touchText(t, 'two', swap);
+        expect(s, id).not.toMatch(/[{}]/);
+        expect(s.length, `${id}: ${s}`).toBeLessThanOrEqual(25);         // fits the chip at 320 px (k = 0.85)
+      }
+      expect(touchText(t, 'one', true)).toBe(t.touch);
+    }
+    expect(touchText(HINT_TEXT.drag!, 'two', false)).toBe('DRAG LEFT THUMB TO STEER');
+    expect(touchText(HINT_TEXT.tap!, 'two', false)).toBe('TAP RIGHT TO OLLIE');
+    expect(touchText(HINT_TEXT.drag!, 'two', true)).toBe('DRAG RIGHT THUMB TO STEER');
+    expect(touchText(HINT_TEXT.manual!, 'two', true)).toBe('HOLD LEFT TO MANUAL');
+    expect(touchText(HINT_TEXT.flip!, 'two', false)).toBe('FLICK ← ON THE RIGHT');
+    expect(ZONE_CUE.sec).toBeGreaterThanOrEqual(2);
+    expect(ZONE_CUE.sec).toBeLessThanOrEqual(4);
   });
 });

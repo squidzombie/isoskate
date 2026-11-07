@@ -25,7 +25,10 @@ export const EMPTY_FRAME: Readonly<InputFrame> = { steerDx: 0, steerAxis: 0, tap
   swipeFast: false, swipeFromRest: false, swipeSteer: false, swipeAmend: false,
   hold: false, press: false, manualKey: false, grab: false };
 
-export interface PointerSample { id: number; tMs: number; x: number; y: number; phase: 'down' | 'move' | 'up' | 'cancel' }
+export interface PointerSample { id: number; tMs: number; x: number; y: number; phase: 'down' | 'move' | 'up' | 'cancel';
+  /** added @ctl (two-thumb controls): the DOM pointerType. 'mouse' and 'pen' (one pointer, not two thumbs) always use
+   *  the one-thumb grammar; absent = 'touch' (synthetic traces, bots). Read on 'down'. */
+  pointerType?: 'mouse' | 'touch' | 'pen' }
 export type Gesture =
   | { k: 'steer'; tMs: number; dxPx: number }
   | { k: 'tap'; tMs: number }
@@ -47,6 +50,11 @@ export interface RecognizerConfig {
   // CSS px (added @G0): arc compensation uses the outer arcOuterFrac of screenW; touch-starts below
   // screenH − deadZoneBottomPx are ignored. 0 / absent = 390·k / no dead zone.
   screenW?: number; screenH?: number;
+  // Two-thumb controls (added @ctl, owner playtest; DESIGN §4.1): 'two' splits the play area at splitFrac of screenW
+  // (0.5): a touch that goes down in the steering zone (left; right with swapSides) only steers, one in the trick zone
+  // only taps / swipes / holds and never steers, for its whole life. 'one' = the one-thumb grammar (every touch can do
+  // both). Absent = 'two', false, 0.5.
+  controls?: 'two' | 'one'; swapSides?: boolean; splitFrac?: number;
 }
 export interface GestureRecognizer {                       // pure; unit-tested with synthetic traces
   feed(s: PointerSample): Gesture[];                       // 'cancel' → no tap/swipe, ends hold, frees steering
@@ -62,6 +70,9 @@ export interface InputSource {
   setPreset(p: 'A' | 'B'): void;
   onAnyInput(f: () => void): () => void;                   // fires on pointerup/touchend/click/keydown (user activation): audio unlock
   setSimpleTricks?(on: boolean): void;                     // Settings "Simple tricks" → RecognizerConfig.simpleTricks (added @m0-core)
+  /** Settings "Controls" and "Swap sides" → RecognizerConfig.controls / swapSides; touches already down keep their
+   *  role (added @ctl). */
+  setControls?(controls: 'two' | 'one', swapSides: boolean): void;
   /** Schedules a synthetic trace through the real recognizer and frame binning: the first sample lands at `atMs`
    *  (default now), later samples keep their relative times (debug `__skate.pointer` in rAF mode; added @G0). */
   inject?(samples: readonly PointerSample[], atMs?: number): void;

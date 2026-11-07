@@ -424,7 +424,10 @@ export const EMPTY_FRAME: Readonly<InputFrame> = { steerDx: 0, steerAxis: 0, tap
   swipeFast: false, swipeFromRest: false, swipeSteer: false, swipeAmend: false,
   hold: false, press: false, manualKey: false, grab: false };
 
-export interface PointerSample { id: number; tMs: number; x: number; y: number; phase: 'down' | 'move' | 'up' | 'cancel' }
+export interface PointerSample { id: number; tMs: number; x: number; y: number; phase: 'down' | 'move' | 'up' | 'cancel';
+  /** added @ctl (two-thumb controls): the DOM pointerType. 'mouse' and 'pen' (one pointer, not two thumbs) always use
+   *  the one-thumb grammar; absent = 'touch' (synthetic traces, bots). Read on 'down'. */
+  pointerType?: 'mouse' | 'touch' | 'pen' }
 export type Gesture =
   | { k: 'steer'; tMs: number; dxPx: number }
   | { k: 'tap'; tMs: number }
@@ -446,6 +449,11 @@ export interface RecognizerConfig {
   // CSS px (added @G0): arc compensation uses the outer arcOuterFrac of screenW; touch-starts below
   // screenH − deadZoneBottomPx are ignored. 0 / absent = 390·k / no dead zone.
   screenW?: number; screenH?: number;
+  // Two-thumb controls (added @ctl, owner playtest; DESIGN §4.1): 'two' splits the play area at splitFrac of screenW
+  // (0.5): a touch that goes down in the steering zone (left; right with swapSides) only steers, one in the trick zone
+  // only taps / swipes / holds and never steers, for its whole life. 'one' = the one-thumb grammar (every touch can do
+  // both). Absent = 'two', false, 0.5.
+  controls?: 'two' | 'one'; swapSides?: boolean; splitFrac?: number;
 }
 export interface GestureRecognizer {                       // pure; unit-tested with synthetic traces
   feed(s: PointerSample): Gesture[];                       // 'cancel' → no tap/swipe, ends hold, frees steering
@@ -461,6 +469,9 @@ export interface InputSource {
   setPreset(p: 'A' | 'B'): void;
   onAnyInput(f: () => void): () => void;                   // fires on pointerup/touchend/click/keydown (user activation): audio unlock
   setSimpleTricks?(on: boolean): void;                     // Settings "Simple tricks" → RecognizerConfig.simpleTricks (added @m0-core)
+  /** Settings "Controls" and "Swap sides" → RecognizerConfig.controls / swapSides; touches already down keep their
+   *  role (added @ctl). */
+  setControls?(controls: 'two' | 'one', swapSides: boolean): void;
   /** Schedules a synthetic trace through the real recognizer and frame binning: the first sample lands at `atMs`
    *  (default now), later samples keep their relative times (debug `__skate.pointer` in rAF mode; added @G0). */
   inject?(samples: readonly PointerSample[], atMs?: number): void;
@@ -847,11 +858,18 @@ export interface SaveV1 {
   trickBook: TrickId[]; postcards: AreaId[];
   onboarding: { lessonDone: boolean; runsStarted: number; learned: Partial<Record<HintId, boolean>>;
                 crashStreak: { kind: string; runs: number } | null;
-                persistAsked: boolean; installHintShown: boolean };
+                persistAsked: boolean; installHintShown: boolean;
+                /** added @ctl: the one-run re-teach of the two-thumb controls for a profile from before them (DESIGN
+                 *  §12.5): -1 = due (sanitize: runsStarted > 3 and no settings.controls in the stored save), n > 0 = shown
+                 *  in run n (its runsStarted), 0 / absent = not needed (new profiles learn them in runs 1–3). */
+                twoThumbIntro?: number };
   settings: {
     music: number; sfx: number; haptics: 'off' | 'key' | 'all'; shake: boolean; reducedMotion: boolean; effects: boolean;
     quality: 'auto' | 'low' | 'med' | 'high'; batterySaver: boolean; steerSensitivity: number; simpleTricks: boolean;
     keyPreset: 'A' | 'B'; analyticsOptOut: boolean;
+    /** added @ctl: touch controls (DESIGN §4.1): 'two' = steer with the left thumb, tricks with the right (default);
+     *  'one' = the one-thumb grammar (classic). `swapSides`: steer right, tricks left. Absent = 'two', false. */
+    controls?: 'two' | 'one'; swapSides?: boolean;
   };
   entitlements: { adFree: boolean; supporter: boolean; purchases: string[] };
   shop: { featuredDay: string | null; featured: ItemId[] };
@@ -1342,6 +1360,12 @@ frames.ts: queue of timestamped gestures → InputFrame per tick:
 ```
 `createRecognizer` is exported from `input/index.ts`, so the thumb bot (§11.2) runs the real recognizer on synthetic traces.
 
+**Two-thumb controls (owner playtest, DESIGN §4.1–4.4, §24 row 71).** The zone split lives entirely in the recognizer; the `InputFrame` contract, frames.ts, the sim, replays and golden hashes are unchanged. `pointer.ts` stamps every sample with its `pointerType`; at `down` the recognizer gives the touch a role from `roleOf(x, pointerType, config)` (`input/recognizer.ts`) and keeps it until `up` / `cancel`:
+- `controls: 'one'`, or a mouse / pen pointer → `both` (the one-thumb grammar, DESIGN §4.7, exactly as at G1);
+- otherwise `x < splitFrac · screenW` (0.5; `screenW` 0 → 390·k) → `steer`, else `trick`; `swapSides` mirrors it.
+
+A `steer` touch never enters HOLD, never emits `press`, `tap`, `swipe`, `holdStart` / `holdEnd` or the long tap, and can own steering (the first `steer` touch to cross SLOP; once the owner lifts or cancels, also a `steer` DRAG already down, on its next sideways move, from where it is then). A `trick` touch runs the full tap / hold / swipe machine but never owns steering, so its swipes carry `dxPx` 0 and `steer` false and use the normal sectors (no owner narrowing; arc compensation kept). Settings reach it through `InputSource.setControls?(controls, swapSides)` (wiring's `applySettings`, from `SaveV1.settings.controls` / `swapSides`); the debug API's manual-mode pipeline copies `controls` / `swapSides` / `splitFrac` from the live one on every `pointer()` call.
+
 ### 7.2 Recognizer state machine (per pointer)
 - **States:** `PENDING` (down, travel < SLOP) → `HOLD` at 200 ms still, or `DRAG` once travel ≥ SLOP (permanent).
   - Release while still and ≤ 350 ms after down → `tap` (also from `HOLD`, which then emits `holdEnd` too).
@@ -1355,8 +1379,8 @@ frames.ts: queue of timestamped gestures → InputFrame per tick:
   - After firing, apply the recoil mask (±60° of the opposite direction for 150 ms).
   - **Re-fire on the same stroke** needs ≥ 90 ms since the last fire, ≥ 32·k px from the last fire point, and a speed dip below 50% of the previous peak in between.
   - `dxPx` = the window's dx, or all dx since touch-down if the stroke is ≤ 150 ms old.
-- **Steering.** Emitted continuously from DRAG touches (including HOLD-then-move), but only by the steering owner: the first touch to become a DRAG.
-- **Hold and press.** `holdStart`/`holdEnd` are emitted for non-steering touches. `press` is level-tracked for every non-DRAG touch and drops when a touch becomes a DRAG.
+- **Steering.** Emitted continuously from DRAG touches (including HOLD-then-move), but only by the steering owner: the first touch to become a DRAG (two thumbs: the first steering-zone touch; trick-zone touches never own it).
+- **Hold and press.** `holdStart`/`holdEnd` are emitted for non-steering touches. `press` is level-tracked for every non-DRAG touch and drops when a touch becomes a DRAG. Steering-zone touches (two thumbs) emit neither, ever.
 - **Ignored touch-starts.** Ignore starts in the bottom `safeBottom + 12` px. During a run, every UI element except the pause button is `pointer-events:none`, so nothing else can swallow a touch.
 
 ### 7.3 Keyboard
@@ -1378,6 +1402,7 @@ frames.ts: queue of timestamped gestures → InputFrame per tick:
 - Recoil suppression, re-fire conditions (doubles), and diagonal sector edges.
 - Two-pointer ownership and `pointercancel` handing steering to the next DRAG.
 - Keyboard: a cardinal fires on keydown with no delay; a second arrow at 60 ms gives an amend, at 90 ms a separate swipe.
+- **Two thumbs** (`tests/unit/input/twothumb.test.ts`, `tests/unit/integration/twothumb.test.ts` through the real sim; the traces above run with `controls: 'one'`): a left touch of any length, a sloppy jab, flicks in all 8 directions (fresh, parked or mid-steer, flick-flick), lift-off flicks and cross-midline slides are steering only, at gain 1.0; several left touches (first DRAG owns), cancel hand-over; a right touch taps / long-taps / holds as before, never steers (a 120 px drag, a cross-midline slide, no left thumb at all), its swipes have `dxPx` 0 and `steer` false, a 34° flick from the inner area is ↗ (no owner narrowing), arc compensation, doubles, recoil; both at once; swap sides; one thumb, mouse and pen keep the one-thumb grammar; the role is fixed at touch-down; dead zone; determinism. Through the sim: a hard left dodge in the air never flips (the one-thumb control does) and steers all of its dx, a hard left dodge on the ground never pops, a resting left thumb never manuals or grabs, a right flick kickflips with `targetX` untouched (even at 0.45 px/ms), a left drag plus a right flick in the air give the kickflip and every pixel of steering, doubles, FS 180, a right HOLD grabs, a right thumb resting after a landing manuals, swap sides.
 - Binning: a gesture at t lands in the tick whose due time is ≥ t.
 
 ## 8. Rendering (`gfx/`, `world/render/`, `vfx/`, `skater/`)
@@ -1628,6 +1653,7 @@ frames.ts: queue of timestamped gestures → InputFrame per tick:
   - It must never crash.
 - **Myopic bot** (DESIGN §10.11). Every 0.1 s, picks the nearest 0.25 m lane whose next 1.5 s (as seen 0.35 s ago) is open, allowing an ollie for Low obstacles and full-width hazards; 75% lateral speed; ±0.08 s jitter. It may crash; the gate is median survival ≥ 4 min from the plateau over 100 seeds. The generator runs a deterministic grid version as validator rule (i).
 - **Thumb bot.** Renders the safe bot's plan as pointer traces: steering drags with human jerk (minimum-jerk profiles plus ±3 px tremor), a resting thumb between moves, taps of 60–260 ms (uniform), flicks with ±25° arcs, air dodges on the steering stroke, and 0.25 s total latency. Traces go through the real recognizer. Pass: 0 crashes and **0 unintended tricks** (any `flipStart`, `spinStart`, `grabStart` or `manualStart` the plan didn't ask for).
+  - **Two profiles** (`BotOptions.layout`, debug/bots/thumb.ts). `'two'` (default): the left thumb steers from a quarter in from the left edge (tremor, ~110 nervous vertical twitches of 34–50 px at 0.8–1.6 px/ms per 4 min, a hard sideways dodge out and back in the air of half the ollies, re-grips at calm moments and at the screen edge); the right thumb taps (60–260 ms, 190 ms cap where a HOLD would manual) and flicks ↑ (±25°, 0.9–1.6 px/ms) for a third of the ollies on flat ground. `'one'`: the G1 bot (one steering thumb in the middle, second-finger taps). The gate runs both, 20 seeds × 4 min each, plus a **control**: the two-thumb traces read with the one-thumb grammar (`BotOptions.grammar: 'one'`) must produce unintended tricks, so the gate cannot pass vacuously. A fourth case measures a habit instead of gating it: `rest: true`, the right thumb back on the glass 80–300 ms after every tap and still until just before the next (a HOLD: grabs and manuals by design, DESIGN §4.4 rule 3); it must give 0 crashes, 0 flips and 0 spins and reports its grab / manual rates per ollie (at the gate: 0.36 grabs and 1.0 manual per ollie). Reports: `artifacts/bots/thumb.json` (two thumbs, with gesture counts), `thumb1.json`, `thumb-rest.json`, `thumb-control.json`.
 - **Conformance bot.** Follows `SafeKey`s exactly (sets `targetX` to the key's x, ollies on the key's tick). Pass: 0 crashes on 50 seeds × 4 min. It proves the validator's geometry and the sim's collision agree, and runs at every gate after W1a merges.
 - **Straight bot.** Holds lane x ∈ {−4, −3, …, +4} and taps at every `FullWidth` obstacle using `warnAtS`. It must crash by t ≤ 20 s from a normal start, and within 10 s of `startT = 150`, in 100% of runs.
 - **Trick bot.** Greedy: steers to trick lines (`TrickLine` tags), flicks the highest-value flip or spin that fits `airLeft`, and picks grinds. It is used for feasibility (doubles, triples, the 360 spin), score ratio, trick-line safety and the p95 combo duration (≤ 45 s, from `comboBanked.durSec`).
@@ -1651,7 +1677,8 @@ frames.ts: queue of timestamped gestures → InputFrame per tick:
   - `__skate.start({seed, startT: 160})`, `manual(true)`, `bot('safe')`, then `step(3600)` × 3 for 5 seeds;
   - expect `alive`;
   - `perf().calls ≤ 120`, `tris ≤ 120k`.
-- **`touch.spec`:** real `page.touchscreen` and dispatched pointer sequences for steer, tap (including a 300 ms tap), swipe in the air (→ `flipStart`), ↗ on the ground (→ `spinStart`), hold inside a combo (→ `manualStart`), a resting thumb outside a combo (→ nothing), and swipe into a rail (→ `grindStart` with the right id).
+- **`touch.spec`:** real `page.touchscreen` / CDP touch and synthetic `__skate.pointer` sequences for steer, tap (including a 300 ms tap), swipe in the air (→ `flipStart`), ↗ on the ground (→ `spinStart`), a right HOLD in the air (→ `grabStart` indy, then `manualStart` at touchdown) and the same hold on the left (→ nothing), and a resting thumb outside a combo (→ nothing). Two thumbs (default): taps and swipes on the right half, drags on the left half, a left tap / hard ↑ that does nothing, a hard left ← in the air as real CDP touch (no flip, all of it steering), Swap sides as real touch, and a **simultaneous** left drag + right flick in the air (CDP `Input.dispatchTouchEvent` with two touch points) that gives the kickflip and all of the steering; one-thumb cases run after switching Settings › Touch controls; the mouse keeps the one-thumb grammar on desktop. Grind picks through the pipeline are covered by `tests/unit/integration/` (not e2e).
+- **`ui.spec` two-thumb hints** (mobile): the STEER / TRICKS rings with the hovering trick ghost, a wrong-side tap pulsing TRICKS, Pause › Settings › Swap sides mirroring the rings in the same run, Swap sides dimmed with One thumb, and an old save (10 runs, no `settings.controls`) re-taught once (chips, rings, both toasts) with the next session's cue labelled.
 - **`audio.spec`:** a `page.touchscreen.tap` on the Title, then `__skate.audio()` reports `unlocked` and context state `running`.
 - **`keyboard.spec`:** preset A mapping end to end, including the immediate cardinal plus amend, S for manual, Enter/R ignored during a run, and Space not re-clicking a focused button.
 - **`ui.spec`:** each screen opens via `__skate.ui()`; results → ROLL AGAIN; shop purchase; crate open persists across reload; **HUD no-overlap at 320, 360 and 390 px widths** (bounding boxes of score, combo pill, coins and pause never intersect, and stay inside the 56 px band); hidden screens are not focusable; Back up / Restore round-trips.
@@ -1733,7 +1760,7 @@ frames.ts: queue of timestamped gestures → InputFrame per tick:
 | Parallel agents collide or drift | Frozen `core/`, stub-first M0, folder ownership, `docs/core-requests.md` as the only shared edit, INT-only wiring, and full tests at every merge gate |
 | Portrait view too narrow, unreadable or "not iso" | The camera solver is tested against a look-ahead guarantee. ψ = 0 in portrait is a deliberate choice, with a fallback of ψ ≤ 4° (DESIGN §23). The x-ray cap, the height-band contract and the colour hierarchy. Screenshots are reviewed every wave. |
 | Unfair at top speed | Seconds-based generation, the validator floors, validator geometry matched to sim collision (conformance bot), dead-end and greedy-player rules, a delayed-reaction safe bot (200 seeds per gate, 400 at release), the myopic bot's median-survival gate, and `crash` analytics events with state and kind |
-| Steer vs flick conflicts | A pure recognizer that labels swipes, the steering-stroke rule in the sim, misfire trace tests, cancel only for consumed swipes, re-fire and lift-off rules, a second-finger tap, and the thumb bot through the real recognizer |
+| Steer vs flick conflicts | Two thumbs by default (owner playtest): the left thumb only steers and the right only tricks, split in the recognizer, so they cannot conflict. One thumb (classic): a pure recognizer that labels swipes, the steering-stroke rule in the sim, misfire trace tests, cancel only for consumed swipes, re-fire and lift-off rules, a second-finger tap. The thumb bot through the real recognizer gates both |
 | Readability (dark Neon, light sidewalks, toolbars) | Inverted Neon hazards, cream-over-ink grind edges, the `--contrast` pixel gate, `noFog` hazards, a HUD-band-aware camera solver and minimum on-screen edge widths |
 | Feel tuning spread across modules | `core/tuning.ts` plus per-package config files, a live tuning panel, and bot tests guarding fairness after every change |
 | Mobile GPU fill rate (neon, shadows, DPR 3) | DPR caps, glow-card caps, auto quality tiers, blob-only on low, no post-processing, and no bloom |

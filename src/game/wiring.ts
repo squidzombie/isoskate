@@ -76,7 +76,9 @@ export function wire(root: HTMLElement): Game {
   ui.attach(gameBus, appBus, meta);
   bindHaptics(gameBus, haptics, () => save.data.settings.haptics);
   const session = createRunSession(save, flags.seed);
-  const hints = new FirstRunHints(ui.hud, gameBus);
+  const hints = new FirstRunHints(ui.hud, gameBus, {
+    save, touch: () => typeof matchMedia !== 'function' || matchMedia('(pointer: coarse)').matches,   // the UI's `coarse`
+  });
 
   // Slides (boardslide family) vs grinds (truck locks), for the grind sound; precomputed so render() never allocates.
   const SLIDE_GRINDS: ReadonlySet<string> = new Set(TRICKS.grinds.filter((d) => d.slide).map((d) => d.id));
@@ -131,6 +133,7 @@ export function wire(root: HTMLElement): Game {
     input.setSensitivity(st.steerSensitivity);
     input.setPreset(st.keyPreset);
     input.setSimpleTricks?.(st.simpleTricks);
+    input.setControls?.(st.controls ?? 'two', st.swapSides ?? false);   // two-thumb controls (owner playtest, DESIGN §4.1)
     audio.setVolumes({ music: st.music, sfx: st.sfx });
     haptics.enabled = st.haptics !== 'off';
     loop.batterySaver = st.batterySaver;

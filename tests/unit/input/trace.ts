@@ -3,7 +3,12 @@ import type { Gesture, PointerSample } from '../../../src/core/input';
 import { createRecognizerImpl, type Recognizer, type RecognizerConfigExt } from '../../../src/input/recognizer';
 
 export const W = 390, H = 844;
-export const makeRec = (cfg: Partial<RecognizerConfigExt> = {}): Recognizer => createRecognizerImpl({ screenW: W, ...cfg });
+/** The one-thumb grammar (Settings "One thumb (classic)"): every touch can steer and trick. recognizer.test.ts and the
+ *  G0 traces are its tests; the two-thumb layout (the default) is tested in twothumb.test.ts with `makeRec2`. */
+export const ONE_THUMB: Partial<RecognizerConfigExt> = { controls: 'one' };
+export const makeRec = (cfg: Partial<RecognizerConfigExt> = {}): Recognizer => createRecognizerImpl({ screenW: W, ...ONE_THUMB, ...cfg });
+/** The two-thumb layout (the default): steering zone on the left half, trick zone on the right. */
+export const makeRec2 = (cfg: Partial<RecognizerConfigExt> = {}): Recognizer => createRecognizerImpl({ screenW: W, controls: 'two', ...cfg });
 
 /** Builds a trace for one pointer: `at` moves the clock, `to` moves the finger in steps of `stepMs`. */
 export class Trace {

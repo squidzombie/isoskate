@@ -4,7 +4,7 @@ import type { Gesture } from '../../../src/core/input';
 import { FrameBuilder, steerMetresPerPx } from '../../../src/input/frames';
 import { diagonalOf, KeyboardMapper } from '../../../src/input/keyboard';
 import { InputPipeline } from '../../../src/input/pipeline';
-import { Trace } from './trace';
+import { ONE_THUMB, Trace } from './trace';
 
 describe('keyboard preset A', () => {
   it('a cardinal fires on keydown with no delay', () => {
@@ -128,7 +128,7 @@ describe('pipeline (recognizer + keyboard + frames, no DOM)', () => {
   const frames = (p: InputPipeline, n: number, t0 = 0) => Array.from({ length: n }, (_, k) => p.frame(t0 + ((k + 1) * 1000) / 60));
 
   it('a scheduled synthetic tap is one tap edge in the tick of its release', () => {
-    const p = new InputPipeline(() => 390);
+    const p = new InputPipeline(() => 390, ONE_THUMB);
     p.schedule(new Trace(1, 0, 200, 400).rest(120).up().samples);
     const f = frames(p, 12);
     expect(f.map((x) => x.tap).indexOf(true)).toBe(7);        // released at 120 ms → the tick due at 133 ms
@@ -137,14 +137,14 @@ describe('pipeline (recognizer + keyboard + frames, no DOM)', () => {
     expect(f[9]!.press).toBe(false);
   });
   it('a scheduled hold reaches the frames at 200 ms, not when the trace was queued', () => {
-    const p = new InputPipeline(() => 390);
+    const p = new InputPipeline(() => 390, ONE_THUMB);
     p.schedule(new Trace(1, 0, 200, 400).rest(400).up().samples, 1000);
     const f = frames(p, 100, 1000);
     expect(f.findIndex((x) => x.hold)).toBe(11);              // 1200 ms → tick due at 1200.0
     expect(f.filter((x) => x.tap)).toHaveLength(0);
   });
   it('a drag steers and a swipe left in a fresh stroke is not steer', () => {
-    const p = new InputPipeline(() => 390);
+    const p = new InputPipeline(() => 390, ONE_THUMB);
     p.schedule(new Trace(1, 0, 300, 400).rest(60).flick(1.2, 180, 60).up().samples);
     const f = frames(p, 10);
     const s = f.find((x) => x.swipe);
@@ -152,7 +152,7 @@ describe('pipeline (recognizer + keyboard + frames, no DOM)', () => {
     expect(f.reduce((a, x) => a + x.steerDx, 0)).toBeLessThan(-2);
   });
   it('keyboard edges and levels go through the same frames', () => {
-    const p = new InputPipeline(() => 390);
+    const p = new InputPipeline(() => 390, ONE_THUMB);
     p.keyDown('ArrowUp', 5); p.keyDown('ArrowRight', 40);
     const f0 = p.frame(1000 / 60);
     p.keyDown('KeyD', 41);                                    // levels are sampled live, edges are binned
@@ -170,7 +170,7 @@ describe('determinism', () => {
       ...new Trace(3, 700, 200, 500).rest(40).flick(1.1, 45, 60).rest(70).flick(1.1, 45, 60).up().samples,
     ];
     const runOnce = () => {
-      const p = new InputPipeline(() => 390);
+      const p = new InputPipeline(() => 390, ONE_THUMB);
       p.schedule(trace());
       p.keyDown('ArrowUp', 900); p.keyDown('ArrowRight', 950);
       return Array.from({ length: 80 }, (_, k) => p.frame(((k + 1) * 1000) / 60));
@@ -185,7 +185,7 @@ describe('determinism', () => {
 describe('long tap through the pipeline (W1a)', () => {
   it('a still 390 ms press gives one frame with longTap (and no tap); 700 ms gives none', () => {
     const frames = (ms: number) => {
-      const p = new InputPipeline(() => 390);
+      const p = new InputPipeline(() => 390, ONE_THUMB);
       p.schedule(new Trace(1, 0, 195, 500).rest(ms).up().samples);
       const out = [];
       for (let t = 0; t <= ms + 50; t += 1000 / 60) out.push(p.frame(t));

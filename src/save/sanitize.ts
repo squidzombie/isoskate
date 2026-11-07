@@ -118,6 +118,8 @@ export function sanitize(input: unknown, defaults: SaveV1, known: KnownIds = KNO
     onboarding: {
       lessonDone: bool(ob.lessonDone, false), runsStarted: int(ob.runsStarted, 0), learned, crashStreak,
       persistAsked: bool(ob.persistAsked, false), installHintShown: bool(ob.installHintShown, false),
+      // A profile that played before the two-thumb controls (no settings.controls stored) gets them re-taught once.
+      twoThumbIntro: int(ob.twoThumbIntro, int(ob.runsStarted, 0) > 3 && se.controls === undefined ? -1 : 0, -1),
     },
     settings: {
       music: num(se.music, d.settings.music, 0, 1), sfx: num(se.sfx, d.settings.sfx, 0, 1),
@@ -130,6 +132,8 @@ export function sanitize(input: unknown, defaults: SaveV1, known: KnownIds = KNO
       simpleTricks: bool(se.simpleTricks, d.settings.simpleTricks),
       keyPreset: oneOf(se.keyPreset, ['A', 'B'] as const, d.settings.keyPreset),
       analyticsOptOut: bool(se.analyticsOptOut, d.settings.analyticsOptOut),
+      controls: oneOf(se.controls, ['two', 'one'] as const, d.settings.controls ?? 'two'),
+      swapSides: bool(se.swapSides, d.settings.swapSides ?? false),
     },
     entitlements: { adFree: bool(en.adFree, false), supporter: bool(en.supporter, false), purchases: ids<string>(en.purchases, (x) => x.length < 80) },
     shop: { featuredDay: day(sh.featuredDay), featured: ids<ItemId>(sh.featured, item) },

@@ -9,7 +9,8 @@
 //   - a fast fresh dodge that rises 32° stays a dodge (no ↗ pop); one that rises 40° pops a FS 180 and keeps its dodge;
 //   - a steering thumb that flicks 34° up-right while dodging does not pop;
 //   - a fresh medium-speed sideways stroke in the air is steering, not a heelflip; a hard fresh flick still flips.
-// Pops use a second-finger tap, so the steering thumb stays down through the whole trace.
+// Pops use a second-finger tap, so the steering thumb stays down through the whole trace. These are the one-thumb
+// grammar's traces (Settings "One thumb (classic)", `controls: 'one'`); the two-thumb layout is in twothumb.test.ts.
 import { describe, expect, it } from 'vitest';
 import type { GameEvent } from '../../../src/core/events';
 import { DT } from '../../../src/core/tuning';
@@ -17,7 +18,7 @@ import { InputPipeline } from '../../../src/input/pipeline';
 import { createSim } from '../../../src/sim';
 import { TRICKS } from '../../../src/tricks';
 import { fixtureWorld, runCfg } from '../sim/fixtures';
-import { H, Trace, W } from '../input/trace';
+import { H, ONE_THUMB, Trace, W } from '../input/trace';
 
 const TICK_MS = DT * 1000;
 
@@ -26,7 +27,7 @@ const TICK_MS = DT * 1000;
 function rig() {
   const sim = createSim(TRICKS, fixtureWorld([]));
   sim.reset(runCfg({ startT: 2 }));
-  const pipe = new InputPipeline(() => W, { screenW: W, screenH: H, k: 1, deadZoneBottomPx: 12 });
+  const pipe = new InputPipeline(() => W, { screenW: W, screenH: H, k: 1, deadZoneBottomPx: 12, ...ONE_THUMB });
   let clock = 0;
   const events: GameEvent[] = [];
   const swipes: { dir: string; fast: boolean; fromRest: boolean; steer: boolean }[] = [];

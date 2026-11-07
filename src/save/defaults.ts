@@ -27,6 +27,7 @@ function newInstallId(): string {
 export const DEFAULT_SETTINGS: Readonly<SaveV1['settings']> = Object.freeze({
   music: 0.8, sfx: 0.9, haptics: 'key', shake: true, reducedMotion: false, effects: true, quality: 'auto',
   batterySaver: false, steerSensitivity: 1, simpleTricks: false, keyPreset: 'A', analyticsOptOut: false,
+  controls: 'two', swapSides: false,               // two-thumb controls by default (owner playtest, DESIGN §4.1)
 });
 
 /** A fresh profile. `seed` fixes the crate RNG stream (tests); by default each install draws its own. */
@@ -54,7 +55,7 @@ export function makeDefaults(now: number = Date.now(), seed: number = random32()
       longestGrind: 0, tricks: {}, areaVisits: {},
     },
     trickBook: [], postcards: [],          // Downtown's postcard is granted on run 1 (DESIGN §14.3)
-    onboarding: { lessonDone: false, runsStarted: 0, learned: {}, crashStreak: null, persistAsked: false, installHintShown: false },
+    onboarding: { lessonDone: false, runsStarted: 0, learned: {}, crashStreak: null, persistAsked: false, installHintShown: false, twoThumbIntro: 0 },
     settings: { ...DEFAULT_SETTINGS },
     entitlements: { adFree: false, supporter: false, purchases: [] },
     shop: { featuredDay: null, featured: [] },

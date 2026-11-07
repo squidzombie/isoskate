@@ -17,12 +17,12 @@
 
 **Name:** DUSKLANE. A web search on 2026-11-06 found no existing game with this title. Similar names exist (Duskers, DUSK, Dusk Runners), but none is a skate game or a close match.
 
-**Logline:** *"Roll from golden hour into the neon night."* An endless, one-thumb street-skating game. You never push. You carve, pop, flip and grind your way down a never-ending procedural street that drifts from a sunset downtown into the suburbs, past the docks and up into a glowing futuristic city at blue hour.
+**Logline:** *"Roll from golden hour into the neon night."* An endless, two-thumb street-skating game (left thumb steers, right thumb tricks). You never push. You carve, pop, flip and grind your way down a never-ending procedural street that drifts from a sunset downtown into the suburbs, past the docks and up into a glowing futuristic city at blue hour.
 
 **Pillars**
-1. **One-thumb flow.**
-   - Drag to carve, tap to pop, swipe up-diagonally to pop a spin, swipe in the air to flip, swipe into a rail to pick the grind, and hold to manual.
-   - The controls never fight the player.
+1. **Two-thumb flow** (one thumb in Settings, §4.7).
+   - Left thumb: drag to carve. Right thumb: tap to pop, swipe up-diagonally to pop a spin, swipe in the air to flip, swipe into a rail to pick the grind, and hold to manual.
+   - The controls never fight the player: steering and tricks live on different thumbs (§24 row 71).
    - Lining up a rail feels magnetic.
 2. **Fair at every speed.**
    - Every timing is in seconds, and a safe line always exists.
@@ -81,60 +81,59 @@ The full numbers behind each claim are in §5 (movement), §8 (camera), §10.6 (
 ## 4. Controls and gesture grammar
 
 ### 4.1 Platform and input principles
-- **Phone portrait first.** Play is one-handed, with the thumb anywhere on screen. Keyboard is a first-class second scheme, and mouse drag behaves exactly like touch.
+- **Phone portrait first, two thumbs (default on touch).** Hold the phone in two hands. The play area splits at the vertical midline (`splitFrac` = 0.5 of its width, one tunable): **the left thumb steers, the right thumb does tricks** (owner playtest, §24 row 71).
+  - A touch belongs to the zone it went down in for its whole life. It may slide across the midline without changing role.
+  - Steering and tricks are separated by construction, so both thumbs work at once: steer while flipping, dodge while picking a grind.
+  - **Settings › Touch controls:** **Two thumbs** (default) / **One thumb (classic)** (§4.7, the earlier grammar: one thumb anywhere both steers and tricks). **Swap sides** (steer right, tricks left) is for left-handed players.
+  - Keyboard is a first-class second scheme (§4.6). A **mouse** (or pen) is one pointer and cannot be two thumbs, so it always uses the one-thumb grammar (§4.7), whatever the setting.
 - **Timing.** The sim runs at a fixed **60 Hz** (TECH §6). Pointer events use `event.timeStamp` and coalesced events, and are assigned to the sim tick their timestamp falls in, never deferred to rAF.
 - **Layering.**
-  - The recognizer emits *gestures* only and is stateless with respect to the game.
+  - The recognizer emits *gestures* only and is stateless with respect to the game. The zone split lives in the recognizer: the sim never sees steering from the trick thumb nor a trick from the steering thumb.
   - The sim decides what a gesture means in the current skater state (§4.3), so meaning is deterministic and replayable.
-  - Bots and replays feed the same `InputFrame` (TECH §4.4).
+  - Bots and replays feed the same `InputFrame` (TECH §4.4), which is unchanged by the zones.
 
 ### 4.2 Per-touch recognizer (thresholds are scaled by `k`)
 
-The recognizer stays stateless with respect to the game. It labels each swipe with how it was made (`fast`, `fromRest`, `steer`), and the sim decides per state whether that swipe counts (§4.3, §4.4).
+The recognizer stays stateless with respect to the game. Each touch gets a **role** at touch-down: *steer* (steering zone), *trick* (trick zone) or *both* (one thumb, mouse, pen). It labels each swipe with how it was made (`fast`, `fromRest`, `steer`), and the sim decides per state whether that swipe counts (§4.3). With two thumbs no swipe is ever `steer` and none carries steering, so the labels only matter to the one-thumb grammar (§4.7).
 
 | Name | Rule |
 |---|---|
+| **Zones** (two thumbs) | **Steering zone** (x < 0.5·W; the right half with Swap sides): the touch only steers. It never produces a TAP, SWIPE, HOLD, long tap or press, however it moves or rests: no ollie, flip, manual, grab or pick from it, ever. **Trick zone** (the other half; x exactly on the midline is the right): the touch taps, swipes and holds exactly as below, but never steers and never owns steering. |
 | `SLOP` | 10 px |
-| **TAP** | A still touch (travel < SLOP) released **≤ 350 ms** after touch-down. Human taps last 60–250 ms, so a nervous long tap is still an ollie. **Sloppy tap (G0):** a touch that drifted past SLOP but stayed within 20 px of its start (and 15 px sideways), fired no swipe and lifted ≤ 250 ms after touch-down is also a TAP; its drift already steered. |
-| **HOLD** | Stays within SLOP for 200 ms. Level-triggered: active until lift. A HOLD released by 350 ms *also* emits a TAP. A HOLD that then moves ≥ SLOP ends the hold and becomes a DRAG (steering gain 1.0). |
-| **DRAG** | Travel ≥ SLOP. **Permanent for that touch**: a DRAG never becomes a HOLD. |
-| **SWIPE** | Either ≥ 32 px moved within any 80 ms window (≥ 0.4 px/ms), or a lift-off with ≥ 24 px moved in its last 80 ms. Detected inside a DRAG too. Every swipe carries three labels: **`fast`** (≥ 60 px in 80 ms, ≥ 0.75 px/ms), **`fromRest`** (the thumb was parked, < 0.15 px/ms for ≥ 60 ms, right before the flick) and **`steer`** (the stroke is the steering owner and is older than 150 ms). |
-| **Direction** | 8 screen-space sectors: **cardinals ±30°, diagonals ±15°**. **Steering thumbs (G0):** a swipe from the steering owner uses diagonals ±10° (cardinals ±35°), unless it is the first motion of a parked thumb (it rested ≥ 60 ms and had not steered before), so a dodge that rises 30–35° stays a dodge. **Arc compensation:** for strokes that start in the outer 40% of the screen width (either side) and are within 45° of horizontal, the measured angle is rotated 8° toward horizontal before sectoring, because a thumb swiping sideways arcs upward. The Settings toggle **Simple tricks** snaps every diagonal to the nearest cardinal. |
+| **TAP** | A still trick-zone touch (travel < SLOP) released **≤ 350 ms** after touch-down. Human taps last 60–250 ms, so a nervous long tap is still an ollie. **Sloppy tap (G0):** a touch that drifted past SLOP but stayed within 20 px of its start (and 15 px sideways), fired no swipe and lifted ≤ 250 ms after touch-down is also a TAP. **Long tap (G1):** a still press released 350–600 ms after down reads as a TAP wherever its HOLD started nothing (§24 row 62). |
+| **HOLD** | A trick-zone touch that stays within SLOP for 200 ms. Level-triggered: active until lift. A HOLD released by 350 ms *also* emits a TAP. A HOLD that then moves ≥ SLOP ends the hold and becomes a DRAG. |
+| **DRAG** | Travel ≥ SLOP. **Permanent for that touch**: a DRAG never becomes a HOLD. A steering-zone DRAG steers; a trick-zone DRAG only swipes. |
+| **SWIPE** | Trick zone only. Either ≥ 32 px moved within any 80 ms window (≥ 0.4 px/ms), or a lift-off with ≥ 24 px moved in its last 80 ms. Labels: **`fast`** (≥ 60 px in 80 ms, ≥ 0.75 px/ms), **`fromRest`** (the thumb was parked, < 0.15 px/ms for ≥ 60 ms, right before the flick) and **`steer`** (always false with two thumbs; §4.7). |
+| **Direction** | 8 screen-space sectors: **cardinals ±30°, diagonals ±15°**. **Arc compensation:** for strokes that start in the outer 40% of the screen width (either side) and are within 45° of horizontal, the measured angle is rotated 8° toward horizontal before sectoring, because a thumb swiping sideways arcs upward (the right thumb works the outer right). The Settings toggle **Simple tricks** snaps every diagonal to the nearest cardinal. |
 | **Recoil filter** | For 150 ms after a swipe fires, motion within ±60° of the opposite direction is ignored on that stroke |
 | **Re-fire** (same stroke) | A stroke can fire again only when **all three** hold: ≥ 90 ms since its last fire, ≥ 32 px moved since the last fire point, and its speed dipped below 50% of the previous flick's peak in between. One long flick therefore fires once; a deliberate flick-flick fires twice (how doubles work). |
 | **Lift-off swipe** | Disabled for a stroke that fired in the last 150 ms, so a lift never adds a phantom double or triple |
-| **Steering** | Relative. `targetX += dx_px · S`, where `S = 9 m / (0.55 · screenWidthPx)`, about 0.042 m/px on a 390 px phone. Settings slider scales it 0.6–1.6×. Steering starts when SLOP is crossed and counts from the touch-down point, so no motion is lost. Lifting holds the current line; there is no auto-centring. **Gain is 1.0 in every state** that steers. |
-| **`swipeDx`** | The steering that swipe contributed: its 80 ms window, or all steering since touch-down when the stroke is ≤ 150 ms old |
-| **Multi-touch** | The first touch to become a DRAG owns steering. Other touches can TAP, SWIPE or HOLD. A second-finger tap is an ollie. |
-| **`pointercancel`** | Produces no tap or swipe, ends any hold, and passes steering to the next touch that becomes a DRAG |
+| **Steering** | Steering zone only. Relative: `targetX += dx_px · S`, where `S = 9 m / (0.55 · screenWidthPx)`, about 0.042 m/px on a 390 px phone. Settings slider scales it 0.6–1.6×. Steering starts when SLOP is crossed and counts from the touch-down point, so no motion is lost. Lifting holds the current line; there is no auto-centring. **Gain is 1.0 in every state** that steers. |
+| **`swipeDx`** | The steering that swipe contributed: always **0** with two thumbs (a trick-zone touch never steers), so the sim has nothing to subtract (§4.4 rule 2) |
+| **Multi-touch** | The first steering-zone touch to become a DRAG owns steering; other steering-zone touches never steer while it is down. When it lifts or cancels, steering goes to the next steering-zone touch that becomes a DRAG **or to a steering-zone DRAG already down as soon as it moves**, from where it is then (a thumb that landed while a grip contact owned steering takes over the moment that contact lets go, with no re-grip; a still contact never takes steering, so lifting still holds the line). Trick-zone touches tap, swipe and hold at any time, any number of them, while the steering thumb steers. |
+| **`pointercancel`** | Produces no tap or swipe, ends any hold, and frees steering exactly like a lift |
 
 ### 4.3 What a gesture means in each skater state (resolved inside the sim)
 
-**Steering-stroke rule.** A swipe labelled `steer` (the steering thumb, mid-stroke) is mostly steering, so the sim accepts it as a trick only when it was clearly meant:
-
-| State and direction | A `steer` swipe counts only if |
-|---|---|
-| Air, ← or → | `fromRest`. A fast sideways dodge in the air is never a kickflip or heelflip. |
-| Air, any other direction | `fast` or `fromRest` |
-| Ground, ↑ ↗ ↖ (they pop) | `fast` or `fromRest` |
-| Ground, other directions | Never (horizontal ones are just fast steering) |
-
-A swipe that does not count is plain steering: it was already applied and nothing is cancelled. Non-steering touches keep the normal 0.4 px/ms threshold. **Fresh steering strokes (G0):** a stroke ≤ 150 ms old that is the steering owner (its `swipeDx` is not 0) counts in any direction with a sideways component (← → and the diagonals) only if `fast` or `fromRest`, so a thumb that lands on the glass and dodges at 0.4–0.7 px/ms dodges; ↑ and ↓ keep the normal threshold.
+With two thumbs every gesture below comes from the trick thumb and every drag from the steering thumb, so the table is the whole story. **Steering-stroke rule (one thumb only, §4.7).** A swipe labelled `steer`, or one carrying `swipeDx`, is judged by the rule in §4.7; trick-zone swipes never are, so they count with the normal 0.4 px/ms threshold in every direction.
 
 | Gesture | Ground (roll) | Manual | Air | Grind |
 |---|---|---|---|---|
-| Horizontal drag | Steer (gain 1.0) | Steer (gain 1.0) | Steer target (gain 1.0); lateral acceleration is limited to air values (§5.3) | Ignored |
-| **TAP** | **Ollie**, fires on release | Ollie, linked | Jump buffer: ollie on touchdown if touchdown is ≤ 0.15 s away, otherwise nothing. **Discarded at grind capture.** | **Pop out** (full ollie from rail height) |
+| Steering drag (left thumb) | Steer (gain 1.0) | Steer (gain 1.0) | Steer target (gain 1.0); lateral acceleration is limited to air values (§5.3) | Ignored |
+| **TAP** (right thumb) | **Ollie**, fires on release | Ollie, linked | Jump buffer: ollie on touchdown if touchdown is ≤ 0.15 s away, otherwise nothing. **Discarded at grind capture.** | **Pop out** (full ollie from rail height) |
 | **SWIPE ↑** | **Ollie**, fires on recognition (about 60 ms sooner than a tap) | Ollie, linked | Impossible flip. Inside the last 0.15 s of air it becomes a buffered ollie instead. **In the pick window it is a pick** (Nosegrind). | Pop out |
 | **SWIPE ↗ / ↖** | **FS 180 / BS 180 ollie** (§6.1a): pops and starts the spin | Linked spin ollie | Flip (Inward Heelflip / Hardflip), or a **spin upgrade to 360** if it repeats the spin's direction while the spin is < 60% done | **180 Out**: pop out with a FS / BS 180 |
 | Other swipes | Nothing | ↓ switches to Nose Manual (once per manual). Others do nothing. | **Flip** (§6.1). **Becomes a grind pick whenever the pick window is open** (§6.3). | **Grind switch** (↓ ← → ↙ ↘ and their doubles) if ≥ 0.25 s after lock (§6.3) |
-| **HOLD** | Manual, **only while the combo's link window is open or the board is on a manual pad or ledge top**. Otherwise a resting thumb does nothing. | n/a | Grab (Indy), if ≥ 0.25 s of air remains | Nothing |
-| Touch still down at touchdown | n/a | n/a | **Pre-press manual** on landing, if that touch went down between 0.30 s and 0.10 s before touchdown and did not move past SLOP within 0.15 s; or a grab is held | Manual after a grind exit landing (same rule) |
+| **HOLD** (right thumb) | Manual, **only while the combo's link window is open or the board is on a manual pad or ledge top**. Otherwise a resting thumb does nothing. | n/a | Grab (Indy), if ≥ 0.25 s of air remains | Nothing |
+| Right thumb still down at touchdown | n/a | n/a | **Pre-press manual** on landing, if that touch went down between 0.30 s and 0.10 s before touchdown and did not move past SLOP within 0.15 s; or a grab is held | Manual after a grind exit landing (same rule) |
+
+The steering thumb resting, lifting, re-gripping or flicking in any direction is only ever steering: it starts no ollie, manual, grab, pre-press or pick.
 
 ### 4.4 Conflict rules (ordered: the first rule that applies wins)
 1. **Pick window first.** While a grind pick window is open (§6.3), **every** swipe is a pick, ↑ included. The late-flip cutoff, spin upgrades and flip upgrades do not apply to it. A buffered TAP is discarded at capture.
-2. **Steering drag vs trick swipe.** Steering applies live. When the sim consumes an air swipe as a flip, spin or pick, it subtracts that swipe's `swipeDx` from `targetX`, so a flick doesn't yank the skater sideways. Pops (↑ ↗ ↖ from the ground or a manual, pop-outs and 180 Outs) subtract nothing: a dodge that also pops keeps its dodge. A `steer` swipe that fails the steering-stroke rule (§4.3) is not consumed and nothing is subtracted, so a dodge stays a dodge.
-3. **Resting thumb vs manual.** A still touch never starts a manual outside a combo, except on a pad or ledge top, and a release ≤ 350 ms is always an ollie (manual → linked ollie). A thumb that has steered stays a DRAG for life. Manual has no fail state and scores only inside a combo, so an accidental manual costs nothing, and steering feel never changes (gain 1.0 everywhere).
+2. **Steering drag vs trick swipe.** With two thumbs they never meet: the trick thumb never steers (`swipeDx` 0, nothing to subtract, a flick never yanks the skater sideways) and the steering thumb never tricks (a fast dodge never flips or pops), so a left drag and a right flick in the same tick give the trick **and** all of the steering. One thumb: the subtraction and the steering-stroke rule of §4.7.
+3. **Resting thumb vs manual.** A still trick thumb never starts a manual outside a combo, except on a pad or ledge top, and a release ≤ 350 ms is always an ollie (manual → linked ollie). The steering thumb never starts one at all. A thumb that has dragged stays a DRAG for life. Manual has no fail state and scores only inside a combo (§24 row 61), so an accidental manual costs nothing, and steering feel never changes (gain 1.0 everywhere).
+   - **A right thumb that rests on the glass between tricks** (two thumbs give it nothing else to do) is a HOLD: back down early in an ollie's air it grabs (Indy), and a grab or pre-press held through touchdown rolls into a manual; resting in a link window manuals too. That is the same gesture as a deliberate hold-to-grab, so it is **a measured trade-off, not a misfire**: the thumb bot's `rest` habit (back down 80–300 ms after every tap, still until 30–80 ms before the next) gives 0.36 grabs and 1.0 manual per ollie (20 seeds × 4 min: 282 ollies, 100 grabs, 282 manuals), 0 flips, 0 spins and 0 crashes (none of them can hurt: grabs auto-release before touchdown, manuals have no fail state). The hints teach a **hovering** right thumb instead (§12.3): the trick ghost waits lifted above its ring and comes down only to tap or hold.
 4. **Pop bleed.** No air swipe is recognized in the first 70 ms after a pop, and the stroke that popped is spent.
 5. **Too-late flips.** Outside the pick window, a swipe with < 0.15 s of predicted airtime left is ignored (↑ becomes a buffered ollie). A long trick started early enough to count but too late to finish still bails. That is the intended risk.
 6. **Upgrade refusal.** A same-direction swipe that would upgrade a flip (or spin) is refused, keeping the current trick, if the upgraded trick could not reach p = 0.55 in the predicted air left. Refused upgrades never bail you.
@@ -144,7 +143,7 @@ A swipe that does not count is plain steering: it was already applied and nothin
 - `touch-action:none` on the play layer only. No callout, no text selection, no pinch zoom, no double-tap zoom.
 - **Dead zone:** ignore touch-starts in the bottom safe-area inset + 12 px (iOS home bar).
 - **During a run, only the pause button can be tapped.** Toasts, hints and popups are `pointer-events:none`, so they never swallow an ollie.
-- **Back gestures** (Android back, iOS edge swipe-back) pause the run instead of leaving the page (TECH §10.1).
+- **Back gestures** (Android back, iOS edge swipe-back) pause the run instead of leaving the page (TECH §10.1). With two thumbs the steering thumb works the left half, so an edge swipe from the very left edge can trigger the system back gesture (a page cannot exclude it); the STEER ring sits 24% in from the edge. To check on real Android gesture navigation and iOS before release.
 - A phone held in landscape shows a **"Rotate to portrait"** pause card.
 - Haptics go through the `haptics.*` hook (TECH §10): `navigator.vibrate` on Android, and a native bridge later.
 - Audio unlocks on the first `pointerup`, `touchend`, `click` or `keydown`, and retries on every gesture until the context is running (§19.4).
@@ -165,6 +164,26 @@ A swipe that does not count is plain steering: it was already applied and nothin
 - **The manual key in the air** only arms the pre-press manual. It never grabs (Q grabs), so a held S or Shift never surprises you.
 - S replaces Shift as the default because holding Shift five times opens the Windows Sticky Keys prompt, which blurs the window and pauses the run.
 - During a run, game keys call `preventDefault`, the focused element is blurred, and the mouse cursor is hidden.
+
+### 4.7 One thumb (classic)
+
+Settings › Touch controls › **One thumb**, and every mouse or pen pointer: the grammar the game shipped with until the owner playtest (§24 row 71). One thumb anywhere on screen both steers and tricks; every touch has the role *both*. The recognizer rules of §4.2 apply to every touch (any touch can tap, swipe and hold, and the first touch to become a DRAG owns steering; a second-finger tap is an ollie), and steering and tricks are told apart by how a swipe was made:
+- **Labels.** `fast` and `fromRest` as in §4.2, and **`steer`**: the stroke is the steering owner and is older than 150 ms. **`swipeDx`**: the steering that swipe contributed, its 80 ms window, or all steering since touch-down when the stroke is ≤ 150 ms old (0 for non-owners).
+- **Owner sectors (G0).** A swipe from the steering owner uses diagonals ±10° (cardinals ±35°), unless it is the first motion of a parked thumb (it rested ≥ 60 ms and had not steered before), so a dodge that rises 30–35° stays a dodge.
+- **Sloppy tap drift** already steered (the owner's drift is applied live).
+- **Conflict rule 2, one thumb.** Steering applies live. When the sim consumes an air swipe as a flip, spin or pick, it subtracts that swipe's `swipeDx` from `targetX`, so a flick doesn't yank the skater sideways. Pops (↑ ↗ ↖ from the ground or a manual, pop-outs and 180 Outs) subtract nothing: a dodge that also pops keeps its dodge. A `steer` swipe that fails the steering-stroke rule is not consumed and nothing is subtracted, so a dodge stays a dodge.
+- **Resting thumb.** A still touch never starts a manual outside a combo, except on a pad or ledge top (§4.4 rule 3, for any touch).
+
+**Steering-stroke rule** (in the sim, `tricks/interpret.ts swipeCounts`). A `steer` swipe is mostly steering, so it counts as a trick only when clearly meant:
+
+| State and direction | A `steer` swipe counts only if |
+|---|---|
+| Air, ← or → | `fromRest`. A fast sideways dodge in the air is never a kickflip or heelflip. |
+| Air, any other direction | `fast` or `fromRest` |
+| Ground, ↑ ↗ ↖ (they pop) | `fast` or `fromRest` |
+| Ground, other directions | Never (horizontal ones are just fast steering) |
+
+A swipe that does not count is plain steering: it was already applied and nothing is cancelled. Non-steering touches keep the normal 0.4 px/ms threshold. **Fresh steering strokes (G0):** a stroke ≤ 150 ms old that is the steering owner (its `swipeDx` is not 0) counts in any direction with a sideways component (← → and the diagonals) only if `fast` or `fromRest`, so a thumb that lands on the glass and dodges at 0.4–0.7 px/ms dodges; ↑ and ↓ keep the normal threshold.
 
 ---
 
@@ -977,7 +996,10 @@ Each gateway hides the swap of building kit and carries the palette and music cr
 ### 12.3 The Lesson Line (first runs only; fixed seed; 0–40 s)
 - **How it plays:**
   - Runs use the Lesson Line until the player has done every taught move once (saved), for at most the first 3 runs. After that they start with the Roll-out (§12.4).
-  - Each move is taught by a ghost-thumb icon (key caps on desktop) with a 1–2 word label. No text walls. In runs 1–3 the ghost thumb and a faint "rest here" mark sit **10–16% from the bottom**, below the skater, so a resting thumb doesn't cover it.
+  - Each move is taught by a ghost-thumb icon (key caps on desktop) with a short label. No text walls.
+  - **Two thumbs** (the default on touch, §4.1): in runs 1–3 two faint rings sit **10–16% from the bottom** on their sides, below the skater so resting thumbs don't cover it: **STEER** (left; a ghost thumb with a short ↔ arrow) and **TRICKS · TAP · FLICK · HOLD** (right; a ghost thumb that acts the tap, flick or hold). Ring labels are 11 px·k with an ink shadow. The ghost of the side the hint is about acts, the other waits faintly: the steering ghost rests on its ring, the trick ghost **hovers** above its ring (lifted, its shadow on the ring) and its tap and hold come down from the hover and go back up, because a right thumb left on the glass is a HOLD (§4.4 rule 3).
+  - **Wrong-side feedback** (while the rings are up): a tap on the steering half pulses the TRICKS ring, and a slow sideways drag on the trick half pulses the STEER ring, so a player who taps or steers on the wrong side learns the split in seconds (the touch itself still does nothing). Labels name the thumb where it matters: "DRAG LEFT THUMB TO STEER", "TAP RIGHT TO OLLIE", "FLICK ← ON THE RIGHT", "HOLD RIGHT TO MANUAL" (sides swapped with Swap sides); the others keep their words ("OLLIE ONTO THE LEDGE", "SWIPE ↓ INTO THE RAIL", "SWIPE ↗ TO SPIN"). **One thumb:** one "rest here" ring in the middle and the one-thumb words ("DRAG TO STEER", "TAP TO OLLIE"). The keys wording (fine pointer) is unchanged.
+  - **Zone cue** (two thumbs, touch): for the first 3 s of runs 1–3, and of the first run after the app opens (a returning player meets the split too), two soft rounded pads and a faint dashed midline fill the bottom band (3–22% from the bottom: below the skater, never in the look-ahead zone, `pointer-events: none`), then fade out. When no ring is up (a returning player) the pads carry their names, **"STEER ↔"** and **"TRICKS"**.
   - Speed follows the normal schedule (7.0 m/s for 20 s).
 - **Assists:**
   - A required hazard that hasn't been answered 1.0 s out slows time to 0.5× (loop time scale, so the sim stays deterministic) until the player acts.
@@ -985,13 +1007,13 @@ Each gateway hides the swap of building kit and carries the palette and music cr
 
 | t (s) | s (m) | Content | Teaches |
 |---|---|---|---|
-| 0–3 | 0–21 | Plaza roll-out, S-curve of 8 coins | **Drag** to carve |
-| 3.5 | 25 | Full-width low parking chain (`barrier_low`, 0.35 m), coin arc. The first required action. | **Tap** = ollie |
+| 0–3 | 0–21 | Plaza roll-out, S-curve of 8 coins | **Drag** (left thumb) to carve |
+| 3.5 | 25 | Full-width low parking chain (`barrier_low`, 0.35 m), coin arc. The first required action. | **Tap** (right thumb) = ollie |
 | 6–9 | 42–63 | Granite ledge at x = +2, magnet, coins on top | **First grind within 6 s** |
-| 10–13 | 70–91 | Two bench pairs at x = −2; ghost ↓ as the edge glows and the chevron appears | **Swipe into a rail** picks the grind (watch for the glow) |
+| 10–13 | 70–91 | Two bench pairs at x = −2; ghost ↓ as the edge glows and the chevron appears | **Swipe into a rail** (right thumb) picks the grind (watch for the glow) |
 | 14–17 | 98–119 | Parked car centre-right; the left ledge continues | Tall things must be avoided |
-| 18–21 | 126–147 | 5-stair terrace (−0.85 m) with a centre handrail; ghost ← at apex (0.4× slow-mo) | **Flick in the air** = flip. Drops are safe. |
-| 22–25 | 154–175 | 3 manual pads; ghost hold | **Hold** = manual. The combo counter and bank arc appear. |
+| 18–21 | 126–147 | 5-stair terrace (−0.85 m) with a centre handrail; ghost ← at apex (0.4× slow-mo) | **Flick in the air** (right thumb) = flip. Drops are safe. |
+| 22–25 | 154–175 | 3 manual pads; ghost hold | **Hold** (right thumb) = manual. The combo counter and bank arc appear. |
 | 26–29 | 182–203 | Rail ladder | Transfers |
 | 30–32 | 210–224 | 1:10 incline back up 0.85 m (datum payback), coins on the crest; ghost ↗ on the flat crest (optional, nothing to react to) | **Swipe up-right** = FS 180 ollie |
 | 33–35.5 | 231–249 | Trench + plank | First full-width pit |
@@ -1011,6 +1033,7 @@ This keeps "fun in 5 seconds" and gives veterans a familiar warm-up. Procedural 
 
 ### 12.5 Hints
 - **Re-teaching.** If the player crashes on the same hazard type for 3 runs in a row, that hint is re-armed once.
+- **Two-thumb re-teach** (§24 row 71). A profile that played before the two-thumb controls (more than 3 runs, and its save has no `settings.controls`) gets the first-runs teaching once more, in its next normal run on a touch screen with two thumbs: the two rings, the chips ("DRAG LEFT THUMB TO STEER", "TAP RIGHT TO OLLIE", "OLLIE ONTO THE LEDGE") and two toasts, "New: left steers · right tricks" and "One thumb? Settings › Controls". Saved in `onboarding.twoThumbIntro` (−1 due, then the run's number), so it happens once.
 - **Desktop discovery.** On desktop, a one-time key overlay appears during the first run, and the full key list is on the pause screen.
 - **Trick discovery.** A "Trick Book" toast teaches new flips the first time a direction is used: "↙ VARIAL KICKFLIP — new!".
 
@@ -1387,7 +1410,7 @@ Boot ─▶ Title (diorama) ──tap──▶ Run ──crash──▶ Crash ov
             ├─▶ Locker (equip, try-on, wishlist)                                  ├─▶ Rewards modal (only when an item or crate was earned)
             ├─▶ Shop ─▶ Crates (open, odds)                                       └─▶ Locker / Shop
             ├─▶ Stats (bests, Trick Book, Postcards)
-            └─▶ Settings (audio, haptics, shake, effects, quality, battery saver, steering sensitivity, simple tricks, key preset, back up / restore, analytics opt-out, credits)
+            └─▶ Settings (audio, haptics, shake, effects, quality, battery saver, touch controls, swap sides, steering sensitivity, simple tricks, key preset, back up / restore, analytics opt-out, credits)
 Run ⇄ Pause (pause button, Esc, back gesture, landscape rotation, visibilitychange/pagehide/blur auto-pause)
 ```
 
@@ -1405,7 +1428,7 @@ Run ⇄ Pause (pause button, Esc, back gesture, landscape rotation, visibilitych
 | **Locker** | 3D turntable in the top half (drag to rotate). Tabs for Skaters / Boards / Helmets. Owned items only, plus "get more" links. Equipping is free and instant. |
 | **Shop / Crates** | §16 |
 | **Stats** | Bests (score, combo, distance, time, furthest area). Totals (runs, distance, tricks). Trick Book grid (36). Area Postcards (4). |
-| **Settings** | Music and SFX sliders, a "No sound? Check the silent switch" note, haptics (Off / Key moments / All), screen shake, reduce effects (lo-fi overlay and speed lines), quality (auto/low/med/high), **battery saver (30 fps)**, steering sensitivity 0.6–1.6, **simple tricks** (diagonals snap to cardinals), key preset A/B, **Back up / Restore progress** (uses the save's `export()`/`import()`), analytics opt-out, "progress won't be saved" warning if storage is unavailable, credits, reset progress (double confirm) |
+| **Settings** | Music and SFX sliders, a "No sound? Check the silent switch" note, haptics (Off / Key moments / All), screen shake, reduce effects (lo-fi overlay and speed lines), quality (auto/low/med/high), **battery saver (30 fps)**, **touch controls: Two thumbs (default: left steers, right tricks) / One thumb (classic)**, **swap sides** (steer right, tricks left), steering sensitivity 0.6–1.6, **simple tricks** (diagonals snap to cardinals), key preset A/B, **Back up / Restore progress** (uses the save's `export()`/`import()`), analytics opt-out, "progress won't be saved" warning if storage is unavailable, credits, reset progress (double confirm) |
 
 ### 17.3 Timing targets
 - **Crash to the next run:**
@@ -1919,6 +1942,7 @@ All particles come from one pooled additive `InstancedMesh`, capped at 300.
 | File | Contents | Owner during waves |
 |---|---|---|
 | `src/core/tuning.ts` | Movement, physics, fairness and camera constants (§5, §8, §10.6): `V_START`, `V_MAX`, `G`, `V_POP`, `V_LAT_MAX`, `LOOKAHEAD_MIN`, `R_MIN`, height bands, magnet and capture numbers, landing thresholds | Integrator (frozen after M0; value changes by note) |
+| `src/input/recognizer.ts` (`DEFAULT_RECOGNIZER`) | Gesture thresholds (§4.2, §4.7): slop, tap / hold / long tap, swipe windows, labels, sectors, arc compensation, recoil, re-fire, owner sectors, sloppy tap, the two-thumb split `splitFrac` (0.5) | Gameplay agent |
 | `src/tricks/score.config.ts` | Trick and spin points, modifiers, link window, combo heat (2.5 s), decay, bonuses (§6, §13) | Gameplay agent |
 | `src/world/gen/gen.config.ts` | Difficulty phases, tier weights, template weights, A1–A3 periods, coin density (§10, §11) | World-gen agent |
 | `src/meta/economy.config.ts` | Coin rules (incl. score coins `sqrt(score/400)`), XP curve, onboarding XP rules, level rewards, prices, crate odds and pity, shop featured rules (§14, §16) | Meta/UI agent |
@@ -2032,3 +2056,9 @@ Every MUST-FIX was applied. The rows below record decisions where critiques conf
 | 68 | Neon clutter over the street (owner) | Lantern strings across the road read as chains; overhead decor every 26 m; the maglev light streak was a 90 % cyan-white bar across the look-ahead zone (it sank a vending bank's contrast to 1.89) | Lantern bulbs only beyond \|x\| ≥ 4.6; strings every 48 m (Neon), wires every 40 m (Suburbs); the maglev streak at 22 % in paper-magenta (§18.4 occlusion and effects limits). |
 | 69 | Dead stretches (owner, §11) | 85% of the anti-straight row segments (S_GATE, half of all run time) and every A3 hazard carried no trick element; warm/build breathers ran straight into the gateway (8–9 s of empty road) | **Template fill:** a manual pad in the row opening's lane (threading the gap is a manual line), A3 hazards land into a manual pad (50%), the single-element templates (DT_LEDGE, SB_WALL, IN_BEAM, NE_RAIL) get a second beat (pad, bench or flat bar, 70%), breathers carry the optional flat bar; breathers mid-visit (§11). Trick elements / 10 s 3.0 / 1.5 / 1.9 / 1.3 → 3.8 / 2.0 / 2.4 / 2.2 (opening / warm / build / plateau). The §11 targets (4–5 trick elements, 4–6 actions / 10 s) need rows hosted by template trick props instead of S_GATE (still ~50% of run time): M5 content work. |
 | 70 | Score ratio and combo gates | The trick bot only flipped on the plan's own ollies (4k pts/min, ratio 0.42) | The trick bot keeps combos like a good player (§10.11): 23.7k pts/min, ratio 0.072, p95 combo 6.3 s, 100 triples (deck pops) in 50 seeds × 5 min. Scoring unchanged. A frame-perfect chain (a pop after every landing) reaches ~270k pts/min: the ×30 multiplier over a whole visit; watch it in M5 balance. |
+
+### Owner playtest (after G1)
+
+| # | Topic | Finding | Resolution |
+|---|---|---|---|
+| 71 | Owner playtest: steer left thumb, tricks right thumb | Playing the G1 build on a phone, the owner felt steering and tricks fighting each other on one thumb ("we need steering on the left thumb and tricks on the right thumb; still swiping the way it works now") | **Two thumbs is the default on touch** (§4.1–4.4): the play area splits at the vertical midline; a touch keeps the role of the zone it went down in. The left thumb only steers (never a tap, swipe, hold or press); the right thumb only taps / swipes / holds with the unchanged gestures and never steers (`swipeDx` 0, normal thresholds). The split lives in the recognizer, so the `InputFrame` contract, the sim, replays and golden hashes are unchanged. **One thumb (classic)** (§4.7) stays in Settings, and a mouse or pen always uses it; **Swap sides** for left-handed players. Hints show the two rings and name the thumb; a zone cue shows the split for the first 3 s. Thumb-bot gate on both layouts (0 crashes, 0 unintended tricks); its control (the two-thumb traces read with the one-thumb grammar) misfires. **Review fixes:** the trick ghost hovers (a right thumb resting on the glass is a HOLD: grabs and manuals, measured by the bot's `rest` habit as a trade-off, §4.4 rule 3); a profile from before the change is re-taught once (§12.5) and the session's first-run cue is labelled; wrong-side taps / drags pulse the right ring; hints follow a Settings change mid-run; Swap sides is dimmed with One thumb; a steering-zone DRAG already down takes over steering when the owner lifts and it moves (§4.2). |

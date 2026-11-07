@@ -3,7 +3,9 @@
 //   Audio: music and SFX sliders, "No sound? Check the silent switch".
 //   Feel: haptics Off / Key moments / All, screen shake, reduce effects (lo-fi overlay and speed lines), reduce
 //         motion, quality auto/low/med/high, battery saver (30 fps).
-//   Controls: steering sensitivity 0.6–1.6, simple tricks (diagonals snap to cardinals), key preset A / B.
+//   Controls: touch controls Two thumbs (default: left steers, right tricks) / One thumb (classic) (touch screens only:
+//         a mouse always plays one thumb), swap sides (steer right, tricks left; dimmed while One thumb is selected),
+//         steering sensitivity 0.6–1.6, simple tricks (diagonals snap to cardinals), key preset A / B.
 //   Progress: Back up / Restore (SaveStore.export / import: copy, share or download a file; paste or pick one), the
 //         "progress won't be saved" warning without storage, reset progress (double confirm).
 //   Privacy: usage stats on this device (the analytics opt-out), restore purchases. Credits.
@@ -22,17 +24,18 @@ export function settingsScreen(ctx: ScreenCtx): Screen {
   const refresh: (() => void)[] = [];
   const set = (key: Key, value: Settings[Key]) => {
     (cur as Record<Key, unknown>)[key] = value;
+    if (key === 'controls') dimSwap();
     ctx.raise({ k: 'settings', key, value });
     ctx.emit({ t: 'settings', key });
     if (key === 'effects' || key === 'reducedMotion') ctx.lofi.set({ effects: cur.effects, reducedMotion: cur.reducedMotion });
     if (key === 'quality') ctx.lofi.set({ tier: cur.quality === 'auto' ? (ctx.coarse() ? 'med' : 'high') : cur.quality });
   };
   /** Segmented control in a `.setting` row; `map` turns the shown option into the stored value (inverted toggles). */
-  const seg = <K extends Key>(label: string, key: K, opts: readonly (readonly [Settings[K], string])[], sub?: string) => {
+  const seg = <K extends Key>(label: string, key: K, opts: readonly (readonly [Settings[K], string])[], sub?: string, cls = '') => {
     const buttons = opts.map(([v, name]) => [v, btn(name, () => { set(key, v); mark(); }, ctx, 'seg', undefined, 'toggle')] as const);
     const mark = () => { for (const [v, b] of buttons) { const on = cur[key] === v; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); } };
     refresh.push(mark);
-    return h('div', { class: 'setting' }, h('div', { class: 'set-label' }, h('span', null, label), sub ? h('small', null, sub) : null),
+    return h('div', { class: `setting ${cls}`.trim(), 'data-setting': key }, h('div', { class: 'set-label' }, h('span', null, label), sub ? h('small', null, sub) : null),
       h('div', { class: 'segs' }, ...buttons.map((x) => x[1])));
   };
   const onOff = [[false, 'Off'], [true, 'On']] as const;
@@ -53,6 +56,10 @@ export function settingsScreen(ctx: ScreenCtx): Screen {
     return h('div', { class: 'setting slider' }, h('div', { class: 'set-label' }, h('span', null, label), out), input);
   };
   const pctFmt = (v: number) => `${Math.round(v * 100)}%`;
+  // Swap sides only means something with two thumbs: dimmed (still settable) while One thumb is selected.
+  const swapRow = seg('Swap sides', 'swapSides', onOff, 'Two thumbs: steer right, tricks left');
+  const dimSwap = () => swapRow.classList.toggle('dim', cur.controls === 'one');
+  refresh.push(dimSwap);
 
   const storageWarn = h('div', { class: 'warn' }, 'This browser is not letting Dusklane save: progress won’t be saved after you close it. Use Back up to keep a copy.');
   const resetBtn = btn('Reset progress', () => resetTap(), ctx, 'danger small', undefined, 'back');
@@ -81,6 +88,8 @@ export function settingsScreen(ctx: ScreenCtx): Screen {
     seg('Quality', 'quality', [['auto', 'Auto'], ['low', 'Low'], ['med', 'Med'], ['high', 'High']]),
     seg('Battery saver', 'batterySaver', onOff, '30 fps'),
     h('h3', null, 'Controls'),
+    seg('Touch controls', 'controls', [['two', 'Two thumbs'], ['one', 'One thumb']], 'Touch screens only · Two: left thumb steers, right thumb tricks · One: classic', 'stack'),
+    swapRow,
     slider('Steering sensitivity', 'steerSensitivity', 0.6, 1.6, 0.05, (v) => `${v.toFixed(2)}×`),
     seg('Simple tricks', 'simpleTricks', onOff, 'Diagonals snap to arrows'),
     seg('Keys', 'keyPreset', [['A', 'A'], ['B', 'B']], 'A: A/D + arrows · B: arrows + IJKL'),

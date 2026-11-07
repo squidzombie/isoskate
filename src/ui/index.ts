@@ -113,13 +113,21 @@ export function createUiImpl(root: HTMLElement): UiExt {
   // HUD columns: measured at boot and on resize only (allowed reads), never per frame.
   const probe = h('div', { class: 'safe-lr', 'aria-hidden': 'true' });
   hudEl.append(probe);
+  let vwNow = 390;                                                  // the viewport width, read at boot / resize only
   const relayout = () => guard.allow(() => {
+    vwNow = window.innerWidth;
     const cs = typeof getComputedStyle === 'function' ? getComputedStyle(probe) : null;
     hud.relayout(window.innerWidth, parseFloat(cs?.paddingLeft ?? '0') || 0, parseFloat(cs?.paddingRight ?? '0') || 0);
   });
   if (typeof window !== 'undefined') {
     relayout();
     window.addEventListener('resize', relayout);
+    // Two-thumb wrong-side feedback (ui/hints.ts): touch pointers during a run, read passively (never consumed).
+    for (const [type, phase] of [['pointerdown', 'down'], ['pointermove', 'move'], ['pointerup', 'up'], ['pointercancel', 'cancel']] as const) {
+      window.addEventListener(type, (e) => {
+        if (e.pointerType === 'touch' && current === 'run') hud.hints.pointer(phase, e.pointerId, e.clientX, e.clientY, e.timeStamp, vwNow);
+      }, { capture: true, passive: true });
+    }
     void (document as Document & { fonts?: FontFaceSet }).fonts?.ready.then(() => { clearMeasureCache(); relayout(); });
   }
 
@@ -163,6 +171,11 @@ export function createUiImpl(root: HTMLElement): UiExt {
         lofi.set({ effects: st.effects, reducedMotion: st.reducedMotion,
           tier: flags.quality ?? (st.quality === 'auto' ? (coarse() ? 'med' : 'high') : st.quality) });
       }
+      const syncControls = () => {
+        const st = ext()?.data.settings;
+        hud.setControls(st?.controls ?? 'two', st?.swapSides ?? false);
+      };
+      syncControls();
       const offs = [
         game.onAny((e) => hud.onGame(e)),
         game.on('runStart', () => {
@@ -172,7 +185,16 @@ export function createUiImpl(root: HTMLElement): UiExt {
           discovered.clear();
           lofi.set({ neon: false });
           const d = ext()?.data;
-          hud.setFirstRuns(!!d && d.onboarding.runsStarted <= 3);
+          syncControls();                                               // two thumbs (DESIGN §4.1)
+          // The two-thumb re-teach run of a profile from before them (game/onboarding.ts marks it at run start: the
+          // chips, the rings and two toasts, once).
+          const intro = !!d && d.onboarding.runsStarted > 3 && d.onboarding.twoThumbIntro === d.onboarding.runsStarted;
+          hud.setFirstRuns(!!d && (d.onboarding.runsStarted <= 3 || intro));
+          if (intro && coarse()) {
+            const swap = d.settings.swapSides ?? false;
+            toast(`New: ${swap ? 'right' : 'left'} steers · ${swap ? 'left' : 'right'} tricks`, TOAST.introMs);
+            setTimeout(() => toast('One thumb? Settings › Controls', TOAST.introMs), TOAST.introGapMs);
+          }
           // Instant retry: what the last run earned, in the band, gone by 3.0 s (DESIGN §17.3).
           const last = ext()?.lastRun();
           if (last && !shownResults.has(last.runId) && !toasted.has(last.runId)) {
@@ -209,6 +231,8 @@ export function createUiImpl(root: HTMLElement): UiExt {
           if (e.tick > 1) track('area_reached', { area: e.area, t_s: Math.round(e.tick * DT * 10) / 10, first_time: !(ext()?.data.postcards.includes(e.area) ?? false) });
         }),
         app.on('quality', (e) => lofi.set({ tier: e.tier })),
+        // Pause › Settings switches the input at once (game/app.ts applySettings): the hints follow in the same run.
+        app.on('settings', (e) => { if (e.key === 'controls' || e.key === 'swapSides') syncControls(); }),
       ];
       return () => { for (const off of offs) off(); };
     },
@@ -217,6 +241,8 @@ export function createUiImpl(root: HTMLElement): UiExt {
   if (flags.debug && typeof window !== 'undefined') {
     (window as unknown as { __dusklaneUi?: object }).__dusklaneUi = {
       guard, hudStats: () => hud.stats(), current: () => current, reveal: () => reveal?.result ?? null, modalOpen: () => modal.open,
+      /** Shows a first-runs hint now (screenshots of every hint; the run's onboarding driver replaces it on its next change). */
+      hint: (id: string | null) => hud.hint(id),
     };
   }
   return ui;

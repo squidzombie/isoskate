@@ -361,6 +361,68 @@ test('the instant-retry reward toast sits in the HUD band and is gone by 3.0 s',
   expect(errors).toEqual([]);
 });
 
+test('two-thumb hints: rings with a hovering trick ghost, wrong-side pulses, Settings mid-run, and the one-time re-teach of an old save', async ({ page }, info) => {
+  test.skip(info.project.name !== 'mobile', 'touch hints');
+  test.setTimeout(120_000);
+  const errors: string[] = [];
+  await boot(page, errors);
+  const cls = (sel: string) => page.evaluate((q) => document.querySelector(q)?.className ?? '', sel);
+  const run = async (god = true) => {
+    await page.evaluate((g) => { window.__skate!.manual(false); window.__skate!.start({ seed: 1, god: g }); window.__skate!.timeScale(0.25); }, god);
+    await expect.poll(() => page.evaluate(() => window.__skate!.snapshot().tick), { timeout: 20000 }).toBeGreaterThan(3);
+  };
+  // Run 1: STEER and TRICKS rings; on the drag hint the trick ghost waits hovering (lifted, its shadow on the ring).
+  await run();
+  await page.evaluate(() => (window as unknown as { __dusklaneUi: { hint(id: string): void } }).__dusklaneUi.hint('drag'));
+  await expect(page.locator('#hud .hud-hint')).toHaveText('DRAG LEFT THUMB TO STEER');
+  expect(await cls('#hud .rest-mark.two.trick')).toMatch(/\bon\b.*\bghosted\b/);
+  expect(await cls('#hud .rest-mark.two.trick .ghost-thumb')).toMatch(/\bidle\b/);
+  await expect(page.locator('#hud .rest-mark.two.trick > span')).toHaveText('TRICKSTAP · FLICK · HOLD');
+  expect(await page.evaluate(() => getComputedStyle(document.querySelector('#hud .rest-mark.two.trick .ghost-thumb')!).transform)).not.toBe('none');
+  // Wrong side: a tap on the steering half pulses TRICKS (the touch itself does nothing in the game).
+  const el = page.locator('#play');
+  await el.dispatchEvent('pointerdown', { pointerId: 21, pointerType: 'touch', isPrimary: true, clientX: 90, clientY: 700 });
+  await el.dispatchEvent('pointerup', { pointerId: 21, pointerType: 'touch', isPrimary: true, clientX: 90, clientY: 700 });
+  await expect.poll(() => cls('#hud .rest-mark.two.trick')).toMatch(/nudge-/);
+  // Pause › Settings › Swap sides: the rings and words follow in the same run.
+  await page.evaluate(() => { window.__skate!.ui('pause'); window.__skate!.ui('settings'); });
+  await screenOn(page, 'settings').locator('[data-setting="swapSides"]').getByRole('button', { name: 'On', exact: true }).click();
+  expect(await cls('#hud .rest-mark.two.steer')).toMatch(/\bswap\b/);
+  // One thumb dims Swap sides (still settable); back to two thumbs, no swap.
+  await screenOn(page, 'settings').locator('[data-setting="controls"]').getByRole('button', { name: 'One thumb', exact: true }).click();
+  expect(await cls('[data-setting="swapSides"]')).toMatch(/\bdim\b/);
+  await screenOn(page, 'settings').locator('[data-setting="controls"]').getByRole('button', { name: 'Two thumbs', exact: true }).click();
+  await screenOn(page, 'settings').locator('[data-setting="swapSides"]').getByRole('button', { name: 'Off', exact: true }).click();
+  expect(await cls('[data-setting="swapSides"]')).not.toMatch(/\bdim\b/);
+  await page.evaluate(() => window.__skate!.ui('title'));
+  // An old save (10 runs, stored before settings.controls existed): sanitize marks the re-teach due.
+  await page.waitForTimeout(700);                                  // the debounced save write
+  await page.evaluate(() => {
+    const k = 'dusklane.save', s = JSON.parse(localStorage.getItem(k)!);
+    s.onboarding.runsStarted = 10; delete s.onboarding.twoThumbIntro; delete s.settings.controls; delete s.settings.swapSides;
+    localStorage.setItem(k, JSON.stringify(s));
+  });
+  await page.reload();
+  await page.waitForFunction(() => !!window.__skate && !!window.__dusklaneUi);
+  expect((await save(page)).onboarding.twoThumbIntro).toBe(-1);
+  await run(false);                                                // a normal run: the re-teach run
+  await expect(page.locator('#toasts .toast').first()).toHaveText('New: left steers · right tricks');
+  await expect(page.locator('#toasts .toast', { hasText: 'One thumb? Settings › Controls' })).toHaveCount(1, { timeout: 6000 });
+  expect(await cls('#hud .rest-mark.two.steer')).toMatch(/\bon\b/);
+  await expect(page.locator('#hud .hud-hint')).toHaveText('DRAG LEFT THUMB TO STEER', { timeout: 10000 });
+  expect((await save(page)).onboarding).toMatchObject({ runsStarted: 11, twoThumbIntro: 11 });
+  // Once: the next run has no rings and no chips; the zone cue of a session's first run is labelled (no rings up).
+  await run();
+  await page.waitForTimeout(500);
+  expect(await cls('#hud .rest-mark.two.steer')).not.toMatch(/\bon\b/);
+  await page.reload();
+  await page.waitForFunction(() => !!window.__skate && !!window.__dusklaneUi);
+  await run();
+  await expect.poll(() => cls('#hud .zone-cue')).toMatch(/\blabelled\b.*\bon\b|\bon\b.*\blabelled\b/);
+  await expect(page.locator('#hud .zone-pad.steer > b')).toHaveText('STEER ↔');
+  expect(errors).toEqual([]);
+});
+
 test('Back up → Restore round-trips through Settings', async ({ page }) => {
   const errors: string[] = [];
   await boot(page, errors);
