@@ -156,6 +156,22 @@ describe('kits', () => {
     // No blend: no switch.
     expect(lookSwitch(ch, src('docks'))).toBeNull();
   });
+  it('the street base follows the datum: after a full-width drop the road and verges sit at the lowered ground', () => {
+    // world/gen's street base after a 0.85 m terrace drop: the road band at −0.85, sidewalks at −0.70.
+    const band = (x0: number, x1: number, y: number, b: number): Obstacle => ({ id: 900 + b + x0, kind: 'curb', area: 'downtown', segment: 0, s: 64, x: (x0 + x1) / 2,
+      len: 32, wid: x1 - x0, hgt: 0, rotY: 0, mirror: false, variant: 0, solids: [], pits: [], edges: [], tags: 0, params: { band: b },
+      slabs: [{ s0: 64, s1: 96, x0, x1, y0: y, y1: y, layer: 0, surface: b === 1 ? 'concrete' : 'asphalt', kind: 'flat' }] });
+    const r = only([band(-4.5, -3, -0.7, 1), band(-3, 3, -0.85, 0), band(3, 4.5, -0.7, 1)], 'downtown');
+    const o = r.g.o;
+    let roadTop = -Infinity, vergeTop = -Infinity;
+    for (let t = 0; t < o.count; t += 3) {         // triangle centroids (boxes have vertices at their corners only)
+      const x = (o.pos[t * 3]! + o.pos[t * 3 + 3]! + o.pos[t * 3 + 6]!) / 3, y = (o.pos[t * 3 + 1]! + o.pos[t * 3 + 4]! + o.pos[t * 3 + 7]!) / 3;
+      if (Math.abs(x) < 2.9) roadTop = Math.max(roadTop, y);
+      if (Math.abs(x) > 6) vergeTop = Math.max(vergeTop, y);
+    }
+    expect(roadTop).toBeCloseTo(-0.85, 2);
+    expect(vergeTop).toBeCloseTo(-0.7, 2);
+  });
   it('a dense street chunk stays inside the per-chunk triangle budget (≤ 12k)', () => {
     for (const area of AREAS) {
       resetIds();

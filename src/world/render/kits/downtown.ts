@@ -56,7 +56,7 @@ export const planterTree: KitFn = (c, ob) => {
   const x = (trunk.x0 + trunk.x1) / 2, s = (trunk.s0 + trunk.s1) / 2, r = (trunk.x1 - trunk.x0) / 2;
   K.capY = trunk.y0 + 1.6;
   // The trunk is the crash solid: the hazard body (ink, or the inverted Neon body with its emissive rim).
-  body(c);
+  body(c, c.hz.inverted ? c.hz.top : c.hz.body);       // Neon: the lighter inverted value (Neon targets 3:1)
   K.frustum(x, s, trunk.y0, trunk.y1, r, r * 0.75, 7, false);
   rimPost(c, x, s, r * 0.9, trunk.y0 + 0.15, trunk.y0 + 1.5, trunk.y0 + 1.2);
   const palm = c.area === 'downtown';

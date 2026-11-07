@@ -3,7 +3,7 @@
 // body with an emissive rim), chevrons on every full-width hazard, noFog and matte flags on hazard bodies, contact
 // shadows under every obstacle. Long kinds are drawn per chunk (clipped); compact kinds once, in their anchor chunk.
 import type { AreaId } from '../../../core/ids';
-import type { Chunk, Obstacle, Pit } from '../../../core/world';
+import type { Chunk, GroundSlab, Obstacle, Pit } from '../../../core/world';
 import { ACCENTS, COLORS, LOOK, mixHex, shade } from '../palette';
 import { PAT } from '../textures/ground';
 import { FACE, FX } from '../writer';
@@ -47,32 +47,53 @@ const VERGE: Readonly<Record<AreaId, { color: number; pat: number }>> = {
   docks: { color: 0xc9b9a6, pat: PAT.apron }, neon: { color: 0x48426a, pat: PAT.tile },
 };
 /** Road under the corridor in 4 m strips (colour by area along s, so a gateway blends the ground), cut around pits,
- *  and the verges beyond ±4.5 at sidewalk height. */
+ *  and the verges beyond ±4.5 at sidewalk height. Both follow the street datum: the lowest ground slab across the
+ *  corridor at s (world/gen lowers it after a full-width drop and lays its own bands, stairs and inclines), never
+ *  above 0; strips are split at slab ends so a terrace or an incline carries the verges down with it. */
 export function streetBase(c: KitCtx, ch: Chunk, roadAt: (s: number) => number = (s) => LOOK[c.areaAt(s)].road, split?: number): void {
   const K = c.K;
   const pits: Pit[] = [];
   for (const ob of ch.obstacles) for (const p of ob.pits) if (p.s1 > ch.s0 && p.s0 < ch.s0 + ch.len) pits.push(p);
   const hasWater = ch.decor.some((d) => d.kind === 'water');
-  // 4 m strips, one more cut at the gateway look switch (chunkBuilder.lookSwitch) when it falls in this chunk.
+  const e0 = ch.s0, e1 = ch.s0 + ch.len;
+  const ground: GroundSlab[] = [];
+  for (const ob of ch.obstacles) {
+    if (ob.solids.length) continue;
+    for (const sl of ob.slabs) if (sl.x1 > -4.5 && sl.x0 < 4.5 && sl.s1 > e0 && sl.s0 < e1) ground.push(sl);
+  }
+  const datumAt = (s: number): number => {
+    let y = 0;
+    for (const sl of ground) if (s >= sl.s0 && s < sl.s1) y = Math.min(y, sl.y0 + ((sl.y1 - sl.y0) * (s - sl.s0)) / Math.max(1e-6, sl.s1 - sl.s0));
+    return y;
+  };
+  // 4 m strips, cut at slab ends where the datum changes and at the gateway look switch (chunkBuilder.lookSwitch).
   const cuts: number[] = [];
-  for (let a = ch.s0; a < ch.s0 + ch.len - 1e-6; a += 4) cuts.push(a);
-  if (split !== undefined && split > ch.s0 + 0.05 && split < ch.s0 + ch.len - 0.05 && !cuts.some((q) => Math.abs(q - split) < 0.05)) cuts.push(split);
+  for (let q = e0; q < e1 - 1e-6; q += 4) cuts.push(q);
+  const cut = (q: number) => { if (q > e0 + 0.05 && q < e1 - 0.05 && !cuts.some((v) => Math.abs(v - q) < 0.05)) cuts.push(q); };
+  for (const sl of ground) if (Math.min(sl.y0, sl.y1) < 0) { cut(sl.s0); cut(sl.s1); }
+  if (split !== undefined) cut(split);
   cuts.sort((p, q) => p - q);
-  cuts.push(ch.s0 + ch.len);
+  cuts.push(e1);
   for (let i = 0; i + 1 < cuts.length; i++) {
     const a = cuts[i]!, b = cuts[i + 1]!, mid = (a + b) / 2, area = c.lookAt(mid);
+    const ya = datumAt(a + 0.01), yb = datumAt(b - 0.01), lo = Math.min(ya, yb), bot = lo - 0.3;
     const road = roadAt(mid);
     K.reset();
     K.lit(area === 'neon' ? PAT.wet : PAT.asphalt).col(road);
-    rectsMinusPits(-4.5, 4.5, a, b, pits, (x0, x1, s0, s1) => K.box(x0, -0.3, s0, x1, -0.005, s1, FACE.top | FACE.front));
-    const v = VERGE[area];
+    rectsMinusPits(-4.5, 4.5, a, b, pits, (x0, x1, s0, s1) => K.box(x0, bot, s0, x1, lo - 0.005, s1, FACE.top | FACE.front));
+    const v = VERGE[area], flat = Math.abs(ya - yb) < 1e-3;
+    // A flat strip as a box with only the faces the cameras see; a strip where the datum changes as a wedge.
+    const verge = (x0: number, x1: number, h: number, faces: number) => {
+      if (flat) K.box(x0, bot, a, x1, ya + h, b, faces); else K.wedge(x0, x1, a, b, bot, ya + h, yb + h);
+    };
     K.lit(v.pat).col(v.color);
-    K.box(-18, -0.3, a, -4.5, 0.15, b, FACE.top | FACE.right | FACE.front);
+    verge(-18, -4.5, 0.15, FACE.top | FACE.right | FACE.front);
     if (area === 'docks' && !hasWater) {
       // Beyond the dock lip: a quay edge and the harbour water (a stand-in until WG's `water` decor arrives).
-      K.lit(PAT.apron).col(0xb9ab98).box(4.5, -0.3, a, 5.1, 0.3, b, FACE.top | FACE.right);
-      K.lit(0).col(COLORS.water).box(5.1, -1.6, a, 18, -0.9, b, FACE.top);
-    } else K.box(4.5, -0.3, a, 18, 0.15, b, FACE.top | FACE.left | FACE.front);
+      K.lit(PAT.apron).col(0xb9ab98);
+      verge(4.5, 5.1, 0.3, FACE.top | FACE.right);
+      K.lit(0).col(COLORS.water).box(5.1, lo - 1.6, a, 18, lo - 0.9, b, FACE.top);
+    } else verge(4.5, 18, 0.15, FACE.top | FACE.left | FACE.front);
   }
   K.reset();
 }
@@ -99,6 +120,8 @@ function rectsMinusPits(x0: number, x1: number, s0: number, s1: number, pits: re
  *  the dispatcher). */
 const curb: KitFn = (c, ob) => {
   const K = c.K;
+  // world/gen's street base: only the sidewalk bands (params.band 1) carry a curb stone.
+  if (ob.params?.band !== undefined && ob.params.band !== 1) return;
   for (const sl of ob.slabs) {
     const roadSide = Math.abs(sl.x0) < Math.abs(sl.x1) ? sl.x0 : sl.x1, dir = Math.sign(sl.x0 + sl.x1) || 1;
     const area = c.areaAt(sl.s0);
