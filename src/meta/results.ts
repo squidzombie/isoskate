@@ -13,7 +13,7 @@ import type { RunResult } from '../core/sim';
 import { sAt } from '../core/tuning';
 import { TRICK_BOOK, type SaveCratesExt } from '../save';
 import { complianceValue, rollCrate } from './crates';
-import { COINS, COMPLIANCE, CRATE_METER, UNLOCK_LEVEL } from './economy.config';
+import { COINS, COMPLIANCE, CRATE_METER, LEVEL_REWARDS, UNLOCK_LEVEL } from './economy.config';
 import { addXp, cappedRun, levelGrants, runXp, xpToNext, type RunXp } from './progression';
 import { basePrice, featuredFor, featuredPrice } from './shop';
 import { addCoins, grantItem, type Grant } from './wallet';
@@ -93,13 +93,21 @@ export function withRng<T>(s: SaveV1, f: (u: () => number) => T): T {
   return out;
 }
 
+/** Items a level above `level` will grant (DESIGN §14.2). Crates prefer other unowned items of the rolled rarity, so
+ *  an early crate never turns a later level reward into duplicate coins while an alternative is left. */
+export function reservedByLevels(level: number): Set<ItemId> {
+  const out = new Set<ItemId>();
+  for (const [L, grants] of Object.entries(LEVEL_REWARDS)) if (Number(L) > level) for (const g of grants) if (g.kind === 'item') out.add(g.id);
+  return out;
+}
+
 /** Rolls one crate (pre-committed, DESIGN §16.3): pity advanced (not for forced gifts), counted as opened, and queued
  *  as a reveal in the save. Nothing is granted until the reveal opens it (ackPending). Items already waiting in a
  *  reveal count as owned, so two queued crates never hold the same new item. */
 export function commitRoll(s: SaveV1, tier: CrateTier, ctx: MetaCtx, forced?: { slot?: Slot; rarity?: Rarity }): CrateResult {
   const owned = new Set(s.owned);
   for (const p of pendingReveals(s)) if (p.item && !p.dup) owned.add(p.item);
-  const out = withRng(s, (uniform) => rollCrate({ tier, pity: s.crates.pity, owned, catalog: ctx.catalog, uniform, forced }));
+  const out = withRng(s, (uniform) => rollCrate({ tier, pity: s.crates.pity, owned, catalog: ctx.catalog, uniform, forced, reserved: reservedByLevels(s.xp.level) }));
   const res = out.result;
   if (!forced) s.crates.pity = out.pity;
   s.crates.opened++;

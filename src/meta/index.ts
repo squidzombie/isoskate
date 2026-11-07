@@ -270,7 +270,7 @@ export { xpToNext, xpToReach, addXp, runXp, levelGrants, cappedRun } from './pro
 export { rollCrate, crateOdds, pityRemaining, crateValue, complianceValue, RARITY_ORDER } from './crates';
 export { featuredFor, featuredPrice, basePrice, isBuyable, daySeed } from './shop';
 export { createOfferPolicy, type OfferPolicyExt } from './offers';
-export { applyRunRules, nextGoal, arrivalDistance, isRewardsExt, pendingReveals, wishPrice, meterSpan, AREA_TIMELINE, type RunRewardsExt, type MetaCtx } from './results';
+export { applyRunRules, nextGoal, arrivalDistance, isRewardsExt, pendingReveals, wishPrice, meterSpan, reservedByLevels, AREA_TIMELINE, type RunRewardsExt, type MetaCtx } from './results';
 export { createAnalyticsImpl, analyticsFor, ANALYTICS_KEY, ANALYTICS, type AnalyticsExt } from './analytics';
 export { COINS, XP, LEVEL_REWARDS, UNLOCK_LEVEL, PRICE, DUPLICATE_VALUE, FEATURED, CRATES, PITY, CRATE_METER, COMPLIANCE, OFFERS,
   CARDBOARD_COINS, BEYOND_30, CRATE_HELD_MAX } from './economy.config';

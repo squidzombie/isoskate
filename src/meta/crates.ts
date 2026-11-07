@@ -2,8 +2,10 @@
 // and writes the result to the save BEFORE any animation, so a refresh can never reroll it.
 //   1. Rarity: a forced rarity (the Level 2 crate) wins; else pity (Street: Epic+ on the 10th crate without one,
 //      Legendary on the 40th; Pro: Legendary on the 10th); else the tier's odds, lowest rarity first.
-//   2. Item: uniformly among the items of that rarity you don't own (and of the forced slot). Only when you own the
-//      whole tier is a duplicate possible; it converts to coins at the duplicate value. The L30 board never drops.
+//   2. Item: uniformly among the items of that rarity you don't own (and of the forced slot), preferring items no later
+//      level reward will grant (so the Level 2 crate never spends Ines, the Level 15 reward, while Rook, Lark or Kofi
+//      are left). Only when you own the whole tier is a duplicate possible; it converts to coins at the duplicate
+//      value. The L30 board never drops.
 import type { CrateTier, ItemId, Rarity, Slot } from '../core/ids';
 import type { CosmeticItem } from '../core/cosmetics';
 import type { CrateResult } from '../core/meta';
@@ -39,6 +41,8 @@ function pickOutcome(odds: Readonly<Partial<Record<Rarity | 'coins', number>>>, 
 export interface RollInput {
   tier: CrateTier; pity: Readonly<Pity>; owned: ReadonlySet<ItemId>; catalog: readonly CosmeticItem[];
   uniform: () => number; forced?: { slot?: Slot; rarity?: Rarity };
+  /** Items a later level reward grants: picked only when no other unowned item of the rolled rarity is left. */
+  reserved?: ReadonlySet<ItemId>;
 }
 export interface RollOutput { result: CrateResult; pity: Pity; pityHit: boolean }
 
@@ -67,7 +71,9 @@ export function rollCrate(i: RollInput): RollOutput {
     return { result: { tier: i.tier, rarity: 'coins', item: null, coins, dup: false }, pity, pityHit };
   }
   const pool = i.catalog.filter((c) => c.rarity === rarity && c.source !== 'level30' && (!i.forced?.slot || c.slot === i.forced.slot));
-  const fresh = pool.filter((c) => !i.owned.has(c.id));
+  const unowned = pool.filter((c) => !i.owned.has(c.id));
+  const spare = i.reserved ? unowned.filter((c) => !i.reserved!.has(c.id)) : unowned;
+  const fresh = spare.length ? spare : unowned;
   if (fresh.length) {
     const it = fresh[Math.min(fresh.length - 1, Math.floor(i.uniform() * fresh.length))]!;
     return { result: { tier: i.tier, rarity, item: it.id, coins: 0, dup: false }, pity, pityHit };

@@ -9,7 +9,7 @@ import { AREA_ORDER } from '../../../src/core/ids';
 import {
   addXp, applyRunRules, AREA_TIMELINE, arrivalDistance, BEYOND_30, cappedRun, COINS, complianceValue, CRATE_HELD_MAX, CRATE_METER, CRATES, crateOdds, crateValue,
   createMetaImpl, DUPLICATE_VALUE, featuredFor, featuredPrice, isRewardsExt, LEVEL_REWARDS, levelGrants, nextGoal, pendingReveals, PITY, PRICE,
-  rollCrate, xpToNext, xpToReach, type MetaCtx, type RunRewardsExt,
+  reservedByLevels, rollCrate, xpToNext, xpToReach, type MetaCtx, type RunRewardsExt,
 } from '../../../src/meta';
 import { createStorage, makeDefaults, sanitize, Store, type SaveCratesExt, type StorageLike } from '../../../src/save';
 import { createWorldGen } from '../../../src/world/gen';
@@ -153,6 +153,29 @@ describe('crates (DESIGN §16.3)', () => {
       uniform: () => 0.5, forced: { slot: 'skater', rarity: 'rare' } });
     expect(all.result.dup).toBe(true);
     expect(all.result.coins).toBe(DUPLICATE_VALUE.rare);
+  });
+  it('crates prefer items no later level reward grants (the Level 2 crate never spends the Level 15 skater)', () => {
+    const reserved = reservedByLevels(2);
+    expect([...reserved]).toEqual(expect.arrayContaining(['sk_ines', 'sk_mika', 'sk_vesper', 'bd_golden_hour']));
+    expect(reservedByLevels(30).size).toBe(0);
+    const pity = { streetEpic: 0, streetLegendary: 0, proLegendary: 0 };
+    const got = new Set<string>();
+    for (let i = 0; i < 64; i++) {
+      const r = rollCrate({ tier: 'street', pity, owned: new Set(), catalog: CATALOG, uniform: () => i / 64, forced: { slot: 'skater', rarity: 'rare' }, reserved });
+      got.add(r.result.item!);
+    }
+    expect(got.has('sk_ines')).toBe(false);
+    expect([...got].sort()).toEqual(['sk_kofi', 'sk_lark', 'sk_rook']);
+    // Only a reserved item left of that rarity: it still drops (never a duplicate while something is unowned).
+    const r = rollCrate({ tier: 'street', pity, owned: new Set(['sk_kofi', 'sk_lark', 'sk_rook']), catalog: CATALOG, uniform: () => 0.5,
+      forced: { slot: 'skater', rarity: 'rare' }, reserved });
+    expect(r.result).toMatchObject({ item: 'sk_ines', dup: false });
+    // applyRun's Level 2 crate goes through the same preference.
+    for (let seed = 1; seed <= 12; seed++) {
+      const st = makeDefaults(0, seed);
+      const w = applyRunRules(st, run(TYPICAL[0]), ctx()).rewards;
+      expect(w.pending?.item).not.toBe('sk_ines');
+    }
   });
   it('the L30 board never drops; Cardboard pays 60–120 coins or an item', () => {
     for (let i = 0; i < 200; i++) {
