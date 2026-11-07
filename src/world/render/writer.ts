@@ -35,6 +35,8 @@ export class GeoWriter {
   }
   end(): PooledGeo { const g = this.g!; g.commit(this.min, this.max); this.g = null; return g; }
   get count(): number { return this.g?.count ?? 0; }
+  /** The pooled geometry being written (null when not begun). */
+  get geo(): PooledGeo | null { return this.g; }
   get active(): boolean { return this.g !== null; }
 
   reserve(n: number): void { const g = this.g!; g.ensure(g.count + n); }

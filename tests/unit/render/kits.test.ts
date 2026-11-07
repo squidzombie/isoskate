@@ -18,7 +18,7 @@ import { COLORS, HAZARD } from '../../../src/world/render/palette';
 import { GeoPool, type PooledGeo } from '../../../src/world/render/pools';
 import { DECAL } from '../../../src/world/render/textures/decals';
 import { SIGN_RECTS, glyphCheck } from '../../../src/world/render/textures/signs';
-import { GeoWriter, srgbToLinear, type KitTargets } from '../../../src/world/render/writer';
+import { FX, GeoWriter, srgbToLinear, type KitTargets } from '../../../src/world/render/writer';
 import { ALL_PROP_KINDS, AREAS, decorOf, emptyChunk, obstacleOf, place, resetIds } from './fixtures';
 
 type T = keyof KitTargets;
@@ -256,6 +256,22 @@ describe('textures', () => {
         expect(lowest, `${kind} ${area} y=${y}`).toBeCloseTo(want, 1);
       }
     }
+  });
+  it('landscape: camera-side decor hides only where it would cover the corridor (low verge props keep drawing)', () => {
+    const nearBits = (kind: DecorKind, area: AreaId, x: number, yawDeg: number) => {
+      const ch = emptyChunk(2, area);
+      ch.decor = [{ ...decorOf(kind, area, 2 * CHUNK_LEN + 4, 1, 1), x }];
+      const pools = Object.fromEntries(TARGETS.map((t) => [t, new GeoPool(256)])) as Record<T, GeoPool>;
+      const w = Object.fromEntries(TARGETS.map((t) => [t, new GeoWriter()])) as unknown as KitTargets;
+      for (const t of TARGETS) w[t].begin(pools[t].acquire());
+      buildChunk(ch, w, src(area), { ...DEFAULT_BUILD, yawDeg }, 40, true);
+      let near = 0;
+      for (const t of ['o', 'b', 'e'] as const) { const g = w[t].end(); for (let i = 0; i < g.count; i++) if (g.pos[i * 3]! > 4.5 && (Math.round(g.fx[i * 4 + 2]!) & FX.near)) near++; }
+      return near;
+    };
+    expect(nearBits('street_lamp', 'downtown', 4.9, 30)).toBeGreaterThan(0);      // 5 m pole: crosses the corridor
+    expect(nearBits('bin_pair', 'suburbs', 5.4, 30)).toBe(0);                     // a low pair of bins stays
+    expect(nearBits('street_lamp', 'downtown', 4.9, 0)).toBeGreaterThan(0);       // portrait: flags kept, never applied
   });
   it('the sign atlas packs every entry inside 1024² (brands of every area, the reviewed words, holo panels)', () => {
     for (const area of AREAS) expect(SIGN_RECTS.get(`b:${area}:0`)).toBeDefined();
