@@ -43,6 +43,11 @@ export const SPEED_TIERS = [8.0, 9.0, 10.5] as const;   // tier 1/2/3 thresholds
 export const G = 22, V_POP = 6.6, T_AIR_FLAT = 0.6;
 export const CORRIDOR_HALF = 4.5, SOFT_WALL_X = 4.2, SOFT_WALL_K = 60, TARGET_X_MAX = 4.3;
 export const V_LAT_MAX = 5.5, A_LAT_GROUND = 40, A_LAT_AIR = 16, STEER_P = 10;
+/** Touch steering never puts targetX more than this far ahead of the skater in the drag's direction (owner playtest:
+ *  a quick slide or flick ran far ahead of the skater, which kept sliding after the thumb stopped or lifted). Just
+ *  above V_LAT_MAX / STEER_P (0.55 m), so a drag still commands full lateral speed and lateral capability (T_SHIFT,
+ *  the validator) is unchanged; when the thumb stops, the skater stops within about this distance. Added @steer. */
+export const STEER_LEAD_MAX = 0.6;
 export const STEER_GAIN = { roll: 1.0, manual: 1.0, air: 1.0, grind: 0, crashed: 0 } as const;
 export const HITBOX = { w: 0.40, l: 0.70, h: 1.50 } as const;
 export const FACE_INSET = 0.08, STEP_UP = 0.18, PIT_FALL_EPS = 0.02;   // pit level = lip level (DESIGN §7)

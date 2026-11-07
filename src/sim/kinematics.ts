@@ -5,7 +5,7 @@
 import type { InputFrame } from '../core/input';
 import { approach, clamp } from '../core/math';
 import {
-  A_LAT_AIR, A_LAT_GROUND, CORRIDOR_HALF, DT, SOFT_WALL_K, SOFT_WALL_X, STEER_GAIN, STEER_P, TARGET_X_MAX, V_LAT_MAX,
+  A_LAT_AIR, A_LAT_GROUND, CORRIDOR_HALF, DT, SOFT_WALL_K, SOFT_WALL_X, STEER_GAIN, STEER_LEAD_MAX, STEER_P, TARGET_X_MAX, V_LAT_MAX,
   sAt, speedAt,
 } from '../core/tuning';
 import type { Ctx } from './state';
@@ -18,12 +18,17 @@ export function advanceTime(k: Ctx): void {
   c.p.s = sAt(c.t);
 }
 
-/** targetX += steerDx·gain + steerAxis·V_LAT_MAX·DT·gain, clamped. Returns the applied change (m). */
+/** targetX += steerDx·gain + steerAxis·V_LAT_MAX·DT·gain, clamped. Touch steering (steerDx) never pushes targetX more
+ *  than STEER_LEAD_MAX ahead of the skater in its direction, and never pulls back a target that was already further
+ *  (the magnet or ground align moved it). Returns the applied change (m). */
 export function applySteer(k: Ctx, f: Readonly<InputFrame>): number {
   const c = k.st.cur;
   const gain = STEER_GAIN[c.mode];
   const before = c.targetX;
-  c.targetX = clamp(c.targetX + (f.steerDx + f.steerAxis * V_LAT_MAX * DT) * gain, -TARGET_X_MAX, TARGET_X_MAX);
+  let t = c.targetX + (f.steerDx + f.steerAxis * V_LAT_MAX * DT) * gain;
+  if (f.steerDx > 0) t = Math.min(t, Math.max(before, c.p.x + STEER_LEAD_MAX));
+  else if (f.steerDx < 0) t = Math.max(t, Math.min(before, c.p.x - STEER_LEAD_MAX));
+  c.targetX = clamp(t, -TARGET_X_MAX, TARGET_X_MAX);
   return c.targetX - before;
 }
 

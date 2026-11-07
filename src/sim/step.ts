@@ -145,9 +145,14 @@ export class SimImpl implements Sim, Ctx {
     else if (!f.press) c.pressRiseTick = -1;
     st.pressDown = f.press;
     if (!f.hold && !f.manualKey && !f.press) st.manualLatch = false;
-    // 3. Interpret and apply. Consumed air swipes give back their steering (DESIGN §4.4 rule 2).
+    // 3. Interpret and apply. Consumed air swipes give back their steering (DESIGN §4.4 rule 2), at most the lead it
+    //    left in its direction: the steering lead cap (STEER_LEAD_MAX) may have kept part of swipeDx from ever applying.
     for (const it of interpret(this.viewOf(f), f, this.tables, this.intents)) {
-      if (this.apply(it) && f.swipeDx) { nudgeTarget(this, -f.swipeDx); applied -= f.swipeDx; }
+      if (this.apply(it) && f.swipeDx) {
+        const lead = c.targetX - c.p.x;
+        const back = f.swipeDx > 0 ? Math.min(f.swipeDx, Math.max(0, lead)) : Math.max(f.swipeDx, Math.min(0, lead));
+        nudgeTarget(this, -back); applied -= back;
+      }
       if (modeOf(c) === 'crashed') return;
     }
     // 4. Magnet / ground align (they move targetX), then lateral motion and the soft walls.
