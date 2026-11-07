@@ -1,122 +1,193 @@
-// world/gen/props/shared.ts: physical builders for the shared kinds used by the M0 templates (DESIGN §10.3 sizes):
-// the street base (sidewalks + curb edges), barrier_low, trench (pits at lip level + plank), trash_can, flatbar,
-// bench and cone. TODO(WG): stairs, handrail, hubba, incline, terrace, manual_pad, filler, and the area skins.
+// world/gen/props/shared.ts: physical builders for the shared kinds (DESIGN §10.3 sizes): barrier_low (and its Neon
+// skin, the holo gate), trench (pits at lip level + planks, per-area skins), the tall column fillers, flatbar, bench,
+// cone, manual_pad, full-width stairs (terrace) with handrails and hubbas, side-set stairs, inclines, and dips.
+// Area skins: `variant` = the area index (AREA_ORDER), so WA's kits pick the skin; geometry rules are shared.
+import type { AreaId, PropKind } from '../../../core/ids';
+import { AREA_ORDER } from '../../../core/ids';
 import { round1cm } from '../../../core/math';
-import { HAZARD_WARN_SEC, HEIGHT, HITBOX, STEP_UP } from '../../../core/tuning';
-import type { Obstacle } from '../../../core/world';
+import { HAZARD_WARN_SEC, HEIGHT, STEP_UP } from '../../../core/tuning';
+import type { GroundSlab, Obstacle } from '../../../core/world';
 import { ObTag } from '../../../core/world';
-import { SIDEWALK_X, SIDEWALK_Y, buildProp, groundUnder, type PropCtx } from './common';
+import { BODY_TOPS, buildProp, buildTall, lowGround, steppedBody, type PropCtx } from './common';
 
-/** Exit zone of a grind edge (DESIGN §10.6 rule d): 0.6 s·v long, ±1.5 m wide, centred on the edge's end. */
-export const EXIT_ZONE_SEC = 0.6, EXIT_ZONE_HALF_W = 1.5;
-/** Shortest curb grind edge worth emitting (m). */
-const CURB_EDGE_MIN = 1.0;
+export const skinOf = (a: AreaId): number => AREA_ORDER.indexOf(a);
+export const STAIR = { rise: 0.17, tread: 0.30 } as const;
+/** Drop of an n-step set (DESIGN §10.3: 3 / 5 / 7 / 10 steps → 0.51 / 0.85 / 1.19 / 1.70 m). */
+export const stairDrop = (n: number): number => round1cm(n * STAIR.rise);
 
-/** Subtract intervals from [a, b): the uncovered pieces, in order. */
-function subtract(a: number, b: number, cuts: readonly (readonly [number, number])[]): [number, number][] {
-  const out: [number, number][] = [];
-  let u = a;
-  for (const [c0, c1] of [...cuts].sort((p, q) => p[0] - q[0])) {
-    if (c1 <= u || c0 >= b) continue;
-    if (c0 > u) out.push([u, c0]);
-    u = Math.max(u, c1);
-  }
-  if (u < b) out.push([u, b]);
-  return out;
-}
-
-/** Sidewalk + curb on one side (DESIGN §10.2): a sidewalk slab at +0.15 from |x| = 3.0 to 4.5 per uncut piece of
- *  [s0, s1) (`cuts`: full-width pits), and pick-only curb edges along its road-side top edge. The road (y = 0) is the
- *  implicit datum. A curb grind never carries the board into a blocker (DESIGN §6.3): each curb edge ends one exit
- *  zone before any crash face or pit within ±1.5 m of the curb line, and before the segment end, so its grind sweep
- *  and exit zone are clear by construction (validator/rules.ts checkEdges checks them like any edge). */
-export function buildCurb(side: -1 | 1, s0: number, s1: number, p: PropCtx, cuts: readonly [number, number][] = [],
-  obstacles: readonly Obstacle[] = [], v = 7): Obstacle[] {
-  const out: Obstacle[] = [];
-  const xIn = SIDEWALK_X * side, xOut = 4.5 * side;
-  const zone = EXIT_ZONE_SEC * v;
-  const blocked: [number, number][] = [[s1 - zone, s1]];
-  for (const ob of obstacles) {
-    if (ob.kind === 'curb') continue;
-    for (const so of ob.solids) {
-      const b = so.box;
-      if (b.x1 <= xIn - EXIT_ZONE_HALF_W || b.x0 >= xIn + EXIT_ZONE_HALF_W) continue;
-      if (so.top === 'knock' || (so.top === 'landable' && b.y1 - SIDEWALK_Y <= STEP_UP)) continue;
-      blocked.push([b.s0 - zone, b.s1]);
-    }
-    for (const pt of ob.pits) {
-      if (pt.x1 <= xIn - EXIT_ZONE_HALF_W || pt.x0 >= xIn + EXIT_ZONE_HALF_W) continue;
-      blocked.push([pt.s0 - zone, pt.s1]);
-    }
-  }
-  for (const [u0, u1] of subtract(s0, s1, cuts)) {
-    if (u1 - u0 < 0.05) continue;
-    const ob = buildProp({ kind: 'curb', s: u0, x: (xIn + xOut) / 2, len: u1 - u0, wid: 1.5, hgt: SIDEWALK_Y, topSlab: false }, p);
-    ob.slabs.push({ s0: ob.s, s1: round1cm(u1), x0: Math.min(xIn, xOut), x1: Math.max(xIn, xOut), y0: SIDEWALK_Y, y1: SIDEWALK_Y,
-      layer: 0, surface: 'concrete', kind: 'flat' });
-    ob.solids.length = 0;                   // 0.15 ≤ STEP_UP: a bump, never a body
-    for (const [e0, e1] of subtract(ob.s, round1cm(u1), blocked)) {
-      const a = round1cm(e0), b = round1cm(Math.floor(e1 * 100) / 100 - 0.02);     // 2 cm short: the zone check never ties
-      if (b - a < CURB_EDGE_MIN) continue;
-      ob.edges.push({ id: ++p.ids.edge, obstacleId: ob.id, a: { s: a, x: xIn, y: SIDEWALK_Y }, b: { s: b, x: xIn, y: SIDEWALK_Y },
-        kind: 'curb', material: 'concrete', layer: 0, pickOnly: true });
-    }
-    if (ob.edges.length) ob.tags |= ObTag.Grindable;
-    out.push(ob);
-  }
-  return out;
-}
-
-/** Full-width barrier_low (crash top, chevrons), optionally with a slot [slot.x ± slot.w/2] (DESIGN §10.3). */
+/** Full-width barrier_low (crash top, chevrons), optionally with a slot [slot.x ± slot.w/2] (DESIGN §10.3). The Neon
+ *  skin is the holo gate (kind 'holo_gate', same geometry: a light bar over a solid chevroned base). */
 export function buildBarrier(s: number, hgt: number, v: number, p: PropCtx, slot?: { x: number; w: number }): Obstacle {
   const len = 0.6;
-  const ob = buildProp({ kind: 'barrier_low', s, x: 0, len, wid: 9.0, hgt, tags: ObTag.FullWidth | ObTag.Required,
+  const kind: PropKind = p.area === 'neon' ? 'holo_gate' : 'barrier_low';
+  const ob = buildProp({ kind, s, x: 0, len, wid: 9.0, hgt, tags: ObTag.FullWidth | ObTag.Required, variant: skinOf(p.area),
     warnAtS: s - HAZARD_WARN_SEC * v, params: slot ? { slotX: round1cm(slot.x), slotW: round1cm(slot.w) } : {} }, p);
   if (slot) {
-    const b = ob.solids[0]!.box;
-    const l = { ...b, x1: round1cm(slot.x - slot.w / 2) }, r = { ...b, x0: round1cm(slot.x + slot.w / 2) };
-    ob.solids = [l, r].filter((bb) => bb.x1 - bb.x0 > 0.05).map((box) => ({ box, top: 'crash' as const, tall: false }));
+    const bx = ob.solids[0]!.box;
+    const l = { ...bx, x1: round1cm(slot.x - slot.w / 2) }, r = { ...bx, x0: round1cm(slot.x + slot.w / 2) };
+    ob.solids = [l, r].filter((q) => q.x1 - q.x0 > 0.05).map((box) => ({ box, top: 'crash' as const, tall: false }));
   }
   return ob;
 }
 
-/** Full-width trench (pit at lip level) of length len with one plank 1.2 m wide at plankX (DESIGN §10.3).
- *  Road band lip 0, sidewalk bands lip 0.15. The caller cuts the sidewalk slabs over [s, s + len). */
-export function buildTrench(s: number, len: number, plankX: number, v: number, p: PropCtx, plankW = 1.2, depth = 0.6): Obstacle {
+/** Full-width trench (pits at lip level) of length len with planks (DESIGN §10.3 skins): DT one 1.2 m plank, SB a
+ *  1.4 m culvert slab, Docks two 0.9 m steel plates, Neon a 1.2 m grate. `planks` = plank centres (the safe one first).
+ *  Each street band gets its own pit at its own lip; the caller cuts the base over [s, s + len). */
+export function buildTrench(s: number, len: number, planks: readonly number[], v: number, p: PropCtx, depth = 0.6,
+  bands: readonly { x0: number; x1: number; dy: number }[] = [{ x0: -4.5, x1: 4.5, dy: 0 }]): Obstacle {
+  const plankW = p.area === 'suburbs' ? 1.4 : p.area === 'docks' ? 0.9 : 1.2;
+  const params: Record<string, number> = { plankX: round1cm(planks[0]!), plankW, depth, planks: planks.length };
+  if (planks[1] !== undefined) params.plank2X = round1cm(planks[1]);
   const ob = buildProp({ kind: 'trench', s, x: 0, len, wid: 9.0, hgt: 0, tags: ObTag.FullWidth | ObTag.Required,
-    warnAtS: s - HAZARD_WARN_SEC * v, params: { plankX: round1cm(plankX), plankW, depth } }, p);
+    variant: skinOf(p.area), warnAtS: s - HAZARD_WARN_SEC * v, params, topSlab: false }, p);
   ob.solids.length = 0;
   const s0 = ob.s, s1 = round1cm(ob.s + ob.len);
-  const bands: [number, number, number][] = [[-4.5, -SIDEWALK_X, SIDEWALK_Y], [-SIDEWALK_X, SIDEWALK_X, 0], [SIDEWALK_X, 4.5, SIDEWALK_Y]];
-  for (const [x0, x1, lip] of bands) ob.pits.push({ s0, s1, x0, x1, lipY: lip, depth, cause: 'fall' });
-  ob.slabs.push({ s0, s1, x0: round1cm(plankX - plankW / 2), x1: round1cm(plankX + plankW / 2), y0: 0, y1: 0, layer: 0,
-    surface: 'wood', kind: 'flat' });
+  for (const bd of bands) ob.pits.push({ s0, s1, x0: bd.x0, x1: bd.x1, lipY: round1cm(p.datum + bd.dy), depth, cause: 'fall' });
+  for (const px of planks) {
+    ob.slabs.push({ s0, s1, x0: round1cm(px - plankW / 2), x1: round1cm(px + plankW / 2), y0: round1cm(p.datum), y1: round1cm(p.datum),
+      layer: 0, surface: p.area === 'docks' || p.area === 'neon' ? 'metal' : 'wood', kind: 'flat' });
+  }
   return ob;
 }
 
-/** A tall column blocker (trash can 0.6 × 0.6, news box 0.5 × 0.5) standing on the street or the sidewalk; its top is
- *  1.15 above the highest ground a board touching it can stand on (its footprint widened by half the hitbox), so it
- *  is never ollie-able from the sidewalk either, even when it stands on the road right beside the curb. */
+/** The area's column filler kinds (DESIGN §10.5): [narrow, wide]. */
+export function fillerKinds(a: AreaId): { kind: PropKind; len: number; wid: number; hgt: number }[] {
+  switch (a) {
+    case 'downtown': return [{ kind: 'news_box', len: 0.5, wid: 0.5, hgt: 1.15 }, { kind: 'trash_can', len: 0.6, wid: 0.6, hgt: 1.15 }];
+    case 'suburbs': return [{ kind: 'mailbox', len: 0.4, wid: 0.4, hgt: 1.2 }, { kind: 'wheelie_bins', len: 0.7, wid: 1.5, hgt: 1.2 }];
+    case 'docks': return [{ kind: 'pallet_tall', len: 1.2, wid: 1.0, hgt: 1.2 }, { kind: 'drum_cluster', len: 0.7, wid: 1.3, hgt: 1.15 }];
+    case 'neon': return [{ kind: 'lantern_stand', len: 0.4, wid: 0.4, hgt: 1.6 }, { kind: 'vending_bank', len: 0.8, wid: 1.0, hgt: 1.8 }];
+  }
+}
+
+/** A tall column filler or blocker of the area kit, centred at x, front at s (Filler tag). */
+export function buildFiller(s: number, x: number, wide: boolean, p: PropCtx, variant = 0): Obstacle {
+  const f = fillerKinds(p.area)[wide ? 1 : 0]!;
+  const params: Record<string, number> | undefined = f.kind === 'vending_bank' ? { machines: 1 } : f.kind === 'drum_cluster' ? { drums: 2 } : undefined;
+  return buildTall(f.kind, s, x, f.len, f.wid, f.hgt, p, { variant, tags: ObTag.Filler, params });
+}
+
+/** A tall column blocker (trash can 0.6 × 0.6, news box 0.5 × 0.5) standing on the street or the sidewalk. */
 export function buildBlocker(kind: 'trash_can' | 'news_box', s: number, x: number, p: PropCtx, variant = 0): Obstacle {
   const w = kind === 'trash_can' ? 0.6 : 0.5;
-  const g = groundUnder(x - w / 2, x + w / 2);
-  const reach = groundUnder(x - w / 2 - HITBOX.w / 2, x + w / 2 + HITBOX.w / 2);
-  const ob = buildProp({ kind, s, x, len: w, wid: w, hgt: HEIGHT.tallMin + (reach.hi - g.lo), ground: g.lo, variant }, p);
-  ob.hgt = HEIGHT.tallMin;
-  return ob;
+  return buildTall(kind, s, x, w, w, HEIGHT.tallMin, p, { variant });
 }
 
 /** Flat bar: a 0.05 m rail on posts (crash top) with one centre grind edge (DESIGN §10.3). */
-export function buildFlatbar(s: number, x: number, len: number, hgt: number, p: PropCtx, tags = ObTag.TrickLine): Obstacle {
-  return buildProp({ kind: 'flatbar', s, x, len, wid: 0.05, hgt, tags, edges: [{ side: 0, kind: 'rail', material: 'metal' }] }, p);
+export function buildFlatbar(s: number, x: number, len: number, hgt: number, p: PropCtx, tags: number = ObTag.TrickLine): Obstacle {
+  return buildProp({ kind: 'flatbar', s, x, len, wid: 0.05, hgt, ground: lowGround(x, 0.05, p), tags,
+    edges: [{ side: 0, kind: 'rail', material: 'metal' }] }, p);
 }
 
 /** Bench 2.0 × 0.5 × 0.45, long axis along s: landable top, grindable long edges, crash front (DESIGN §10.3). */
-export function buildBench(s: number, x: number, p: PropCtx, ground = 0, tags = ObTag.TrickLine): Obstacle {
-  return buildProp({ kind: 'bench', s, x, len: 2.0, wid: 0.5, hgt: 0.45, ground, tags, surface: 'wood',
-    edges: [{ side: -1, kind: 'bench', material: 'stone' }, { side: 1, kind: 'bench', material: 'stone' }] }, p);
+export function buildBench(s: number, x: number, p: PropCtx, tags: number = ObTag.TrickLine): Obstacle {
+  return buildProp({ kind: 'bench', s, x, len: 2.0, wid: 0.5, hgt: 0.45, ground: lowGround(x, 0.5, p), tags,
+    surface: 'wood', variant: skinOf(p.area),
+    edges: [{ side: -1, kind: 'bench', material: p.area === 'docks' ? 'wood' : 'stone' }, { side: 1, kind: 'bench', material: p.area === 'docks' ? 'wood' : 'stone' }] }, p);
 }
 
 export function buildCone(s: number, x: number, p: PropCtx): Obstacle {
-  return buildProp({ kind: 'cone', s, x, len: 0.3, wid: 0.3, hgt: 0.5, tags: ObTag.Knockable }, p);
+  return buildProp({ kind: p.area === 'neon' ? 'a_frame_sign' : 'cone', s, x, len: 0.3, wid: p.area === 'neon' ? 0.4 : 0.3,
+    hgt: p.area === 'neon' ? 0.55 : 0.5, ground: lowGround(x, 0.3, p), tags: ObTag.Knockable | ObTag.TrickLine }, p);
+}
+
+/** Manual pad 3–6 × 1.2 × 0.15: a bump-class top (manual), its long edges curb-class (pick only). */
+export function buildPad(s: number, x: number, len: number, p: PropCtx): Obstacle {
+  return buildProp({ kind: 'manual_pad', s, x, len: Math.min(6, Math.max(3, len)), wid: 1.2, hgt: 0.15, ground: lowGround(x, 1.2, p),
+    tags: ObTag.TrickLine, surface: 'concrete', edges: [{ side: -1, kind: 'curb', material: 'concrete' }, { side: 1, kind: 'curb', material: 'concrete' }] }, p);
+}
+
+/** Full-width stairs (a terrace drop, DESIGN §10.3): a sticky stairs slab from the datum down `n` steps. The caller
+ *  cuts the street base over it and lowers the datum after it. Returns the terrace obstacle; rails / hubbas are added
+ *  with addHandrail / addHubba. */
+export function buildTerrace(s: number, n: number, p: PropCtx, landmark?: string): Obstacle {
+  const drop = stairDrop(n), len = round1cm(n * STAIR.tread);
+  const ob = buildProp({ kind: 'terrace', s, x: 0, len, wid: 9.0, hgt: 0, topSlab: false, landmark, variant: skinOf(p.area),
+    params: { steps: n, drop } }, p);
+  ob.solids.length = 0;
+  ob.slabs.push({ s0: ob.s, s1: round1cm(ob.s + len), x0: -4.5, x1: 4.5, y0: round1cm(p.datum), y1: round1cm(p.datum - drop),
+    layer: 0, surface: p.area === 'downtown' ? 'granite' : 'concrete', kind: 'stairs', steps: n });
+  return ob;
+}
+
+/** A handrail down a stair slab (DESIGN §10.3): 0.60 above the nosing line, a 0.5 m flat kink at the top, 0.05 wide;
+ *  crash posts and rail (stepped), two grind edges (kink + slope). `y0` = top datum, `drop` = stairs drop. */
+export function buildHandrail(sTop: number, len: number, x: number, y0: number, drop: number, p: PropCtx, tags: number = ObTag.TrickLine): Obstacle {
+  const kink = 0.5, h = 0.6, w = 0.05;
+  const ob = buildProp({ kind: 'handrail', s: sTop - kink, x, len: kink + len, wid: w, hgt: h, ground: y0, tags,
+    edges: [], topSlab: false }, p);
+  const xa = round1cm(x - w / 2), xb = round1cm(x + w / 2);
+  ob.solids = [{ box: { s0: round1cm(sTop - kink), s1: round1cm(sTop), x0: xa, x1: xb, y0: round1cm(y0), y1: round1cm(y0 + h) }, top: 'crash', tall: false }];
+  const yAt = (s: number) => y0 + h - (drop * (s - sTop)) / len;
+  const base = (s: number) => y0 - (drop * (s - sTop)) / len;
+  steppedBody(ob, sTop, sTop + len, xa, xb, yAt, base, 'crash', Math.max(2, Math.round(len / 0.6)));
+  const e = (a: number, b: number, ya: number, yb: number) => ({ id: ++p.ids.edge, obstacleId: ob.id,
+    a: { s: round1cm(a), x: round1cm(x), y: round1cm(ya) }, b: { s: round1cm(b), x: round1cm(x), y: round1cm(yb) },
+    kind: 'rail' as const, material: 'metal' as const, layer: 0 as const, pickOnly: false });
+  ob.edges.push(e(sTop - kink, sTop, y0 + h, y0 + h), e(sTop, sTop + len, y0 + h, y0 + h - drop));
+  ob.tags |= ObTag.Grindable;
+  ob.params = { drop: round1cm(drop), kink };
+  return ob;
+}
+
+/** A hubba down a stair slab: 0.45 above the nosing, 0.6 wide; landable sloped top (rideable), both long edges. */
+export function buildHubba(sTop: number, len: number, x: number, y0: number, drop: number, p: PropCtx, tags: number = ObTag.TrickLine): Obstacle {
+  const h = 0.45, w = 0.6;
+  const ob = buildProp({ kind: 'hubba', s: sTop, x, len, wid: w, hgt: h, ground: y0, tags, topSlab: false, edges: [] }, p);
+  const xa = round1cm(x - w / 2), xb = round1cm(x + w / 2);
+  ob.solids.length = 0;
+  const yAt = (s: number) => y0 + h - (drop * (s - sTop)) / len;
+  const base = (s: number) => y0 - (drop * (s - sTop)) / len;
+  // The top end is a full-height landable face (frontal slam above 0.18); then the stepped body.
+  steppedBody(ob, sTop, sTop + len, xa, xb, yAt, base, 'landable', Math.max(3, Math.round(len / 0.45)));
+  const top: GroundSlab = { s0: ob.s, s1: round1cm(sTop + len), x0: xa, x1: xb, y0: round1cm(y0 + h), y1: round1cm(y0 + h - drop),
+    layer: 0, surface: 'granite', kind: 'incline' };
+  ob.slabs.push(top);
+  BODY_TOPS.add(top);
+  for (const ex of [xa, xb]) ob.edges.push({ id: ++p.ids.edge, obstacleId: ob.id, a: { s: ob.s, x: ex, y: round1cm(y0 + h) },
+    b: { s: round1cm(sTop + len), x: ex, y: round1cm(y0 + h - drop) }, kind: 'hubba', material: 'stone', layer: 0, pickOnly: false });
+  ob.tags |= ObTag.Grindable;
+  ob.params = { drop: round1cm(drop) };
+  return ob;
+}
+
+/** Full-width incline (slope ≤ 1:10, DESIGN §10.10): from the datum up `rise` over `len` (sticky, no launch). */
+export function buildIncline(s: number, len: number, rise: number, p: PropCtx, x0 = -4.5, x1 = 4.5): Obstacle {
+  const ob = buildProp({ kind: 'incline', s, x: (x0 + x1) / 2, len, wid: x1 - x0, hgt: 0, topSlab: false, variant: skinOf(p.area),
+    params: { rise: round1cm(rise) } }, p);
+  ob.solids.length = 0;
+  ob.slabs.push({ s0: ob.s, s1: round1cm(ob.s + len), x0, x1, y0: round1cm(p.datum), y1: round1cm(p.datum + rise), layer: 0,
+    surface: p.area === 'neon' ? 'wetAsphalt' : p.area === 'docks' ? 'concrete' : 'asphalt', kind: 'incline' });
+  return ob;
+}
+
+/** A dip (SB_HILL, DESIGN §10.4): down `depth` and back up, slopes 1:15, full width. Net datum change 0. */
+export function buildDip(s: number, len: number, depth: number, p: PropCtx): Obstacle {
+  const ob = buildProp({ kind: 'incline', s, x: 0, len, wid: 9.0, hgt: 0, topSlab: false, variant: skinOf(p.area), params: { dip: round1cm(depth) } }, p);
+  ob.solids.length = 0;
+  const half = round1cm(len / 2), d = round1cm(p.datum);
+  const surface = p.area === 'suburbs' ? 'asphalt' : 'concrete';
+  ob.slabs.push({ s0: ob.s, s1: round1cm(ob.s + half), x0: -4.5, x1: 4.5, y0: d, y1: round1cm(d - depth), layer: 0, surface, kind: 'incline' },
+    { s0: round1cm(ob.s + half), s1: round1cm(ob.s + len), x0: -4.5, x1: 4.5, y0: round1cm(d - depth), y1: d, layer: 0, surface, kind: 'incline' });
+  return ob;
+}
+
+/** Side-set stairs (DESIGN §10.3, §10.10): a 3-stair set off a raised 0.51 m platform on one side (a Low face, T),
+ *  stairs down to the street. Platform [sA, sA + platLen), stairs after it; x0…x1 its lateral span. Landable body. */
+export function buildSideSet(sA: number, platLen: number, x0: number, x1: number, p: PropCtx): Obstacle {
+  const n = 3, drop = stairDrop(n), stairLen = round1cm(n * STAIR.tread);
+  const g = lowGround((x0 + x1) / 2, x1 - x0, p);
+  const ob = buildProp({ kind: 'stairs', s: sA, x: (x0 + x1) / 2, len: platLen + stairLen, wid: x1 - x0, hgt: drop, ground: g,
+    top: 'landable', topSlab: false, tags: ObTag.TrickLine | ObTag.Elevated, params: { steps: n, side: 1, platLen: round1cm(platLen) } }, p);
+  ob.solids = [{ box: { s0: ob.s, s1: round1cm(sA + platLen), x0: round1cm(x0), x1: round1cm(x1), y0: g, y1: round1cm(g + drop) }, top: 'landable', tall: false }];
+  const yAt = (s: number) => g + drop - (drop * (s - sA - platLen)) / stairLen;
+  steppedBody(ob, sA + platLen, sA + platLen + stairLen, x0, x1, yAt, () => g, 'landable', n);
+  const plat: GroundSlab = { s0: ob.s, s1: round1cm(sA + platLen), x0: round1cm(x0), x1: round1cm(x1), y0: round1cm(g + drop), y1: round1cm(g + drop),
+    layer: 1, surface: 'granite', kind: 'flat' };
+  const stairs: GroundSlab = { s0: round1cm(sA + platLen), s1: round1cm(sA + platLen + stairLen), x0: round1cm(x0), x1: round1cm(x1),
+    y0: round1cm(g + drop), y1: round1cm(g), layer: 1, surface: 'granite', kind: 'stairs', steps: n };
+  ob.slabs.push(plat, stairs);
+  BODY_TOPS.add(plat); BODY_TOPS.add(stairs);
+  if (drop <= STEP_UP) ob.solids.length = 0;
+  return ob;
 }

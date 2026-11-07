@@ -357,6 +357,105 @@ behaviour and is behind a flag.
 
 ## WG: World-gen (W1b)
 
+### Anti-straight: gate rows instead of A1 column fillers; A1 / A2 measured   (status: info, design deviation for the gate review; no core change)
+- File / symbol: world/gen/generator.ts (tryBuild rows), schedule.ts, templates/shared.ts › S_GATE, gen.config.ts › GEN.gate
+- Change: none. A1 column fillers cost too much (validation per filler) and failed near the line, so the straight-bot
+  guarantee comes from gate rows: a row of the area's tall blockers with 1–2 openings, ≤ `GEN.gate.gap` apart
+  (8 / 6.5 / 6.3 / 6.3 s by phase), each opening ≥ 2.4 m from every opening of the previous row (pass zones
+  disjoint: no straight lane passes two rows). Rows are overlaid on the template due at the deadline (validated with
+  it in one pass) or come as an S_GATE segment; a run's first segment is an at-line S_GATE (its row stands inside
+  the spawn grace) so two rows stand within ~4.5 s of any start; a long template drawn while the gate is not due may
+  slip the deadline by ≤ its length (not in the first 12 s of a run, nor right before a gateway); a gate due inside
+  a gateway comes before it. A1 column coverage and A2 wander (line range ≥ 3 m) are tracked and measured, not
+  enforced (no filler / wall insertion). S_GATE may also carry the A3 barrier when both deadlines fall together.
+- Why: straight bot 100 % dead by 17.2 s from t = 0 and by 4.4 s / 7.2 s from startT 150 / 165 (gate.straight).
+- Local workaround meanwhile: n/a.
+
+### Validator conventions other packages rely on   (status: info; no core change)
+- Street base obstacles are `kind: 'curb'` with `params.band` (world/gen BAND_CODE: road 0, sidewalk 1, lawn 2, apron 3,
+  dock 4, plaza 5, path 6, tunnel 7); curb grind edges are cut so no edge ends 2.2 s before a gate row or faces a
+  blocker in its exit zone. The Docks lip is one persistent `dock_lip` body per visit (0.8 s·v into it) with its edges
+  per segment (no joints under a board).
+- Stepped bodies (stair rails, hubbas, incline sides): landable pieces sit at the lower end, crash pieces (rails) on
+  the higher ground of their piece, so no box height lies in the forbidden band; ride-on slope bodies are exempt
+  from the band rule (they are ramps).
+- Rule (h) uses one 1/30 s grid slice of tolerance (dead ends measured ≤ 2.033 s): the grid's air reach and slice
+  interval are pessimistic. Required ollies never clear a pit longer than 10 slices (no 0.25 s window: plank only).
+- `insetOf` (sim's crash-face inset) is exported from world/gen; `planLine` (world/gen) is the validator's planner for bots.
+- `GEN_FLAGS.trench` (ON since G0): S_TRENCH in the A3 slots and the Lesson Line's 33–35.5 s pit; off, every A3 slot
+  is an S_BARRIER and the Lesson Line uses a barrier there. Read once per Generator.
+- Why: hand-off notes. Local workaround: n/a.
+
+### Thumb bot taps are capped at 190 ms where a HOLD would start a manual   (status: info for GP; no core change)
+- File / symbol: debug/bots/thumb.ts; sim interpret (GP) › manualStart on HOLD with an open combo window or on a prop top
+- Change: none. TECH §11.2 asks for 60–260 ms taps; a 2nd-finger tap held ≥ 200 ms becomes a HOLD, which on the ground
+  starts a manual when the combo window is open or the board is on a prop top (an unintended trick). The bot caps such
+  taps at 190 ms, and never puts the tap finger down in the 0.10–0.30 s pre-press window before a touchdown. If GP
+  wants 260 ms taps to stay taps there, the recognizer / interpret rule is GP's call.
+- Why: 0 unintended tricks (gate.thumb). Local workaround: the cap.
+
+### BOTS.safe is the planner bot now; record sim fixtures with BOTS.conformance   (status: info for GP; no core change)
+- File / symbol: debug/bots/registry.ts › BOTS.safe, BOTS.conformance; tests/unit/sim/bench.test.ts, replay.test.ts (GP)
+- Change: none. `BOTS.safe` was the SafeKey follower at M0; it is now the planner bot of TECH §11.2 (delayed view,
+  latency, jitter), about 5× costlier per tick to record with. The old behaviour is `BOTS.conformance`. GP's sim bench
+  and replay tests record 2-minute runs with `BOTS.safe` and, on a machine at load ≈ 10, can pass their default 5 s
+  test timeout (they pass alone in ~5 s). Suggest recording with `BOTS.conformance` (or a longer timeout).
+- Why: hand-off. Local workaround: the safe bot re-plans only when its view changed (≥ every 0.3 s).
+
+### Decor anchors   (status: info for WA; no core change)
+- Decor records use only `DECOR_KINDS` with their documented params; billboards stand at |x| ≥ 4.9 (inner edge); end
+  walls every 8–12 s of an area visit; shadow casters, lantern strings and blade signs follow the area recipes in
+  world/gen/decor.ts. Backdrop buildings keep their parameter ranges (w 6–14, d 8–30, h 6–40 m).
+- Why: hand-off. Local workaround: n/a.
+
+### After the WG review (appended; supersedes the gate-row numbers above; no core change)   (status: info for the G1 gate)
+- File / symbol: world/gen/rows.ts, generator.ts (row overlays), schedule.ts, gen.config.ts › GEN.gate / GEN.a3; tests/bots/*.
+- Change: none to core. What the gate should know:
+  - **After a fallback** the next segment draws a template first (no re-plan cascade) and a missed row deadline moves
+    on by one template (`GEN.gate.fallbackDefer`).
+  - **Anti-straight rows by lanes** (rows.ts): a row's *lanes* are the board-centre x ranges a straight roller passes
+    it through (openings and any side gap beside a template obstacle, scanned from the solids); every row's lanes are
+    disjoint from the previous row's. Rows ≤ `GEN.gate.gap` apart (8 / 6.3 / 6.3 / 6.3 s); a long template may still
+    slip the deadline by ≤ its length outside a run's first 12 s and with 2 s left before a gateway. Rows are drawn
+    from a mixed palette of the area kit (DT news box, trash can, café set, kiosk; SB mailbox, bin pair; IN tall
+    pallet, 2- and 3-drum skids; NE lantern stand, 1- and 2-machine vending banks, food cart), all `ObTag.Filler`.
+  - **Rows inside templates** first where the template's own line already passes (opening at the line), else as a
+    tail after its content (the segment grows), else with one forced move; never beside a grind edge a rider is still
+    on, and only where a rider leaving any template edge (±0.8 m) reaches an opening (T_SHIFT + 0.5 s). S_GATE is the
+    fallback (≈ 42 % of run time, as before the review: the row cadence is the binding constraint).
+  - **Straight-bot guarantee** (gate.straight): t = 0 → all lanes dead by 17.2 s; startT 150 / 165 → ≤ 10 s. Beyond the
+    acceptance, measured: plateau starts every 10 s from 150–460 s → 2.2 % of lanes live > 10 s, worst 13.1 s (all
+    next to a gateway: 4 s of T0 between two rows); switching to straight mid-run → 7.6 % > 10 s, worst 16.3 s (same
+    cause). A1 per-column periods (4 s at the plateau) are measured, not enforced; A2 likewise (wander wall when due).
+  - **Docks**: rows stop at the lip (its body blocks a straight roller; row lanes count it); base curb / lip edges end
+    `GEN.gate.edgeBan` = 3.0 s before a row (a rider coming off the lip reaches the opening).
+  - **Bots**: the thumb bot applies a targetX change the sim made itself once (its in-flight moves shift with it; the
+    old loop diverged into ±4.3 m flicks on some streets) and steers at most at the planned lateral rate.
+  - **A3**: never before its minimum (8 s; 12 s in the opening) except the last slot before a gateway (≤ 2.5 s early,
+    `a3PreGwEarly`); the maximum may slip ≤ 2 s when a long template lands on it.
+  - **Rejection metrics** (gate.static, artifacts/bots.json): validator re-rolls per segment (the < 5 % gate),
+    fallbacks per segment (< 1 %), every failed `validate()` incl. row-overlay probes and edge trims
+    (`validationFailRate`, ≈ 11–14 %, gated < 20 %), and scheduling re-plans per segment (`replanRate`, reported).
+  - **Bench** (tests/unit/gen/bench.test.ts): world/gen bundled with Vite's production build (Rollup) and run by plain
+    Node in a child process, fastest of 3 passes per segment, p95 ≤ 3 ms. Vitest's module transform costs this code
+    ~2.5×; the old in-vitest bench measured that.
+  - **Docks lip** starts `GEN.lipLead` (1.8 s) into a visit, not 0.8 s (a line by the right wall after the Level
+    Crossing steers off first; otherwise the lip's magnet captured it).
+  - **Rule (h)** has no slice tolerance any more (dead ends ≤ 2.0 s on the grid).
+  - **Content**: landmarks are drawn 4× until seen in a visit; NE_GAUNTLET also fills Neon A3 slots from T3; DT_RUSH
+    reworked (cars from 1.5 s in); the Harbor Bridge deck stands on every visit (incline from 0.4 s in).
+- Why: review fixes B1, B2 (partly), M1 (partly), M2, M3, M4, M7.
+- Local workaround meanwhile: n/a.
+
+### Merge risks for the gate (WG ↔ GP / WA)   (status: info for G1; no core change)
+- The thumb bot imports `FrameBuilder` and `steerMetresPerPx` from `input/index.ts` (not frozen; TECH §11.2 names
+  `frames.ts`). If GP renamed them, re-point debug/bots/thumb.ts at the new names (no behaviour change needed).
+- The trick bot now reads the frozen `TRICKS` tables (core TrickTables), not `FLIPS` / `SPINS`.
+- GP's sim bench records with `BOTS.safe` (the planner): see the G1 notes (make the bench time the sim only).
+- WA: the row palette above uses existing PropKinds only; `Decor.y` for awnings / blade signs / banners is the
+  mounting height (sidewalk + 2.4–3 m), see the G1 decision on Decor.y semantics. Overhead decor is sparser now
+  (Neon lantern strings ~26 m apart, Suburbs wires ~32 m: `GEN.decorOverhead`).
+
 ## WA: World art (W2a)
 
 ## SK: Skater and cosmetics (W2b)
