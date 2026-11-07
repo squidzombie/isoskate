@@ -15,7 +15,7 @@ import { TRICK_BOOK, type SaveCratesExt } from '../save';
 import { complianceValue, rollCrate } from './crates';
 import { COINS, COMPLIANCE, CRATE_METER, UNLOCK_LEVEL } from './economy.config';
 import { addXp, cappedRun, levelGrants, runXp, xpToNext, type RunXp } from './progression';
-import { basePrice, featuredPrice } from './shop';
+import { basePrice, featuredFor, featuredPrice } from './shop';
 import { addCoins, grantItem, type Grant } from './wallet';
 
 /** The area timeline (DESIGN §12.1: the first visit 40 s, later visits 35 s, gateways 4 s), mirrored here so meta does
@@ -268,6 +268,9 @@ export function applyRunRules(s: SaveV1, r: RunResult, ctx: MetaCtx): { rewards:
 
   track.push({ e: 'trick_counts', p: { ...r.tricks } });
 
+  // Today's featured row, as the Shop will show it (meta.featured() keeps it), so the goal line and the Results
+  // wishlist bar quote the same price on the first run of a new day.
+  if (s.shop.featuredDay !== ctx.today) s.shop = { featuredDay: ctx.today, featured: featuredFor(ctx.today, new Set(s.owned), ctx.catalog) };
   const wish = s.wishlist ? ctx.byId.get(s.wishlist) : undefined;
   const out: RunRewardsExt = {
     coins,

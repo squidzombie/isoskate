@@ -446,6 +446,16 @@ describe('crate meter and next goal', () => {
     raw.crates.held.cardboard = 9;
     expect(sanitize(raw, makeDefaults(0, 1)).crates.held.cardboard).toBe(CRATE_HELD_MAX.cardboard);
   });
+  it('on the first run of a new day the wishlist need already uses today\'s picks (the Shop and Results agree)', () => {
+    const s = makeDefaults(0, 1);
+    s.stats.runs = 5; s.xp.level = 5; s.wallet.coins = 100; s.daily.lastWarmupDay = ctx().today;
+    s.shop = { featuredDay: '2000-01-01', featured: [] };          // last visited the Shop long ago
+    const pick = featuredFor(ctx().today, new Set(s.owned), CATALOG)[1]!;
+    s.wishlist = pick;
+    const w = applyRunRules(s, run({ score: 100 }), ctx()).rewards;
+    expect(s.shop.featuredDay).toBe(ctx().today);
+    expect(w.wishlist?.need).toBe(featuredPrice(byId.get(pick)!));
+  });
   it('a typical run 2 shows a concrete goal line', () => {
     const s = makeDefaults(0, 1);
     const r = TYPICAL.slice(0, 2).map((t) => applyRunRules(s, run(t), ctx()).rewards) as RunRewardsExt[];

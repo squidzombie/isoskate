@@ -19,7 +19,7 @@ import { DISPLAY_FONT, fitPx, hudColumns, UI_FONT, type HudColumns } from './fit
 import { h, setText } from './h';
 import { createHints, type Hints } from './hints';
 import { createPopups, type PopupKind, type Popups } from './popups';
-import { HUD_TIMING } from './ui.config';
+import { HUD_LAYOUT, HUD_TIMING } from './ui.config';
 
 export { HUD_TIMING };
 const SPEED_STAMP = ['', 'CRUISE', 'FLOW', 'FULL SEND'] as const;
@@ -133,12 +133,12 @@ export function createHud(root: HTMLElement, o: HudOptions): HudExt {
     const u = v ? 1 : Math.min(1, (t - rollT0) / (HUD_TIMING.rollSec * 1000));
     shownScore = Math.round(rollFrom + (rollTo - rollFrom) * u);
     write(score, fmtScore(shownScore));
-    fit(score, fmtScore(rollTo), UI_FONT, 900, 26 * cols.k, 14, cols.leftW);
+    fit(score, fmtScore(rollTo), UI_FONT, 900, HUD_LAYOUT.scorePx * cols.k, HUD_LAYOUT.scoreMinPx, cols.leftW);
     const d = Math.floor(v?.dist ?? sc.distancePts);
     write(dist, `${d < 1e5 ? fmtScore(d) : fmtShort(d)} m`);
     const coinStr = fmtShort(v?.coins ?? sc.coins + sc.coinPayouts);
     write(coinText, coinStr);
-    fit(coinText, coinStr, UI_FONT, 900, 17 * cols.k, 10, cols.coinW - 17 * cols.k);
+    fit(coinText, coinStr, UI_FONT, 900, HUD_LAYOUT.coinPx * cols.k, HUD_LAYOUT.coinMinPx, cols.coinW - HUD_LAYOUT.coinPx * cols.k);
     // Combo pill.
     const active = v ? (v.combo ?? 0) > 0 : sc.combo.active;
     if (active !== comboOn) { comboOn = active; combo.classList.toggle('on', active); if (active) combo.classList.remove('lost'); }
@@ -146,7 +146,7 @@ export function createHud(root: HTMLElement, o: HudOptions): HudExt {
       const links = Math.max(1, v?.links ?? sc.combo.links);
       const txt = `${fmtShort(v?.combo ?? sc.combo.pending)} × ${links}`;
       write(comboText, txt);
-      fit(comboText, txt, UI_FONT, 900, 15 * cols.k, 9, cols.midW - 20);
+      fit(comboText, txt, UI_FONT, 900, HUD_LAYOUT.comboPx * cols.k, HUD_LAYOUT.comboMinPx, cols.midW - HUD_LAYOUT.comboPad);
       const tier = comboTier(links);
       if (tier !== lastTier) { combo.dataset.tier = tier; lastTier = tier; }
       if (links !== lastLinks && lastLinks >= 0) { bumpFlip = !bumpFlip; combo.style.animationName = bumpFlip ? 'hud-bump-a' : 'hud-bump-b'; }
@@ -155,13 +155,13 @@ export function createHud(root: HTMLElement, o: HudOptions): HudExt {
     // Trick ticker: the last trick only; decayed names in grey with their factor.
     if (v?.trick !== undefined) {
       write(trick, v.trick);
-      fit(trick, v.trick, DISPLAY_FONT, 400, 11 * cols.k, HUD_TIMING.trickMinPx, cols.midW);
+      fit(trick, v.trick, DISPLAY_FONT, 400, HUD_LAYOUT.trickPx * cols.k, HUD_TIMING.trickMinPx, cols.midW);
     } else if (trickDirty) {
       trickDirty = false;
       const txt = trickDecayed > 0 ? `${trickLabel} ×${trickDecayed}` : trickLabel;
       write(trick, txt);
       trick.classList.toggle('decayed', trickDecayed > 0);
-      fit(trick, txt, DISPLAY_FONT, 400, 11 * cols.k, HUD_TIMING.trickMinPx, cols.midW);
+      fit(trick, txt, DISPLAY_FONT, 400, HUD_LAYOUT.trickPx * cols.k, HUD_TIMING.trickMinPx, cols.midW);
     } else if (trickTtl <= 0 && !active && trick.textContent) write(trick, '');
     // One-shot texts queued by events.
     if (popups.flushText()) textWrites++;
