@@ -8,7 +8,10 @@
 // Field conventions for every `Decor` record (core/world.ts):
 // - `s`, `x`: footprint anchor in track space = front-centre (the end nearest the player, smallest s) at base height.
 //   Ground decals and spans use their centre line; kinds with `x0`/`x1` params anchor at the span midpoint.
-// - `y`: base height above the area datum (the surface it stands on). Overhead kinds give their lowest point.
+// - `y`: base height above the area datum of the surface the element stands on or hangs from (ground, sidewalk, the
+//   foot of the facade or post). Every side, ground and backdrop kind uses it that way; a kind hung above that
+//   surface (awning, blade_sign, banner) takes its own mounting height from its `mount` param (lowest point =
+//   y + mount; G1 decision, docs/core-requests.md WA "Decor.y"). Overhead kinds alone give their lowest point in `y`.
 // - `rotY`: radians about +y. 0 = the identity face looks at the camera (toward −s, i.e. toward the player).
 // - `scale`: uniform multiplier on the nominal size (1 = sizes in the params / doc). `variant`: integer skin/shape
 //   selector; kits use it modulo their own variant count, so any non-negative integer is valid.
@@ -227,6 +230,7 @@ export const DECOR_KINDS = {
     params: {
       w: 'length along s, m (2–8, default 4)', depth: 'reach toward the street, m (0.6–1.5, default 1.0)',
       stripes: '0 plain, 1 striped (default 1)', color: 'colour index into area accents (0–5)',
+      mount: 'height of the underside (valance bottom) above y, m (2.4–3.2, default 2.4)',
     },
   },
   blade_sign: {
@@ -236,12 +240,14 @@ export const DECOR_KINDS = {
       h: 'sign height, m (1–6, default 3)', w: 'lateral width, m (0.3–1.2, default 0.6)',
       brand: 'brand index into DECOR_BRANDS[area] (−1 none)', word: 'Neon: NEON_SIGN_WORDS index (−1 = Latin brand)',
       emissive: 'glow 0..2.5 (default 0 Downtown, 1.8 Neon)', glow: '0/1 additive glow card behind (Neon, default 1)',
+      mount: 'height of the sign bottom above y, m (2.2–4, default 2.6)',
     },
   },
   banner: {
     zone: 'side', areas: ['downtown', 'suburbs'], castShadow: false,
     doc: 'Fabric banner hung on a lamp post, facing the camera.',
-    params: { h: 'banner height, m (0.8–2, default 1.2)', color: 'colour index into area accents (0–5)' },
+    params: { h: 'banner height, m (0.8–2, default 1.2)', color: 'colour index into area accents (0–5)',
+      mount: 'height of the banner bottom above y, m (2.4–4, default 3.0)' },
   },
   billboard: {
     zone: 'side', areas: ['downtown', 'suburbs', 'docks'], castShadow: true,

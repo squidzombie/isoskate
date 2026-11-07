@@ -5,6 +5,7 @@ import type { RunResult, ScoreState, SkaterState } from './sim';
 import type { Bus } from './bus';
 import type { SaveV1 } from './save';
 import type { AppEvent, GameEvent } from './events';
+import type { MonetizationProvider } from './platform';
 export interface HudApi {
   show(on: boolean): void;
   /** anchor = the skater's projected CSS position (CameraRig.project), for popups beside/below the skater. */
@@ -20,6 +21,8 @@ export interface UiApi {
   attach(game: Bus<GameEvent>, app: Bus<AppEvent>, meta: MetaApi): () => void;
   /** UI raises intents; game/app.ts decides what happens. */
   onIntent(f: (i: UiIntent) => void): () => void;
+  /** added @G1 (MU): the shared monetization provider (wiring); the UI shows an offer only if eligible and ready. */
+  setMonetization?(p: MonetizationProvider): void;
 }
 export type UiIntent =
   | { k: 'play'; startArea?: AreaId } | { k: 'retry' } | { k: 'pause' } | { k: 'resume' } | { k: 'home' } | { k: 'restart' }

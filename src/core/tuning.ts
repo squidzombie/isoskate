@@ -78,6 +78,9 @@ export const CAMERA = { pitchDeg: 35, yawMinDeg: 0, yawMaxDeg: 30, yawAspect0: 0
 export const CHUNK_LEN = 32, GEN_AHEAD_SEC = 12, ORIGIN_REBASE = 512;
 export const CHUNK_WINDOW = { behind: 1, ahead: 3 } as const;
 export const ROLLOUT_SEC = 9, LESSON_SEC = 40;
+/** DESIGN §12.1 area timeline (added @G1, MU request): the first visit lasts 40 s, every later one 35 s, each gateway
+ *  4 s. world/gen/areas.ts re-exports them; meta reads them for the Results "next area" goal. */
+export const FIRST_VISIT_SEC = 40, VISIT_SEC = 35, GATEWAY_SEC = 4;
 export const REWIND = { sec: 1.5, max: 3, snapEveryTicks: 15, ring: 8 } as const;
 // Sim tunables moved from sim/consts.ts (applied @G0, docs/core-requests.md M0-sim section).
 export const ROLL_OFF_DROP = 0.05, STICKY_DROP = 0.3;                 // TECH §6.3 step 5 (roll-off, sticky slabs)

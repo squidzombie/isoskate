@@ -282,6 +282,8 @@ export const CAMERA = { pitchDeg: 35, yawMinDeg: 0, yawMaxDeg: 30, yawAspect0: 0
 export const CHUNK_LEN = 32, GEN_AHEAD_SEC = 12, ORIGIN_REBASE = 512;
 export const CHUNK_WINDOW = { behind: 1, ahead: 3 } as const;
 export const ROLLOUT_SEC = 9, LESSON_SEC = 40;
+/** DESIGN §12.1 area timeline (added @G1, MU): first visit 40 s, later visits 35 s, gateways 4 s (world/gen re-exports). */
+export const FIRST_VISIT_SEC = 40, VISIT_SEC = 35, GATEWAY_SEC = 4;
 export const REWIND = { sec: 1.5, max: 3, snapEveryTicks: 15, ring: 8 } as const;
 // Sim tunables moved from sim/consts.ts (applied @G0, docs/core-requests.md M0-sim section).
 export const ROLL_OFF_DROP = 0.05, STICKY_DROP = 0.3;                 // TECH §6.3 step 5 (roll-off, sticky slabs)
@@ -414,6 +416,9 @@ export interface InputFrame {
                          //        for the pre-press window (0.30–0.10 s before touchdown). A touch that becomes a DRAG drops it.
   manualKey: boolean;    // level: S/Shift/RT held. Ground → manual like HOLD; air → never a grab (press handles pre-press)
   grab: boolean;         // level: Q / LT held
+  /** added @G1 (GP): edge: a still touch released after tapMaxMs and ≤ longTapMaxMs (600 ms) after down,
+   *  a HOLD that never moved. The sim reads it as a TAP wherever that hold started nothing. */
+  longTap?: boolean;
 }
 export const EMPTY_FRAME: Readonly<InputFrame> = { steerDx: 0, steerAxis: 0, tap: false, swipe: null, swipeDx: 0,
   swipeFast: false, swipeFromRest: false, swipeSteer: false, swipeAmend: false,
@@ -424,7 +429,7 @@ export type Gesture =
   | { k: 'steer'; tMs: number; dxPx: number }
   | { k: 'tap'; tMs: number }
   | { k: 'swipe'; tMs: number; dir: Dir8; dxPx: number; fast: boolean; fromRest: boolean; steer: boolean }
-  | { k: 'holdStart'; tMs: number } | { k: 'holdEnd'; tMs: number }
+  | { k: 'holdStart'; tMs: number } | { k: 'holdEnd'; tMs: number; release?: true }   // release: the long tap (added @G1)
   | { k: 'press'; tMs: number; down: boolean };
 export interface RecognizerConfig {
   slopPx: number; tapMaxMs: number; holdMs: number;                 // 10, 350, 200
@@ -611,6 +616,8 @@ export interface WorldView {
   rebuildGPU(): void;                 // after context restore
   stats(): { chunksBuilt: number; buildMsP95: number; drawCalls: number };
   dispose(): void;
+  /** added @G1 (WA): work-time auto-adjust (§8.9) on while the saved quality is 'auto', off after a manual pick. */
+  setAutoQuality?(on: boolean): void;
 }
 export interface SkaterView {
   readonly object3d: Object3D;
@@ -638,6 +645,8 @@ export interface Vfx {
   update(f: RenderFrame): void; setQuality(q: QualityTier): void; clear(): void;
   /** Legendary cosmetic particles requested by skater/ (TECH §8.5; added @G0, implemented by WA / M5). */
   emit?(kind: 'steam' | 'leaves' | 'petals' | 'glyphs' | 'lightTrail', p: { s: number; x: number; y: number }, n?: number): void;
+  /** added @G1 (WA): DESIGN §18.8 reduced motion / "Reduce effects" (no speed lines, no ambient drift). */
+  setReducedMotion?(on: boolean): void;
 }
 ```
 
@@ -752,7 +761,7 @@ export type GameEvent =
   | { t: 'land'; tick: number; airT: number; dropH: number; quality: 'clean' | 'perfect' | 'sketchy'; surface: Surface }
   | { t: 'pickWindow'; tick: number; edgeId: number; open: boolean }
   | { t: 'grindStart'; tick: number; id: GrindId; edgeId: number; material: EdgeMaterial; perfect: boolean; transfer: boolean }
-  | { t: 'grindSwitch'; tick: number; from: GrindId; to: GrindId }
+  | { t: 'grindSwitch'; tick: number; from: GrindId; to: GrindId; late?: true }   // late: a re-pick ≤ 0.12 s after lock, not a switch (added @G1)
   | { t: 'grindEnd'; tick: number; id: GrindId; dur: number; exit: 'end' | 'pop' }
   | { t: 'manualStart'; tick: number; kind: ManualId }
   | { t: 'manualEnd'; tick: number; kind: ManualId; dur: number; reason: 'budget' | 'pop' | 'bump' | 'release' }
@@ -776,7 +785,7 @@ export type GameEvent =
   | { t: 'speedTier'; tick: number; tier: 0 | 1 | 2 | 3 }    // < 8.0 / ≥ 8.0 CRUISE / ≥ 9.0 FLOW / 10.5 FULL SEND (SPEED_TIERS)
   | { t: 'crash'; tick: number; cause: CrashCause; obstacleId: number | null; kind: PropKind | null; speed: number;
       state: SkaterMode; flipProgress: number; spinProgress: number; god?: boolean }   // god: logged, not applied
-  | { t: 'rewind'; tick: number; toTick: number }
+  | { t: 'rewind'; tick: number; toTick: number; cause?: CrashCause; obstacleId?: number | null; kind?: PropKind | null; left?: number }   // the crash it undid, rewinds left (added @G1)
   | { t: 'runEnd'; tick: number; result: RunResult };
 
 /** App events: UI/meta/platform. Not deterministic, never consumed by the sim. */
@@ -823,9 +832,12 @@ export interface SaveV1 {
     rng: [number, number, number, number];                        // Sfc32 state (rolls are pre-committed)
     pending: { tier: CrateTier; rarity: string; item: ItemId | null; coins: number; dup: boolean } | null;
     opened: number;
+    /** added @G1 (MU): pre-committed results waiting behind `pending` (granted at their reveal; ≤ 8, absent when empty). */
+    queue?: { tier: CrateTier; rarity: string; item: ItemId | null; coins: number; dup: boolean }[];
   };
   daily: { lastGiftDay: string | null; giftHeld: boolean; lastWarmupDay: string | null;
-           adsDay: string | null; adsCount: number };
+           adsDay: string | null; adsCount: number;
+           giftBonusDay?: string | null };                        // added @G1 (MU): day the daily_gift_bonus offer was granted
   crateMeter: { metres: number; nextAt: number };                 // 4000, then +8000
   stats: {
     runs: number; best: number; bestDist: number; bestTime: number; bestCombo: number;
@@ -954,7 +966,7 @@ export interface AnalyticsSink { flush(events: readonly object[]): Promise<void>
 
 ### 4.11 `core/debug.ts`: debug API (`window.__skate`, dev builds or `?debug=1`)
 ```ts
-import type { AreaId, PropKind, ScreenId, QualityTier } from './ids';
+import type { AreaId, Dir8, GrindId, ManualId, PropKind, ScreenId, QualityTier } from './ids';
 import type { V3 } from './math';
 import type { InputFrame } from './input';
 import type { GameEvent } from './events';
@@ -969,6 +981,15 @@ export interface DebugSnapshot {
   crash: { cause: string; kind: string | null } | null;
   nextObstacles: { id: number; kind: PropKind; s: number; x: number; dist: number; tags: number }[];  // next 40 m
   safe: SafeKey[];                                                                              // next 40 m
+  /** added @G1 (GP): the debug overlay data (pick window, combo clocks, prediction), from sim's simDebug(). */
+  sim?: DebugSimInfo;
+}
+/** The sim's debug overlay data (added @G1). `heat` is 0 outside a combo; `pick` is null unless the pick window is open. */
+export interface DebugSimInfo {
+  airLeft: number; heat: number; window: number; bankIn: number; magnetEdge: number | null; transferArmed: boolean;
+  pick: { open: boolean; edgeId: number; tCapture: number; inSec: number; dirs: Dir8[]; grind: GrindId | null } | null;
+  manual: { kind: ManualId; t: number; budget: number } | null;
+  rewindsLeft: number;
 }
 export interface DebugAPI {
   readonly version: string;
@@ -1038,6 +1059,7 @@ import type { RunResult, ScoreState, SkaterState } from './sim';
 import type { Bus } from './bus';
 import type { SaveV1 } from './save';
 import type { AppEvent, GameEvent } from './events';
+import type { MonetizationProvider } from './platform';
 export interface HudApi {
   show(on: boolean): void;
   /** anchor = the skater's projected CSS position (CameraRig.project), for popups beside/below the skater. */
@@ -1053,6 +1075,8 @@ export interface UiApi {
   attach(game: Bus<GameEvent>, app: Bus<AppEvent>, meta: MetaApi): () => void;
   /** UI raises intents; game/app.ts decides what happens. */
   onIntent(f: (i: UiIntent) => void): () => void;
+  /** added @G1 (MU): the shared monetization provider (wiring); the UI shows an offer only if eligible and ready. */
+  setMonetization?(p: MonetizationProvider): void;
 }
 export type UiIntent =
   | { k: 'play'; startArea?: AreaId } | { k: 'retry' } | { k: 'pause' } | { k: 'resume' } | { k: 'home' } | { k: 'restart' }
@@ -1092,6 +1116,7 @@ export function renderOffline(area: AreaId, sec: number): Promise<AudioBuffer | 
 - `DECOR_LIMITS` holds the placement rules (side band |x| ≥ 4.6, signs |x| ≥ 4.9, backdrop |x| ≥ 5, overhead y ≥ 3.2 m and ≤ 0.3 m thick, maglev at 7 m). `DECOR_BRANDS` (DESIGN §18.6) and `NEON_SIGN_WORDS` (the reviewed Japanese list) are what `brand` / `word` params index into.
 - WG emits only these kinds (`world/gen/decor.ts` uses it, never redefines it); WA renders every kind in every listed area skin. `Decor.kind` stays `string` in `core/world.ts` for compatibility.
 - A gateway id in `areas` means "inside that gateway's 4 s segment". The generic street kinds (decals, lamps, sign posts, wires, verge, shadow casters, end walls) list every area **and** every gateway.
+- **`Decor.y` (one definition since G1).** `y` is the base height of the surface the element stands on or hangs from (ground, sidewalk, the foot of the facade or post) for every ground, side and backdrop kind. Kinds hung above that surface take their own mounting height from a documented `mount` param (lowest point = `y + mount`): `awning` (underside, default 2.4 m), `blade_sign` (sign bottom, 2.6 m), `banner` (banner bottom, 3.0 m). Only `overhead` kinds give their lowest point in `y`. WG emits `y` = sidewalk with `mount` 2.6 / 2.8 / 2.4 / 3.0; WA draws at `y + mount`.
 
 ---
 
@@ -1243,7 +1268,8 @@ tAt(s): piecewise inverse; Newton (≤ 6 iterations) on the middle piece.
   - The first-contact axis is the one that started overlapping last (slab method, prev → cur). Knock tops are knocked from every side.
   - After rolling off a top **sideways**, its body pushes the board out to the side and re-anchors `targetX`; it never re-lands on that top.
   - Gravity is integrated exactly (`y += vy·DT − ½G·DT²`), so a flat ollie lasts 36 ticks (0.600 s), pop tick included.
-  - A roll-off drop (a curb, a ledge end) keeps the link window running and does not refresh it on landing.
+  - A roll-off drop (a curb, a ledge end) keeps the link window running and does not refresh it on landing, unless that air scored a trick or the combo has no running window (G1, GP review M4).
+- **Edge nudge** (changed @G1, GP request 9; DESIGN §7). An **air** landing on a raised landable top moves the board centre ≥ `LAND.edgeNudge` (0.15 m; `min(0.15, width / 2)` from each side edge) inside the top's side edge, and `targetX` with it (M0: 0.02 m). Rolling onto a top keeps the M0 0.02 m. The surface and the landed / crash classification are unchanged; only x moves (≤ 0.13 m toward the top's centre). The validator's grid does not replay landing x, so nothing mirrors it there; the conformance bot (GP sim, WG validator) stays at 0 crashes.
 
 ### 6.5 Air, flips, spins and landing
 - **`airLeft` prediction** (`predict.ts`). Each air tick, integrate forward with DT (≤ 90 steps) against `groundAt` and candidate capture bands. This gives the predicted time to touchdown or capture, used for:
@@ -1265,7 +1291,7 @@ tAt(s): piecewise inverse; Newton (≤ 6 iterations) on the middle piece.
   - `p ≥ 0.55` (0.40 for first runs) → sketchy: combo banks.
   - Otherwise `badLanding`.
   - The board centre within 0.15 m of a top edge is nudged to the supported side.
-- **Pre-press manual.** A press that went down between 0.30 and 0.10 s before touchdown and is still a press (it did not become a DRAG), or a held grab, starts a manual on touchdown.
+- **Pre-press manual.** A press that went down **in that air** (or on the grind the air left) between 0.30 and 0.10 s before touchdown and is still a press (it did not become a DRAG), or a held grab, starts a manual on touchdown. A press already down when the board rolled off a curb is an ollie on its way, not a pre-press (G1: the thumb-bot gate). Outside a combo it starts one (DESIGN §24 row 61).
 
 ### 6.6 Magnet, capture and grind
 - **Candidates.** In air, take edges from `edgesNear(s, s + 1.5·vs, x, MAGNET.range)` whose height band is reachable along the predicted arc and that are **not `pickOnly`**. Pick the one with the minimum lateral offset at its predicted crossing.
@@ -1278,7 +1304,8 @@ tAt(s): piecewise inverse; Newton (≤ 6 iterations) on the middle piece.
   - The lateral/vertical snap eases over 0.08 s.
   - Flip and spin progress are judged as a landing.
   - `perfect` if the pick time is within ±0.08 s of lock.
-- **Switch.** A swipe of ↓ ← → ↙ ↘ (or a double) ≥ 0.25 s after lock changes the grind id, at most 2 per edge.
+- **Switch.** A swipe of ↓ ← → ↙ ↘ (or a double) ≥ 0.25 s after lock changes the grind id, at most 2 per edge. A pick in the 0.12 s after lock re-names the grind just locked: `grindSwitch` with `late: true` (no link, no switch counted, no switch cue).
+- **No re-capture of the edge a pop-out left** (changed @G1, GP request 2, `RULES.popOutSkipsOwnEdge` = true). After a pop-out (TAP / ↑ / 180 Out) the air magnet skips the edge the board left, and capture (with its prediction) skips every edge of that obstacle when its top is landable (ledges, benches), unless the player steered toward it by ≥ `MAGNET.cancelDragM` this jump. Rails and beams keep re-capture (their tops are crash tops). The end hop is unchanged. The bot gates (conformance, thumb, trick) pass with it on.
 - **Exit.**
   - At the edge end: an auto-hop with `vy = 2.5` (`airborne: grindEnd`).
   - TAP or ↑: a full pop `vy = V_POP` from the edge height, scored as a Pop-out.

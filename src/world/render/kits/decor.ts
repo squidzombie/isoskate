@@ -119,14 +119,11 @@ const lowWall: DecorFn = (c, d) => {
   K.reset().to('b').lit(PAT.pavers, 0, nearOf(d)).col(0xc4b2a6).chamfer(d.x - 0.2, d.y, d.s, d.x + 0.2, d.y + h, d.s + len, 0.03);
 };
 
-/** The lowest point of a decor element hung on a facade or a post (awning, blade sign, banner). world/gen gives it in
- *  `y` (as overhead kinds give theirs; docs/core-requests.md WA "Decor.y of hung side kinds"); a `y` at the ground
- *  it stands on (less than HUNG.minMount above the sidewalk edge) gets the kind's default mounting height. */
-export const HUNG = { minMount: 1.2, awning: 2.4, blade: 2.6, banner: 3.0 } as const;
-function hungY(c: KitCtx, d: Decor, mount: number): number {
-  const ground = c.groundAt(d.s + 0.01, Math.max(-4.45, Math.min(4.45, d.x)));
-  return d.y - ground >= HUNG.minMount ? d.y : d.y + mount;
-}
+/** The lowest point of a decor element hung on a facade or a post (awning, blade sign, banner): `y` is the surface
+ *  it hangs from (core/decor.ts field conventions, one definition since G1) and the kind's `mount` param is its
+ *  height above it; HUNG holds the documented defaults. */
+export const HUNG = { awning: 2.4, blade: 2.6, banner: 3.0 } as const;
+const hungY = (_c: KitCtx, d: Decor, mount: number): number => d.y + num(d, 'mount', mount);
 
 const awning: DecorFn = (c, d) => {
   const area = c.areaAt(d.s), w = num(d, 'w', 4), depth = num(d, 'depth', 1.0);

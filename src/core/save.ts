@@ -17,9 +17,12 @@ export interface SaveV1 {
     rng: [number, number, number, number];                        // Sfc32 state (rolls are pre-committed)
     pending: { tier: CrateTier; rarity: string; item: ItemId | null; coins: number; dup: boolean } | null;
     opened: number;
+    /** added @G1 (MU): pre-committed results waiting behind `pending` (granted at their reveal; ≤ 8, absent when empty). */
+    queue?: { tier: CrateTier; rarity: string; item: ItemId | null; coins: number; dup: boolean }[];
   };
   daily: { lastGiftDay: string | null; giftHeld: boolean; lastWarmupDay: string | null;
-           adsDay: string | null; adsCount: number };
+           adsDay: string | null; adsCount: number;
+           giftBonusDay?: string | null };                        // added @G1 (MU): day the daily_gift_bonus offer was granted
   crateMeter: { metres: number; nextAt: number };                 // 4000, then +8000
   stats: {
     runs: number; best: number; bestDist: number; bestTime: number; bestCombo: number;

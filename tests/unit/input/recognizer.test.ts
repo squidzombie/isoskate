@@ -23,18 +23,20 @@ describe('tap / hold / drag boundaries', () => {
     expect(kinds(run(makeRec(), new Trace(1, 0, CX, CY).rest(120).up().samples))).toEqual(['press+', 'tap', 'press-']);
   });
 
-  it('long tap (W1a): a still release 350–400 ms after down (600 at the design target) marks its holdEnd `release`; a drag, a cancel or a longer press do not', () => {
+  it('long tap (W1a, 600 ms since G1): a still release 350–600 ms after down marks its holdEnd `release`; a drag, a cancel or a longer press do not', () => {
     const holdEnd = (ms: number, end: 'up' | 'cancel' = 'up', longTapMaxMs?: number) => {
       const tr = new Trace(1, 0, CX, CY).rest(ms);
       const g = run(makeRec(longTapMaxMs ? { longTapMaxMs } : {}), (end === 'up' ? tr.up() : tr.cancel()).samples);
       return g.find((x) => x.k === 'holdEnd') as { release?: true } | undefined;
     };
-    expect(DEFAULT_RECOGNIZER.longTapMaxMs).toBe(400);
+    expect(DEFAULT_RECOGNIZER.longTapMaxMs).toBe(600);
     expect(holdEnd(351)?.release).toBe(true);
     expect(holdEnd(400)?.release).toBe(true);
-    expect(holdEnd(401)?.release).toBeUndefined();                         // the e2e priming touch (≥ 400 ms + delivery)
-    expect(holdEnd(600, 'up', 600)?.release).toBe(true);
-    expect(holdEnd(601, 'up', 600)?.release).toBeUndefined();
+    expect(holdEnd(600)?.release).toBe(true);
+    expect(holdEnd(601)?.release).toBeUndefined();
+    expect(holdEnd(700)?.release).toBeUndefined();                         // the e2e priming touch (≥ 700 ms + delivery)
+    expect(holdEnd(400, 'up', 400)?.release).toBe(true);
+    expect(holdEnd(401, 'up', 400)?.release).toBeUndefined();
     expect(holdEnd(300)?.release).toBeUndefined();                        // ≤ 350 ms is a real tap
     expect(holdEnd(380, 'cancel')?.release).toBeUndefined();
     expect(kinds(run(makeRec(), new Trace(1, 0, CX, CY).rest(380).up().samples))).toEqual(['press+', 'holdStart', 'holdEnd', 'press-']);

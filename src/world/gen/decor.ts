@@ -93,13 +93,13 @@ export function emitDecor(out: Decor[], env: DecorEnv, rng: Sfc32): number {
     case 'downtown':
       along(9, (s, k) => {
         const sd = k % 2 ? 1 : -1;
-        o.add('awning', s, sd * 4.65, side0 + 2.6, { w: rng.range(3, 6), depth: 1.0, stripes: 1, color: rng.int(0, 5) });
-        o.add('blade_sign', s + 2, sd * 5.25, side0 + 2.8, { h: rng.range(1.5, 3), w: 0.6, brand: rng.int(0, DECOR_BRANDS.downtown.length - 1), emissive: 0 });
+        o.add('awning', s, sd * 4.65, side0, { w: rng.range(3, 6), depth: 1.0, stripes: 1, color: rng.int(0, 5), mount: 2.6 });
+        o.add('blade_sign', s + 2, sd * 5.25, side0, { h: rng.range(1.5, 3), w: 0.6, brand: rng.int(0, DECOR_BRANDS.downtown.length - 1), emissive: 0, mount: 2.8 });
       });
       along(12, (s, k) => o.add(rng.pick(['cafe_umbrella', 'bike_parked', 'potted_plant', 'hydrant', 'parking_meter'] as const), s, (k % 2 ? 1 : -1) * 5.1, side0, { r: 1.1, count: 3, h: 0.9 }));
       along(16, (s, k) => o.add('tree', s, (k % 2 ? -1 : 1) * 5.4, side0, { crown: rng.range(1.2, 2.0), trunkH: rng.range(2.4, 3.4), species: 1 }));
       if (rng.chance(0.3)) o.add('billboard', s0 + rng.range(0, len), (rng.chance(0.5) ? -1 : 1) * 7.6, side0, { w: 5, h: 2.5, pole: 3, brand: rng.int(0, 4) });
-      if (rng.chance(0.3)) o.add('banner', s0 + rng.range(0, len), (rng.chance(0.5) ? -1 : 1) * 5.0, side0 + 3, { h: 1.2, color: rng.int(0, 5) });
+      if (rng.chance(0.3)) o.add('banner', s0 + rng.range(0, len), (rng.chance(0.5) ? -1 : 1) * 5.0, side0, { h: 1.2, color: rng.int(0, 5), mount: 3 });
       if (rng.chance(0.25)) o.add('lantern_string', s0 + rng.range(0, len), 0, datum + 4.6, { x0: -5.2, x1: 5.2, sag: 0.6, count: 14, palette: 1 });
       if (rng.chance(0.35)) o.add('traffic_light', s0 + rng.range(0, len), (rng.chance(0.5) ? -1 : 1) * 4.9, side0, { h: 4, state: rng.int(0, 2) });
       break;
@@ -127,7 +127,7 @@ export function emitDecor(out: Decor[], env: DecorEnv, rng: Sfc32): number {
     case 'neon':
       along(6, (s, k) => {
         const sd = k % 2 ? 1 : -1;
-        o.add('blade_sign', s, sd * 5.25, side0 + 2.4, { h: rng.range(2.5, 5), w: 0.6, word: rng.chance(0.5) ? rng.int(0, NEON_SIGN_WORDS.length - 1) : -1,
+        o.add('blade_sign', s, sd * 5.25, side0, { mount: 2.4, h: rng.range(2.5, 5), w: 0.6, word: rng.chance(0.5) ? rng.int(0, NEON_SIGN_WORDS.length - 1) : -1,
           brand: rng.int(0, DECOR_BRANDS.neon.length - 1), emissive: 1.8, glow: 1 });
       });
       along(9, (s, k) => o.add(rng.pick(['vending_machine', 'food_cart', 'paper_lantern', 'bike_parked', 'potted_plant', 'cherry_tree'] as const), s,

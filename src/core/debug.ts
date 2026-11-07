@@ -1,5 +1,5 @@
 // core/debug.ts (TECH §4.11). FROZEN CONTRACT: verbatim from TECH §4; change only via docs/core-requests.md.
-import type { AreaId, PropKind, ScreenId, QualityTier } from './ids';
+import type { AreaId, Dir8, GrindId, ManualId, PropKind, ScreenId, QualityTier } from './ids';
 import type { V3 } from './math';
 import type { InputFrame } from './input';
 import type { GameEvent } from './events';
@@ -14,6 +14,15 @@ export interface DebugSnapshot {
   crash: { cause: string; kind: string | null } | null;
   nextObstacles: { id: number; kind: PropKind; s: number; x: number; dist: number; tags: number }[];  // next 40 m
   safe: SafeKey[];                                                                              // next 40 m
+  /** added @G1 (GP request 4): the debug overlay data (pick window, combo clocks, prediction), from sim's simDebug(). */
+  sim?: DebugSimInfo;
+}
+/** The sim's debug overlay data (added @G1). `heat` is 0 outside a combo; `pick` is null unless the pick window is open. */
+export interface DebugSimInfo {
+  airLeft: number; heat: number; window: number; bankIn: number; magnetEdge: number | null; transferArmed: boolean;
+  pick: { open: boolean; edgeId: number; tCapture: number; inSec: number; dirs: Dir8[]; grind: GrindId | null } | null;
+  manual: { kind: ManualId; t: number; budget: number } | null;
+  rewindsLeft: number;
 }
 export interface DebugAPI {
   readonly version: string;

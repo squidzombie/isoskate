@@ -243,17 +243,21 @@ describe('decor renderers', () => {
 });
 
 describe('textures', () => {
-  it('hung side decor (awning, blade sign, banner) reads y as its lowest point when world/gen gives the mounting height', () => {
+  it('hung side decor (awning, blade sign, banner): y is the sidewalk it hangs from, the lowest point is y + mount', () => {
     for (const [kind, area, mount] of [['awning', 'downtown', 2.6], ['blade_sign', 'downtown', 2.8], ['blade_sign', 'neon', 2.4], ['banner', 'suburbs', 3]] as const) {
-      for (const y of [0.15 + mount, 0.15]) {
+      for (const m of [mount, null]) {
+        const y = 0.15;
+        const base = decorOf(kind, area, 2 * CHUNK_LEN + 4, 1, 3);
+        const params = { ...base.params } as Record<string, number>;
+        if (m === null) delete params.mount; else params.mount = m;
         const ch = emptyChunk(2, area);
-        ch.decor = [{ ...decorOf(kind, area, 2 * CHUNK_LEN + 4, 1, 3), y }];
+        ch.decor = [{ ...base, y, params }];
         const { g } = build(ch, area);
         let lowest = Infinity;
         for (const t of ['o', 'b', 'e'] as const) for (let i = 0; i < g[t].count; i++) if (g[t].pos[i * 3]! > 4.55 && g[t].pos[i * 3 + 1]! > 0.2) lowest = Math.min(lowest, g[t].pos[i * 3 + 1]!);
-        // WG style (y = sidewalk + mount): the element starts at y; a ground-level y takes the kind's default mount.
-        const want = y > 1 ? y : 0.15 + (kind === 'awning' ? HUNG.awning : kind === 'banner' ? HUNG.banner : HUNG.blade);
-        expect(lowest, `${kind} ${area} y=${y}`).toBeCloseTo(want, 1);
+        // An explicit mount wins; without one the kind's documented default applies.
+        const want = y + (m ?? (kind === 'awning' ? HUNG.awning : kind === 'banner' ? HUNG.banner : HUNG.blade));
+        expect(lowest, `${kind} ${area} mount=${m}`).toBeCloseTo(want, 1);
       }
     }
   });

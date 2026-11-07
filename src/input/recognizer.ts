@@ -29,9 +29,8 @@
 // W1a (GP) amendment, the open G0 item "a 350–600 ms press does nothing": a still touch lifted after tapMaxMs but
 // ≤ longTapMaxMs after touch-down (a HOLD that never moved) ends its hold with `release: true` (HoldEndExt). It is not
 // a `tap` (the 349 / 351 ms boundary stays); the frame builder turns it into InputFrame `longTap` and the sim reads it
-// as a TAP wherever the hold started nothing (tricks/interpret.ts). Filed in docs/core-requests.md (GP). The design
-// target is 600 ms; it ships at 400 ms until tests/e2e/touch.spec.ts's pipeline-priming touch (a still press of
-// 400 ms + delivery, meant to do nothing) holds longer (request 1 in the GP section).
+// as a TAP wherever the hold started nothing (tricks/interpret.ts). Core `longTap` / `holdEnd.release` since G1 (GP
+// request 1); 600 ms, the design value, since tests/e2e/touch.spec.ts's pipeline-priming touch holds ≥ 700 ms.
 import type { Dir8 } from '../core/ids';
 import type { Gesture, GestureRecognizer, PointerSample, RecognizerConfig } from '../core/input';
 
@@ -42,8 +41,8 @@ export interface RecognizerConfigExt extends RecognizerConfig {
   ownerDiagonalHalfDeg: number;
   /** Sloppy tap: lifted ≤ this many ms after touch-down ... */
   sloppyTapMs: number;
-  /** Long tap: a still touch lifted ≤ this many ms after touch-down (and after tapMaxMs) marks its holdEnd `release`.
-   *  Design target 600; 400 until the e2e priming touch holds ≥ 700 ms (docs/core-requests.md GP request 1). */
+  /** Long tap: a still touch lifted ≤ this many ms after touch-down (and after tapMaxMs) marks its holdEnd `release`
+   *  (600, DESIGN §4.2; applied @G1). */
   longTapMaxMs: number;
   /** ... having never moved more than this from the touch-down point (·k) ... */
   sloppyTapMaxPx: number;
@@ -71,7 +70,7 @@ export const DEFAULT_RECOGNIZER: Readonly<RecognizerConfigExt> = {
   screenW: 0, screenH: 0,
   ownerDiagonalHalfDeg: 10,
   sloppyTapMs: 250, sloppyTapMaxPx: 20, sloppyTapMaxDxPx: 15,
-  longTapMaxMs: 400,
+  longTapMaxMs: 600,
 };
 
 /** holdEnd of a still touch lifted tapMaxMs–longTapMaxMs after touch-down (core Gesture plus `release`; GP request). */

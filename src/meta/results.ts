@@ -10,7 +10,7 @@ import type { CrateResult, NextGoal, Reward, RunRewards } from '../core/meta';
 import { Sfc32 } from '../core/rng';
 import type { SaveV1 } from '../core/save';
 import type { RunResult } from '../core/sim';
-import { sAt } from '../core/tuning';
+import { FIRST_VISIT_SEC, GATEWAY_SEC, VISIT_SEC, sAt } from '../core/tuning';
 import { TRICK_BOOK, type SaveCratesExt } from '../save';
 import { complianceValue, rollCrate } from './crates';
 import { COINS, COMPLIANCE, CRATE_METER, LEVEL_REWARDS, UNLOCK_LEVEL } from './economy.config';
@@ -18,10 +18,9 @@ import { addXp, cappedRun, levelGrants, runXp, xpToNext, type RunXp } from './pr
 import { basePrice, featuredFor, featuredPrice } from './shop';
 import { addCoins, grantItem, type Grant } from './wallet';
 
-/** The area timeline (DESIGN §12.1: the first visit 40 s, later visits 35 s, gateways 4 s), mirrored here so meta does
- *  not import world/gen internals (WG owns them). tests/unit/meta/economy.test.ts pins it against the frozen
- *  WorldGen.areaAt; docs/core-requests.md (MU) asks for these in core/tuning.ts. */
-export const AREA_TIMELINE = { firstVisitSec: 40, visitSec: 35, gatewaySec: 4 } as const;
+/** The area timeline (DESIGN §12.1: the first visit 40 s, later visits 35 s, gateways 4 s), from core/tuning.ts
+ *  (applied @G1, MU request). tests/unit/meta/economy.test.ts pins it against the frozen WorldGen.areaAt. */
+export const AREA_TIMELINE = { firstVisitSec: FIRST_VISIT_SEC, visitSec: VISIT_SEC, gatewaySec: GATEWAY_SEC } as const;
 
 type Pending = NonNullable<SaveV1['crates']['pending']>;
 const queueOf = (s: SaveV1): Pending[] => ((s.crates as SaveV1['crates'] & SaveCratesExt).queue ??= []);

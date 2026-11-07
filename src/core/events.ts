@@ -18,7 +18,7 @@ export type GameEvent =
   | { t: 'land'; tick: number; airT: number; dropH: number; quality: 'clean' | 'perfect' | 'sketchy'; surface: Surface }
   | { t: 'pickWindow'; tick: number; edgeId: number; open: boolean }
   | { t: 'grindStart'; tick: number; id: GrindId; edgeId: number; material: EdgeMaterial; perfect: boolean; transfer: boolean }
-  | { t: 'grindSwitch'; tick: number; from: GrindId; to: GrindId }
+  | { t: 'grindSwitch'; tick: number; from: GrindId; to: GrindId; late?: true }   // late: a re-pick ≤ 0.12 s after lock, not a switch (added @G1)
   | { t: 'grindEnd'; tick: number; id: GrindId; dur: number; exit: 'end' | 'pop' }
   | { t: 'manualStart'; tick: number; kind: ManualId }
   | { t: 'manualEnd'; tick: number; kind: ManualId; dur: number; reason: 'budget' | 'pop' | 'bump' | 'release' }
@@ -42,7 +42,7 @@ export type GameEvent =
   | { t: 'speedTier'; tick: number; tier: 0 | 1 | 2 | 3 }    // < 8.0 / ≥ 8.0 CRUISE / ≥ 9.0 FLOW / 10.5 FULL SEND (SPEED_TIERS)
   | { t: 'crash'; tick: number; cause: CrashCause; obstacleId: number | null; kind: PropKind | null; speed: number;
       state: SkaterMode; flipProgress: number; spinProgress: number; god?: boolean }   // god: logged, not applied
-  | { t: 'rewind'; tick: number; toTick: number }
+  | { t: 'rewind'; tick: number; toTick: number; cause?: CrashCause; obstacleId?: number | null; kind?: PropKind | null; left?: number }   // the crash it undid, rewinds left (added @G1)
   | { t: 'runEnd'; tick: number; result: RunResult };
 
 /** App events: UI/meta/platform. Not deterministic, never consumed by the sim. */

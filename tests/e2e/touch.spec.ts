@@ -47,7 +47,7 @@ async function airborneFor(page: Page, since: number, ticks: number): Promise<vo
 }
 
 /** A real-time god-mode run (crashes logged, not applied), rolled for a few ticks. With `prime`, one still touch
- *  (held 400 ms: no tap, no drag, and a resting thumb starts nothing) primes Chromium's touch pipeline first: under
+ *  (held 700 ms, past the 600 ms long tap: no tap, no drag, and a resting thumb starts nothing) primes Chromium's touch pipeline first: under
  *  SwiftShader the first touchmove of a page's life can be held back by seconds while the first frames compile. */
 async function liveRun(page: Page, seed = 1, prime: Touch | null = null): Promise<void> {
   await page.evaluate((s) => { window.__skate!.manual(false); window.__skate!.start({ seed: s, god: true }); }, seed);
@@ -61,7 +61,7 @@ async function liveRun(page: Page, seed = 1, prime: Touch | null = null): Promis
   await touch.start(vp.width / 2, vp.height * 0.6, 7);
   await touch.move(vp.width / 2 + 3, vp.height * 0.6, 7);
   await page.waitForFunction(() => (window as unknown as { __moved: boolean }).__moved, null, { timeout: 15000 });
-  await page.waitForTimeout(400);
+  await page.waitForTimeout(700);
   await touch.end();
 }
 

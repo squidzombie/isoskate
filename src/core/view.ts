@@ -54,6 +54,8 @@ export interface WorldView {
   rebuildGPU(): void;                 // after context restore
   stats(): { chunksBuilt: number; buildMsP95: number; drawCalls: number };
   dispose(): void;
+  /** added @G1 (WA): work-time auto-adjust (TECH §8.9) on while the saved quality is 'auto', off after a manual pick. */
+  setAutoQuality?(on: boolean): void;
 }
 export interface SkaterView {
   readonly object3d: Object3D;
@@ -81,4 +83,6 @@ export interface Vfx {
   update(f: RenderFrame): void; setQuality(q: QualityTier): void; clear(): void;
   /** Legendary cosmetic particles requested by skater/ (TECH §8.5; added @G0, implemented by WA / M5). */
   emit?(kind: 'steam' | 'leaves' | 'petals' | 'glyphs' | 'lightTrail', p: { s: number; x: number; y: number }, n?: number): void;
+  /** added @G1 (WA): DESIGN §18.8 reduced motion / "Reduce effects" (no speed lines, no ambient drift). */
+  setReducedMotion?(on: boolean): void;
 }

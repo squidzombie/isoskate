@@ -17,6 +17,9 @@ export interface InputFrame {
                          //        for the pre-press window (0.30–0.10 s before touchdown). A touch that becomes a DRAG drops it.
   manualKey: boolean;    // level: S/Shift/RT held. Ground → manual like HOLD; air → never a grab (press handles pre-press)
   grab: boolean;         // level: Q / LT held
+  /** added @G1 (GP request 1): edge: a still touch released after tapMaxMs and ≤ longTapMaxMs (600 ms) after down,
+   *  a HOLD that never moved. The sim reads it as a TAP wherever that hold started nothing. */
+  longTap?: boolean;
 }
 export const EMPTY_FRAME: Readonly<InputFrame> = { steerDx: 0, steerAxis: 0, tap: false, swipe: null, swipeDx: 0,
   swipeFast: false, swipeFromRest: false, swipeSteer: false, swipeAmend: false,
@@ -27,7 +30,7 @@ export type Gesture =
   | { k: 'steer'; tMs: number; dxPx: number }
   | { k: 'tap'; tMs: number }
   | { k: 'swipe'; tMs: number; dir: Dir8; dxPx: number; fast: boolean; fromRest: boolean; steer: boolean }
-  | { k: 'holdStart'; tMs: number } | { k: 'holdEnd'; tMs: number }
+  | { k: 'holdStart'; tMs: number } | { k: 'holdEnd'; tMs: number; release?: true }   // release: the long tap (added @G1)
   | { k: 'press'; tMs: number; down: boolean };
 export interface RecognizerConfig {
   slopPx: number; tapMaxMs: number; holdMs: number;                 // 10, 350, 200

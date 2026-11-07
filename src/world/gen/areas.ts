@@ -5,7 +5,10 @@ import type { AreaBlend } from '../../core/world';
 import type { AreaId, GatewayId } from '../../core/ids';
 import { AREA_ORDER } from '../../core/ids';
 
-export const FIRST_VISIT_SEC = 40, VISIT_SEC = 35, GATEWAY_SEC = 4, BLEND_SEC = 8;
+import { FIRST_VISIT_SEC, GATEWAY_SEC, VISIT_SEC } from '../../core/tuning';
+
+export { FIRST_VISIT_SEC, VISIT_SEC, GATEWAY_SEC };
+export const BLEND_SEC = 8;
 export const LOOP_SEC = AREA_ORDER.length * (VISIT_SEC + GATEWAY_SEC);   // 156 s
 /** Gateway that leads out of each area. */
 export const GATEWAY_AFTER: Readonly<Record<AreaId, GatewayId>> = {
