@@ -196,7 +196,7 @@ test.describe('real touch', () => {
     const vp = page.viewportSize()!, touch = await Touch.of(page);
     await liveRun(page, 1, touch);
     const mt = await Touch.multi(page);
-    await page.evaluate(() => window.__skate!.timeScale(0.3));
+    await page.evaluate(() => window.__skate!.timeScale(0.25));
     const x0 = (await snap(page)).p.x;
     const t0 = (await snap(page)).tick;
     // 0.12·W of drag ≈ 1.96 m of steering, to the left (away from the Roll-out ledge at x = +2 and its magnet).
@@ -205,12 +205,12 @@ test.describe('real touch', () => {
     for (let i = 1; i <= 4; i++) await mt.move(1, xL + (dx * i) / 12, yL);
     await Promise.all([mt.down(2, vp.width * 0.75, vp.height * 0.7), mt.up(2)]);   // right tap (queued: a tap, not a hold)
     await airborneFor(page, t0, 7);
-    for (let i = 5; i <= 8; i++) await mt.move(1, xL + (dx * i) / 12, yL);
+    // Right flick ← right away (queued, like a real flick) while the left thumb is down mid-drag, then the left goes on.
     const fl: Promise<unknown>[] = [mt.down(2, vp.width * 0.7, vp.height * 0.65)];
     for (let i = 1; i <= 4; i++) fl.push(mt.move(2, vp.width * 0.7 - i * 22, vp.height * 0.65));
     fl.push(mt.up(2));
-    await Promise.all(fl);                                          // right flick ← while the left is down
-    for (let i = 9; i <= 12; i++) await mt.move(1, xL + (dx * i) / 12, yL);
+    await Promise.all(fl);
+    for (let i = 5; i <= 12; i++) await mt.move(1, xL + (dx * i) / 12, yL);
     await mt.up(1);
     await expect.poll(async () => (await events(page, t0)).filter((e) => e.t === 'flipStart').map((e) => (e as { id: string }).id), { timeout: 4000 })
       .toEqual(['kickflip']);
@@ -430,7 +430,11 @@ test.describe('keyboard preset A plays the same as touch', () => {
     await page.keyboard.press('Space');
     await airborneFor(page, t0, 7);
     await page.keyboard.press('ArrowLeft');
-    await expect.poll(async () => (await events(page, t0)).filter((e) => e.t === 'land').length, { timeout: 4000 }).toBeGreaterThan(0);
+    // 15 s of wall time: under load SwiftShader frames run this loop at a few ticks per second (the landing is sim time).
+    await expect.poll(async () => (await events(page, t0)).filter((e) => e.t === 'land').length, { timeout: 15000 }).toBeGreaterThan(0).catch(async () => {
+      const diag = await page.evaluate((x) => ({ ev: window.__skate!.events(x).filter((e) => e.t !== 'coin').map((e) => `${e.t}@${e.tick}`), s: window.__skate!.snapshot() }), t0);
+      throw new Error(`no landing: ${JSON.stringify({ ev: diag.ev, tick: diag.s.tick, mode: diag.s.mode, y: diag.s.p.y })}`);
+    });
     const viaKeys = (await events(page, t0)).filter((e) => e.t === 'ollie' || e.t === 'flipStart' || e.t === 'land')
       .map((e) => ('id' in e ? `${e.t}:${(e as { id: string }).id}` : e.t));
     expect(viaKeys.slice(0, 3)).toEqual(viaTouch.slice(0, 3));

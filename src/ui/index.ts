@@ -218,6 +218,8 @@ export function createUiImpl(root: HTMLElement): UiExt {
   if (flags.debug && typeof window !== 'undefined') {
     (window as unknown as { __dusklaneUi?: object }).__dusklaneUi = {
       guard, hudStats: () => hud.stats(), current: () => current, reveal: () => reveal?.result ?? null, modalOpen: () => modal.open,
+      /** Shows a first-runs hint now (screenshots of every hint; the run's onboarding driver replaces it on its next change). */
+      hint: (id: string | null) => hud.hint(id),
     };
   }
   return ui;
