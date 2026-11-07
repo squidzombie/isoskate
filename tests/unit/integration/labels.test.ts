@@ -23,8 +23,9 @@ const TICK_MS = DT * 1000;
 
 /** A flat street, the real pipeline (390×844 screen, k = 1) and a run that has rolled for 0.5 s. Traces are given in
  *  ms relative to `base` (the clock when the rig is ready); `until(ms)` steps the sim to that time. `steerOnly` drops
- *  every swipe from the frames: the same trace as pure steering, the reference for "the stroke is only steering". */
-function rig(steerOnly = false) {
+ *  every swipe from the frames: the same trace as pure steering, the reference for "the stroke is only steering";
+ *  `tapMs` adds a tap to the frame at that time (a plain ollie on the tick a swipe popped, as a reference). */
+function rig(steerOnly = false, tapMs?: number) {
   const sim = createSim(TRICKS, fixtureWorld([]));
   sim.reset(runCfg({ startT: 2 }));
   const pipe = new InputPipeline(() => W, { screenW: W, screenH: H, k: 1, deadZoneBottomPx: 12 });
@@ -37,6 +38,7 @@ function rig(steerOnly = false) {
       const f = pipe.frame(clock);
       if (f.swipe) swipes.push({ dir: f.swipe, fast: f.swipeFast, fromRest: f.swipeFromRest, steer: f.swipeSteer });
       if (steerOnly) { f.swipe = null; f.swipeDx = 0; }
+      if (tapMs !== undefined && clock - base === tapMs) f.tap = true;
       for (const e of sim.step(f)) events.push({ ...e, tick: clock - base } as GameEvent);
     }
   };
@@ -137,11 +139,19 @@ describe('recognizer labels → sim (DESIGN §4.3 steering-stroke rule)', () => 
   });
 
   it('a fast fresh dodge rising 40° pops a FS 180 and keeps the dodge (ground pops cancel no steering)', () => {
-    const up40 = dodge(40), pure = dodge(40, 0.83, 96, 195, true);
-    expect(up40.events.some((e) => e.t === 'spinStart' && e.id === 'fs180')).toBe(true);
-    // The pop takes the skater into the air (lower lateral authority), but the stroke's steering stands: no give-back.
-    expect(up40.sim.cur.p.x).toBeGreaterThan(0.6 * pure.sim.cur.p.x);
+    const up40 = dodge(40);
+    const spin = up40.events.find((e) => e.t === 'spinStart');
+    expect(spin).toMatchObject({ id: 'fs180' });
+    // The reference: the same trace as pure steering, popped by a plain tap on the same tick. The pop takes the
+    // skater into the air (lower lateral authority) either way; a spin pop that gave any of its stroke's steering back
+    // would leave it short of the reference.
+    const ref = rig(true, spin!.tick);
+    ref.play(new Trace(1, 0, 195, 700).flick(0.83, 40, 96).rest(150).up());
+    ref.until(1100);
+    expect(ollies(ref.events)[0]?.tick).toBe(spin!.tick);
     expect(up40.sim.cur.p.x).toBeGreaterThan(0.2);
+    expect(up40.sim.cur.targetX).toBeCloseTo(ref.sim.cur.targetX, 6);
+    expect(up40.sim.cur.p.x).toBeCloseTo(ref.sim.cur.p.x, 6);
   });
 
   it('a medium-speed fresh dodge (0.5 px/ms) rising 36° does not pop', () => {

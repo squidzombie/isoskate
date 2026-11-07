@@ -115,9 +115,9 @@ test.describe('real touch', () => {
     await touch.start(vp.width * 0.3, y);
     for (let i = 1; i <= 12; i++) { await touch.move(vp.width * 0.3 + i * 10, y); await page.waitForTimeout(16); }
     await touch.end();
-    // The skater carves right while the thumb moves (direct steering, DESIGN §4.2: a thumb faster than the skater's
-    // 5.5 m/s loses the excess and the skater stops soon after the lift), so how far depends on how long the CDP drag
-    // took under SwiftShader; 120 px at this pace always gives well over 0.5 m.
+    // The skater carves right while the thumb moves (direct steering, DESIGN §4.2: a thumb faster than the skater
+    // drives it at up to 7 m/s, loses the excess beyond that and stops soon after the lift), so how far depends on how
+    // long the CDP drag took under SwiftShader; 120 px at this pace always gives well over 0.5 m.
     await expect.poll(async () => (await snap(page)).p.x - x0, { timeout: 3000 }).toBeGreaterThan(0.5);
     expect(kinds(await events(page)).filter((k) => k === 'ollie' || k === 'flipStart')).toEqual([]);
     expect(errors).toEqual([]);

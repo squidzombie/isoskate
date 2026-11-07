@@ -18,7 +18,7 @@ import {
   SCORE, emptyView, interpret, lose, tickCombo, type AmendView, type InputFrameExt, type Intent, type InterpretView,
 } from '../tricks';
 import { copySkater, initState, modeOf, type Ctx, type SimState } from './state';
-import { advanceTime, applySteer, lateral, nudgeTarget, timers } from './kinematics';
+import { advanceTime, applySteer, lateral, noteAssist, nudgeTarget, timers } from './kinematics';
 import { obstacleOfPit, rollGround } from './ground';
 import {
   airStep, amendAir, bufferOllie, endGrab, grabTick, pop, startFlip, startGrab, started, upgradeFlip, upgradeSpin,
@@ -156,8 +156,10 @@ export class SimImpl implements Sim, Ctx {
       if (modeOf(c) === 'crashed') return;
     }
     // 4. Magnet / ground align (they move targetX), then lateral motion and the soft walls.
+    const tx0 = c.targetX;
     magnet(this, applied);
     groundAlign(this);
+    noteAssist(this, c.targetX - tx0);
     lateral(this);
     this.walls();
     // 5. Vertical motion by mode.

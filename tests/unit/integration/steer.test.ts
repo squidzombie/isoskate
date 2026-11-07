@@ -1,18 +1,21 @@
 // Direct touch steering (owner playtest @steer; DESIGN §4.2, §5.2, row 67): human-like thumb traces through the real
 // recognizer and frame binning into the real sim. The skater moves while the thumb moves and stops promptly when the
-// thumb stops or lifts: STEER_LEAD_MAX caps how far the target may lead the skater, and the release brake
-// (STEER_BRAKE) stops a skater whose thumb outran it. Before @steer a quick 60–120 px slide threw the target 2.5–5 m
-// ahead and the skater kept sliding 2.3–3.6 m (0.45–0.8 s) after the thumb had stopped.
-// Keys (steerAxis) and absolute-target drivers (the bots) never meet the cap or the brake.
+// thumb stops or lifts: STEER_LEAD_MAX caps how far the target may lead the skater, a thumb that outruns the skater
+// drives it at up to STEER_FAST.vMax, and the release brake (STEER_BRAKE) stops it when that thumb stops. Before
+// @steer a quick 60–120 px slide threw the target 2.5–5 m ahead and the skater kept sliding 2.3–3.6 m (0.45–0.8 s)
+// after the thumb had stopped. Keys (steerAxis) and absolute-target drivers (the bots) never meet the cap, the fast
+// thumb or the brake.
 import { describe, expect, it } from 'vitest';
 import type { InputFrame, PointerSample } from '../../../src/core/input';
 import type { Sim, SimSnapshot } from '../../../src/core/sim';
-import { DT, STEER_BRAKE, STEER_LEAD_MAX, V_LAT_MAX } from '../../../src/core/tuning';
+import { DT, STEER_BRAKE, STEER_FAST, STEER_LEAD_MAX, V_LAT_MAX } from '../../../src/core/tuning';
+import type { Ctx } from '../../../src/sim/state';
+import { applySteer, noteAssist } from '../../../src/sim/kinematics';
 import { InputPipeline } from '../../../src/input/pipeline';
 import { createSim } from '../../../src/sim';
 import { TRICKS } from '../../../src/tricks';
 import { fixtureWorld, frame, runCfg } from '../sim/fixtures';
-import { H, W } from '../input/trace';
+import { H, Trace, W } from '../input/trace';
 
 const TICK_MS = DT * 1000;
 const M_PER_PX = 9 / (0.55 * W);
@@ -48,7 +51,7 @@ function ride(samples: PointerSample[], endMs: number, o: { pop?: boolean; ticks
   sim.reset(runCfg({ startT: 0 }));
   const pipe = new InputPipeline(() => W, { screenW: W, screenH: H, k: 1 });
   pipe.schedule(samples);
-  const xs: number[] = [], modes: string[] = [];
+  const xs: number[] = [], modes: string[] = [], vxs: number[] = [];
   let stop = -1, popped = false;
   for (let i = 0; i < (o.ticks ?? 150); i++) {
     const end = (i + 1) * TICK_MS;
@@ -58,10 +61,10 @@ function ride(samples: PointerSample[], endMs: number, o: { pop?: boolean; ticks
       if (!popped && end >= T0 - 30) { f.tap = true; popped = true; }
     }
     sim.step(f);
-    xs.push(sim.cur.p.x); modes.push(sim.cur.mode);
+    xs.push(sim.cur.p.x); modes.push(sim.cur.mode); vxs.push(sim.cur.vel.x);
     if (stop < 0 && end >= endMs) stop = i;
   }
-  return { xs, modes, stop, sim };
+  return { xs, modes, vxs, stop, sim };
 }
 
 /** After the thumb stopped (or lifted): travel (from x at the stop to the final x, less what the resting thumb itself
@@ -113,13 +116,41 @@ describe('touch steering stops when the thumb stops or lifts (DESIGN §4.2, owne
     expect(a.travel).toBeLessThanOrEqual(0.35);
   });
 
-  it.each([[600], [700], [1000]])('a 2 m dodge drawn as a human-speed drag (48 px in %d ms) ends at about 2 m and settles within 0.1 m in ≤ 0.5 s', (ms) => {
+  it.each([[500], [600], [700], [1000]])('a 2 m dodge drawn as a human-speed drag (48 px in %d ms) ends at about 2 m and settles within 0.1 m in ≤ 0.5 s', (ms) => {
     for (const lift of [true, false]) {
       const a = after(ride(slide(48, ms, { lift }), T0 + ms, { ticks: 160 }));
       expect(Math.abs(a.disp - 48 * M_PER_PX), `${ms} ms lift ${lift}`).toBeLessThanOrEqual(0.15);
       expect(a.settle).toBeLessThanOrEqual(0.5);
       expect(a.settle).toBeLessThanOrEqual(0.05);                     // measured: settled as the drag ends
     }
+  });
+
+  // Measured (fix pass): before the fast thumb these went 0.45 / 0.72 / 1.0 m (the plain 5.5 m/s cap), and before
+  // @steer 2.5 / 3.8 / 4.3 m with a 2.3–3.6 m slide after the lift.
+  it.each([[60, 120, 0.55], [90, 180, 0.85], [120, 250, 1.2]])('a quick %d px slide in %d ms is a dodge of at least %d m (the thumb outran the skater: it ran faster than V_LAT_MAX)', (dx, ms, min) => {
+    const r = ride(slide(dx, ms, { lift: true }), T0 + ms);
+    const a = after(r);
+    expect(a.disp).toBeGreaterThan(min);
+    expect(a.travel).toBeLessThanOrEqual(0.35);
+    const vMax = Math.max(...r.vxs.map(Math.abs));
+    expect(vMax).toBeGreaterThan(V_LAT_MAX + 0.5);
+    expect(vMax).toBeLessThanOrEqual(STEER_FAST.vMax + 1e-9);
+  });
+
+  it('a slow input rate (one sample every 40–67 ms, a busy phone without coalesced events) is a smooth drag, not a stutter', () => {
+    // 200 px in 600 ms at constant speed, then lift; the stop window grows with the gaps between samples.
+    const drag = (stepMs: number) => {
+      const t = new Trace(1, T0 - 120, 200, 640).rest(120).move(200, 0, 600, stepMs).up();
+      const r = ride(t.samples, T0 + 600);
+      return { disp: r.xs.at(-1)! - r.xs[0]!, travel: after(r).travel };
+    };
+    const ref = drag(8);
+    for (const stepMs of [40, 50, 1000 / 15]) {
+      const d = drag(stepMs);
+      expect(d.disp, `${stepMs} ms`).toBeGreaterThan(0.9 * ref.disp);
+      expect(d.travel, `${stepMs} ms`).toBeLessThanOrEqual(0.6);
+    }
+    expect(ref.travel).toBeLessThanOrEqual(0.35);
   });
 
   it('a 2 m dodge with a quick thumb (0.5 px/ms) kept moving until the skater gets there completes in ≤ 0.5 s', () => {
@@ -169,6 +200,7 @@ describe('what the cap and the brake never touch', () => {
       maxLead = Math.max(maxLead, sim.cur.targetX - sim.cur.p.x);
     }
     expect(maxLead).toBeGreaterThan(STEER_BRAKE.restLead + 0.15);        // a brake would have cut that short
+    expect(Math.abs(sim.cur.vel.x)).toBeLessThanOrEqual(V_LAT_MAX);
     expect(sim.cur.targetX).toBeCloseTo(n * V_LAT_MAX * DT, 9);
     expect(sim.cur.p.x).toBeCloseTo(n * V_LAT_MAX * DT, 2);              // no brake: it went all the way
   });
@@ -182,9 +214,40 @@ describe('what the cap and the brake never touch', () => {
       desired += Math.max(-0.85 * V_LAT_MAX * DT, Math.min(0.85 * V_LAT_MAX * DT, goal - desired));
       sim.step(frame({ steerDx: desired - sim.cur.targetX }));
       expect(sim.cur.targetX).toBeCloseTo(desired, 12);
-      expect(Math.abs(sim.cur.targetX - sim.cur.p.x)).toBeLessThan(STEER_BRAKE.armLead);
+      expect(Math.abs(sim.cur.targetX - sim.cur.p.x)).toBeLessThan(STEER_LEAD_MAX);
     }
     expect(sim.cur.p.x).toBeCloseTo(1, 1);
+  });
+
+  it('a bot-style target through a hop (the air lags it further: up to 0.66 m ahead in the thumb bot\'s gate runs) is followed exactly', () => {
+    // An ollie, then a 3 m move at the thumb bot's rate (0.85·V_LAT_MAX) that starts in the air, where A_LAT_AIR lets
+    // the target get further ahead than on the ground; it never reaches the cap, so nothing caps, speeds up or brakes it.
+    const sim = mk();
+    let desired = 0, maxLead = 0, maxV = 0;
+    for (let i = 0; i < 150; i++) {
+      const goal = i < 4 ? 0 : i < 100 ? 3 : 2.4;
+      desired += Math.max(-0.85 * V_LAT_MAX * DT, Math.min(0.85 * V_LAT_MAX * DT, goal - desired));
+      sim.step(frame({ steerDx: desired - sim.cur.targetX, tap: i === 2 }));
+      expect(sim.cur.targetX).toBeCloseTo(desired, 12);
+      maxLead = Math.max(maxLead, Math.abs(sim.cur.targetX - sim.cur.p.x));
+      maxV = Math.max(maxV, Math.abs(sim.cur.vel.x));
+      if (i === 30) expect(sim.cur.mode).toBe('air');
+    }
+    expect(maxLead).toBeGreaterThan(0.6);                              // a 0.6 m arming lead would have braked it
+    expect(maxLead).toBeLessThan(STEER_LEAD_MAX);
+    expect(maxV).toBeLessThanOrEqual(V_LAT_MAX);
+    expect(sim.cur.p.x).toBeCloseTo(2.4, 1);
+  });
+
+  it('the release brake keeps what ground align or the magnet added since it armed', () => {
+    const sim = mk();
+    for (let i = 0; i < 8; i++) sim.step(frame({ steerDx: 0.3 }));    // a thumb far faster than the skater: armed
+    const k = sim as unknown as Ctx, c = k.st.cur;
+    expect(k.st.steer.armed).toBe(1);
+    c.targetX += 0.12; noteAssist(k, 0.12);                             // what step 4's assist would do
+    applySteer(k, frame()); applySteer(k, frame());                     // the thumb stops: the brake fires
+    expect(k.st.steer.brake).toBeGreaterThan(0);
+    expect(c.targetX - c.p.x).toBeCloseTo(STEER_BRAKE.restLead + 0.12, 9);
   });
 
   it('a drag never pushes the target more than STEER_LEAD_MAX ahead, and a snapshot taken mid-brake replays exactly', () => {
