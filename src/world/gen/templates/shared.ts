@@ -4,7 +4,7 @@
 //   S_TRENCH     T1–T3  2.0 s  full-width trench (gap 0.25 / 0.30 / 0.33 s·v) with the area's plank(s)
 //   S_BARRIER    T1–T2  1.8 s  full-width barrier_low (holo gate in Neon); T2 may open a 2 m slot
 //   S_LADDER     T2     3.0 s  3 flat bars 2.5 m apart laterally, overlapping 0.3 s: rail-to-rail transfers
-//   S_GATE       T2–T4  1.5 s  a row of tall area blockers with 1–2 openings ≥ 3 m from the last wander's x (A2)
+//   S_GATE       T2–T4  1.5 s  an anti-straight row of tall area props with 1–2 openings (rows.ts)
 //   S_PADS       T1     3.0 s  2–3 manual pads (bumps) in a lane; coins on top
 //   S_STAIRS     T1–T3  2.5 s  T1: a 3-stair side set; T2/T3: a 5 / 7-stair full-width terrace with a handrail
 //   S_INCLINE_UP T0     ≥1 s   1:10 incline paying a datum drop back
@@ -12,11 +12,10 @@ import { clamp, round1cm } from '../../../core/math';
 import { HEIGHT, T_SHIFT, sAt, speedAt, tAt } from '../../../core/tuning';
 import { rMinAt } from '../validator/sweep';
 import { ObTag } from '../../../core/world';
-import { GEN, type Tier } from '../gen.config';
-import type { PropCtx } from '../props/common';
-import type { Obstacle } from '../../../core/world';
-import { buildBarrier, buildBench, buildCone, buildFiller, buildFlatbar, buildHandrail, buildIncline, buildPad, buildSideSet,
-  buildTerrace, buildTrench, fillerKinds, stairDrop, STAIR } from '../props/shared';
+import { GEN } from '../gen.config';
+import { buildBarrier, buildBench, buildCone, buildFlatbar, buildHandrail, buildIncline, buildPad, buildSideSet,
+  buildTerrace, buildTrench, stairDrop, STAIR } from '../props/shared';
+import { gateOpenings, gateRow, lanesApart, openingLanes } from '../rows';
 import { LIP } from '../props/street';
 import type { Template, TemplateCtx, TemplateOut } from './types';
 import { actFrom, contentFrom, edgeCoins, endAfter, put, roadHalf, side, sOf } from './util';
@@ -123,72 +122,15 @@ export const S_LADDER: Template = {
   },
 };
 
-/** Gate openings (A2 + straight-bot rule): centres within ±maxC, ≥ 3 m (≤ 4.4 m) from the line's x, ≥ `apart` from the
- *  last row's openings (a straight lane passes at most one of two rows); an optional second opening. Relaxed in
- *  steps when nothing fits. */
-export function gateOpenings(rng: TemplateCtx['rng'], x0: number, lastGateX: readonly number[], tier: Tier,
-  keepOut: readonly (readonly [number, number])[] = []): number[] | null {
-  const w = GEN.gate.width[tier];
-  const clear = (x: number) => !keepOut.some(([a, b]) => x + w / 2 > a && x - w / 2 < b);
-  const far = (x: number) => !lastGateX.some((o) => Math.abs(x - o) < GEN.gate.apart) && clear(x);
-  const cand: number[] = [];
-  const scan = (ok: (x: number) => boolean) => { if (!cand.length) for (let i = 0; i <= 66; i++) { const x = round1cm(-GEN.gate.maxC + i * 0.1); if (ok(x)) cand.push(x); } };
-  // Prefer a real move (A2) the myopic player can still make, then no move at all (the line already left the last
-  // openings), then anything apart from the last openings (the straight-bot guarantee needs only that).
-  scan((x) => { const d = Math.abs(x - x0); return d >= GEN.gate.shift[0] && d <= GEN.gate.shift[1] && far(x); });
-  scan((x) => far(x) && Math.abs(x - x0) <= 1.0);
-  scan((x) => far(x) && Math.abs(x - x0) <= GEN.gate.shift[1]);
-  scan((x) => far(x));
-  scan((x) => Math.abs(x - x0) >= GEN.gate.shift[0] && clear(x));
-  if (!cand.length) return null;
-  const pick = cand[rng.int(0, cand.length - 1)]!;
-  const centres = [pick];
-  if (rng.chance(GEN.gate.second[tier] ?? 0)) {
-    const c2 = round1cm(pick - Math.sign(pick - x0 || 1) * rng.range(GEN.gate.secondOff[0], GEN.gate.secondOff[1]));
-    // Keep room for the next row: ≥ 1 m of opening centres ≥ `apart` from both openings.
-    let room = 0;
-    for (let k = 0; k <= 66; k++) { const x = -GEN.gate.maxC + k * 0.1; if (Math.abs(x - pick) >= GEN.gate.apart && Math.abs(x - c2) >= GEN.gate.apart) room += 0.1; }
-    if (Math.abs(c2) <= GEN.gate.maxC && far(c2) && Math.abs(c2 - x0) >= GEN.gate.shift[0] && room >= 1.0) centres.push(c2);
-  }
-  return centres;
-}
-
-/** A row of the area's tall blockers across the corridor at sRow, except the openings (width w): blockers 0.1 m apart
- *  (inset gaps ≤ 0.26 m < the 0.40 m hitbox), so no lane passes the row outside an opening. */
-export function gateRow(sRow: number, centres: readonly number[], w: number, props: PropCtx, rng: TemplateCtx['rng'],
-  keepOut: readonly (readonly [number, number])[] = []): Obstacle[] {
-  const out: Obstacle[] = [];
-  // Openings, plus the lateral spans of obstacles the row passes beside (they are part of the wall there).
-  const open = [...centres.map((x) => [x - w / 2, x + w / 2] as [number, number]), ...keepOut.map(([a, b]) => [a - 0.3, b + 0.3] as [number, number])]
-    .sort((a, b) => a[0] - b[0]);
-  const kinds = fillerKinds(props.area);
-  const wide = props.area === 'suburbs' ? rng.chance(0.6) : props.area === 'docks' ? rng.chance(0.5) : false;
-  let a = -4.5;
-  const runs: [number, number][] = [];
-  for (const [o0, o1] of open) { if (o0 > a) runs.push([a, o0]); a = Math.max(a, o1); }
-  if (a < 4.5) runs.push([a, 4.5]);
-  let i = 0;
-  for (const [r0, r1] of runs) {
-    const L = r1 - r0;
-    if (L < 0.25) continue;
-    const useWide = wide && L >= kinds[1]!.wid;
-    const bw = kinds[useWide ? 1 : 0]!.wid, pitch = bw + 0.1;
-    const n = Math.max(1, Math.ceil((L - bw) / pitch) + 1);
-    const step = n > 1 ? (L - bw) / (n - 1) : 0;
-    for (let k = 0; k < n; k++) out.push(buildFiller(sRow, round1cm(n > 1 ? r0 + bw / 2 + k * step : (r0 + r1) / 2), useWide, props, i++ % 3));
-  }
-  return out;
-}
-
 export const S_GATE: Template = {
   id: 'S_GATE', area: 'shared', tiers: [2, 3, 4], durMax: 2.9, mirror: true, wander: true,
   build(c: TemplateCtx): TemplateOut | null {
     const w = GEN.gate.width[c.tier];
-    // The first row of a run (or one where the line already left the last openings) opens at the line: no move, so
-    // it may stand early (inside a spawn grace); the next row then forces the shift.
-    const atLine = !c.a3 && Math.abs(c.safeX) <= GEN.gate.maxC && c.lastGateX.every((p) => Math.abs(c.safeX - p) >= GEN.gate.apart + 0.2)
-      && (c.lastGateX.length === 0 || c.rng.chance(0.35));
-    const centres = atLine ? [round1cm(c.safeX)] : gateOpenings(c.rng, c.safeX, c.lastGateX, c.tier);
+    // A row whose opening is at the line (the line already left the last row's lanes) needs no move, so it may
+    // stand early (the first row of a run stands inside the spawn grace); otherwise the line moves to an opening.
+    const atLine = !c.a3 && Math.abs(c.safeX) <= GEN.gate.maxC && lanesApart([openingLanes(c.safeX, w)], c.lastGateOpen)
+      && (c.lastGateOpen.length === 0 || c.rng.chance(0.35));
+    const centres = atLine ? [round1cm(c.safeX)] : gateOpenings(c.rng, c.safeX, c.lastGateOpen, c.tier);
     if (!centres) return null;
     const pick = centres[0]!;
     // With the A3 hazard: a full-width barrier first (ollie), the move to the opening after the landing and R_MIN.
@@ -199,7 +141,7 @@ export const S_GATE: Template = {
       put(c, buildBarrier(round1cm(sAt(tTake + 0.3) - 0.3), hgt, speedAt(tTake), c.props));
       moveFrom = tTake + Math.max(rMinAt(tTake), 0.9) + 0.05;
     }
-    const tRow = atLine ? contentFrom(c) + (c.lastGateX.length ? 1.4 : 0.9) + c.rng.range(0, 0.15)
+    const tRow = atLine ? contentFrom(c) + (c.lastGateOpen.length ? 1.4 : 0.9) + c.rng.range(0, 0.15)
       : Math.max(moveFrom + T_SHIFT(Math.abs(pick - c.safeX)) + 0.3, c.t0 + 1.7) + c.rng.range(0, 0.15);
     const sRow = sOf(tRow);
     // The approach carries a trick line beyond the opening (away from the entry, off the move path): a bench or a
@@ -217,7 +159,8 @@ export const S_GATE: Template = {
     }
     for (const ob of gateRow(sRow, centres, w, c.props, c.rng)) put(c, ob);
     const tr = tAt(sRow);
-    return { t1: tAt(sRow + 1.2) + 0.5, gateX: centres, gateT: tr, ...(c.a3 ? { fullWidth: true } : {}), guides: [{ t0: tr - 0.45, t1: tr + 0.15, x0: pick - 0.25, x1: pick + 0.25 }] };
+    return { t1: tAt(sRow + 1.2) + 0.5, gateX: centres, gateT: tr, ...(c.a3 ? { fullWidth: true } : {}),
+      guides: [{ t0: tr - 0.45, t1: tr + 0.15, x0: pick - 0.25, x1: pick + 0.25 }] };
   },
 };
 

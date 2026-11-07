@@ -25,8 +25,9 @@ export interface GenCursor {
   lastTall: Float64Array;
   /** A2: lateral range since the last wander, and its A-time. */
   wander: { lo: number; hi: number; lastA: number };
-  /** Gate rows (A1 / A2, straight-bot guarantee): run time the next row is due, and the last row's opening centres. */
-  gateDueT: number; lastGateX: number[];
+  /** Anti-straight rows (straight-bot guarantee, rows.ts): run time the next row is due, the last two rows' run times,
+   *  and the board-centre lanes a straight roller passed the last row through (the next row's must be disjoint). */
+  gateDueT: number; lastRowT: number; prevRowT: number; lastGateOpen: [number, number][];
   /** A3: A-time of the last full-width hazard, and the A-time the next one is due. */
   lastFwA: number; fwDueA: number;
   /** Run time the next breather is due. */

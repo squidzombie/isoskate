@@ -44,8 +44,8 @@ export interface TemplateCtx {
   readonly wanderFrom: number;
   /** A1: seconds of non-T0 time left before the column at x must meet a tall blocker (gates open where it is late). */
   colLeft(x: number): number;
-  /** The last gate row's opening centres (the next row keeps its openings ≥ GEN.gate.apart away from them). */
-  readonly lastGateX: readonly number[];
+  /** The lanes a straight roller passed the last anti-straight row through (the next row's must be disjoint). */
+  readonly lastGateOpen: readonly (readonly [number, number])[];
   /** S_GATE: also carry the A3 full-width hazard in the approach (both deadlines due at once). */
   readonly a3?: boolean;
   /** Earliest time a required action may start (spacing from the previous one, spawn grace). */
@@ -82,7 +82,7 @@ export interface TemplateOut {
   t0Stretch?: boolean;
   /** Hints for the validator's line (DP guides): where the line should pass, e.g. a gate opening's centre. */
   guides?: { t0: number; t1: number; x0: number; x1: number }[];
-  /** S_GATE: the row's opening centres and the run time the board reaches the row. */
+  /** S_GATE: its row's opening centres and the run time the board reaches it. */
   gateX?: number[]; gateT?: number;
   /** Docks lip edges: false = none this segment; a range (and landmark) = this run instead of the default ones. */
   lip?: false | { s0: number; s1: number; landmark?: string };

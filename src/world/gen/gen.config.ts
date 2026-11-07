@@ -46,24 +46,42 @@ export const GEN = {
     gateAt: 1.9 },
   /** A3: a full-width hazard (S_BARRIER / S_TRENCH area skin) every [min, max] seconds of non-T0 time. */
   a3: { opening: [12, 16], other: [8, 12] } as Record<'opening' | 'other', readonly [number, number]>,
-  /** A3 is due when less than this much A-time is left to its maximum (a gate may go first, then the hazard). */
-  a3Lead: 6.5,
+  /** A3 is due (never before its minimum) when less than this much A-time is left to its maximum: a drawn template
+   *  (≤ ~3.6 s) would overrun it, and the hazard itself stands ~1 s into its own template. */
+  a3Lead: 4.6,
+  /** Share of the A3 slots that are an S_TRENCH (with GEN_FLAGS.trench; the rest are S_BARRIER). */
+  a3Trench: 0.5,
+  /** Before a gateway (T0: the A-clock pauses) the last slot that fits the hazard takes it when its maximum would come
+   *  within this much A-time after the gateway; such a slot needs `preGwLeft` s left in the visit. */
+  a3PreGw: 2.6, a3PreGwLeft: 9.0,
   /** The line enters a gateway within ±this x (its corridor; gateways are T0). */
   gwEntry: 2.5,
-  /** Long templates that may not slip the gate deadline (they rarely validate without the gate's room). */
-  noSlip: ['DT_RUSH'] as readonly string[],
-  /** S_GATE (DESIGN §10.4): openings 2.5 / 2.2 / 2.0 m by tier, ≥ 3 m (≤ 3.6 m) from the last wander's safe x. */
+  /** S_GATE (DESIGN §10.4): openings 2.5 / 2.2 / 2.0 m by tier, ≥ 3 m (≤ 4.0 m) from the line's x when it moves. */
   gate: { width: { 0: 2.5, 1: 2.5, 2: 2.5, 3: 2.2, 4: 2.0 } as Record<Tier, number>, maxC: 3.3, shift: [2.8, 4.0] as readonly [number, number],
-    second: { 2: 0.6, 3: 0.3 } as Partial<Record<Tier, number>>, secondOff: [3.6, 6.6] as readonly [number, number], lead: 2.3,
-    /** No base curb / lip edge ends in this many seconds before a row (its exit zone would face the row). */
-    edgeBan: 2.2,
+    second: { 2: 0.6, 3: 0.3 } as Partial<Record<Tier, number>>, secondOff: [3.6, 6.6] as readonly [number, number],
+    /** The gate segment starts this long before its row (head window + a 3 m move). */
+    lead: 2.3,
     /** S_GATE approach trick line: chance, and its end ≥ this many seconds before the row. */
     feature: 0.75, featureGap: 1.0,
-    /** Consecutive rows ≤ gap seconds apart (run time, T0 included): a straight lane passes at most one of two rows
-     *  (openings ≥ `apart` from the last row's), so every lane dies within two rows (DESIGN §10.7 guarantees). */
-    gap: { opening: 8.0, warm: 6.5, build: 6.3, plateau: 6.3 } as Record<PhaseId, number>, apart: 2.4,
-    /** Planning: the shortest gate segment. */
-    fit: 2.6 },
+    /** Anti-straight rows (straight-bot guarantees, rows.ts): every row's lanes are disjoint (≥ apartPad) from the
+     *  previous row's, so a straight lane passes at most one of two consecutive rows. Consecutive rows are ≤ `gap`
+     *  apart and every second row ≤ `window` after the one two before (run time, T0 stretches included). */
+    gap: { opening: 8.0, warm: 6.3, build: 6.3, plateau: 6.3 } as Record<PhaseId, number>,
+    window: { opening: 16.0, warm: 12.6, build: 12.6, plateau: 12.6 } as Record<PhaseId, number>,
+    apartPad: 0.06,
+    /** Rows overlaid on a template at its own line: candidate slots tried (each costs one validation); the line counts
+     *  as steady at a slot when it stays within this x over [−0.45, +0.15] s around it. */
+    overlayTries: 2, steady: 0.25,
+    /** Template obstacles beside a row: the row's pieces keep this far from their solids (grind sweeps). */
+    keepPad: 0.3,
+    /** No base curb / lip edge ends in this many seconds before a row (its exit zone would face the row). */
+    edgeBan: 2.2,
+    /** A tail row (after a template's content) stands ≥ this long after the template's last grind edge ends (its exit
+     *  zone and rail-end lane), and leaves this much room before a gateway (the cut-down filler). */
+    edgeClear: 1.15, tailRoom: 0.8,
+    /** Planning: the shortest gate segment. A gate segment carries the A3 hazard too (both due) only after this
+     *  many seconds of a run's clock (its first rows must stand on time). */
+    fit: 2.9, combineAfter: 12 },
   /** S_TRENCH: gap per tier (s·v, DESIGN §10.3 0.25 / 0.30 / 0.35) and the plank offset from the safe x per tier. */
   trench: { gapSec: { 0: 0.25, 1: 0.25, 2: 0.30, 3: 0.33, 4: 0.33 } as Record<Tier, number>,
     plankOff: { 0: [0, 1], 1: [0, 1], 2: [1, 2], 3: [1.5, 2.5], 4: [1.5, 2.5] } as Record<Tier, readonly [number, number]>, depth: 0.6 },
