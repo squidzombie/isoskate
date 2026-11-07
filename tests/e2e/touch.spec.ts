@@ -22,7 +22,10 @@ class Touch {
   start(x: number, y: number, id = 1) { return this.cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id }] }); }
   move(x: number, y: number, id = 1) { return this.cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y, id }] }); }
   end() { return this.cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); }
-  async tap(x: number, y: number) { await this.start(x, y); await this.end(); }
+  /** Down and up queued back to back (like flick). Awaiting each ack stretched a CDP tap to 23–1,098 ms on a quiet
+   *  machine at G1 (a round trip waits for a rendered SwiftShader frame of the full world art), so it was often a
+   *  HOLD past the 600 ms long tap, not a tap; queued, the pair arrives as one still touch. */
+  async tap(x: number, y: number) { await Promise.all([this.start(x, y), this.end()]); }
   /** A fast flick: down, `steps` moves of (dx, dy) and up queued back to back without waiting for each ack (under
    *  SwiftShader one round trip can take a whole slow frame, which would turn the flick into a slow, old stroke).
    *  Chromium delivers the moves as one pointermove with coalesced events, as for a real fast thumb. */
