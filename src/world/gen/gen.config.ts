@@ -50,8 +50,9 @@ export const GEN = {
    *  within this much A-time after the gateway; such a slot needs `preGwLeft` s left in the visit and may come up to
    *  `preGwEarly` s before the A3 minimum. */
   a3PreGw: 2.6, a3PreGwLeft: 9.0, a3PreGwEarly: 2.5,
-  /** The line enters a gateway within ±this x (its corridor; gateways are T0). */
-  gwEntry: 2.5,
+  /** The line enters a gateway within ±this x (its corridor; gateways are T0). The Docks lip starts lipLead s into a
+   *  visit (a line still by the right wall after the gateway steers off it first). */
+  gwEntry: 2.5, lipLead: 1.8,
   /** GW_harborBridge deck (DESIGN §12.2): incline from `lead` s in, deck to `exitSec`·v before the gateway ends, ≥ minDeck m. */
   harborBridge: { lead: 0.4, exitSec: 0.6, minDeck: 4 },
   /** S_GATE (DESIGN §10.4): openings 2.5 / 2.2 / 2.0 m by tier, ≥ 3 m (≤ 4.0 m) from the line's x when it moves. */

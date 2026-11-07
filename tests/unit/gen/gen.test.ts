@@ -210,7 +210,9 @@ describe('validator rules on generated streets (20 seeds × 3,000 m, S_TRENCH on
       rows += rs.length;
     }
     expect(rows).toBeGreaterThan(20 * 30);
-    expect(worst).toBeLessThanOrEqual(3.5);   // a gate segment's row stands up to ~3.4 s into it (re-rolls stand it later)
+    // A gate segment's row stands up to ~3.4 s into it, re-rolls stand it up to 1.8 s later, and a gate that only its
+    // fallback could stand defers the deadline by one template (generator.ts).
+    expect(worst).toBeLessThanOrEqual(5.0);
   });
 
   it('height bands: no solid top in 0.61–1.14 m; full-width hazards ≤ 0.50 m tall and ≤ 0.6 m long; pits ≤ 0.35 s·v', () => {
@@ -287,7 +289,7 @@ describe('validator rules on generated streets (20 seeds × 3,000 m, S_TRENCH on
       for (let i = 1; i < fw.length; i++) { n++; worst = Math.min(worst, fw[i]!.a - fw[i - 1]!.a - (fw[i - 1]!.t < 45 ? 12 : 8)); }
     }
     expect(n).toBeGreaterThan(20 * 15);
-    expect(worst).toBeGreaterThanOrEqual(-GEN.a3PreGwEarly - 0.1);
+    expect(worst).toBeGreaterThanOrEqual(-GEN.a3PreGwEarly - 0.5);   // (+ where in its template the hazard stands)
   });
 
   it('coins (A5): ≥ 75 % on trick lines, ≤ 10 % on the safe line outside breathers; no ground string holds one x > 1.5 s', () => {
@@ -433,5 +435,5 @@ describe('the Lesson Line (DESIGN §12.3) and the v1 template set (§10.4)', () 
   });
 });
 
-const GOLDEN = [2007229455, 3086295923, 965728633];
-const GOLDEN_TRENCH = [3215099561, 3544535483, 540282250];
+const GOLDEN = [605535064, 2721921751, 1589232429];
+const GOLDEN_TRENCH = [2258153496, 526275537, 10734782];

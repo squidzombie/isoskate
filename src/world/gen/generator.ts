@@ -328,8 +328,9 @@ export class Generator implements WorldGen {
     const persistentNew: Obstacle[] = [];
     if (layout.lip && !c.persistent.some((o) => o.kind === 'dock_lip' && o.s <= s0 + 30 && o.s + o.len >= s1 - 1e-6)) {
       const gwNext = gatewayWindow(t0, this.startArea);
-      // The lip starts 0.8 s into the visit, so a board hugging the right wall out of the gateway steers off first.
-      persistentNew.push(buildLipBody(round1cm(s0 + 0.8 * v0), sAt(gwNext.start), props));
+      // The lip starts GEN.lipLead s into the visit, so a board hugging the right wall out of the gateway steers off
+      // first (head window + a 1 m move, clear of the lip's magnet).
+      persistentNew.push(buildLipBody(round1cm(s0 + GEN.lipLead * v0), sAt(gwNext.start), props));
     }
     const groundHi = (x0: number, x1: number, s: number) => {
       let d = c.datum;

@@ -18,7 +18,7 @@ const COT35 = 1 / Math.tan((35 * Math.PI) / 180);
 const seeds = seedsFor(100);
 
 interface Measure {
-  seed: number; segments: number; rerolls: number; fallbacks: number; coinShare: number; valCalls: number; valFails: number; replans: number;
+  seed: number; segments: number; rerolls: number; fallbacks: number; coinShare: number; coins: number; trickCoins: number; valCalls: number; valFails: number; replans: number;
   decisionMin: number; windowMin: number; windowMinIndep: number; deadEndMax: number;
   spacingMin: number; band: string[]; datum: string[]; hidden: string[];
 }
@@ -29,7 +29,8 @@ function measure(seed: number): Measure {
   const w = createWorldQuery(gen);
   const obs = w.obstacles(0, S_END);
   const keys: SafeKey[] = [];
-  for (let i = 0; i * CHUNK_LEN < S_END; i++) keys.push(...gen.chunk(i).safe);
+  let coins = 0, trickCoins = 0;
+  for (let i = 0; i * CHUNK_LEN < S_END; i++) { const ch = gen.chunk(i); keys.push(...ch.safe); for (const c of ch.coins) { coins++; if (c.line === 'trick') trickCoins++; } }
   keys.sort((a, b) => a.t - b.t);
   const xAt = (t: number) => { let k = 0; while (k + 1 < keys.length && keys[k + 1]!.t <= t) k++; const a = keys[k]!, b = keys[k + 1] ?? a; return b.t > a.t ? a.x + (b.x - a.x) * (t - a.t) / (b.t - a.t) : a.x; };
   // Spacing along the SafeKeys: ollies and the starts of ≥ 0.5 m moves.
@@ -92,7 +93,7 @@ function measure(seed: number): Measure {
   }
   const st = gen.stats(), vs = gen.valStats;
   const replans = Object.entries(st.rejections).filter(([k]) => k.startsWith('replan:')).reduce((a, [, v]) => a + v, 0);
-  return { seed, segments: st.segments, rerolls: st.rerolls, fallbacks: st.fallbacks, coinShare: st.trickCoinShare, valCalls: gen.valCalls, valFails: gen.valFails, replans,
+  return { seed, segments: st.segments, rerolls: st.rerolls, fallbacks: st.fallbacks, coinShare: st.trickCoinShare, coins, trickCoins, valCalls: gen.valCalls, valFails: gen.valFails, replans,
     decisionMin: vs.decisionMin, windowMin: vs.windowMin, windowMinIndep, deadEndMax: vs.deadEndMax, spacingMin, band, datum, hidden };
 }
 
@@ -105,7 +106,7 @@ const agg = {
   windowMinIndep: +Math.min(...ms.map((m) => m.windowMinIndep)).toFixed(3),
   deadEndMax: +Math.max(...ms.map((m) => m.deadEndMax)).toFixed(3),
   spacingMarginMin: +Math.min(...ms.map((m) => m.spacingMin)).toFixed(3),
-  coinShare: +(sum((m) => m.coinShare * m.segments) / sum((m) => m.segments)).toFixed(3),
+  coinShare: +(sum((m) => m.trickCoins) / sum((m) => m.coins)).toFixed(3),   // per coin, over every gate seed's first 3,000 m
   coinShareMin: +Math.min(...ms.map((m) => m.coinShare)).toFixed(3),
   rerollRate: +(sum((m) => m.rerolls) / sum((m) => m.segments)).toFixed(4),
   fallbackRate: +(sum((m) => m.fallbacks) / sum((m) => m.segments)).toFixed(4),
