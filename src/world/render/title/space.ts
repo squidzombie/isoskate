@@ -90,7 +90,9 @@ export class TitleScene {
   private colorHi: DataTexture | null = null; private cloudsHi: DataTexture | null = null; private puffHi: DataTexture | null = null;
   private readonly colorLo: DataTexture; private readonly cloudsLo: DataTexture; private readonly puffLo: DataTexture;
   private time = 0; private mixT = 0;
-  private vpW = -1; private vpH = -1; private bandKey = '';
+  private vpW = -1; private vpH = -1;
+  /** The band the layout was made for (compared field by field: nothing allocates per frame). */
+  private readonly laid = { on: false, top: 0, bottom: 0, heroTop: 0, heroBottom: 0, colR: 0 };
   private dpr = 1;
   // Layout pose (restored after a dive) and dive scratch.
   private readonly camHome = new Vector3(); private readonly anchorHome = new Vector3(); private boardScale = 1;
@@ -194,12 +196,7 @@ export class TitleScene {
   update(dt: number, vp: Viewport): void {
     const d = Math.min(0.1, Math.max(0, dt));
     this.time += d;
-    if (vp.wCss !== this.vpW || vp.hCss !== this.vpH) this.layout(vp);
-    else if (!this.diving) {
-      const b = this.band();
-      const k = b ? `${b.top | 0},${b.bottom | 0},${b.heroTop | 0},${b.heroBottom | 0},${b.colR | 0}` : '';
-      if (k !== this.bandKey) this.layout(vp);
-    }
+    if (vp.wCss !== this.vpW || vp.hCss !== this.vpH || (!this.diving && this.bandMoved())) this.layout(vp);
     if (this.colorHi && this.mixT < 1) {
       this.mixT = Math.min(1, this.mixT + d / 0.6);
       this.earthMat.uniforms.uMix!.value = ss(0, 1, this.mixT);
@@ -337,7 +334,7 @@ export class TitleScene {
     this.vpW = vp.wCss; this.vpH = vp.hCss; this.dpr = vp.dpr;
     const portrait = W / H < 0.85, P = portrait ? TITLE_SCENE.portrait : TITLE_SCENE.landscape;
     const b = this.band() ?? { top: H * 0.47, bottom: H * 0.9, heroTop: H * 0.15, heroBottom: H * 0.44, colR: W * 0.7, sideTop: H * 0.08 };
-    this.bandKey = this.band() ? `${b.top | 0},${b.bottom | 0},${b.heroTop | 0},${b.heroBottom | 0},${b.colR | 0}` : '';
+    this.keep(this.band());
     const bandH = Math.max(60, b.bottom - b.top);
     const cam = this.camera;
     cam.fov = P.fov; cam.aspect = W / H; cam.near = 0.05; cam.far = 900; this.baseFov = P.fov;
@@ -384,6 +381,18 @@ export class TitleScene {
   /** Draws `scene` once into a 1-pixel scissor (uploads what it has not drawn yet, finishes compiles), under the
    *  frame that follows. */
   static warm(r: WebGLRenderer, scene: Scene, camera: Camera): void { scissored(r, () => r.render(scene, camera)); }
+
+  private keep(b: TitleBand | null): void {
+    const l = this.laid;
+    l.on = !!b;
+    if (b) { l.top = b.top; l.bottom = b.bottom; l.heroTop = b.heroTop; l.heroBottom = b.heroBottom; l.colR = b.colR; }
+  }
+  private bandMoved(): boolean {
+    const b = this.band(), l = this.laid;
+    if (!b) return l.on;
+    const far = (a: number, c: number) => Math.abs(a - c) >= 1;
+    return !l.on || far(b.top, l.top) || far(b.bottom, l.bottom) || far(b.heroTop, l.heroTop) || far(b.heroBottom, l.heroBottom) || far(b.colR, l.colR);
+  }
 
   /** Context restore: re-upload the baked maps. */
   rebuildGPU(): void {
@@ -437,14 +446,18 @@ function starGeometry(n: number): BufferGeometry {
 
 const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
-/** Idle-time slices: requestIdleCallback with its deadline (several slices while it lasts), else setTimeout. */
+/** Idle-time slices: requestIdleCallback with its deadline (several slices while it lasts; no timeout, so a busy run
+ *  frame is never interrupted), else one slice per setTimeout. */
 function idleSlices(step: (budgetMs: number) => boolean): void {
-  const g = globalThis as { requestIdleCallback?: (f: (d: { timeRemaining(): number }) => void, o?: { timeout: number }) => number };
+  const g = globalThis as { requestIdleCallback?: (f: (d: { timeRemaining(): number }) => void) => number };
+  let skipped = 0;
   const run = (d?: { timeRemaining(): number }) => {
+    if (d && d.timeRemaining() < EARTH_TEX.sliceMs && ++skipped < 30) { next(); return; }   // a short idle period: wait
+    skipped = 0;
     let done = step(EARTH_TEX.sliceMs);
     while (!done && d && d.timeRemaining() > EARTH_TEX.sliceMs + 1) done = step(EARTH_TEX.sliceMs);
     if (!done) next();
   };
-  const next = () => { if (g.requestIdleCallback) g.requestIdleCallback(run, { timeout: 120 }); else setTimeout(run, 16); };
+  const next = () => { if (g.requestIdleCallback) g.requestIdleCallback(run); else setTimeout(run, 16); };
   next();
 }

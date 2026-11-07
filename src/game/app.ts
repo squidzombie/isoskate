@@ -367,7 +367,11 @@ export class App {
 
   private onKey(e: KeyboardEvent): void {
     if (e.repeat) return;
-    if (this.dive?.active) { e.preventDefault(); this.dive.skip(); return; }   // any key skips the dive
+    if (this.dive?.active) {                           // any key skips the dive (browser shortcuts still work)
+      if (e.code === 'Space' || e.code === 'Enter' || e.code.startsWith('Arrow')) e.preventDefault();
+      this.dive.skip();
+      return;
+    }
     const s = this.screen;
     if (e.code === 'Escape') {
       if (this.backToPause()) return;
