@@ -240,7 +240,8 @@ The first block is the frozen behaviour later packages (GP, WG, WA, the bots) ca
 
 ### Shared uniforms and palette routing in gfx/   (status: info; gfx edits WA made, additive)
 - gfx/uniforms.ts (new): `sharedUniforms(ctx)` (uDesat, uTime, haze, emissive / glow / window-lit scales, sky colours) and `GRADING_PARS` (`dlGrade`). SK can now patch the toon materials with `sharedUniforms(ctx).uDesat` (the deferred SK request above).
-- gfx/renderer.ts: `palette(area, blend)` routes through `setPaletteSource(ctx, f)` (world/render installs its presets; GOLDEN without it); `getHemi(ctx)`. gfx/index.ts exports them.
+- gfx/renderer.ts: `palette(area, blend)` routes through `setPaletteSource(ctx, f)` (world/render installs its presets; GOLDEN without it); `getHemi(ctx)`. gfx/index.ts exports them. `setGfxQuality(ctx, q, keepShadows = false)`: WA's mid-run auto-adjust passes true (pixel ratio now, shadow map at the next run start: no program recompile mid-run); every existing caller is unchanged.
+- gfx/silhouette.ts (new, debug only): `readWorldPoints(renderer, scene, camera, w, h)` for the contrast gate patch.
 
 ### Notes for WG (no contract change)
 - Decor beyond the dock lip (water side) and gaps between side buildings on the sun side give the long sun stripes their depth; both read well and are worth keeping in the layouts.
