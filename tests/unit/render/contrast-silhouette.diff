@@ -39,7 +39,21 @@
  
  import type { ContrastItem, ContrastReport } from '../core/debug';
  export type { ContrastItem, ContrastReport };
-@@ -110,7 +122,7 @@
+@@ -62,6 +74,13 @@
+ 
+ /** Renders the current frame and measures it. Call in manual mode (`__skate.manual(true)`) for a stable frame. */
+ export function measureContrast(host: DebugHost): ContrastReport {
++  // The gate reads the game frame: the debug overlay's lines are hidden while it measures.
++  const overlay = host.gfx.scene.getObjectByName('debugOverlay'), overlayOn = overlay?.visible ?? false;
++  if (overlay) overlay.visible = false;
++  try { return measureFrame(host); } finally { if (overlay) overlay.visible = overlayOn; }
++}
++
++function measureFrame(host: DebugHost): ContrastReport {
+   host.loop.renderNow();
+   const canvas = host.gfx.renderer.domElement;
+   const W = canvas.width, H = canvas.height;
+@@ -110,7 +129,7 @@
    const usable = (x: number, y: number) => x >= 0 && y >= hudBottom && x < W && y < H && !inSkater(x, y) && !inCoin(x, y);
  
    const obs = sim.world.obstacles(s - 2, s + ahead);
@@ -48,7 +62,7 @@
    const shapes: Shape[] = [];
    for (const o of obs) {
      for (const so of o.solids) {
-@@ -119,11 +131,30 @@
+@@ -119,11 +138,30 @@
        for (let i = 0; i < 8; i++) pts.push(proj({ s: i & 4 ? b.s1 : b.s0, x: i & 1 ? b.x1 : b.x0, y: i & 2 ? b.y1 : b.y0 }));
        const poly = hull(pts);
        const xs = poly.map((p) => p[0]), ys = poly.map((p) => p[1]);
@@ -80,7 +94,7 @@
    const ringPx = RING_PX * sx;
    for (const h of shapes) {
      if (h.top !== 'crash') continue;
-@@ -140,7 +171,7 @@
+@@ -140,7 +178,7 @@
          if (!usable(x, y)) continue;
          const l = L[y * W + x]!, px = x + 0.5, py = y + 0.5;
          if (inside(h.poly, px, py)) {

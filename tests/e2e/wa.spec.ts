@@ -14,6 +14,7 @@ declare global { interface Window { __skate?: import('../../src/core/debug').Deb
 interface WorldInfo {
   chunks: number[]; cached: number[]; mainCalls: number; shadowCalls: number; chunksBuilt: number; cacheHits: number;
   maxChunkTris: number; buildMsP95: number; chunkMsP95: number; bench(n?: number, index?: number): { p50: number; p95: number; min: number; max: number };
+  firstFrame: { seq: number; built: number; hits: number; chunks: number[] };
 }
 const world = (page: Page) => page.evaluate(() => {
   const w = (window.__skate as unknown as { ext: { world(): WorldInfo } }).ext.world();
@@ -92,32 +93,27 @@ test('a run starts with exactly the three chunks on screen; a retry restores the
   test.setTimeout(120_000);
   await page.goto('/?debug=1&quality=med');
   await page.waitForFunction(() => !!window.__skate);
-  const first = await page.evaluate(() => {
+  // ext.world().firstFrame records the first frame of the latest run (its seq counts runs); a start may attach the new
+  // world after the call returns, so each check waits for the next one.
+  const firstFrameAfter = (startFn: string) => page.evaluate(async (fn) => {
     const s = window.__skate!, w = () => (s as unknown as { ext: { world(): WorldInfo } }).ext.world();
+    const seq = w().firstFrame.seq;
     s.manual(true);
-    const a = w();
-    s.start({ seed: 11, god: true });
-    s.step(1);
-    const b = w();
-    return { built: b.chunksBuilt - a.chunksBuilt, hits: b.cacheHits - a.cacheHits, chunks: b.chunks };
-  });
+    if (fn === 'first') s.start({ seed: 11, god: true }); else { s.step(600); s.start({ seed: 12, god: true }); }
+    for (let k = 0; k < 120 && w().firstFrame.seq === seq; k++) { s.renderNow(); await new Promise((r) => setTimeout(r, 10)); }
+    return w().firstFrame;
+  }, startFn);
   // The first frame makes exactly the 3 chunks around the start available: built, or restored from the cache the
   // Title preview run left (TECH §8.6 exception).
+  const first = await firstFrameAfter('first');
   expect(first.chunks).toEqual([-1, 0, 1]);
   expect(first.built + first.hits).toBe(3);
-  const retry = await page.evaluate(() => {
-    const s = window.__skate!, w = () => (s as unknown as { ext: { world(): WorldInfo } }).ext.world();
-    s.step(600);                                   // leave the Roll-out behind (its chunks go to the cache)
-    const a = w();
-    s.start({ seed: 12, god: true });              // a retry: same Roll-out, new seed after it
-    s.renderNow();                                 // the retry's first frame
-    const b = w();
-    return { built: b.chunksBuilt - a.chunksBuilt, hits: b.cacheHits - a.cacheHits, chunks: b.chunks };
-  });
-  // The Roll-out chunks still live at the retry (a long backdrop keeps chunk 0) go to the cache with the others.
+  // A retry (same Roll-out, new seed after it): the Roll-out chunks still live (a long backdrop keeps chunk 0) went to
+  // the cache with the others and are all restored, none rebuilt.
+  const retry = await firstFrameAfter('retry');
   expect(retry.chunks).toEqual([-1, 0, 1]);
-  expect(retry.hits).toBeGreaterThanOrEqual(3);
-  expect(retry.built + retry.hits).toBe(3);
+  expect(retry.hits).toBe(3);
+  expect(retry.built).toBe(0);
 });
 
 test('context loss → restore → Resume rebuilds the scene and renders it again', async ({ page }) => {

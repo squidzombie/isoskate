@@ -214,6 +214,8 @@ class WorldViewImpl implements WorldView {
   }
   private warmupMs: number[] = [];
   private autoCheckedAt = 0;
+  /** The first frame of the last run (debug / wa.spec: TECH §8.6 exception, exactly 3 chunks built or restored). */
+  private lastFresh = { seq: 0, built: 0, hits: 0, chunks: [] as number[] };
 
   attach(gen: WorldGen): void {
     // Roll-out chunks (−1..1) go to the cache for the new run; the rest are released.
@@ -286,8 +288,10 @@ class WorldViewImpl implements WorldView {
       // behind it, the next ahead) and nothing else (TECH §8.6 exception); a retry restores them from the cache.
       this.abortPending();
       this.firstIndex = lo;
+      const b0 = this.built, h0 = this.cacheHits;
       for (const i of [ci, lo, ci + 1]) if (!this.chunks.has(i)) this.buildNow(i);
       this.frameWork = 0;           // the documented exception frame is not a sample of the per-frame budget
+      this.lastFresh = { seq: this.lastFresh.seq + 1, built: this.built - b0, hits: this.cacheHits - h0, chunks: [...this.chunks.keys()].sort((p, q) => p - q) };
     } else {
       // A chunk already on screen but not built (debug steps can jump many ticks between two renders) is built now;
       // otherwise at most one chunk is built, sliced over frames within STREAM.sliceMs: the current one, the one
@@ -365,7 +369,7 @@ class WorldViewImpl implements WorldView {
       verts, chunkTris: tris, maxChunkTris, coinSlotsUsed: this.coins.used, decalsUsed: this.decals.used, lanternsUsed: this.lanterns.used,
       originS: this.originS, edgeHalfW: this.opts.edgeHalfW, mainCalls: this.mainCalls, shadowCalls: this.shadowCalls,
       chunksBuilt: this.built, cacheHits: this.cacheHits, buildMsP95: this.buildP95, chunkMsP95: this.chunkP95, pending: this.pending?.index ?? null,
-      warmupMs: this.warmupMs,
+      warmupMs: this.warmupMs, firstFrame: this.lastFresh,
       quality: this.ctx.quality, autoQuality: this.autoOn,
       bench: (n?: number, index?: number) => this.benchBuild(n, index),
       obstacles: (id?: number) => [...this.chunks.values()].flatMap((c) => c.chunk.obstacles).filter((o) => id === undefined || o.id === id),
