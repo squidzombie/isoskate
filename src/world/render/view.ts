@@ -575,6 +575,8 @@ class WorldViewImpl implements WorldView {
   /** Coins stay ≥ CAMERA.minCoinPx on screen however far the camera zooms out (DESIGN §8). */
   private updateCoinScale(f: RenderFrame): void {
     const vp = f.viewport, cv = this.coinVp;
+    // The menu cameras are perspective and close: coins keep their true size there (the floor is for the run).
+    if (RIG_STATE.menu) { if (cv.speedQ !== -2) { cv.speedQ = -2; this.coins.setScale(1); } return; }
     const lead = Math.max(f.speed, speedAt(f.cur.t + CAMERA.zoomTau));
     const speedQ = Math.round(lead * 20);
     if (vp.wCss === cv.w && vp.hCss === cv.h && vp.safeTop === cv.safeTop && vp.aspect === cv.aspect && speedQ === cv.speedQ) return;

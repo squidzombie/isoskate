@@ -73,9 +73,11 @@ export class Sky {
       bot.scale.y = 0.35;
       g.add(top, bot);
       const m = new Mesh(); m.add(g);
-      const sx = r.range(28, 60);
+      const sx = r.range(24, 52);
       g.scale.set(sx, r.range(5, 8), r.range(10, 16));
-      m.position.set(r.range(-220, 220), r.range(55, 120), -r.range(180, 320));
+      // Three in the narrow portrait view up the street, the rest spread for landscape.
+      const z = r.range(200, 330), wide = i >= 3 ? 1.6 : 0.4;
+      m.position.set(r.range(-0.5, 0.5) * z * wide, z * r.range(0.16, 0.42), -z);
       m.userData.drift = r.range(0.6, 1.6);
       this.clouds.push(m);
       this.group.add(m);
@@ -129,8 +131,10 @@ export class Sky {
     (m.uZen!.value as Color).setHex(p.zenith); (m.uMid!.value as Color).setHex(p.mid); (m.uHor!.value as Color).setHex(p.horizon);
     (m.uSun!.value as Color).setHex(p.sun); (m.uSunGlow!.value as Color).setHex(p.sunGlow);
     m.uDisc!.value = sunDisc;
-    const el = (Math.max(4, p.sunElevDeg * 0.45) * Math.PI) / 180;
-    m.uSunDir!.value = [-0.35, Math.sin(el), -Math.cos(el)];
+    // The menu cameras look up the street: the sun (or, at blue hour, its afterglow) sits low over the vanishing point,
+    // a little left, so it is in frame in portrait too.
+    const el = (Math.max(6, p.sunElevDeg * 0.5) * Math.PI) / 180;
+    m.uSunDir!.value = [-0.09, Math.sin(el), -Math.cos(el)];
     this.group.visible = menu;
     this.group.position.copy(cam.position);
     this.cloudTop.color.setHex(shade(p.horizon, 0.1)).lerp(new Color(0xffc9a8), 0.5 * (1 - neonGlow));

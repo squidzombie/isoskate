@@ -89,7 +89,10 @@ export function solveFraming(speed: number, vp: Viewport, out?: Framing): Framin
 export const LOCKER_CAM = { fovDeg: 35, height: 1.4, dist: 11, targetY: 0.9, anchorFromTop: 0.33 } as const;
 /** The static Title diorama camera (DESIGN §8): low, behind and to the right of the idling skater, looking down the
  *  street toward the horizon (the skater sits in the lower third, the sunset sky fills the top). */
-export const TITLE_CAM = { fovDeg: 35, height: 1.4, back: 4.6, side: 0.55, lookAhead: 26, lookY: 1.7, lookX: -0.35 } as const;
+export const TITLE_CAM = { fovDeg: 35, height: 1.4, back: 4.6, side: 0.55, lookAhead: 26, lookY: 1.7, lookX: -0.35,
+  /** Portrait: further back and a wider vertical FOV, so the whole rider stands in the lower third (not cropped at the
+   *  edge) and the sunset sky, sun glow and clouds fill the top. */
+  portrait: { fovDeg: 52, height: 1.75, back: 7.2, side: 0.75, lookAhead: 30, lookY: 3.4, lookX: 0.15 } } as const;
 
 export class RunCameraRig implements CameraRig {
   readonly runCamera = new OrthographicCamera(-1, 1, 1, -1, 1, 200);
@@ -200,11 +203,11 @@ export class RunCameraRig implements CameraRig {
     this.originS = originOf(s);
     const z = -(s - this.originS);
     cam.clearViewOffset();
-    cam.fov = TITLE_CAM.fovDeg; cam.aspect = vp.wCss / Math.max(1, vp.hCss);
-    // Portrait screens frame the rider larger and lower; landscape widens the street view.
-    const k = vp.aspect < 1 ? 1 : 1.35;
-    cam.position.set(x + TITLE_CAM.side * k, gy + TITLE_CAM.height, z + TITLE_CAM.back * k);
-    this.target.set(x + TITLE_CAM.lookX, gy + TITLE_CAM.lookY, z - TITLE_CAM.lookAhead);
+    // Portrait has its own framing (TITLE_CAM.portrait); landscape widens the street view.
+    const c = vp.aspect < 1 ? TITLE_CAM.portrait : TITLE_CAM, k = vp.aspect < 1 ? 1 : 1.35;
+    cam.fov = c.fovDeg; cam.aspect = vp.wCss / Math.max(1, vp.hCss);
+    cam.position.set(x + c.side * k, gy + c.height, z + c.back * k);
+    this.target.set(x + c.lookX, gy + c.lookY, z - c.lookAhead);
     cam.up.set(0, 1, 0);
     cam.lookAt(this.target);
     cam.near = 0.1; cam.far = 600;
