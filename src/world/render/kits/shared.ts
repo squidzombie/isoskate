@@ -7,7 +7,7 @@ import type { Chunk, Obstacle, Pit } from '../../../core/world';
 import { ACCENTS, COLORS, LOOK, mixHex, shade } from '../palette';
 import { PAT } from '../textures/ground';
 import { FACE, FX } from '../writer';
-import { WARN, chevrons, contact, groundOf, hazardPool, isFull, rnd, setArea, solidsFallback, type KitCtx } from './common';
+import { WARN, chevrons, contact, groundChevrons, groundOf, isFull, rnd, setArea, solidsFallback, type KitCtx } from './common';
 
 export type KitFn = (c: KitCtx, ob: Obstacle) => void;
 export interface KitDef { draw: KitFn; long?: boolean }
@@ -29,6 +29,16 @@ export function rim(c: KitCtx, x0: number, x1: number, y: number, s: number, s1?
   if (s1 !== undefined) K.box(x0, y - 0.01, s, x1, y + 0.008, s1, FACE.top);
   K.to(t);
 }
+/** Neon emissive rim on a round post or trunk (DESIGN §18.4 inverted hazards): a vertical strip on its camera face
+ *  and a ring at `ringY`. No-op outside the inverted look. */
+export function rimPost(c: KitCtx, x: number, s: number, r: number, y0: number, y1: number, ringY: number): void {
+  if (!c.hz.inverted) return;
+  const K = c.K, t = K.t;
+  K.to('e').glowing(1.6, -1, FX.noFog).col(c.hz.rim);
+  K.box(x - 0.02, y0, s - r - 0.012, x + 0.02, y1, s - r + 0.01, FACE.front);
+  K.cyl(x, s, ringY, ringY + 0.035, r + 0.012, 8, false);
+  K.to(t);
+}
 export const inChunk = (c: KitCtx, s: number) => s >= c.s0 && s < c.s1;
 
 // ── street base (per chunk) ─────────────────────────────────────────────────────────────────────────────────────
@@ -38,14 +48,20 @@ const VERGE: Readonly<Record<AreaId, { color: number; pat: number }>> = {
 };
 /** Road under the corridor in 4 m strips (colour by area along s, so a gateway blends the ground), cut around pits,
  *  and the verges beyond ±4.5 at sidewalk height. */
-export function streetBase(c: KitCtx, ch: Chunk, roadAt: (s: number) => number = (s) => LOOK[c.areaAt(s)].road): void {
+export function streetBase(c: KitCtx, ch: Chunk, roadAt: (s: number) => number = (s) => LOOK[c.areaAt(s)].road, split?: number): void {
   const K = c.K;
   const pits: Pit[] = [];
   for (const ob of ch.obstacles) for (const p of ob.pits) if (p.s1 > ch.s0 && p.s0 < ch.s0 + ch.len) pits.push(p);
   const hasWater = ch.decor.some((d) => d.kind === 'water');
-  for (let a = ch.s0; a < ch.s0 + ch.len - 1e-6; a += 4) {
-    const b = a + 4, area = c.lookAt(a + 2);
-    const road = roadAt(a + 2);
+  // 4 m strips, one more cut at the gateway look switch (chunkBuilder.lookSwitch) when it falls in this chunk.
+  const cuts: number[] = [];
+  for (let a = ch.s0; a < ch.s0 + ch.len - 1e-6; a += 4) cuts.push(a);
+  if (split !== undefined && split > ch.s0 + 0.05 && split < ch.s0 + ch.len - 0.05 && !cuts.some((q) => Math.abs(q - split) < 0.05)) cuts.push(split);
+  cuts.sort((p, q) => p - q);
+  cuts.push(ch.s0 + ch.len);
+  for (let i = 0; i + 1 < cuts.length; i++) {
+    const a = cuts[i]!, b = cuts[i + 1]!, mid = (a + b) / 2, area = c.lookAt(mid);
+    const road = roadAt(mid);
     K.reset();
     K.lit(area === 'neon' ? PAT.wet : PAT.asphalt).col(road);
     rectsMinusPits(-4.5, 4.5, a, b, pits, (x0, x1, s0, s1) => K.box(x0, -0.3, s0, x1, -0.005, s1, FACE.top | FACE.front));
@@ -187,46 +203,48 @@ const cone: KitFn = (c, ob) => {
   K.col(COLORS.knock).frustum(x, s, g + h * 0.62, g + h, r * 0.4, 0.02, 8, true);
 };
 
-/** Full-width barrier_low (DESIGN §10.3). Downtown: a parking chain (≤ 0.47 m: bollards + a heavy chain, chevrons
- *  on the bollard fronts) or a construction barrier (boards with chevrons); Suburbs: a trimmed low hedge with
- *  chevron boards on stakes; Docks: a pipe run on chevroned blocks; Neon: the holo gate (a solid chevroned base
- *  under a light bar). Every variant sits in its own contact shadow (it fills the hazard's screen hull, so the
- *  measured silhouette stays ≥ 2.5:1 against the road). An optional slot splits the solids: nothing is drawn there. */
+/** Full-width barrier_low (DESIGN §10.3). Downtown: a parking chain (≤ 0.47 m: chunky bollards with amber sleeves
+ *  and a heavy chain) or a construction barrier (boards with chevrons); Suburbs: a trimmed low hedge with chevron
+ *  boards on stakes; Docks: a pipe run on chevroned blocks; Neon: the holo gate (a solid chevroned base under a light
+ *  bar). Every variant stands in its contact shadow behind a chevron warning band on the ground (the "ollie this"
+ *  read from far away; it lies outside the gate's ring around the hazard). An optional slot splits the solids:
+ *  nothing is drawn there. */
 const barrier: KitFn = (c, ob) => {
   const area = c.area;
   for (const so of ob.solids) {
-    const b = so.box, h = b.y1 - b.y0;
-    // The screen hull of the box covers the ground from its front to h·cot(35°) behind its back: the hazard's own
-    // dark pool fills it (Neon inverts: its base is solid and lighter than the road, no pool).
-    if (area !== 'neon') hazardPool(c, b.x0, b.x1, b.s0, b.s1, h);
+    const b = so.box;
+    if (area !== 'neon') groundChevrons(c, b.x0, b.x1, b.s0 - BARRIER_BAND.near - BARRIER_BAND.depth, b.s0 - BARRIER_BAND.near);
     if (area === 'neon') holoGate(c, b);
     else if (area === 'suburbs') hedgeBarrier(c, b);
     else if (area === 'docks') pipeRun(c, b);
-    else if (h < 0.48) parkingChain(c, b);
+    else if (b.y1 - b.y0 < 0.48) parkingChain(c, b);
     else constructionBarrier(c, b);
   }
 };
+/** The ground warning band in front of a full-width barrier: its depth and its gap to the barrier front (m). */
+export const BARRIER_BAND = { depth: 0.45, near: 0.6 } as const;
 type Box = Obstacle['solids'][number]['box'];
 
 function parkingChain(c: KitCtx, b: Box): void {
   const K = c.K, g = b.y0, top = b.y1, sm = (b.s0 + b.s1) / 2;
-  const span = b.x1 - b.x0, n = Math.max(1, Math.round(span / 1.5));
+  const span = b.x1 - b.x0, n = Math.max(1, Math.round(span / 1.5)), r = 0.12;
   const posts: number[] = [];
-  for (let i = 0; i <= n; i++) posts.push(b.x0 + 0.09 + (span - 0.18) * (i / n));
+  for (let i = 0; i <= n; i++) posts.push(b.x0 + r + 0.01 + (span - 2 * r - 0.02) * (i / n));
   for (const px of posts) {
-    body(c); K.chamfer(px - 0.08, g, sm - 0.08, px + 0.08, top + 0.02, sm + 0.08, 0.03, c.hz.top);
-    // Reflective chevron band on the bollard's camera face.
-    chevrons(c, px - 0.08, px + 0.08, top - 0.12, top - 0.05, sm - 0.08, 0.16, 0.5);
-    body(c);
+    contact(c, px - r, px + r, sm - r, sm + r, g + 0.01, 0.5, 0.1);
+    body(c); K.chamfer(px - r, g, sm - r, px + r, top + 0.02, sm + r, 0.035, c.hz.top);
+    // Amber reflective sleeve round the bollard (front and sides), flashing with the warning.
+    K.lit(0, 0, HZ | WARN).col(COLORS.chevron).box(px - r - 0.004, top - 0.13, sm - r - 0.004, px + r + 0.004, top - 0.085, sm + r + 0.004, FACE.front | FACE.left | FACE.right);
   }
-  // A heavy dark chain sagging between the bollards: alternating links (the amber every 4th link).
+  // A heavy dark chain sagging between the bollards (every 4th link amber), under a thin contact line.
   for (let i = 0; i + 1 < posts.length; i++) {
-    const xa = posts[i]! + 0.08, xb = posts[i + 1]! - 0.08, links = Math.max(4, Math.round((xb - xa) / 0.11));
+    const xa = posts[i]! + r, xb = posts[i + 1]! - r, links = Math.max(4, Math.round((xb - xa) / 0.12));
+    contact(c, xa, xb, sm - 0.06, sm + 0.06, g + 0.01, 0.3, 0);
     for (let k = 0; k < links; k++) {
       const u0 = k / links, u1 = (k + 1) / links;
-      const sag = (u: number) => top - 0.07 - 0.13 * Math.sin(Math.PI * u);
-      if (k % 4 === 2) K.lit(0, 0, HZ | WARN).col(COLORS.chevron); else body(c, 0x1a1428);
-      K.bar(xa + (xb - xa) * u0, sag(u0), sm, xa + (xb - xa) * u1, sag(u1), sm, 0.022);
+      const sag = (u: number) => top - 0.06 - 0.14 * Math.sin(Math.PI * u);
+      if (k % 5 === 2) K.lit(0, 0, HZ | WARN).col(COLORS.chevron); else body(c, 0x1a1428);
+      K.bar(xa + (xb - xa) * u0, sag(u0), sm, xa + (xb - xa) * u1, sag(u1), sm, 0.035);
     }
   }
 }

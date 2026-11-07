@@ -9,7 +9,8 @@ import type { AreaId, PropKind } from '../../../src/core/ids';
 import { CHUNK_LEN } from '../../../src/core/tuning';
 import type { Chunk, Obstacle } from '../../../src/core/world';
 import { ObTag } from '../../../src/core/world';
-import { DEFAULT_BUILD, buildChunk, chunkHash, heightClass, lookAreaAt } from '../../../src/world/render/chunkBuilder';
+import { DEFAULT_BUILD, LOOK_SWITCH, buildChunk, chunkHash, heightClass, lookAreaAt, lookSwitch } from '../../../src/world/render/chunkBuilder';
+import { CONTACT_PAD } from '../../../src/world/render/kits/common';
 import { KITS } from '../../../src/world/render/kits/index';
 import { DECOR_RENDERERS } from '../../../src/world/render/kits/decor';
 import { COLORS, HAZARD } from '../../../src/world/render/palette';
@@ -120,36 +121,41 @@ describe('kits', () => {
     }
   });
 
-  it('every crash-top hazard outside Neon sits in its pool of shadow (a decal over its screen-hull ground)', () => {
-    resetIds();
-    const r = only([...obstacleOf('trash_can', 'downtown', 70, 0), ...obstacleOf('barrier_low', 'downtown', 80, 0)], 'downtown');
-    expect(r.out.decals.filter((d) => d.id === DECAL.pool).length).toBeGreaterThanOrEqual(2);
-    resetIds();
-    const n = only(obstacleOf('trash_can', 'neon', 70, 0), 'neon');
-    expect(n.out.decals.filter((d) => d.id === DECAL.pool).length).toBe(0);
+  it('every obstacle stands in a soft contact shadow: its footprint plus a small pad, α ≤ 0.5, never a pool', () => {
+    for (const area of AREAS) {
+      for (const kind of ['trash_can', 'barrier_low', 'news_box', 'parked_car', 'container', 'vending_bank', 'bench'] as PropKind[]) {
+        resetIds();
+        const obs = obstacleOf(kind, area, 70, 0);
+        const r = only(obs, area);
+        const shadows = r.out.decals.filter((d) => d.id === DECAL.contact);
+        expect(shadows.length, `${kind} in ${area}`).toBeGreaterThan(0);
+        for (const d of shadows) expect(d.alpha).toBeLessThanOrEqual(CONTACT_PAD.alphaMax);
+        // Inside the obstacle's footprint grown by the pad (the gate's ground ring around a hazard stays ground).
+        let x0 = Infinity, x1 = -Infinity, s0 = Infinity, s1 = -Infinity;
+        for (const o of obs) for (const so of o.solids) { x0 = Math.min(x0, so.box.x0); x1 = Math.max(x1, so.box.x1); s0 = Math.min(s0, so.box.s0); s1 = Math.max(s1, so.box.s1); }
+        for (const d of shadows) {
+          expect(d.x - d.w / 2).toBeGreaterThanOrEqual(x0 - CONTACT_PAD.side - 1e-6);
+          expect(d.x + d.w / 2).toBeLessThanOrEqual(x1 + CONTACT_PAD.side + 1e-6);
+          expect(d.s - d.len / 2).toBeGreaterThanOrEqual(s0 - CONTACT_PAD.front - 1e-6);
+          expect(d.s + d.len / 2).toBeLessThanOrEqual(s1 + CONTACT_PAD.back + 0.3 + 1e-6);
+        }
+      }
+    }
   });
-
-  it('with the landscape yaw the pool follows the hull: footprint, swept copy and the parallelogram between them', () => {
+  it('gateway blends switch the road and the hazard looks at one s, moved off every obstacle (its own area\'s look kept)', () => {
     resetIds();
-    const obs = obstacleOf('trash_can', 'downtown', 70, 0), b = obs[0]!.solids[0]!.box;
-    const ch: Chunk = { index: 2, s0: 2 * CHUNK_LEN, len: CHUNK_LEN, area: 'downtown', blend: null, obstacles: obs, coins: [], decor: [], safe: [], segments: [] };
-    const pools = build(ch, 'downtown', 30).out.decals.filter((d) => d.id === DECAL.pool);
-    expect(pools.length).toBe(3);
-    const reach = (b.y1 - b.y0) * 1.43 * 0.92, vx = -Math.sin(Math.PI / 6) * reach, vs = Math.cos(Math.PI / 6) * reach;
-    const rects = pools.filter((d) => !d.e), par = pools.find((d) => d.e)!;
-    // The swept copy leans toward −x (the camera sits on the +x side) and back along s.
-    const [r0, r1] = [...rects].sort((u, v) => u.s - v.s);
-    expect(r1!.x - r0!.x).toBeCloseTo(vx, 5);
-    expect(r1!.s - r0!.s).toBeCloseTo(vs, 5);
-    // The parallelogram: the footprint's diagonal from its front corner on the far side of the lean (front-left) to
-    // its back-right corner, swept by v.
-    const [e1x, e1s, e2x, e2s] = par.e!;
-    expect(e2x).toBeCloseTo(vx, 5); expect(e2s).toBeCloseTo(vs, 5);
-    expect(par.x - e1x / 2 - e2x / 2).toBeCloseTo(b.x0, 5);
-    expect(e1x).toBeCloseTo(b.x1 - b.x0, 5); expect(e1s).toBeCloseTo(b.s1 - b.s0, 5);
-    expect(par.s - e1s / 2 - e2s / 2).toBeCloseTo(b.s0, 5);
+    // A docks → neon blend whose weight crosses 0.5 at s = 76, a Neon vending bank straddling it, a docks drum before it.
+    const blendAt = (s: number) => { const u = Math.min(1, Math.max(0, 0.5 + (s - 76) / 60)); return { area: (u < 0.5 ? 'docks' : 'neon') as AreaId, blend: { from: 'docks' as AreaId, to: 'neon' as AreaId, u } }; };
+    const obs = [...obstacleOf('vending_bank', 'neon', 75.6, -1.5), ...obstacleOf('drum_cluster', 'docks', 70, 1.5)];
+    const ch: Chunk = { index: 2, s0: 2 * CHUNK_LEN, len: CHUNK_LEN, area: 'docks', blend: null, obstacles: obs, coins: [], decor: [], safe: [], segments: [] };
+    const sw = lookSwitch(ch, { areaAt: blendAt })!;
+    expect(sw.from).toBe('docks'); expect(sw.to).toBe('neon');
+    // The Neon bank keeps the Neon look (the switch comes before it); the docks drum keeps the docks look.
+    expect(sw.s).toBeLessThanOrEqual(75.6 - LOOK_SWITCH.margin + 1e-6);
+    expect(sw.s).toBeGreaterThanOrEqual(70 + obs[1]!.len + LOOK_SWITCH.margin - 1e-6);
+    // No blend: no switch.
+    expect(lookSwitch(ch, src('docks'))).toBeNull();
   });
-
   it('a dense street chunk stays inside the per-chunk triangle budget (≤ 12k)', () => {
     for (const area of AREAS) {
       resetIds();

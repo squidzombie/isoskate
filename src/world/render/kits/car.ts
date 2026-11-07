@@ -2,9 +2,11 @@
 // drawn along +s with its rear (taillights) toward the camera. Used by parked_car, parked_van, crosswalk_car,
 // backout_car and the parked_car_side decor. Hazard cars are dark (DESIGN §18.4: ink-dark body, one accent), with a
 // slightly lighter roof so the volume reads; windows are dark glass that picks up the sky tint.
-import { shade } from '../palette';
+import { mixHex, shade } from '../palette';
 import { FACE, FX, type Kit } from '../writer';
 
+/** Hazard cars: the roof a clear value step above the ink body (the volume reads from above, G1 review). */
+const ROOF_TOP = 0x4a3b6b;
 export const CAR_BODIES = [0x1c1430, 0x141a2e, 0x1d1420, 0x122220, 0x221830, 0x17142a] as const;
 
 export interface CarSpec {
@@ -38,7 +40,7 @@ export function drawCar(K: Kit, c: CarSpec): void {
   const top = y + h, ri = c.van ? 0.08 : 0.16;
   const ca = c.van ? s0 + L * 0.05 : s0 + L * 0.24, cb = c.van ? s1 - L * 0.12 : s1 - L * 0.22;
   const ra = c.van ? ca + 0.05 : ca + L * 0.12, rb = c.van ? cb - 0.25 : cb - L * 0.1;
-  const glass = c.hazard && !c.inverted ? 0x18142c : 0x3c3a62, roof = c.inverted ? shade(c.body, 0.15) : shade(c.body, 0.12);
+  const glass = c.hazard && !c.inverted ? 0x18142c : 0x3c3a62, roof = c.inverted ? shade(c.body, 0.15) : c.hazard ? mixHex(c.body, ROOF_TOP, 0.65) : shade(c.body, 0.12);
   K.lit(0, 0, flags, glow * 0.5).col(glass);
   K.quad(x0 + 0.08, belt, ca, x1 - 0.08, belt, ca, x1 - 0.08 - ri, top - 0.04, ra, x0 + 0.08 + ri, top - 0.04, ra);    // rear window (camera)
   K.quad(x1 - 0.08, belt, cb, x0 + 0.08, belt, cb, x0 + 0.08 + ri, top - 0.04, rb, x1 - 0.08 - ri, top - 0.04, rb);    // windscreen

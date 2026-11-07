@@ -18,7 +18,7 @@ import type { GfxContext, PaletteSample, RenderFrame, Viewport, WorldView } from
 import type { Chunk, Coin, Decor, Obstacle, WorldGen } from '../../core/world';
 import { LIGHT_SCALE, getHemi, getSun, originOf, setGfxQuality, setPaletteSource, sharedUniforms, type SharedUniforms } from '../../gfx';
 import { RIG_STATE, solveFraming, yawForAspect } from './camera';
-import { buildChunk, chunkHash, type AreaSource } from './chunkBuilder';
+import { buildChunk, buildChunkSteps, chunkHash, type AreaSource, type ChunkBuildOut } from './chunkBuilder';
 import { DEFAULT_BUILD, type BuildOptions, type DecalRec, type LanternRec } from './kits/common';
 import type { AmbientRec } from './kits/decor';
 import { COIN, CoinLayer, DecalLayer, LanternLayer } from './layers';
@@ -41,6 +41,7 @@ export const VIEW = {
 type Target = keyof KitTargets;
 const TARGETS: readonly Target[] = ['o', 'x', 'e', 'g', 'b'];
 interface Part { mesh: Mesh; geo: PooledGeo }
+interface Pending { index: number; ch: Chunk; hash: number; gen: Generator<void, ChunkBuildOut, void>; ms: number; replaces: LiveChunk | null }
 interface LiveChunk {
   index: number; s0: number; group: Group; parts: Partial<Record<Target, Part>>;
   coinSlots: number[]; decalSlots: number[]; lanternSlots: number[];
@@ -95,7 +96,14 @@ class WorldViewImpl implements WorldView {
   private readonly optsVp = { w: -1, h: -1, safeTop: -1, aspect: -1 };
   private readonly coinVp = { w: -1, h: -1, safeTop: -1, aspect: -1, speedQ: -1 };
   private buildP95 = 0;
+  /** Build work per frame that built anything (ms; the 4 ms budget, TECH §8.6) and per finished chunk (debug). */
   private readonly buildMs: number[] = [];
+  private readonly chunkMs: number[] = [];
+  private chunkP95 = 0;
+  /** A chunk being built over several frames (not on screen yet): its generator holds the writers until it returns. */
+  private pending: Pending | null = null;
+  private frameWork = 0;
+  private readonly relList: LiveChunk[] = [];
   private readonly st = { chunksBuilt: 0, buildMsP95: 0, drawCalls: 0 };
   private built = 0;
   private cacheHits = 0;
@@ -202,6 +210,7 @@ class WorldViewImpl implements WorldView {
 
   attach(gen: WorldGen): void {
     // Roll-out chunks (−1..1) go to the cache for the new run; the rest are released.
+    this.abortPending();
     for (const c of [...this.chunks.values()]) this.release(c);
     this.gen = gen;
     this.coins.clearCollected();
@@ -252,28 +261,42 @@ class WorldViewImpl implements WorldView {
     }
     const ci = Math.floor(f.playerS / CHUNK_LEN);
     const lo = ci - CHUNK_WINDOW.behind, hi = ci + CHUNK_WINDOW.ahead;
-    for (const c of [...this.chunks.values()]) {
-      if (c.index > hi || (c.index < lo && (c.far < f.playerS - STREAM.keepBehindM || c.index < ci - STREAM.maxBehind))) this.release(c);
+    const rel = this.relList;
+    rel.length = 0;
+    for (const c of this.chunks.values()) {
+      if (c.index > hi || (c.index < lo && (c.far < f.playerS - STREAM.keepBehindM || c.index < ci - STREAM.maxBehind))) rel.push(c);
     }
+    for (const c of rel) this.release(c);
+    rel.length = 0;
+    if (this.pending && (this.pending.index > hi || this.pending.index < lo)) this.abortPending();
+    this.frameWork = 0;
     if (fresh) {
       // The first frame of a run makes the three chunks the camera sees available (the one under the skater, the one
       // behind it, the next ahead) and nothing else (TECH §8.6 exception); a retry restores them from the cache.
+      this.abortPending();
       this.firstIndex = lo;
-      for (const i of [ci, lo, ci + 1]) if (!this.chunks.has(i)) this.recordBuild(this.build(i));
+      for (const i of [ci, lo, ci + 1]) if (!this.chunks.has(i)) this.buildNow(i);
+      this.frameWork = 0;           // the documented exception frame is not a sample of the per-frame budget
     } else {
-      // Then at most one chunk build per frame: the current one, the one behind, the missing ones ahead nearest-first,
-      // then stale ones (edge widths changed with the viewport).
-      let target: number | null = null;
-      if (!this.chunks.has(ci)) target = ci;
-      else if (!this.chunks.has(lo)) target = lo;
-      for (let i = ci + 1; i <= hi && target === null; i++) if (!this.chunks.has(i)) target = i;
-      if (target === null) for (let i = ci; i <= hi && target === null; i++) { const c = this.chunks.get(i); if (c && c.key !== this.optsKey) target = i; }
-      if (target !== null) {
-        const old = this.chunks.get(target);
-        if (old) this.release(old, true);
-        this.recordBuild(this.build(target));
+      // A chunk already on screen but not built (debug steps can jump many ticks between two renders) is built now;
+      // otherwise at most one chunk is built, sliced over frames within STREAM.sliceMs: the current one, the one
+      // behind, the missing ones ahead nearest-first, then stale ones (edge widths changed with the viewport).
+      let sync = false;
+      const vis = this.visibleChunks(f);
+      if (vis) for (let i = Math.max(lo, vis[0]); i <= Math.min(hi, vis[1]); i++) if (!this.chunks.has(i)) { this.buildNow(i); sync = true; }
+      if (!sync) {
+        if (!this.pending) {
+          let target: number | null = null;
+          if (!this.chunks.has(ci)) target = ci;
+          else if (!this.chunks.has(lo)) target = lo;
+          for (let i = ci + 1; i <= hi && target === null; i++) if (!this.chunks.has(i)) target = i;
+          if (target === null) for (let i = ci; i <= hi && target === null; i++) { const c = this.chunks.get(i); if (c && c.key !== this.optsKey) target = i; }
+          if (target !== null) this.pending = this.startBuild(target, this.chunks.get(target) ?? null);
+        }
+        if (this.pending) this.stepPending((fs ?? nowMs()) + STREAM.sliceMs);
       }
     }
+    if (this.frameWork > 0) this.recordBuild(this.frameWork);
     this.updateCoinScale(f);
     this.applyPalette(f);
     this.updateShadow(f, origin);
@@ -284,6 +307,7 @@ class WorldViewImpl implements WorldView {
   setQuality(q: QualityTier): void { this.autoOn = false; this.applyTier(q); }
   /** After a context restore: every chunk is rebuilt from the generator (deterministic) with the collected coins. */
   rebuildGPU(): void {
+    this.abortPending();
     const g = this.gen, got = [...this.coins.collectedIds];
     for (const c of [...this.chunks.values()]) this.release(c, true);
     for (const c of [...this.cache.values()]) this.freeChunk(c);
@@ -298,6 +322,7 @@ class WorldViewImpl implements WorldView {
     return st;
   }
   dispose(): void {
+    this.abortPending();
     for (const c of [...this.chunks.values()]) this.release(c, true);
     for (const c of [...this.cache.values()]) this.freeChunk(c);
     this.cache.clear();
@@ -322,7 +347,8 @@ class WorldViewImpl implements WorldView {
     return { chunks: [...this.chunks.keys()].sort((a, b) => a - b), cached: [...this.cache.keys()].sort((a, b) => a - b), geosCreated, geosIdle,
       verts, chunkTris: tris, maxChunkTris, coinSlotsUsed: this.coins.used, decalsUsed: this.decals.used, lanternsUsed: this.lanterns.used,
       originS: this.originS, edgeHalfW: this.opts.edgeHalfW, mainCalls: this.mainCalls, shadowCalls: this.shadowCalls,
-      chunksBuilt: this.built, cacheHits: this.cacheHits, buildMsP95: this.buildP95, quality: this.ctx.quality, autoQuality: this.autoOn,
+      chunksBuilt: this.built, cacheHits: this.cacheHits, buildMsP95: this.buildP95, chunkMsP95: this.chunkP95, pending: this.pending?.index ?? null,
+      quality: this.ctx.quality, autoQuality: this.autoOn,
       bench: (n?: number, index?: number) => this.benchBuild(n, index),
       obstacles: (id?: number) => [...this.chunks.values()].flatMap((c) => c.chunk.obstacles).filter((o) => id === undefined || o.id === id),
       sceneGeos: () => {
@@ -346,6 +372,7 @@ class WorldViewImpl implements WorldView {
   /** Debug / wa.spec: rebuilds the live chunk under `index` (default: the nearest ahead) n times into scratch buffers
    *  and returns the build-time distribution (ms). The live chunk is untouched. */
   benchBuild(n = 40, index?: number): { p50: number; p95: number; min: number; max: number; tris: number } {
+    if (this.pending) this.stepPending(Infinity);
     const idx = index ?? Math.max(...this.chunks.keys());
     const ch = this.chunks.get(idx)?.chunk;
     if (!ch) return { p50: 0, p95: 0, min: 0, max: 0, tris: 0 };
@@ -382,15 +409,39 @@ class WorldViewImpl implements WorldView {
     return fillBehind(index, ch, Math.min(contentS, s0 + CHUNK_LEN), this.behind);
   }
 
-  /** Builds (or restores from the cache) one chunk; returns the render-side build time in ms (−1 for a cache hit). */
-  private build(index: number): number {
-    const ch = this.chunkFor(index);
+  /** The chunk indices the camera sees (from where it was last placed, moved on to this frame's s), or null. */
+  private visibleChunks(f: RenderFrame): [number, number] | null {
+    const cam = RIG_STATE.camera;
+    if (!cam || RIG_STATE.menu || !RIG_STATE.placed) return null;
+    const ds = f.playerS - RIG_STATE.playerS;
+    let s0 = Infinity, s1 = -Infinity;
+    for (let k = 0; k < 4; k++) {
+      const nx = k & 1 ? 1 : -1, ny = k & 2 ? 1 : -1;
+      const a = this.v1.set(nx, ny, -1).unproject(cam), b = this.v2.set(nx, ny, 1).unproject(cam);
+      const t = a.y - b.y > 1e-6 ? Math.min(1, Math.max(0, a.y / (a.y - b.y))) : 1;
+      const s = RIG_STATE.originS - (a.z + (b.z - a.z) * t) + ds;
+      s0 = Math.min(s0, s); s1 = Math.max(s1, s);
+    }
+    if (!Number.isFinite(s0) || !Number.isFinite(s1)) return null;
+    return [Math.floor(s0 / CHUNK_LEN), Math.floor(s1 / CHUNK_LEN)];
+  }
+
+  /** Builds one chunk to completion in this frame (the first frame of a run, a chunk already on screen). */
+  private buildNow(index: number): void {
+    if (this.pending && this.pending.index !== index) this.stepPending(Infinity);
+    if (!this.pending || this.pending.index !== index) this.pending = this.startBuild(index, this.chunks.get(index) ?? null);
+    if (this.pending) this.stepPending(Infinity);
+  }
+
+  /** Starts a build of `index` (restoring it from the Roll-out cache when its content hash matches: null). */
+  private startBuild(index: number, replaces: LiveChunk | null): Pending | null {
+    const ch = this.chunkFor(index);          // generation (world/gen's budget) is not timed here
     const t0 = nowMs();
     const glowCards = QUALITY[this.ctx.quality].glowCards;
     // Only Roll-out chunks (−1..1) can be cached: the content hash is computed for those alone.
     const hash = index <= 1 ? chunkHash(ch, this.areaSrc, this.optsKey * 97 + glowCards + (index === this.firstIndex ? 7 : 0)) : 0;
     const cached = this.cache.get(index);
-    if (cached && cached.hash === hash) {
+    if (cached && cached.hash === hash && !replaces) {
       this.cache.delete(index);
       cached.chunk = ch;
       cached.group.position.z = -(cached.s0 - this.originS);
@@ -399,12 +450,35 @@ class WorldViewImpl implements WorldView {
       this.chunks.set(index, cached);
       this.cacheHits++;
       this.refreshAmbient();
-      return -1;
+      return null;
     }
     if (cached) { this.cache.delete(index); this.freeChunk(cached); }
     const w = this.writers;
     for (const t of TARGETS) w[t].begin(this.pools[t].acquire());
-    const out = buildChunk(ch, w, this.areaSrc, this.opts, glowCards, index === this.firstIndex);
+    const gen = buildChunkSteps(ch, w, this.areaSrc, this.opts, glowCards, index === this.firstIndex);
+    const ms = nowMs() - t0;
+    this.frameWork += ms;
+    return { index, ch, hash, gen, ms, replaces };
+  }
+
+  /** Runs the pending build until it is done or the clock passes `until` (ms); finishes it when done. */
+  private stepPending(until: number): void {
+    const p = this.pending;
+    if (!p) return;
+    const t0 = nowMs();
+    let r = p.gen.next();
+    while (!r.done && nowMs() < until) r = p.gen.next();
+    if (r.done) this.finishBuild(p, r.value);
+    const ms = nowMs() - t0;
+    p.ms += ms; this.frameWork += ms;
+    if (r.done) this.recordChunk(p.ms);
+  }
+
+  /** The finished geometry → the five meshes of the chunk (TECH §8.6); a stale chunk it replaces is released. */
+  private finishBuild(p: Pending, out: ChunkBuildOut): void {
+    this.pending = null;
+    if (p.replaces && this.chunks.get(p.index) === p.replaces) this.release(p.replaces, true);
+    const { index, ch, hash } = p, w = this.writers;
     const group = this.groupPool.pop() ?? new Group();
     group.name = `chunk${index}`;
     group.position.z = -(ch.s0 - this.originS);
@@ -437,7 +511,15 @@ class WorldViewImpl implements WorldView {
     this.chunks.set(index, lc);
     this.built++;
     this.refreshAmbient();
-    return nowMs() - t0;
+  }
+
+  /** Drops a build in progress (its buffers go back to the pools). */
+  private abortPending(): void {
+    const p = this.pending;
+    if (!p) return;
+    this.pending = null;
+    p.gen.return(undefined as never);
+    for (const t of TARGETS) this.pools[t].release(this.writers[t].end());
   }
 
   private claimLayers(c: LiveChunk, coins: readonly Coin[]): void {
@@ -612,15 +694,20 @@ class WorldViewImpl implements WorldView {
     sun.target.updateMatrixWorld();
   }
 
-  /** Keeps the last 120 build times and their p95 (cache restores are not builds). */
+  /** Keeps the build work of the last 120 frames that built (ms) and its p95 (cache restores are not builds). */
   private recordBuild(ms: number): void {
-    if (ms < 0) return;
-    this.buildMs.push(ms);
-    if (this.buildMs.length > 120) this.buildMs.shift();
-    const sorted = this.buildMs.slice().sort((a, b) => a - b);
-    this.buildP95 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))]!;
-    if (ms > STREAM.buildBudgetMs * 4) console.debug(`[world] chunk build ${ms.toFixed(1)} ms`);
+    this.buildP95 = pushP95(this.buildMs, ms);
+    if (ms > STREAM.buildBudgetMs * 4) console.debug(`[world] chunk build work ${ms.toFixed(1)} ms in one frame`);
   }
+  private recordChunk(ms: number): void { this.chunkP95 = pushP95(this.chunkMs, ms); }
+}
+
+/** Appends to a rolling window of 120 samples and returns its p95. */
+function pushP95(list: number[], v: number): number {
+  list.push(v);
+  if (list.length > 120) list.shift();
+  const sorted = list.slice().sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))]!;
 }
 
 /** Auto quality is on unless the URL forces a tier, the saved setting is not 'auto' (read-only; a G2 request asks for

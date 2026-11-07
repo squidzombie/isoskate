@@ -48,6 +48,8 @@ export interface KitCtx {
   surfaceAt(s: number, x: number): Surface | null;
   decal(d: DecalRec): void;
   lantern(l: LanternRec): void;
+  /** Contact shadows drawn so far (the dispatcher adds default ones under solids a kit left without). */
+  contacts: number;
 }
 
 /** Deterministic per-object random in [0, 1) from integers. */
@@ -102,50 +104,18 @@ export function chevrons(c: KitCtx, x0: number, x1: number, y0: number, y1: numb
 /** fx flag: flashes with the 1.6 s full-width hazard warning (DESIGN §9). */
 export const WARN = 16;
 
-/** Soft contact shadow under a footprint (DESIGN: contact shadows under every obstacle). `grow` reaches past the
- *  footprint behind it (+s), where the obstacle's own screen hull covers the ground. */
-export function contact(c: KitCtx, x0: number, x1: number, s0: number, s1: number, y: number, alpha = 0.55, grow = 0): void {
-  // Kept inside the footprint laterally and in front (the gate's ring around a hazard stays clean ground); it may
-  // reach behind the obstacle (+s), which its own screen hull covers.
-  if (alpha <= 0) return;
-  const len = s1 - s0 + grow;
-  c.decal({ id: DECAL.contact, x: (x0 + x1) / 2, y, s: s0 + len / 2, w: (x1 - x0) * 1.04, len, rot: 0, color: COLORS.ink, alpha, kind: 0 });
+/** Soft contact shadow under a footprint (DESIGN §18.4: contact shadows under every obstacle): the footprint grown by
+ *  CONTACT_PAD (less in front, where the sun-from-behind casts nothing), soft edges, α ≤ CONTACT_PAD.alphaMax. `grow`
+ *  reaches further behind (+s), where a tall prop's cast shadow starts. Counted in `c.contacts`. */
+export function contact(c: KitCtx, x0: number, x1: number, s0: number, s1: number, y: number, alpha: number = CONTACT_PAD.alpha, grow = 0): void {
+  c.contacts++;
+  const a = Math.min(alpha, CONTACT_PAD.alphaMax);
+  if (a <= 0) return;
+  const p = CONTACT_PAD, f0 = s0 - p.front, f1 = s1 + p.back + grow;
+  c.decal({ id: DECAL.contact, x: (x0 + x1) / 2, y, s: (f0 + f1) / 2, w: x1 - x0 + 2 * p.side, len: f1 - f0, rot: 0, color: COLORS.ink, alpha: a, kind: 0 });
 }
-
-/** The dark pool a low, see-through full-width hazard sits in (the parking chain, the hedge strip): its shadow on
- *  the ground it stands on, laid over the ground inside the hazard's screen hull (from its front face to h·cot 35°
- *  behind its back) so the hazard reads as one dark silhouette across the street (DESIGN §18.4 gate). Split by the
- *  ground under it (road / sidewalk bands). */
-export function hazardPool(c: KitCtx, x0: number, x1: number, s0: number, s1: number, h: number, alpha = 0.95): void {
-  // The hull's ground: the footprint swept along the camera's screen-up direction on the ground, (−sin yaw, cos yaw)
-  // (camera.ts screenX), by h·cot(pitch) (trimmed 8% so the pool never shows above the hull top).
-  const reach = h * 1.43 * 0.92, yaw = (c.opts.yawDeg * Math.PI) / 180;
-  const vx = -Math.sin(yaw) * reach, vs = Math.cos(yaw) * reach;
-  const cuts = [x0];
-  for (const b of [-4.5, -3, -2.6, 2.6, 3, 4.5]) if (b > x0 + 0.05 && b < x1 - 0.05) cuts.push(b);
-  cuts.push(x1);
-  const put = (x: number, s: number, w: number, len: number, e?: readonly [number, number, number, number]) => {
-    const y = c.groundAt(s, x) + 0.012;
-    c.decal({ id: DECAL.pool, x, y, s, w, len, rot: 0, color: 0x1a1428, alpha, kind: 0, ...(e ? { e } : {}) });
-  };
-  for (let i = 0; i + 1 < cuts.length; i++) {
-    const a = cuts[i]!, b = cuts[i + 1]!;
-    if (Math.abs(vx) < 0.02) {
-      // Portrait (yaw 0): one rectangle from the front edge to the swept back edge.
-      const back = s1 + vs, sm = (s0 + back) / 2;
-      const y = c.groundAt(Math.min(sm, s0 + 0.1), (a + b) / 2) + 0.012;
-      c.decal({ id: DECAL.pool, x: (a + b) / 2, y, s: (s0 - 0.04 + back) / 2, w: b - a + 0.01, len: back - s0 + 0.04, rot: 0, color: 0x1a1428, alpha, kind: 0 });
-      continue;
-    }
-    // Yawed: hull(R ∪ R+v) = R ∪ (R+v) ∪ the sweep of R's diagonal across v (front corner on the far side of the
-    // lean → back corner on the near side).
-    const W = b - a, L = s1 - s0;
-    put((a + b) / 2, (s0 + s1) / 2, W + 0.01, L + 0.04);
-    put((a + b) / 2 + vx, (s0 + s1) / 2 + vs, W + 0.01, L + 0.04);
-    const fx = vx < 0 ? a : b, d1x = vx < 0 ? W : -W;           // the diagonal from the front corner opposite the lean
-    put(fx + d1x / 2 + vx / 2, s0 + L / 2 + vs / 2, 1, 1, [d1x, L, vx, vs]);
-  }
-}
+/** Contact-shadow growth around a footprint (m) and its opacity (reviewed at G1: a believable shadow, never a pool). */
+export const CONTACT_PAD = { side: 0.12, front: 0.05, back: 0.15, alpha: 0.5, alphaMax: 0.5 } as const;
 
 /** Ground under an obstacle footprint (road 0 or sidewalk 0.15 in M0; the lowest solid bottom otherwise). */
 export function groundOf(ob: Obstacle): number {
@@ -213,15 +183,28 @@ export function pit(c: KitCtx, p: Pit, ob: Obstacle): void {
   K.col(COLORS.pitLip).box(p.x0, p.lipY - 0.04, p.s0 - 0.06, p.x1, p.lipY + 0.006, p.s0, FACE.top | FACE.back);
   K.col(COLORS.pitLip).box(p.x0, p.lipY - 0.04, p.s1, p.x1, p.lipY + 0.006, p.s1 + 0.06, FACE.top | FACE.front);
   // Full-width warning chevrons on the road along the near lip.
-  if (isFull(ob) && p.x1 - p.x0 > 2) {
-    const s = p.s0 - 0.38;
-    K.lit(0, 0, FX.noFog).col(COLORS.ink).box(p.x0, p.lipY - 0.05, s, p.x1, p.lipY + 0.004, p.s0 - 0.06, FACE.top);
+  if (isFull(ob) && p.x1 - p.x0 > 2) groundChevrons(c, p.x0, p.x1, p.s0 - 0.38, p.s0 - 0.06, p.lipY);
+  K.reset();
+}
+
+/** A warning band on the ground across x0..x1 between sA and sB (sA < sB), at ground height y (or the ground under
+ *  each part when y is omitted): an ink band with slanted amber chevrons (DESIGN §18.4 full-width hazards), noFog,
+ *  flashing with the hazard warning. */
+export function groundChevrons(c: KitCtx, x0: number, x1: number, sA: number, sB: number, y?: number): void {
+  const K = c.K, t = K.t;
+  const cuts = [x0];
+  for (const b of [-4.5, -3, 3, 4.5]) if (b > x0 + 0.05 && b < x1 - 0.05) cuts.push(b);
+  cuts.push(x1);
+  for (let i = 0; i + 1 < cuts.length; i++) {
+    const a = cuts[i]!, b = cuts[i + 1]!, g = (y ?? c.groundAt((sA + sB) / 2, (a + b) / 2)) + 0.004;
+    K.to('o').lit(0, 0, FX.noFog | FX.matte).col(COLORS.ink).box(a, g - 0.05, sA, b, g, sB, FACE.top);
     K.col(COLORS.chevron).lit(0, 0, FX.noFog | WARN);
-    for (let x = p.x0 + 0.1; x < p.x1 - 0.32; x += 0.7) {
-      K.quad(x, p.lipY + 0.006, s + 0.04, x + 0.3, p.lipY + 0.006, s + 0.04, x + 0.48, p.lipY + 0.006, p.s0 - 0.1, x + 0.18, p.lipY + 0.006, p.s0 - 0.1);
+    const d = sB - sA, slant = d * 0.45;
+    for (let x = a + 0.08; x + 0.28 + slant < b - 0.02; x += 0.6) {
+      K.quad(x, g + 0.002, sA + 0.04, x + 0.28, g + 0.002, sA + 0.04, x + 0.28 + slant, g + 0.002, sB - 0.04, x + slant, g + 0.002, sB - 0.04);
     }
   }
-  K.reset();
+  K.to(t);
 }
 
 /** Grey-box fallback for kinds without a kit (and the forbidden-band warning colour): solids by height class. */

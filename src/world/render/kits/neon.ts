@@ -5,16 +5,18 @@
 // magenta / lantern-red rim (DESIGN §18.4). Only invented brands and the reviewed sign words appear.
 import { NEON_SIGN_WORDS } from '../../../core/decor';
 import type { Obstacle } from '../../../core/world';
-import { shade } from '../palette';
+import { mixHex, shade } from '../palette';
 import { PAT } from '../textures/ground';
 import { signRect } from '../textures/signs';
 import { FACE, FX } from '../writer';
 import { contact, rnd, type KitCtx } from './common';
 import { planter } from './downtown';
-import { accent, body, inChunk, rim, type KitDef, type KitFn } from './shared';
+import { accent, body, inChunk, rim, rimPost, type KitDef, type KitFn } from './shared';
 
 const HZ = FX.noFog | FX.matte;
 const boxOf = (ob: Obstacle) => ob.solids[0]?.box;
+/** Lit parts of a Neon hazard drawn in an ink look (a gateway, DESIGN §18.4): dimmed, so the silhouette stays dark. */
+const litK = (c: KitCtx, k: number) => (c.hz.inverted ? k : k * 0.4);
 
 /** A lit sign quad from the sign atlas on the emissive target (front face toward −s). */
 export function litSign(c: KitCtx, key: string, x0: number, x1: number, y0: number, y1: number, s: number, k = 1.6, anim = 0, flags = 0): void {
@@ -55,17 +57,17 @@ export const vendingBank: KitFn = (c, ob) => {
   const K = c.K, b = boxOf(ob);
   if (!b) return;
   const n = Math.max(1, Math.round((b.x1 - b.x0) / 1.0)), w = (b.x1 - b.x0) / n;
-  contact(c, b.x0, b.x1, b.s0, b.s1, b.y0 + 0.01, 0, 0);
+  contact(c, b.x0, b.x1, b.s0, b.s1, b.y0 + 0.01, 0.35, 0.15);
   K.capY = b.y0 + 1.6;
   for (let i = 0; i < n; i++) {
     const x0 = b.x0 + i * w + 0.02, x1 = x0 + w - 0.04;
     body(c, i % 2 ? c.hz.body : shade(c.hz.body, -0.08));
     K.chamfer(x0, b.y0, b.s0 + 0.02, x1, b.y1, b.s1, 0.04, c.hz.top);
-    litSign(c, `vend:${(ob.id + i) % 4}`, x0 + 0.08, x1 - 0.08, b.y0 + 0.55, b.y1 - 0.12, b.s0 + 0.01, 1.45);
+    litSign(c, `vend:${(ob.id + i) % 4}`, x0 + 0.08, x1 - 0.08, b.y0 + 0.55, b.y1 - 0.12, b.s0 + 0.01, litK(c, 1.45));
     K.lit(0, 0, HZ).col(0x2b2140).box(x0 + 0.12, b.y0 + 0.12, b.s0 + 0.005, x1 - 0.12, b.y0 + 0.4, b.s0 + 0.02, FACE.front);
     rim(c, x0, x1, b.y1, b.s0 + 0.02);
   }
-  glowCard(c, (b.x0 + b.x1) / 2, b.y0 + 1.1, b.s0 - 0.05, b.x1 - b.x0 + 0.6, 1.8, 0xbff9ff, 0.35);
+  if (c.hz.inverted) glowCard(c, (b.x0 + b.x1) / 2, b.y0 + 1.1, b.s0 - 0.05, b.x1 - b.x0 + 0.6, 1.8, 0xbff9ff, 0.35);
   K.capY = null;
 };
 
@@ -74,7 +76,7 @@ export const vendingBank: KitFn = (c, ob) => {
 const viaductPillar: KitFn = (c, ob) => {
   const K = c.K, b = boxOf(ob);
   if (!b) return;
-  contact(c, b.x0, b.x1, b.s0, b.s1, b.y0 + 0.01, 0, 0);
+  contact(c, b.x0, b.x1, b.s0, b.s1, b.y0 + 0.01, 0.35, 0.15);
   K.capY = b.y0 + 1.6;
   body(c); K.chamfer(b.x0, b.y0, b.s0, b.x1, b.y1 - 0.4, b.s1, 0.06, c.hz.top);
   body(c, c.hz.top); K.box(b.x0 - 0.2, b.y1 - 0.4, b.s0 - 0.2, b.x1 + 0.2, b.y1, b.s1 + 0.2);
@@ -93,7 +95,9 @@ const cherryPlanter: KitFn = (c, ob) => {
   if (!trunk) return;
   const x = (trunk.x0 + trunk.x1) / 2, s = (trunk.s0 + trunk.s1) / 2, r = (trunk.x1 - trunk.x0) / 2;
   K.capY = trunk.y0 + 1.6;
-  body(c, 0x3a2a3e); K.frustum(x, s, trunk.y0, trunk.y1, r, r * 0.7, 7, false);
+  // The trunk is the crash solid: the inverted body with its emissive rim (ink outside the Neon look).
+  body(c); K.frustum(x, s, trunk.y0, trunk.y1, r, r * 0.7, 7, false);
+  rimPost(c, x, s, r * 0.9, trunk.y0 + 0.15, trunk.y0 + 1.5, trunk.y0 + 1.2);
   for (let i = 0; i < 6; i++) {
     const a = (i / 6) * Math.PI * 2;
     K.lit(0, 0.5, 0, 0.25).col(i % 2 ? 0xffb7d0 : 0xf59bbe);
@@ -108,28 +112,28 @@ const cherryPlanter: KitFn = (c, ob) => {
 export const foodCart: KitFn = (c, ob) => {
   const K = c.K, b = boxOf(ob);
   if (!b) return;
-  contact(c, b.x0, b.x1, b.s0, b.s1, b.y0 + 0.01, 0, 0);
+  contact(c, b.x0, b.x1, b.s0, b.s1, b.y0 + 0.01, 0.35, 0.15);
   K.capY = b.y0 + 1.6;
   const g = b.y0, counter = g + 0.95;
   body(c); K.box(b.x0 + 0.05, g + 0.15, b.s0 + 0.05, b.x1 - 0.05, counter, b.s1 - 0.05);
   body(c, 0x161029); for (const x of [b.x0 + 0.25, b.x1 - 0.25]) K.hcyl('x', 0, g + 0.2, (b.s0 + b.s1) / 2, x - 0.04, x + 0.04, 0.2, 8, true);
-  K.to('e').glowing(1.3, -1, FX.noFog).col(0xffd39a).box(b.x0 + 0.12, counter - 0.18, b.s0 + 0.04, b.x1 - 0.12, counter - 0.04, b.s0 + 0.05, FACE.front);
+  K.to('e').glowing(litK(c, 1.3), -1, FX.noFog).col(0xffd39a).box(b.x0 + 0.12, counter - 0.18, b.s0 + 0.04, b.x1 - 0.12, counter - 0.04, b.s0 + 0.05, FACE.front);
   K.to('o');
   body(c, c.hz.top); K.chamfer(b.x0, counter, b.s0, b.x1, counter + 0.06, b.s1, 0.02);
   body(c); for (const x of [b.x0 + 0.05, b.x1 - 0.1]) K.box(x, counter, b.s0 + 0.1, x + 0.05, b.y1 - 0.25, b.s0 + 0.15);
   // Noren curtain: lantern-red panels across the front with a word or brand.
   const word = ob.variant % (NEON_SIGN_WORDS.length + 1);
-  K.lit(0, 0, HZ, 0.35).col(0xc4473d);
+  K.lit(0, 0, HZ, c.hz.inverted ? 0.35 : 0).col(c.hz.inverted ? 0xc4473d : mixHex(0xc4473d, c.hz.body, 0.6));
   for (let i = 0; i < 4; i++) {
     const x0 = b.x0 + 0.1 + i * ((b.x1 - b.x0 - 0.2) / 4);
     K.box(x0 + 0.01, b.y1 - 0.65, b.s0 + 0.08, x0 + (b.x1 - b.x0 - 0.2) / 4 - 0.01, b.y1 - 0.3, b.s0 + 0.1, FACE.front);
   }
-  if (word > 0) litSign(c, `w:${word - 1}`, b.x0 + 0.2, b.x1 - 0.2, b.y1 - 0.62, b.y1 - 0.34, b.s0 + 0.07, 1.2);
+  if (word > 0 && c.hz.inverted) litSign(c, `w:${word - 1}`, b.x0 + 0.2, b.x1 - 0.2, b.y1 - 0.62, b.y1 - 0.34, b.s0 + 0.07, 1.2);
   body(c, c.hz.top); K.box(b.x0 - 0.12, b.y1 - 0.3, b.s0 - 0.12, b.x1 + 0.12, b.y1 - 0.22, b.s1 + 0.12);
   // Paper lantern on top.
-  K.to('e').glowing(1.7, -1, FX.noFog).col(0xff5a3c).sphere((b.x0 + b.x1) / 2, b.y1 - 0.02, (b.s0 + b.s1) / 2, 0.2, 7, 4, 1.3);
+  K.to('e').glowing(litK(c, 1.7), -1, FX.noFog).col(0xff5a3c).sphere((b.x0 + b.x1) / 2, b.y1 - 0.02, (b.s0 + b.s1) / 2, 0.2, 7, 4, 1.3);
   K.to('o');
-  glowCard(c, (b.x0 + b.x1) / 2, counter, b.s0 - 0.1, b.x1 - b.x0 + 0.8, 1.2, 0xffb07a, 0.4);
+  if (c.hz.inverted) glowCard(c, (b.x0 + b.x1) / 2, counter, b.s0 - 0.1, b.x1 - b.x0 + 0.8, 1.2, 0xffb07a, 0.4);
   rim(c, b.x0, b.x1, counter + 0.06, b.s0);
   K.capY = null;
 };
@@ -138,7 +142,7 @@ export const foodCart: KitFn = (c, ob) => {
 const bikeRow: KitFn = (c, ob) => {
   const K = c.K, b = boxOf(ob);
   if (!b) return;
-  contact(c, b.x0, b.x1, b.s0, b.s1, b.y0 + 0.01, 0, 0);
+  contact(c, b.x0, b.x1, b.s0, b.s1, b.y0 + 0.01, 0.35, 0.15);
   const alongS = b.s1 - b.s0 > b.x1 - b.x0;
   const n = Math.max(2, Math.floor((alongS ? b.s1 - b.s0 : b.x1 - b.x0) / 0.5));
   body(c); K.box(b.x0, b.y0, b.s0, b.x1, b.y0 + 0.05, b.s1);
@@ -205,16 +209,18 @@ const lanternStand: KitFn = (c, ob) => {
   const K = c.K, b = boxOf(ob);
   if (!b) return;
   const x = (b.x0 + b.x1) / 2, s = (b.s0 + b.s1) / 2;
-  contact(c, b.x0, b.x1, b.s0, b.s1, b.y0 + 0.01, 0, 0);
+  contact(c, b.x0, b.x1, b.s0, b.s1, b.y0 + 0.01, 0.35, 0.15);
   K.capY = b.y0 + 1.6;
   body(c); K.box(b.x0 + 0.05, b.y0, b.s0 + 0.05, b.x1 - 0.05, b.y0 + 0.06, b.s1 - 0.05);
   K.cyl(x, s, b.y0 + 0.06, b.y1 - 0.5, 0.04, 6, false);
   const red = ob.id % 2 === 0;
-  K.to('e').glowing(1.7, -1, FX.noFog).col(red ? 0xff5a3c : 0xffd39a);
+  K.to('e').glowing(litK(c, 1.7), -1, FX.noFog).col(red ? 0xff5a3c : 0xffd39a);
   K.cyl(x, s, b.y1 - 0.5, b.y1 - 0.06, 0.17, 8, false);
   K.to('o');
   body(c, 0x161029); K.cyl(x, s, b.y1 - 0.56, b.y1 - 0.5, 0.19, 8, true); K.cyl(x, s, b.y1 - 0.06, b.y1, 0.19, 8, true);
-  glowCard(c, x, b.y1 - 0.3, s - 0.25, 1.1, 1.1, red ? 0xff5a3c : 0xffd39a, 0.5);
+  // A small glow round the lantern only (it never spills over the ground ring the gate reads around the stand).
+  if (c.hz.inverted) glowCard(c, x, b.y1 - 0.28, s - 0.2, 0.55, 0.6, red ? 0xff5a3c : 0xffd39a, 0.35);
+  rimPost(c, x, s, 0.05, b.y0 + 0.1, b.y1 - 0.6, b.y0 + 0.9);
   K.capY = null;
 };
 
@@ -236,7 +242,7 @@ const neonCurb: KitFn = (c, ob) => {
 const robot: KitFn = (c, ob) => {
   const K = c.K, b = boxOf(ob);
   if (!b) return;
-  contact(c, b.x0, b.x1, b.s0, b.s1, b.y0 + 0.01, 0, 0);
+  contact(c, b.x0, b.x1, b.s0, b.s1, b.y0 + 0.01, 0.35, 0.15);
   body(c); K.chamfer(b.x0, b.y0 + 0.12, b.s0, b.x1, b.y0 + 0.6, b.s1, 0.05, c.hz.top);
   body(c, 0x161029); for (const s of [b.s0 + 0.12, (b.s0 + b.s1) / 2, b.s1 - 0.12]) for (const x of [b.x0, b.x1 - 0.06]) K.hcyl('x', 0, b.y0 + 0.1, s, x, x + 0.06, 0.1, 6, true);
   K.to('e').glowing(1.5, -1, FX.noFog).col(0x3ff2ff).box(b.x0 + 0.1, b.y0 + 0.3, b.s0 - 0.005, b.x1 - 0.1, b.y0 + 0.5, b.s0, FACE.front);

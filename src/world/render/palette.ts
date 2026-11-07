@@ -74,9 +74,9 @@ export interface HazardLook { body: number; top: number; accent: number; accent2
 // Ink bodies sit at ~#160F22 (a sun-lit or shadowed ink face must stay ≤ 2.5× darker than asphalt in a building's
 // shadow), tops one step lighter, accents thin: the gate leaves ~8–12% of a silhouette for anything lighter.
 export const HAZARD: Readonly<Record<AreaId, Readonly<HazardLook>>> = {
-  downtown: { body: 0x170f24, top: 0x2c2240, accent: 0xd9765a, accent2: 0x3e8e8a, rim: 0, rimEmissive: 0, inverted: false, glow: 0 },
-  suburbs: { body: 0x170f24, top: 0x2c2240, accent: 0x8fb8de, accent2: 0xb5645a, rim: 0, rimEmissive: 0, inverted: false, glow: 0 },
-  docks: { body: 0x170f24, top: 0x2c2240, accent: 0xf2b630, accent2: 0xb5552f, rim: 0, rimEmissive: 0, inverted: false, glow: 0 },
+  downtown: { body: 0x170f24, top: 0x4a3b6b, accent: 0xd9765a, accent2: 0x3e8e8a, rim: 0, rimEmissive: 0, inverted: false, glow: 0 },
+  suburbs: { body: 0x170f24, top: 0x4a3b6b, accent: 0x8fb8de, accent2: 0xb5645a, rim: 0, rimEmissive: 0, inverted: false, glow: 0 },
+  docks: { body: 0x170f24, top: 0x4a3b6b, accent: 0xf2b630, accent2: 0xb5552f, rim: 0, rimEmissive: 0, inverted: false, glow: 0 },
   neon: { body: 0x7a6fb0, top: 0x9489c8, accent: 0xff3fa4, accent2: 0xff5a3c, rim: 0xff3fa4, rimEmissive: 1.2, inverted: true, glow: 1.6 },
 };
 

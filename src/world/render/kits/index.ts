@@ -4,7 +4,7 @@
 import type { PropKind } from '../../../core/ids';
 import type { Obstacle } from '../../../core/world';
 import { CHUNK_LEN } from '../../../core/tuning';
-import { edgesOf, groundOfObstacle, hazardPool, setArea, solidsFallback, type KitCtx } from './common';
+import { contact, edgesOf, groundOfObstacle, setArea, solidsFallback, type KitCtx } from './common';
 import { HAZARD } from '../palette';
 import { DOCKS_KITS } from './docks';
 import { DOWNTOWN_KITS } from './downtown';
@@ -31,6 +31,7 @@ export function drawObstacle(c: KitCtx, ob: Obstacle, chunkIndex: number, first 
   const def = KITS[ob.kind];
   const anchored = anchorChunk(ob) === chunkIndex || (first && anchorChunk(ob) < chunkIndex);
   let far = Math.min(ob.s + ob.len, c.s1);
+  const contacts0 = c.contacts;
   if (def?.long) {
     K.reset(); K.clip0 = c.s0; K.clip1 = c.s1;
     def.draw(c, ob);
@@ -40,20 +41,17 @@ export function drawObstacle(c: KitCtx, ob: Obstacle, chunkIndex: number, first 
     far = ob.s + ob.len + 1;
   }
   K.reset();
-  if (anchored && !c.hz.inverted) hazardPools(c, ob);
+  if ((anchored || def?.long) && c.contacts === contacts0) contactsOf(c, ob, !!def?.long);
   edgesOf(c, ob);
   return far;
 }
 
-/** Every crash-top solid sits in its own pool of shadow (DESIGN §18.4: contact shadows under every obstacle): a soft
- *  dark decal over the ground its screen hull covers (its footprint and h·cot 35° behind it, where the sun-from-
- *  behind shadow falls), so see-through parts (legs, gaps, the x-ray cap) still read as one dark silhouette. The
- *  inverted Neon hazards glow instead. Full-width barriers draw their own pool. */
-function hazardPools(c: KitCtx, ob: Obstacle): void {
-  if (ob.kind === 'barrier_low' || ob.kind === 'holo_gate') return;
+/** The default contact shadow under every solid of a kit that drew none of its own (DESIGN §18.4). */
+function contactsOf(c: KitCtx, ob: Obstacle, clip: boolean): void {
   for (const so of ob.solids) {
-    if (so.top !== 'crash') continue;
     const b = so.box;
-    hazardPool(c, b.x0, b.x1, b.s0, b.s1, b.y1 - b.y0, so.tall ? 0.95 : 0.82);
+    if (clip && (b.s1 <= c.s0 || b.s0 >= c.s1)) continue;
+    const s0 = clip ? Math.max(b.s0, c.s0) : b.s0, s1 = clip ? Math.min(b.s1, c.s1) : b.s1;
+    contact(c, b.x0, b.x1, s0, s1, b.y0 + 0.01, so.top === 'crash' ? 0.5 : 0.35, so.tall ? 0.2 : 0);
   }
 }

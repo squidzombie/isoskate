@@ -94,7 +94,11 @@ export function obstacleOf(kind: PropKind, area: AreaId, s: number, x: number, v
       const off = hub ? 0.45 : 0.6, w = hub ? 0.6 : 0.05;
       const e: GrindEdge = { id: nextEdge++, obstacleId: id, a: { s: s - 0.5, x, y: drop + off }, b: { s: s + len, x, y: off }, kind: hub ? 'hubba' : 'rail', material: hub ? 'stone' : 'metal', layer: 0, pickOnly: false };
       return [{ id, kind, area, segment: 0, s: s - 0.5, x, len: len + 0.5, wid: w, hgt: off, rotY: 0, mirror: false, variant, pits: [], tags: ObTag.Grindable,
-        solids: [{ box: { s0: s - 0.5, s1: s + len, x0: x - w / 2, x1: x + w / 2, y0: 0, y1: drop + off }, top: hub ? 'landable' : 'crash', tall: false }],
+        // A hubba is one landable block; a handrail is stepped crash solids under its rail (as world/gen builds it).
+        solids: hub ? [{ box: { s0: s - 0.5, s1: s + len, x0: x - w / 2, x1: x + w / 2, y0: 0, y1: drop + off }, top: 'landable', tall: false }]
+          : [{ box: { s0: s - 0.5, s1: s, x0: x - w / 2, x1: x + w / 2, y0: drop, y1: drop + off }, top: 'crash' as const, tall: false },
+            ...[0, 1, 2].map((k) => ({ box: { s0: s + (k * len) / 3, s1: s + ((k + 1) * len) / 3, x0: x - w / 2, x1: x + w / 2, y0: drop * (1 - (k + 1) / 3),
+              y1: drop + off - (drop * (0.5 + ((k + 0.5) * len) / 3)) / (len + 0.5) }, top: 'crash' as const, tall: false }))],
         slabs: [{ s0: s - 3, s1: s, x0: x - 1.6, x1: x + 1.6, y0: drop, y1: drop, layer: 0, surface: 'concrete', kind: 'flat' },
           { s0: s, s1: s + len, x0: x - 1.6, x1: x + 1.6, y0: drop, y1: 0, layer: 0, surface: 'concrete', kind: 'stairs', steps: n }], edges: [e] }];
     }

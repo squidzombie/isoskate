@@ -32,18 +32,23 @@ const frame = (s: number, events: GameEvent[] = [], view: Viewport = vp(390, 844
 };
 
 describe('WorldView streaming', () => {
-  it('first frame: the three chunks on screen; then one build per frame up to 1 behind / 3 ahead; rebases at 512 m', () => {
+  it('first frame: the three chunks on screen; then at most one build per frame (sliced) up to 1 behind / 3 ahead; rebases at 512 m', () => {
     const ctx = fakeCtx(), view = createWorldView(ctx) as WorldViewDebug;
     view.attach(gen());
     view.update(frame(40));
     expect(view.debugInfo().chunks).toEqual([0, 1, 2]);
-    view.update(frame(40));
-    expect(view.debugInfo().chunks).toEqual([0, 1, 2, 3]);
-    for (let k = 0; k < 4; k++) view.update(frame(40));
+    // The chunks ahead are not on screen yet: each one may take a few frames (STREAM.sliceMs), never two per frame.
+    let n = 3;
+    for (let k = 0; k < 40 && view.debugInfo().chunks.length < 5; k++) {
+      view.update(frame(40));
+      const m = view.debugInfo().chunks.length;
+      expect(m - n).toBeLessThanOrEqual(1);
+      n = m;
+    }
     expect(view.debugInfo().chunks).toEqual([0, 1, 2, 3, 4]);
-    for (let k = 0; k < 3; k++) view.update(frame(80));
+    for (let k = 0; k < 40 && !view.debugInfo().chunks.includes(5); k++) view.update(frame(80));
     expect(view.debugInfo().chunks).toEqual([1, 2, 3, 4, 5]);
-    for (let k = 0; k < 6; k++) view.update(frame(ORIGIN_REBASE + 10));
+    for (let k = 0; k < 60; k++) view.update(frame(ORIGIN_REBASE + 10));
     expect(view.debugInfo().originS).toBe(ORIGIN_REBASE);
     const world = ctx.scene.getObjectByName('world')!;
     for (const g of world.children) expect(g.position.z).toBeCloseTo(-(Number(g.name.replace('chunk', '')) * CHUNK_LEN - ORIGIN_REBASE), 9);

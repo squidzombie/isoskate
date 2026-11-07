@@ -7,7 +7,7 @@ import { PAT } from '../textures/ground';
 import { FACE, FX } from '../writer';
 import { CAR_BODIES, drawCar } from './car';
 import { contact, rnd, type KitCtx } from './common';
-import { accent, body, inChunk, rim, type KitDef, type KitFn } from './shared';
+import { accent, body, inChunk, rim, rimPost, type KitDef, type KitFn } from './shared';
 
 const HZ = FX.noFog | FX.matte;
 type Box = Obstacle['solids'][number]['box'];
@@ -55,8 +55,10 @@ export const planterTree: KitFn = (c, ob) => {
   if (!trunk) return;
   const x = (trunk.x0 + trunk.x1) / 2, s = (trunk.s0 + trunk.s1) / 2, r = (trunk.x1 - trunk.x0) / 2;
   K.capY = trunk.y0 + 1.6;
-  body(c, c.hz.inverted ? c.hz.body : 0x3a2a30);
+  // The trunk is the crash solid: the hazard body (ink, or the inverted Neon body with its emissive rim).
+  body(c);
   K.frustum(x, s, trunk.y0, trunk.y1, r, r * 0.75, 7, false);
+  rimPost(c, x, s, r * 0.9, trunk.y0 + 0.15, trunk.y0 + 1.5, trunk.y0 + 1.2);
   const palm = c.area === 'downtown';
   const top = trunk.y1;
   if (palm) {

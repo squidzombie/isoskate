@@ -16,7 +16,8 @@ import type { CameraMode, RenderFrame, Viewport } from '../../../src/core/view';
 import type { AreaBlend, Chunk, Coin, Decor, Obstacle } from '../../../src/core/world';
 import { measureContrast } from '../../../src/debug/contrast';
 import { DEFAULT_LOADOUT } from '../../../src/content';
-import { createGfx, readViewport } from '../../../src/gfx';
+import { createGfx, originOf, readViewport } from '../../../src/gfx';
+import { readWorldPoints } from '../../../src/gfx/silhouette';
 import { SkaterViewImpl, basePose } from '../../../src/skater';
 import { createVfx } from '../../../src/vfx';
 import { createCameraRig, createWorldView } from '../../../src/world/render';
@@ -160,11 +161,13 @@ function streetScene(): void {
   D('end_wall', S0 + 40, -1, 2); D('end_wall', S0 + 44, 1, 3);
   // Obstacles: a representative mix per area (ledge line, a tall gate row, a full-width hazard, a car, benches).
   const a0 = A(S0 + 10);
+  // The area kit's obstacles belong to a0 (one segment straddling the blend, as world/gen emits them).
+  const OA = (k: PropKind, s: number, x: number, v = 0) => obs.push(...obstacleOf(k, a0, s, x, v));
   O('barrier_low', S0 + 5, 0, 0);
-  if (a0 === 'downtown') { O('granite_ledge', S0 + 9, 2.2); O('parked_car', S0 + 10, -2.4); O('bench', S0 + 19, 2.2); O('bollard_row', S0 + 22, 0); O('planter_tree', S0 + 25, -1.8); O('news_box', S0 + 25, 1.5); }
-  if (a0 === 'suburbs') { O('garden_wall', S0 + 9, 2.2); O('parked_van', S0 + 10, -2.3); O('wheelie_bins', S0 + 19, -0.6); O('mailbox', S0 + 19, 1.4); O('hedge', S0 + 24, -3.6); O('crate_stack', S0 + 22, 2.4); }
-  if (a0 === 'docks') { O('container', S0 + 9, -2.6); O('ibeam', S0 + 10, 1.8); O('drum_cluster', S0 + 19, 0.4); O('pallet_3', S0 + 21, -0.8); O('pallet_tall', S0 + 23, 2.3); O('dock_lip', S0 - 20, 4.35); }
-  if (a0 === 'neon') { O('guard_rail', S0 + 8, 3); O('vending_bank', S0 + 10, -2.2); O('food_cart', S0 + 19, 0.8); O('lantern_stand', S0 + 22, -2.3); O('cherry_planter', S0 + 25, 2.3); O('bike_row', S0 + 26, -0.6); }
+  if (a0 === 'downtown') { OA('granite_ledge', S0 + 9, 2.2); OA('parked_car', S0 + 10, -2.4); OA('bench', S0 + 19, 2.2); OA('bollard_row', S0 + 22, 0); OA('planter_tree', S0 + 25, -1.8); OA('news_box', S0 + 25, 1.5); }
+  if (a0 === 'suburbs') { OA('garden_wall', S0 + 9, 2.2); OA('parked_van', S0 + 10, -2.3); OA('wheelie_bins', S0 + 19, -0.6); OA('mailbox', S0 + 19, 1.4); OA('hedge', S0 + 24, -3.6); OA('crate_stack', S0 + 22, 2.4); }
+  if (a0 === 'docks') { OA('container', S0 + 9, -2.6); OA('ibeam', S0 + 10, 1.8); OA('drum_cluster', S0 + 19, 0.4); OA('pallet_3', S0 + 21, -0.8); OA('pallet_tall', S0 + 23, 2.3); OA('dock_lip', S0 - 20, 4.35); }
+  if (a0 === 'neon') { OA('guard_rail', S0 + 8, 3); OA('vending_bank', S0 + 10, -2.2); OA('food_cart', S0 + 19, 0.8); OA('lantern_stand', S0 + 22, -2.3); OA('cherry_planter', S0 + 25, 2.3); OA('bike_row', S0 + 26, -0.6); }
   O('trench', S0 + 30, -1.2);
   for (let k = 0; k < 6; k++) coinAt(S0 + 9.5 + k * 1.2, 2.2, 0.75);
   for (let k = 0; k < 5; k++) coinAt(S0 + 2 + k * 0.6, Math.sin(k) * 0.8, 0.5);
@@ -212,7 +215,17 @@ const host = {
   loop: { renderNow: renderOnce },
   gfx, cameraRig: rig, skater,
   camera: () => ({ H: 0, yawDeg: 0, lookAheadSec: 2.6, aspect: vp.aspect }),
-  sim: () => ({ cur, world: { obstacles: (s0: number, s1: number) => allObs().filter((o) => o.s + o.len >= s0 && o.s <= s1), coins: () => coins } }),
+  sim: () => ({ cur, world: { obstacles: (s0: number, s1: number) => allObs().filter((o) => o.s + o.len >= s0 && o.s <= s1), coins: () => coins,
+    // WorldQuery.groundAt for the gate's silhouette test: the highest slab top ≤ yMax under (s, x), else the datum.
+    groundAt: (s: number, x: number, yMax: number) => {
+      let y = 0;
+      for (const o of allObs()) for (const sl of o.slabs) {
+        if (s < sl.s0 || s >= sl.s1 || x < sl.x0 || x > sl.x1) continue;
+        const top = sl.y0 + (sl.y1 - sl.y0) * ((s - sl.s0) / Math.max(1e-6, sl.s1 - sl.s0));
+        if (top <= yMax && top > y) y = top;
+      }
+      return { y, surface: 'asphalt', layer: 0, slab: null, pit: null };
+    } } }),
 };
 const w = world as unknown as { debugInfo(): Record<string, unknown> };
 const v = new Vector3();
@@ -223,6 +236,28 @@ void v;
   stats: () => ({ calls: gfx.renderer.info.render.calls, tris: gfx.renderer.info.render.triangles, ...w.debugInfo() }),
   contrast: () => measureContrast(host as never),
   kinds: { props: ALL_PROP_KINDS.length, areas: AREAS.length, chunk: CHUNK_LEN },
+  /** Debug: the frame with every crash solid's silhouette pixels (world point inside its box) tinted red. */
+  mask: (): string => {
+    renderOnce();
+    const el = gfx.renderer.domElement, W = el.width, H = el.height;
+    const c2 = document.createElement('canvas'); c2.width = W; c2.height = H;
+    const x2 = c2.getContext('2d')!;
+    x2.drawImage(el, 0, 0);
+    const img = x2.getImageData(0, 0, W, H);
+    const wp = readWorldPoints(gfx.renderer, gfx.scene, rig.camera, W, H);
+    if (!wp) return '';
+    const o = originOf(S0), boxes = allObs().flatMap((ob) => ob.solids.filter((so) => so.top === 'crash').map((so) => so.box));
+    for (let i = 0; i < W * H; i++) {
+      const x = wp.xyz[i * 3]!, y = wp.xyz[i * 3 + 1]!, s = o - wp.xyz[i * 3 + 2]!;
+      if (Number.isNaN(x)) continue;
+      if (boxes.some((b) => x >= b.x0 - 0.05 && x <= b.x1 + 0.05 && s >= b.s0 - 0.05 && s <= b.s1 + 0.05 && y >= b.y0 + 0.025 && y <= b.y1 + 0.05)
+        && y >= host.sim().world.groundAt(s, x, y + 0.01).y + 0.025) {
+        img.data[i * 4] = (img.data[i * 4]! + 255) / 2; img.data[i * 4 + 1] = img.data[i * 4 + 1]! / 2; img.data[i * 4 + 2] = img.data[i * 4 + 2]! / 2;
+      }
+    }
+    x2.putImageData(img, 0, 0);
+    return c2.toDataURL('image/png');
+  },
   /** Debug: visible meshes with their world bounds. */
   objects: () => {
     const out: { name: string; min: number[]; max: number[] }[] = [];

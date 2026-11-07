@@ -12,7 +12,9 @@ import { SHAKE } from './render.config';
 
 /** What the rig did this frame, for the WorldView of the same module (sky layer, haze mode, hidden camera-side decor).
  *  The world view updates before the rig in a frame, so it reads the previous frame's state (one frame of lag). */
-export const RIG_STATE = { mode: 'run' as CameraMode, yawDeg: 0, hudTop: 0.066, menu: false, H: 20.8, camera: null as OrthographicCamera | PerspectiveCamera | null };
+export const RIG_STATE = { mode: 'run' as CameraMode, yawDeg: 0, hudTop: 0.066, menu: false, H: 20.8, camera: null as OrthographicCamera | PerspectiveCamera | null,
+  /** The track s and origin the camera was last placed for (the world view extrapolates the visible range). */
+  playerS: 0, originS: 0, placed: false };
 /** Layer of the sky dome, clouds, birds and skyline strips (sky.ts): only the menu cameras enable it. */
 const SKY_LAYER = 1;
 
@@ -173,6 +175,7 @@ export class RunCameraRig implements CameraRig {
       shx += SHAKE.grinding * Math.sin(this.jitterT * 63.1); shy += SHAKE.grinding * Math.cos(this.jitterT * 71.9);
     }
     this.place(f.playerS, this.lat, this.groundY, zoom, shx, shy);
+    RIG_STATE.playerS = f.playerS; RIG_STATE.originS = this.originS; RIG_STATE.placed = true;
   }
 
   private grinding = false;

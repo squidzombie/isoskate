@@ -3,7 +3,8 @@
 // artifacts/gallery/: every PropKind per area (pages), every DECOR_KINDS entry per area, a dense street vignette per
 // area and per gateway blend, the Title / Locker diorama, at 390×844, 390×664 and 1280×800. Each frame is measured with
 // the real contrast gate (debug/contrast.ts) and the world stats; everything lands in artifacts/gallery/report.json.
-//   PORT=5187 node tests/unit/render/gallery.mjs [--only street,props] [--vp 390x844] [--area neon]
+//   PORT=5187 node tests/unit/render/gallery.mjs [--only street,props] [--vp 390x844] [--area neon] [--no-gate]
+// Exits 1 on a console error or on any run-camera view below the contrast gate.
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -58,6 +59,9 @@ mkdirSync(OUT, { recursive: true });
 const browser = await chromium.launch({ args: ARGS });
 const report = [];
 let failed = false;
+/** DESIGN §18.4 (debug/contrast.ts CONTRAST_GATE). */
+const GATE = { hazard: 2.5, edge: 1.8 };
+const gateFails = [];
 try {
   for (const vp of VPS) {
     const context = await browser.newContext({ viewport: { width: vp.w, height: vp.h }, deviceScaleFactor: 1, isMobile: vp.m, hasTouch: vp.m });
@@ -79,6 +83,12 @@ try {
         maxChunkTris: s.maxChunkTris, buildMsP95: s.buildMsP95, items: r.items });
       const fmt = (v) => (v === null || Number.isNaN(v) ? '  -  ' : v.toFixed(2));
       console.log(`${file.padEnd(40)} hazard ${fmt(r.hazard)} edge ${fmt(r.edge)} calls ${s.calls} (main ${s.mainCalls}) tris ${s.tris} chunk≤${s.maxChunkTris} build95 ${s.buildMsP95.toFixed(1)}${r.worst ? `  worst ${r.worst.kind} ${r.worst.ratio.toFixed(2)}` : ''}`);
+      // Run-camera views are held to the DESIGN §18.4 gate (the menu cameras are not).
+      if (!/cam=(title|locker)/.test(j.q) && !argv.includes('--no-gate')) {
+        for (const [cls, v] of [['hazard', r.hazard], ['edge', r.edge]]) {
+          if (v !== null && !Number.isNaN(v) && v < GATE[cls]) { gateFails.push(`${file}: ${cls} ${v.toFixed(2)} < ${GATE[cls]}${r.worst ? ` (${r.worst.kind})` : ''}`); }
+        }
+      }
     }
     if (errors.length) { failed = true; console.error(`[${vp.name}] console errors:\n  ${[...new Set(errors)].join('\n  ')}`); }
     await context.close();
@@ -89,4 +99,5 @@ try {
 }
 writeFileSync(join(OUT, 'report.json'), JSON.stringify(report, null, 2));
 console.log(`gallery: ${report.length} PNGs in ${OUT}`);
+if (gateFails.length) { failed = true; console.error(`gate failures (run views):\n  ${gateFails.join('\n  ')}`); }
 process.exit(failed ? 1 : 0);

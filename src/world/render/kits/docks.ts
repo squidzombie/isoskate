@@ -2,7 +2,7 @@
 // pallets, drums, cable spools, mooring bollards, the dock lip, embedded rail tracks). The apron is light concrete,
 // so the container colours can stay deep (rust, container blue, patina) and still clear the gate.
 import type { Obstacle } from '../../../core/world';
-import { COLORS, shade } from '../palette';
+import { COLORS, mixHex, shade } from '../palette';
 import { PAT } from '../textures/ground';
 import { FACE, FX } from '../writer';
 import { contact, lightGroundAt, rnd } from './common';
@@ -20,8 +20,9 @@ export const container: KitFn = (c, ob) => {
   const col = c.hz.inverted ? c.hz.body : CONTAINER[(ob.id + ob.variant) % CONTAINER.length]!;
   contact(c, b.x0, b.x1, b.s0, b.s1, b.y0 + 0.01, 0.7, 0.3);
   K.capY = b.y0 + 1.6;
-  K.lit(PAT.ribsV, 0, HZ).col(col).box(b.x0 + 0.04, b.y0, b.s0 + 0.04, b.x1 - 0.04, b.y1 - 0.04, b.s1 - 0.04);
-  K.lit(0, 0, HZ).col(shade(col, 0.12)).box(b.x0, b.y1 - 0.06, b.s0, b.x1, b.y1, b.s1, FACE.top | FACE.front | FACE.back | FACE.left | FACE.right);
+  K.lit(PAT.ribsV, 0, HZ, c.hz.inverted ? c.hz.glow : 0).col(col).box(b.x0 + 0.04, b.y0, b.s0 + 0.04, b.x1 - 0.04, b.y1 - 0.04, b.s1 - 0.04);
+  // The roof a clear value step above the ink sides, so the box reads as a volume (G1 review).
+  K.lit(0, 0, HZ).col(c.hz.inverted ? shade(col, 0.12) : mixHex(col, c.hz.top, 0.65)).box(b.x0, b.y1 - 0.06, b.s0, b.x1, b.y1, b.s1, FACE.top | FACE.front | FACE.back | FACE.left | FACE.right);
   K.col(shade(col, -0.35));
   for (const [x, s] of [[b.x0, b.s0], [b.x1 - 0.1, b.s0], [b.x0, b.s1 - 0.1], [b.x1 - 0.1, b.s1 - 0.1]] as const) K.box(x, b.y0, s, x + 0.1, b.y1 - 0.06, s + 0.1);
   // Doors on the camera face: two leaves, four vertical locking bars, a white stencil code.

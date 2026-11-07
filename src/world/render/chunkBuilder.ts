@@ -33,27 +33,42 @@ export interface ChunkBuildOut { decals: DecalRec[]; lanterns: LanternRec[]; amb
 const KITS_BY_TARGETS = new WeakMap<KitTargets, Kit>();
 export function buildChunk(ch: Chunk, w: KitTargets, areas: AreaSource, opts: Readonly<BuildOptions> = DEFAULT_BUILD,
   glowCards = 40, first = false): ChunkBuildOut {
+  const g = buildChunkSteps(ch, w, areas, opts, glowCards, first);
+  let r = g.next();
+  while (!r.done) r = g.next();
+  return r.value;
+}
+
+/** The same build as resumable steps (TECH §8.6 time slicing): it yields after the street base and after every
+ *  obstacle and decor record, so the view can spread a chunk that is not on screen yet over frames. The writers stay
+ *  begun between steps; nothing else may write to them until it returns. */
+export function* buildChunkSteps(ch: Chunk, w: KitTargets, areas: AreaSource, opts: Readonly<BuildOptions> = DEFAULT_BUILD,
+  glowCards = 40, first = false): Generator<void, ChunkBuildOut, void> {
   let K = KITS_BY_TARGETS.get(w);
   if (!K) { K = new Kit(w); KITS_BY_TARGETS.set(w, K); }
   K.chunk(ch.s0).frame(0, 0, 0).reset();
   const out: ChunkBuildOut = { decals: [], lanterns: [], ambient: [], far: ch.s0 + ch.len };
+  const sw = lookSwitch(ch, areas);
   const c: KitCtx = {
     K, area: ch.area, hz: HAZARD[ch.area], s0: ch.s0, s1: ch.s0 + ch.len, opts, glowLeft: glowCards,
     areaAt: (s) => areas.areaAt(s).area,
-    lookAt: (s) => lookAreaAt(areas, s),
+    lookAt: (s) => (sw && areas.areaAt(s).blend ? (s < sw.s ? sw.from : sw.to) : lookAreaAt(areas, s)),
     groundAt: (s, x) => groundSlab(ch, s, x)?.y0 ?? 0,
     surfaceAt: (s, x) => groundSlab(ch, s, x)?.surface ?? null,
     decal: (d) => { out.decals.push(d); },
     lantern: (l) => { out.lanterns.push(l); },
+    contacts: 0,
   };
-  streetBase(c, ch, (s) => roadAt(areas, s));
-  for (const ob of ch.obstacles) out.far = Math.max(out.far, drawObstacle(c, ob, ch.index, first));
+  streetBase(c, ch, (s) => (sw && areas.areaAt(s).blend ? LOOK[s < sw.s ? sw.from : sw.to].road : roadAt(areas, s)), sw?.s);
+  yield;
+  for (const ob of ch.obstacles) { out.far = Math.max(out.far, drawObstacle(c, ob, ch.index, first)); yield; }
   for (const d of ch.decor) {
     setArea(c, areas.areaAt(d.s).area);
     drawDecor(c, d);
     const a = ambientOf(d);
     if (a) out.ambient.push(a);
     out.far = Math.max(out.far, d.s + (d.params?.d ?? d.params?.len ?? 4));
+    yield;
   }
   return out;
 }
@@ -81,6 +96,55 @@ export function roadAt(areas: AreaSource, s: number): number {
   if (!a.blend) return LOOK[a.area].road;
   const k = Math.min(1, Math.max(0, (blendWeight(a.blend) - 0.5) * 8 + 0.5));
   return mixHex(LOOK[a.blend.from].road, LOOK[a.blend.to].road, k);
+}
+
+/** Where a gateway blend switches the road and the hazard looks (DESIGN §18.4: ink hazards on the light road, the
+ *  inverted Neon look on the wet one): the s where the blend weight crosses 0.5, moved off every obstacle of the chunk
+ *  (its footprint ± LOOK_SWITCH.margin, the gate's ground ring), toward the side its centre is on, so no hazard
+ *  straddles two looks. null when no blend crosses its middle within LOOK_SWITCH.reach of the chunk. */
+export const LOOK_SWITCH = { reach: 16, margin: 0.9, maxMove: 24 } as const;
+export function lookSwitch(ch: Chunk, areas: AreaSource): { s: number; from: AreaId; to: AreaId } | null {
+  const w = (s: number) => { const b = areas.areaAt(s).blend; return b && b.from !== b.to ? blendWeight(b) - 0.5 : NaN; };
+  let a = ch.s0 - LOOK_SWITCH.reach, wa = w(a), found = NaN;
+  for (let s = a + 1; s <= ch.s0 + ch.len + LOOK_SWITCH.reach; s += 1) {
+    const ws = w(s);
+    if (wa < 0 && ws >= 0) { let lo = s - 1, hi = s; for (let i = 0; i < 12; i++) { const m = (lo + hi) / 2; if (w(m) < 0) lo = m; else hi = m; } found = hi; break; }
+    a = s; wa = ws;
+  }
+  if (!Number.isFinite(found)) return null;
+  const b = areas.areaAt(found).blend!;
+  let s = found;
+  // Only obstacles with solids carry a hazard look (sidewalks and curbs run the whole chunk). An obstacle of the
+  // `from` area keeps its own look (the switch comes after it), one of the `to` area likewise (the switch comes
+  // before it); any other is kept off the switch on the side of its centre.
+  const obs = ch.obstacles.filter((o) => o.solids.length > 0);
+  const m = LOOK_SWITCH.margin;
+  let lo = -Infinity, hi = Infinity;
+  for (const o of obs) {
+    if (!isHazard(o)) continue;
+    if (o.area === b.from && o.area !== b.to) lo = Math.max(lo, o.s + o.len + m);
+    else if (o.area === b.to) hi = Math.min(hi, o.s - m);
+  }
+  if (lo > hi) lo = -Infinity;            // the arriving area's hazards win a conflict
+  s = Math.min(hi, Math.max(lo, s));
+  for (let pass = 0; pass < 6; pass++) {
+    let moved = false;
+    for (const o of obs) {
+      const o0 = o.s - m, o1 = o.s + o.len + m;
+      if (s <= o0 + 1e-6 || s >= o1 - 1e-6) continue;
+      const next = o.s + o.len / 2 < found ? o1 : o0;
+      s = next > hi ? o0 : next < lo ? o1 : next;
+      moved = true;
+    }
+    if (!moved) break;
+  }
+  if (Math.abs(s - found) > LOOK_SWITCH.maxMove) s = found;
+  return { s, from: b.from, to: b.to };
+}
+
+/** An obstacle with a crash solid that is not a thin grindable (rails, beams, lips are read by their grind edges). */
+function isHazard(o: Chunk['obstacles'][number]): boolean {
+  return o.solids.some((so) => so.top === 'crash' && (Math.min(so.box.x1 - so.box.x0, so.box.s1 - so.box.s0) > 0.35 || o.edges.length === 0));
 }
 
 /** A content hash of a chunk (what the build reads), for the Roll-out cache: identical chunks reuse their meshes. */
