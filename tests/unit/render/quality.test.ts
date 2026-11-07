@@ -9,8 +9,8 @@ const run = (q: AutoQuality, n: number, work: number, iv: number) => { let last:
 describe('AutoQuality', () => {
   it('tiers: DPR caps, shadow maps and particle / glow caps (TECH §8.9)', () => {
     expect(QUALITY.low).toMatchObject({ dpr: 1, shadow: 0, particles: 150, glowCards: 20 });
-    expect(QUALITY.med).toMatchObject({ dpr: 1.5, shadow: 1024, particles: 300, glowCards: 40 });
-    expect(QUALITY.high).toMatchObject({ dpr: 2, shadow: 2048, particles: 300, glowCards: 40 });
+    expect(QUALITY.med).toMatchObject({ dpr: 1.5, shadow: 1024, particles: 300, glowCards: 24 });
+    expect(QUALITY.high).toMatchObject({ dpr: 2, shadow: 2048, particles: 300, glowCards: 24 });
   });
   it('drops one tier after 3 s of p95 work > 12 ms', () => {
     const q = new AutoQuality('high');

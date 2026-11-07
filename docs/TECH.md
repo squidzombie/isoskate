@@ -1140,6 +1140,7 @@ export function renderOffline(area: AreaId, sec: number): Promise<AudioBuffer | 
 - WG emits only these kinds (`world/gen/decor.ts` uses it, never redefines it); WA renders every kind in every listed area skin. `Decor.kind` stays `string` in `core/world.ts` for compatibility.
 - A gateway id in `areas` means "inside that gateway's 4 s segment". The generic street kinds (decals, lamps, sign posts, wires, verge, shadow casters, end walls) list every area **and** every gateway.
 - **`Decor.y` (one definition since G1).** `y` is the base height of the surface the element stands on or hangs from (ground, sidewalk, the foot of the facade or post) for every ground, side and backdrop kind. Kinds hung above that surface take their own mounting height from a documented `mount` param (lowest point = `y + mount`): `awning` (underside, default 2.4 m), `blade_sign` (sign bottom, 2.6 m), `banner` (banner bottom, 3.0 m). Only `overhead` kinds give their lowest point in `y`. WG emits `y` = sidewalk with `mount` 2.6 / 2.8 / 2.4 / 3.0; WA draws at `y + mount`.
+- **RECLAIM kinds (added @theme T3; docs/core-requests.md THEME T3; theme §4).** Twelve additive kinds: `weed_edge`, `moss_patch`, `root_lift` (ground decals at |x| ≥ 3.6, ≤ 1.3:1 against the surface, ≥ 0.3 m from every grind edge: `KitCtx.edges`); `wild_grass`, `shrub_wild`, `sapling`, `cart_planter` (side, 3D only at |x| ≥ 4.6); `perched_birds` (side, `x0`/`x1` both at |x| ≥ 4.6; drawn and taken off by `vfx/critters.ts`, so the renderer emits only an ambient record); `wildlife` (backdrop, at most one per area visit, never in Neon); `critter_emitter` and `drips` (ambient); `vista` (backdrop, one per area visit: a far-side block, or the Docks water-side crane). New optional params on existing kinds (`fade`, `roofGreen`, `roofTree`, `ivy`, `live`, `lit`, `vine`, `bloom`, `roses`, `moss`, `nest`, `tree`, `litRatio`, `body`, `age`, `cat`, shadow-caster shapes 4/5, tree species 3–5) document what the T2 renderer already reads; absent, each falls back to its hash. `parked_car_side` gains `docks`, `leaf_emitter` every area. Ambient records (`world/render` `AmbientRec`) gain `critters`, `drips`, `birds` and `puddle` (Neon puddles, for drip ripples). Nothing here changes `Obstacle`, the validator or any bot: the golden test is split into an obstacle chain (bit-identical) and a decor chain (re-baselined in T3).
 
 
 ### 4.15 `core/skins.ts`: the RECLAIM skin chooser (added @theme T0; docs/core-requests.md THEME; DESIGN §10.3, §18.5, §24 row 74)
@@ -1480,7 +1481,7 @@ A `steer` touch never enters HOLD, never emits `press`, `tap`, `swipe`, `holdSta
 | Textures | ≤ 16 MB GPU. Facade/sign atlas 1024² per area, decal atlas 512², ground 512², board graphic 512×128, skater atlas 256² |
 | Main thread per frame | sim ≤ 1 ms (all ticks), render submit ≤ 5 ms, chunk build ≤ 4 ms (sliced, 1 chunk per frame max), generation ≤ 3 ms (budgeted) |
 | Particles | ≤ 300 instances (150 on low) |
-| Glow cards | ≤ 40 per chunk |
+| Glow cards | ≤ 24 per chunk (RECLAIM T3, theme §4 Neon clutter; was 40) |
 | Memory | No allocations in steady-state frames. Chunk buffers are pooled. |
 | Bundle | ≤ 350 KB gzip (`scripts/size-check.mjs` in CI) |
 
@@ -1530,6 +1531,7 @@ A `steer` touch never enters HOLD, never emits `press`, `tap`, `swipe`, `holdSta
 ### 8.8 VFX (WA)
 - **Particles.** One additive `InstancedMesh` of camera-facing quads with a CPU ring buffer: sparks, dust, petals, coin stars, rings.
 - **Speed lines** (from 9.0 m/s) are quads in the same system placed **outside the corridor only**, alpha ≤ 0.15, plus parallax streaks on side dressing. On the camera side they stay below the camera-side cut plane (`RIG_UNIFORMS.uCut`, @cam), so a streak never lies over the corridor on screen.
+- **Critters (RECLAIM T4, `vfx/critters.ts`).** One more instanced quad mesh, in normal (alpha) blending so birds and butterflies can be darker than what is behind them: +1 draw call when any is alive (capacity 64, no shadows, hidden on `low`). Perched birds (re-listed per frame from the `birds` ambient records) take off outward when the skater passes under them or lands within 6 m, and the game plays `birdFlutter` (`onBirdFlutter`, game/wiring.ts); butterflies, dandelion seeds, moths at the live Neon signs and dragonflies spawn from `critter_emitter` records in the side bands only (|x| ≥ 4.7, camera side below `uCut`) and fade out at the top-third line of the screen (projected with the run camera). Neon and the Underpass `drips` fall as particle streaks from awning and sign edges and land in ripple rings, with faint ripples on the Neon puddles ahead. ≤ 30 critters and ≤ 40 drips alive; reduced motion keeps the birds perched and spawns nothing. Ambient leaves are green and russet, never gold.
 - **DOM effects.** Trick popups and the "BAILED!" sticker are DOM, owned by MU. Desaturation is the `uDesat` uniform (§8.6), not DOM.
 
 ### 8.9 Quality tiers and auto-adjust (`world/render/quality.ts`)
@@ -1537,8 +1539,8 @@ A `steer` touch never enters HOLD, never emits `press`, `tap`, `swipe`, `holdSta
 | Tier | DPR cap | Shadows | Particles | Glow cards | Grain overlay |
 |---|---|---|---|---|---|
 | low | 1.0 | off (contact shadow only) | 150 | 20 per chunk | off |
-| med | 1.5 | 1024, `PCFShadowMap` radius 2 | 300 | 40 | on |
-| high | 2.0 | 2048, radius 3 | 300 | 40 | on |
+| med | 1.5 | 1024, `PCFShadowMap` radius 2 | 300 | 24 | on |
+| high | 2.0 | 2048, radius 3 | 300 | 24 | on |
 
 - **Start tier:** `med` on touch devices, `high` on desktop. MSAA is decided once from the starting tier (§8.1).
 - **Auto-adjust measures work, not intervals.** Per frame it records CPU work time (sim + render submit, `performance.now()` around the frame) and missed vsyncs (an interval > 1.5× the median interval).

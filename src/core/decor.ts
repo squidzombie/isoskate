@@ -66,6 +66,12 @@ export const NEON_SIGN_WORDS: readonly string[] =
 /** Surface list for `surface` params (index → Surface). */
 export const DECOR_SURFACES = ['asphalt', 'wetAsphalt', 'concrete', 'tile', 'granite', 'wood', 'metal', 'grass'] as const;
 
+/** RECLAIM overgrowth on the backdrop blocks (theme §4; each falls back to a hash of (s, x) when absent). */
+const RECLAIMED = {
+  fade: 'sun-faded facade 0..1', roofGreen: 'roof moss and roof garden 0..1', roofTree: '0/1 a tree on the roof',
+  ivy: 'ivy share of the walls 0..1 (DT end walls only, SB houses, IN warehouse ribs, NE tower ledges as moss)',
+} as const;
+
 export const DECOR_KINDS = {
   // ─── Backdrop: buildings and big silhouettes (also the off-screen shadow casters, DESIGN §18.2) ───────────────
   building: {
@@ -86,6 +92,7 @@ export const DECOR_KINDS = {
       lit: 'window-lit bias added to the palette ratio (−0.2..0.2, default 0)',
       tint: 'lightness jitter (−0.04..0.04, default 0)',
       clutter: 'roof clutter mask bits: 1 water tank, 2 AC boxes, 4 antennas, 8 laundry lines (default 3)',
+      ...RECLAIMED,
     },
   },
   house: {
@@ -96,7 +103,7 @@ export const DECOR_KINDS = {
       h: 'eave height, m (3–6, default 3.2)', roofH: 'ridge above the eave, m (1.5–3.5, default 2.4)',
       roof: 'roof colour index into the Suburbs accents (0–4, default 4 = roof brick)',
       garage: '0/1 attached garage on the driveway side (default 0)', porch: '0/1 porch facing the street (default 1)',
-      lit: 'window-lit bias (−0.2..0.2, default 0)',
+      lit: 'window-lit bias (−0.2..0.2, default 0)', ...RECLAIMED,
     },
   },
   warehouse: {
@@ -106,6 +113,7 @@ export const DECOR_KINDS = {
       w: 'lateral depth, m (10–24, default 16)', d: 'length along s, m (16–40, default 24)', h: 'height, m (6–14, default 9)',
       ribs: 'rib spacing, m (0.3–0.8, default 0.5)', door: '0/1 roller door facing the street (default 1)',
       brand: 'sign band brand index into DECOR_BRANDS.docks (−1 none)', color: 'cladding colour index into Docks accents (0–5)',
+      ...RECLAIMED,
     },
   },
   tower: {
@@ -115,7 +123,7 @@ export const DECOR_KINDS = {
     params: {
       w: 'lateral depth, m (6–10, default 8)', d: 'length along s, m (6–12, default 9)',
       floors: 'storeys (8–14, default 11; 3.2 m each)', bladeSigns: 'blade signs on the street face (0–3, default 1)',
-      lit: 'window-lit bias (−0.2..0.2, default 0)', accent: 'emissive accent index into Neon accents (0–5)',
+      lit: 'window-lit bias (−0.2..0.2, default 0)', accent: 'emissive accent index into Neon accents (0–5)', ...RECLAIMED,
     },
   },
   shadow_caster: {
@@ -124,7 +132,8 @@ export const DECOR_KINDS = {
       + 'trees and crane arms at |x| 9–14 whose shadows stripe the street (DESIGN §18.2).',
     params: {
       w: 'lateral size, m (1–12)', d: 'length along s, m (1–30)', h: 'height, m (2–40)',
-      shape: 'silhouette: 0 box, 1 gable roof, 2 tree crown, 3 crane arm (default 0)',
+      shape: 'silhouette: 0 box, 1 gable roof, 2 tree crown, 3 crane arm, 4 a row of leafy crowns, 5 plain water tower (default 0)',
+      roofTree: '0/1 a box ends in a roof tree\'s leaves (default: 1 in 2)',
     },
   },
   container_stack: {
@@ -141,6 +150,7 @@ export const DECOR_KINDS = {
     params: {
       h: 'height of the gantry, m (20–40, default 28)', boom: 'boom length, m (15–40, default 25)',
       side: 'boom direction: −1 left, +1 right (default sign of x)', beacon: '0/1 amber beacon at the top (default 1)',
+      tree: '0/1 a tree on the cab', nest: '0/1 a heron\'s nest on the boom',
     },
   },
   end_wall: {
@@ -153,12 +163,13 @@ export const DECOR_KINDS = {
       brand: 'shopfront sign brand index into DECOR_BRANDS[area] (−1 none)',
       word: 'Neon only: NEON_SIGN_WORDS index for the sign (−1 = Latin brand)',
       shutters: 'number of shutter bays for style 1 (1–6, default 3)',
+      live: 'Neon: 0/1 one lit 営業中 or 喫茶 sign (default: 1 in 4)', ...RECLAIMED,
     },
   },
   chain_link: {
     zone: 'side', areas: ['docks', 'levelCrossing'], castShadow: true,
     doc: 'Chain-link fence run along s outside the corridor (posts + translucent mesh).',
-    params: { len: 'length along s, m (2–40)', h: 'height, m (1.6–2.4, default 2.0)', post: 'post spacing, m (default 2.5)' },
+    params: { len: 'length along s, m (2–40)', h: 'height, m (1.6–2.4, default 2.0)', post: 'post spacing, m (default 2.5)', ivy: 'ivy woven in 0..1' },
   },
   water: {
     zone: 'backdrop', areas: ['docks', 'harborBridge'], castShadow: false,
@@ -192,7 +203,7 @@ export const DECOR_KINDS = {
     doc: 'Street lamp. Variant skins per area: DT brass ornate, SB simple, Docks floodlight mast, Neon lantern-topped.',
     params: {
       h: 'pole height, m (3.5–8, default 5)', arm: 'arm reach toward the street, m (0–1.2; head stays at |x| ≥ 4.6)',
-      lit: 'lamp emissive 0..1 (default: palette driven)',
+      lit: 'switched on at dusk 0/1, steady (default: 1 in DT 0, SB 0.2, IN 0.4, NE 0.6)', vine: '0/1 ivy spiral and a vine from the arm',
     },
   },
   tree: {
@@ -200,7 +211,7 @@ export const DECOR_KINDS = {
     doc: 'Tree outside the corridor (Downtown palms in planters, Suburbs round trees, Greenway park trees). Sways gently.',
     params: {
       crown: 'crown radius, m (0.8–3, default 1.6)', trunkH: 'trunk height, m (1.5–6, default 2.6)',
-      species: '0 round deciduous, 1 palm (in a planter), 2 conifer (default 0)', sway: 'sway amount 0..1 (default 0.3)',
+      species: '0 round deciduous, 1 palm (in a planter), 2 conifer, 3 plane, 4 fig (DT), 5 birch (SB) (default 0)', sway: 'sway amount 0..1 (default 0.3)',
     },
   },
   cherry_tree: {
@@ -211,17 +222,17 @@ export const DECOR_KINDS = {
   hedge_round: {
     zone: 'side', areas: ['suburbs', 'greenway'], castShadow: true,
     doc: 'Round clipped hedge / bush in a front yard.',
-    params: { r: 'radius, m (0.4–1.2, default 0.7)', squash: 'height/width ratio (0.6–1.2, default 0.85)' },
+    params: { r: 'radius, m (0.4–1.2, default 0.7)', squash: 'height/width ratio (0.6–1.2, default 0.85)', bloom: '0/1 shaggy flowering buddleia' },
   },
   fence_run: {
     zone: 'side', areas: ['suburbs', 'greenway'], castShadow: true,
     doc: 'Front-yard boundary outside the corridor: picket fence, hedge strip or low wall, along s.',
-    params: { len: 'length along s, m (1–40)', h: 'height, m (0.5–1.4, default 1.0)', style: '0 picket, 1 hedge, 2 low wall' },
+    params: { len: 'length along s, m (1–40)', h: 'height, m (0.5–1.4, default 1.0)', style: '0 picket, 1 hedge, 2 low wall', roses: '0/1 climbing roses (Suburbs)' },
   },
   low_wall: {
     zone: 'side', areas: ['greenway', 'downtown'], castShadow: true,
     doc: 'Low decorative park or plaza wall outside the corridor (not grindable; never cream-edged).',
-    params: { len: 'length along s, m', h: 'height, m (0.3–0.8, default 0.5)' },
+    params: { len: 'length along s, m', h: 'height, m (0.3–0.8, default 0.5)', moss: '0/1 moss cap' },
   },
   awning: {
     zone: 'side', areas: ['downtown', 'suburbs', 'neon'], castShadow: true,
@@ -241,6 +252,7 @@ export const DECOR_KINDS = {
       brand: 'brand index into DECOR_BRANDS[area] (−1 none)', word: 'Neon: NEON_SIGN_WORDS index (−1 = Latin brand)',
       emissive: 'glow 0..2.5 (default 0 Downtown, 1.8 Neon)', glow: '0/1 additive glow card behind (Neon, default 1)',
       mount: 'height of the sign bottom above y, m (2.2–4, default 2.6)',
+      live: 'Neon: 0/1 lit, else a dead tube (default: 70%; 出口 and 薬局 never lit)',
     },
   },
   banner: {
@@ -260,7 +272,8 @@ export const DECOR_KINDS = {
       + 'facing the camera. Inner edge |x| ≥ 4.9. Abstract invented glyphs only.',
     params: {
       w: 'width, m (2–6, default 3.5)', h: 'height, m (1.5–5, default 2.5)', pole: 'pole height, m (default 3.5)',
-      hue: 'base hue 0..1', drift: 'hue drift Hz (default 0.2)', flicker: '0/1 rare flicker (default 1)', brand: 'brand index',
+      hue: 'base hue 0..1', drift: 'hue drift Hz (default 0.2)', flicker: 'ignored (RECLAIM: nothing flickers)', brand: 'brand index',
+      live: '0/1 lit, else dark (default: 70%)',
     },
   },
   vending_machine: {
@@ -315,7 +328,7 @@ export const DECOR_KINDS = {
   mailbox_post: {
     zone: 'side', areas: ['suburbs'], castShadow: true,
     doc: 'Front-yard mailbox on a post outside the corridor (the in-corridor mailbox is an obstacle).',
-    params: { color: 'colour index into Suburbs accents (0–4)' },
+    params: { color: 'colour index into Suburbs accents (0–4)', nest: '0/1 a nest on top' },
   },
   bin_pair: {
     zone: 'side', areas: ['suburbs'], castShadow: true,
@@ -333,9 +346,11 @@ export const DECOR_KINDS = {
     params: { r: 'arc radius, m (1–3, default 2)', rate: 'sweep Hz (default 0.3)' },
   },
   parked_car_side: {
-    zone: 'side', areas: ['downtown', 'suburbs', 'neon'], castShadow: true,
-    doc: 'Parked car outside the corridor (driveways, side streets). The in-corridor parked_car is an obstacle.',
-    params: { color: 'body colour seed 0..1', van: '0 car, 1 van' },
+    zone: 'side', areas: ['downtown', 'suburbs', 'docks', 'neon'], castShadow: true,
+    doc: 'Parked car outside the corridor (driveways, side streets; vehicle builder, sun-faded paint, no chrome). '
+      + 'Neon: a taxi with an unlit textless roof sign, ≤ 1 per chunk at |x| ≥ 5. The in-corridor parked_car is an obstacle.',
+    params: { color: 'body colour seed 0..1', van: '0 car, 1 van', body: '0 sedan, 1 estate, 2 suv, 3 panel van, 4 kei van, 5 pickup (default: van)',
+      age: 'weathering 0..1', cat: '0/1 a ginger cat on the roof (not Neon)' },
   },
   pallet_pile: {
     zone: 'side', areas: ['docks'], castShadow: true,
@@ -366,6 +381,7 @@ export const DECOR_KINDS = {
     params: {
       x0: 'left anchor x, m (≤ −4.6)', x1: 'right anchor x, m (≥ 4.6)', sag: 'sag at mid-span, m (0–1.2, default 0.6)',
       count: 'lanterns (6–24, default 12)', palette: '0 red/paper alternating, 1 paper only, 2 red only', sway: 'Hz (default 0.5)',
+      litRatio: 'share of bulbs lit, steady; bulbs only at |x| ≥ 4.6 (default 0.6)',
     },
   },
   overhead_wire: {
@@ -446,14 +462,84 @@ export const DECOR_KINDS = {
     params: { rate: 'petals per second on screen (default 6)', len: 'active length along s, m' },
   },
   leaf_emitter: {
-    zone: 'ambient', areas: ['suburbs', 'greenway'], castShadow: false,
+    zone: 'ambient', areas: ANY, castShadow: false,
     doc: 'Ambient leaves blowing across the street (Greenway "leaves blowing", DESIGN §12.2).',
     params: { rate: 'leaves per second on screen (default 6)', len: 'active length along s, m' },
   },
   maglev_train: {
     zone: 'ambient', areas: ['neon'], castShadow: false,
-    doc: 'Sora Line train pass along the maglev beams: a light streak with a whoosh every ~20 s.',
-    params: { period: 'seconds between passes (default 20)', phase: 'offset, s', len: 'streak length, m (default 40)', speed: 'm/s (default 45)' },
+    doc: 'Sora Line train pass along the maglev beams: a lit carriage with a soft whoosh every ~40 s.',
+    params: { period: 'seconds between passes (default 40, never under 40)', phase: 'offset, s', len: 'streak length, m (default 40)', speed: 'm/s (default 45)' },
+  },
+
+  // ─── RECLAIM (theme §4, T3): nature moving back in. Nothing overhead, nothing opaque over the corridor; 3D plants only
+  // at |x| ≥ 4.6 (the clean core |x| ≤ 3.6 keeps the old decal kinds; flat weeds and moss in 3.6–4.5 at ≤ 1.3:1). ───
+  weed_edge: {
+    zone: 'ground', areas: ANY, castShadow: false,
+    doc: 'Flat weed strip along the edge band (3.6 ≤ |x| ≤ 4.5) or a building base, ≤ 1.3:1 against the surface and '
+      + '≥ 0.3 m from grind edges; flower dots only at |x| ≥ 4.6. x is the strip centre line.',
+    params: { len: 'length along s, m (1–8)', side: '−1 / +1', density: '0..1 (default 0.6)', flowers: '0..1 (default 0)' },
+  },
+  moss_patch: {
+    zone: 'ground', areas: ANY, castShadow: false,
+    doc: 'Flat moss patch on a sidewalk, plaza or apron at |x| ≥ 3.6.',
+    params: { r: 'radius, m (0.3–1.5, default 0.8)', tint: '0 moss, 1 lichen' },
+  },
+  root_lift: {
+    zone: 'ground', areas: ['downtown', 'suburbs', 'neon'], castShadow: false,
+    doc: 'Flat root and slab-crack decal at |x| ≥ 3.6 beside a tree. No geometry: it never reads as a bump.',
+    params: { len: 'length along s, m (0.8–2.5, default 1.4)', side: '−1 / +1' },
+  },
+  wild_grass: {
+    zone: 'side', areas: ANY, castShadow: false,
+    doc: 'Clump of wild grass (solid blade triangles with sway) at |x| ≥ 4.6, optional flower heads.',
+    params: { count: 'blades (3–12, default 7)', h: 'height, m (0.3–0.9, default 0.6)', flowers: '0..1 (default 0)', hue: '0..1 (area flora index)' },
+  },
+  shrub_wild: {
+    zone: 'side', areas: ANY, castShadow: true,
+    doc: 'Wild shrub at |x| ≥ 4.6: a fern clump, or buddleia with lilac blooms.',
+    params: { r: 'radius, m (0.4–1.2, default 0.7)', h: 'height, m (default r × 1.2)', bloom: '0..1 (default 0)' },
+  },
+  sapling: {
+    zone: 'side', areas: ANY, castShadow: true,
+    doc: 'Young tree grown out of a sidewalk crack at |x| ≥ 4.6.',
+    params: { h: 'height, m (1–3, default 2)' },
+  },
+  cart_planter: {
+    zone: 'side', areas: ['downtown', 'suburbs'], castShadow: true,
+    doc: 'A rust shopping cart full of wildflowers, parked on the sidewalk band (scenery).',
+    params: { bloom: '0..1 (default 0.8)' },
+  },
+  perched_birds: {
+    zone: 'side', areas: ANY, castShadow: false,
+    doc: 'Birds perched on a wire, string anchor or pole top beyond the corridor (lightest tone #A6A3A8). They flutter '
+      + 'off outward when the skater passes beneath or a trick lands within 6 m (vfx only). y is the perch height.',
+    params: { x0: 'perch span start x, m (|x| ≥ 4.6)', x1: 'perch span end x, m (same side, |x| ≥ 4.6)', count: 'birds (2–6, default 3)',
+      species: '0 sparrow, 1 pigeon, 2 grey-backed gull (default 0)' },
+  },
+  wildlife: {
+    zone: 'backdrop', areas: ALL, castShadow: true,
+    doc: 'One animal, idle, at |x| ≥ 6 or in a cross street; at most one per area visit.',
+    params: { species: '0 deer (DT, SB), 1 fox, 2 grey heron, 3 cat (not Neon)', pose: '0 standing, 1 head down / sitting' },
+  },
+  critter_emitter: {
+    zone: 'ambient', areas: ANY, castShadow: false,
+    doc: 'Ambient critters in the side bands only (|x| ≥ 4.6), never in the HUD band or the top third of the screen; '
+      + 'never yellow, gold or white; no firefly species. Butterflies lift off on a nearby trick landing.',
+    params: { species: '0 butterflies (lilac / sky blue), 1 dandelion seeds (warm grey, ≤ 35% alpha), 2 moths at live signs '
+      + '(Neon), 3 dragonflies (SB, IN)', rate: 'per second on screen (default 0.6)', len: 'active length along s, m' },
+  },
+  drips: {
+    zone: 'ambient', areas: ['neon', 'underpass'], castShadow: false,
+    doc: '"It just rained": drips from awning and sign edges in the side bands and ripple rings on puddles. No falling '
+      + 'rain. Off with Reduce effects.',
+    params: { rate: 'drips per second near the skater (default 3)', len: 'active length along s, m' },
+  },
+  vista: {
+    zone: 'backdrop', areas: ALL, castShadow: true,
+    doc: 'The area\'s one big view, once per visit, at a cross street, camera-facing (theme §6): 0 the Hotel Amberlane '
+      + 'fig (DT), 1 the vine-wrapped water tower (SB), 2 the heron crane (Docks), 3 the open sign, Kumo Mart 24 (Neon).',
+    params: { which: '0–3 (default: the area\'s)', w: 'lateral span, m (default 10)' },
   },
 } as const satisfies Readonly<Record<string, DecorKindDef>>;
 

@@ -76,7 +76,7 @@ export class Generator implements WorldGen {
   private readonly rejections: Record<string, number> = {};
   private coinsTotal = 0;
   private coinsTrick = 0;
-  private readonly decorState = { nextEndWall: 0, backNext: [0, 0] as [number, number] };
+  private readonly decorState = { nextEndWall: 0, backNext: [0, 0] as [number, number], visit: { end: -1, start: 0, vista: false, wildlife: false } };
   /** Validator stats of the committed segments (static asserts read them). */
   readonly valStats = { decisionMin: Infinity, windowMin: Infinity, deadEndMax: 0, actions: 0, fillers: 0, walls: 0 };
   readonly internals: GenInternals = { obstacleById: new Map(), edgeById: new Map() };
@@ -582,7 +582,7 @@ export class Generator implements WorldGen {
     }
     const decor: Decor[] = [];
     const denv = { area, gateway, s0, s1, datum: Math.max(c.datum, b.datumEnd), driveways: b.driveways,
-      nextEndWall: this.decorState.nextEndWall, backNext: this.decorState.backNext, areaEndS: sAt(areaEndT) };
+      nextEndWall: this.decorState.nextEndWall, backNext: this.decorState.backNext, areaEndS: sAt(areaEndT), visit: this.decorState.visit };
     emitDecor(decor, denv, decorRng);
     this.decorState.nextEndWall = denv.nextEndWall;
     const safe: SafeKey[] = res.line.keys(t1);

@@ -14,15 +14,19 @@ import { DECAL, type DecalId } from '../textures/decals';
 import { signRect } from '../textures/signs';
 import { RENDER } from '../render.config';
 import { FACE, FX } from '../writer';
-import { CAR_BODIES, drawCar } from './car';
+import { CAR_BODIES, drawVehicle } from './car';
 import { rnd, surfaceLook, type KitCtx } from './common';
 import { FLORA, awningAt, bladeSignAt, board, bridgeTruss, building, cityGlow, containerStack, crane, crownAt, endWall, fern, house, hz, num, opt,
   shadowCaster, tower, tunnel, wallDrape, warehouse, water } from './buildings';
 import { glowCard, litSign } from './neon';
+import { RECLAIM_DECOR, catLoaf } from './reclaim';
 
 export type DecorFn = (c: KitCtx, d: Decor) => void;
 /** Ambient emitters (petals, leaves, steam, sprinklers, train passes) found while building; vfx/ and the view read them. */
-export interface AmbientRec { kind: 'petals' | 'leaves' | 'steam' | 'sprinkler' | 'train'; s: number; x: number; y: number; len: number; rate: number; p: Readonly<Record<string, number>> }
+export interface AmbientRec {
+  kind: 'petals' | 'leaves' | 'steam' | 'sprinkler' | 'train' | 'critters' | 'drips' | 'birds' | 'puddle';
+  s: number; x: number; y: number; len: number; rate: number; p: Readonly<Record<string, number>>;
+}
 
 const inward = (d: Decor) => -(Math.sign(d.x) || 1);
 const nearOf = (d: Decor) => (d.x > 0 ? FX.near : 0);
@@ -435,15 +439,23 @@ const hoop: DecorFn = (c, d) => {
   K.col(0xff8a5b).cyl(d.x, d.s - 0.4, d.y + h, d.y + h + 0.03, 0.22, 8, false);
 };
 
+/** Decor vehicle bodies (`parked_car_side` `body`): sedan, estate, SUV, panel van, kei van, pickup. */
+const SIDE_BODIES = ['sedan', 'estate', 'suv', 'panel_van', 'kei_van', 'pickup'] as const;
 const parkedCarSide: DecorFn = (c, d) => {
-  const van = num(d, 'van', 0) === 1, L = van ? 4.6 : 4.4, W = 1.85, H = van ? 1.9 : 1.45;
-  const xa = Math.sign(d.x) * Math.max(4.6, Math.abs(d.x)), xb = xa + Math.sign(d.x) * W;
-  // RECLAIM: sun-faded mid-value paints, never ink, no chrome (the T1 vehicle builder replaces the body).
-  const cars = RECLAIM.decorCarPaint;
-  const body = cars[Math.floor(num(d, 'color', rnd(d.s, d.x)) * cars.length) % cars.length] ?? CAR_BODIES[0]!;
-  c.K.reset().to('b').lit(0, 0, nearOf(d));
-  drawCar(c.K, { x0: Math.min(xa, xb), x1: Math.max(xa, xb), s0: d.s, s1: d.s + L, y: d.y, h: H, body, accent: RECLAIM.bumper, van });
-  c.K.to('b');
+  // RECLAIM (theme §4): the T1 vehicle builder in sun-faded mid-value paints, never ink, no chrome; a ginger cat on
+  // some roofs (not Neon); Neon parks taxis with an unlit, textless roof sign.
+  const area = c.areaAt(d.s), neon = area === 'neon', van = num(d, 'van', 0) === 1;
+  const body = neon ? 'taxi' : SIDE_BODIES[Math.abs(num(d, 'body', van ? 3 : 0) | 0) % SIDE_BODIES.length]!;
+  const big = body === 'panel_van' || body === 'kei_van', L = body === 'kei_van' ? 3.4 : big ? 4.6 : 4.4, W = body === 'kei_van' ? 1.5 : 1.85;
+  const H = big ? 1.9 : body === 'suv' ? 1.7 : 1.45;
+  const xa = Math.sign(d.x) * Math.max(4.6, Math.abs(d.x)), xb = xa + Math.sign(d.x) * W, x0 = Math.min(xa, xb), x1 = Math.max(xa, xb);
+  const cars = RECLAIM.decorCarPaint, nf = nearOf(d);
+  const paint = neon ? RECLAIM.neonCarBody[3]! : cars[Math.floor(num(d, 'color', rnd(d.s, d.x)) * cars.length) % cars.length] ?? CAR_BODIES[0]!;
+  const K = c.K.reset().to('b').lit(0, 0, nf);
+  drawVehicle(K, { body, x0, x1, s0: d.s, s1: d.s + L, y: d.y, h: H, paint: mixHex(paint, fadePaint(paint), num(d, 'age', 0.5)), side: shade(paint, -0.32), stripe: -1, hazard: false });
+  K.to('b').lit(0, 0, nf);
+  if (neon) K.col(RECLAIM.deadTube).box((x0 + x1) / 2 - 0.3, d.y + H, d.s + L * 0.45, (x0 + x1) / 2 + 0.3, d.y + H + 0.2, d.s + L * 0.55);
+  else if (num(d, 'cat', 0) > 0) catLoaf(K, (x0 + x1) / 2, d.y + H, d.s + L * 0.5, RECLAIM.ginger, nf);
 };
 
 const palletPile: DecorFn = (c, d) => {
@@ -710,6 +722,7 @@ export const DECOR_RENDERERS: Readonly<Record<DecorKind, DecorFn>> = {
   crosswalk, lane_dash: laneDash, parking_bay: parkingBay, road_arrow: roadArrow, crack, patch, oil_stain: oilStain, drain,
   manhole, puddle, leaf_scatter: leafScatter, petal_scatter: petalScatter, driveway, park_path: parkPath, verge, steam_vent: steamVent,
   petal_emitter: () => {}, leaf_emitter: () => {}, maglev_train: () => {},
+  ...RECLAIM_DECOR,
 };
 
 /** The ambient record of an emitter decor (null for other kinds). */
@@ -724,6 +737,11 @@ export function ambientOf(d: Decor): AmbientRec | null {
     case 'sprinkler': return hz(d, 84) < 0.1 ? { kind: 'sprinkler', s: d.s, x: d.x, y: d.y, len: num(d, 'r', 2), rate: num(d, 'rate', 0.3), p } : null;
     case 'maglev_train': return { kind: 'train', s: d.s, x: d.x, y: d.y, len: num(d, 'len', 40), rate: Math.max(40, num(d, 'period', 20) * 2), p };
     case 'cherry_tree': return num(d, 'petals', 0.5) > 0 ? { kind: 'petals', s: d.s, x: d.x, y: d.y + 3, len: 6, rate: num(d, 'petals', 0.5) * 3, p } : null;
+    // RECLAIM (theme §4, T4): the critters, the after-rain drips and the perched birds live in vfx/critters.ts.
+    case 'critter_emitter': return { kind: 'critters', s: d.s, x: d.x, y: d.y, len: num(d, 'len', 32), rate: num(d, 'rate', 0.6), p };
+    case 'drips': return { kind: 'drips', s: d.s, x: d.x, y: d.y, len: num(d, 'len', 32), rate: num(d, 'rate', 3), p };
+    case 'perched_birds': return { kind: 'birds', s: d.s, x: d.x, y: d.y, len: 0, rate: num(d, 'count', 3), p };
+    case 'puddle': return num(d, 'tint', 0) > 0 ? { kind: 'puddle', s: d.s, x: d.x, y: d.y, len: num(d, 'len', 1.4), rate: 0, p } : null;   // Neon: drip ripples
     default: return null;
   }
 }

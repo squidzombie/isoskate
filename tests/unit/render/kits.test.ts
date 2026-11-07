@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { DECOR_KINDS, NEON_SIGN_WORDS, type DecorKind } from '../../../src/core/decor';
 import type { AreaId, PropKind } from '../../../src/core/ids';
 import { CHUNK_LEN } from '../../../src/core/tuning';
-import type { Chunk, Obstacle } from '../../../src/core/world';
+import type { Chunk, Decor, Obstacle } from '../../../src/core/world';
 import { ObTag } from '../../../src/core/world';
 import { DEFAULT_BUILD, LOOK_SWITCH, buildChunk, chunkHash, heightClass, lookAreaAt, lookSwitch } from '../../../src/world/render/chunkBuilder';
 import { CONTACT_PAD, LIP } from '../../../src/world/render/kits/common';
@@ -254,6 +254,32 @@ describe('RECLAIM kits (DESIGN §18.4 dressing rules 5 and 8, §18.5 vehicle bui
 });
 
 describe('decor renderers', () => {
+  it('RECLAIM edge-band decals (weeds, moss, roots) stay out of the clean core and ≥ 0.3 m from every grind edge', () => {
+    for (const area of AREAS) {
+      const ch = emptyChunk(2, area), s0 = 2 * CHUNK_LEN;
+      // A grind edge along the left edge band (x −4.05): the left weeds must give way, the right ones still draw.
+      const host = ch.obstacles[0]!;
+      host.edges = [...host.edges, { id: 99001, obstacleId: host.id, a: { s: s0, x: -4.05, y: 0.15 }, b: { s: s0 + 30, x: -4.05, y: 0.15 }, kind: 'ledge', material: 'concrete', layer: 0, pickOnly: false }];
+      ch.decor = ([-1, 1] as const).flatMap((sd) => [
+        { ...decorOf('weed_edge', area, s0 + 2, sd), x: sd * 4.05, params: { len: 8, side: sd, density: 1, flowers: 1 } },
+        { ...decorOf('moss_patch', area, s0 + 14, sd), x: sd * 4.1, params: { r: 0.8 } },
+        { ...decorOf('root_lift', area, s0 + 20, sd), x: sd * 4.0, params: { len: 1.4, side: sd } }] as Decor[]);
+      const { out } = build(ch, area);
+      const band = out.decals.filter((d) => [DECAL.weedA, DECAL.weedB, DECAL.mossA, DECAL.mossB, DECAL.lichen, DECAL.rootLift].includes(d.id as never));
+      expect(band.length, area).toBeGreaterThan(0);
+      for (const d of band) {
+        expect(Math.abs(d.x) - d.w / 2, `${area} clean core`).toBeGreaterThanOrEqual(3.6 - 1e-6);
+        for (const e of ch.obstacles.flatMap((o) => o.edges)) {
+          if (d.s + d.len / 2 < Math.min(e.a.s, e.b.s) - 0.3 || d.s - d.len / 2 > Math.max(e.a.s, e.b.s) + 0.3) continue;
+          const ex = (e.a.x + e.b.x) / 2;
+          expect(Math.abs(ex - d.x) - d.w / 2, `${area}: decal at x ${d.x.toFixed(2)} vs edge ${ex}`).toBeGreaterThanOrEqual(0.3 - 1e-6);
+        }
+      }
+      expect(band.some((d) => d.x > 0)).toBe(true);
+      // Flower dots only beyond the corridor edge.
+      for (const d of out.decals.filter((k) => k.id === DECAL.flowers)) expect(Math.abs(d.x)).toBeGreaterThanOrEqual(4.6);
+    }
+  });
   it('every DECOR_KINDS entry has a renderer', () => {
     for (const k of Object.keys(DECOR_KINDS)) expect(DECOR_RENDERERS[k as DecorKind], k).toBeTypeOf('function');
   });
@@ -271,7 +297,8 @@ describe('decor renderers', () => {
           if (kind === 'road_arrow') ch.decor.unshift(decorOf('crosswalk', area, 2 * CHUNK_LEN + 14, side, 3));
           const { g, out, tris } = build(ch, area);
           const base = baseline(area);
-          if (def.zone === 'ambient') { expect(out.ambient.length + (kind === 'maglev_train' ? 1 : 0)).toBeGreaterThan(0); continue; }
+          // (RECLAIM: perched birds are drawn by vfx/critters.ts, which lets them take off: an ambient record, no mesh.)
+          if (def.zone === 'ambient' || kind === 'perched_birds') { expect(out.ambient.length + (kind === 'maglev_train' ? 1 : 0)).toBeGreaterThan(0); continue; }
           expect(tris - base + out.decals.length + out.lanterns.length, `${kind} ${area}`).toBeGreaterThan(0);
           if (kind === 'road_arrow') expect(out.decals.some((d) => d.id === DECAL.arrowS || d.id === DECAL.slow), `${kind} ${area}: arrow painted`).toBe(true);
           for (const t of TARGETS) for (let i = 0; i < g[t].count; i++) {

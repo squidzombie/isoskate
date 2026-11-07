@@ -38,8 +38,8 @@ export const STREAM = { buildBudgetMs: 4, keepBehindM: 14, maxBehind: 3, rebuild
 /** Per-tier world settings (TECH §8.9): glow cards per chunk, particle cap (vfx reads it), shadow map size. */
 export const QUALITY: Readonly<Record<QualityTier, { glowCards: number; particles: number; shadow: number; dpr: number }>> = {
   low: { glowCards: 20, particles: 150, shadow: 0, dpr: 1.0 },
-  med: { glowCards: 40, particles: 300, shadow: 1024, dpr: 1.5 },
-  high: { glowCards: 40, particles: 300, shadow: 2048, dpr: 2.0 },
+  med: { glowCards: 24, particles: 300, shadow: 1024, dpr: 1.5 },
+  high: { glowCards: 24, particles: 300, shadow: 2048, dpr: 2.0 },
 };
 
 /** Auto-adjust (TECH §8.9): measures CPU work (sim + render submit) and missed vsyncs, never frame intervals alone. */

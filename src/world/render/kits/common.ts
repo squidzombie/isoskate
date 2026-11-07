@@ -52,6 +52,8 @@ export interface KitCtx {
   lantern(l: LanternRec): void;
   /** Contact shadows drawn so far (the dispatcher adds default ones under solids a kit left without). */
   contacts: number;
+  /** The chunk's grind edges (RECLAIM rule 5: no weed, moss or root decal within 0.3 m of one). */
+  edges: readonly GrindEdge[];
 }
 
 /** Deterministic per-object random in [0, 1) from integers. */

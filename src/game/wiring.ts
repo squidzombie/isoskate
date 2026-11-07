@@ -19,7 +19,7 @@ import { createSim } from '../sim';
 import { createSkaterView } from '../skater';
 import { TRICKS } from '../tricks';
 import { createUi } from '../ui';
-import { createVfx } from '../vfx';
+import { createVfx, onBirdFlutter } from '../vfx';
 import { createCameraRig, createWorldView, setCamVariant } from '../world/render';
 import { App } from './app';
 import { GameLoop } from './loop';
@@ -75,6 +75,7 @@ export function wire(root: HTMLElement): Game {
   const gameBus = createBus<GameEvent>();
   const appBus = createBus<AppEvent>();
   audio.attach(gameBus, appBus);
+  onBirdFlutter(vfx, (pan) => audio.sfx('birdFlutter', { pan }));   // RECLAIM: perched birds take off (vfx/critters.ts)
   ui.attach(gameBus, appBus, meta);
   bindHaptics(gameBus, haptics, () => save.data.settings.haptics);
   const session = createRunSession(save, flags.seed);

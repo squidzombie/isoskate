@@ -10,7 +10,7 @@ import type { Chunk, SafeKey, WorldGen } from '../../../src/core/world';
 import { ObTag } from '../../../src/core/world';
 import { AREA_TEMPLATES, createWorldGen, createWorldQuery, GATEWAYS, GEN, GEN_FLAGS, Generator, gatewayWindow, LESSON_PARTS, rMinAt, ROLLOUT_CHAIN_T,
   ROLLOUT_END_S, SHARED } from '../../../src/world/gen';
-import { DECOR_KINDS } from '../../../src/core/decor';
+import { DECOR_KINDS, NEON_SIGN_WORDS } from '../../../src/core/decor';
 import { insetOf } from '../../../src/sim';
 import { checkPath } from '../../../src/world/gen/validator/path';
 import { SafeLine } from '../../../src/world/gen/safe';
@@ -31,18 +31,44 @@ function hashChunk(c: Chunk, h: number): number {
   for (const d of c.decor) w(d.kind.length, cm(d.s), cm(d.x), d.variant);
   return h;
 }
+/** The obstacle chain of the golden test (theme T3): layout, solids, pits, edges, coins and the safe line, no decor.
+ *  It stays bit-identical through every decor or render change (RECLAIM T0–T7a); only a generator change moves it. */
+function obstacleHashChunk(c: Chunk, h: number): number {
+  const w = (...v: number[]) => { h = hash32(h, ...v); };
+  w(c.index, c.obstacles.length, c.coins.length, c.safe.length);
+  for (const o of c.obstacles) {
+    w(o.id, o.kind.length, o.kind.charCodeAt(0), cm(o.s), cm(o.x), cm(o.len), cm(o.wid), cm(o.hgt), o.tags);
+    for (const so of o.solids) w(cm(so.box.s0), cm(so.box.s1), cm(so.box.x0), cm(so.box.x1), cm(so.box.y0), cm(so.box.y1), so.top.length);
+    for (const sl of o.slabs) w(cm(sl.s0), cm(sl.s1), cm(sl.x0), cm(sl.x1), cm(sl.y0), cm(sl.y1));
+    for (const p of o.pits) w(cm(p.s0), cm(p.s1), cm(p.x0), cm(p.x1), cm(p.lipY));
+    for (const e of o.edges) w(e.id, cm(e.a.s), cm(e.a.x), cm(e.a.y), cm(e.b.s), cm(e.b.x), e.pickOnly ? 1 : 0);
+  }
+  for (const k of c.coins) w(k.id, cm(k.p.s), cm(k.p.x), cm(k.p.y), k.value);
+  for (const k of c.safe) w(Math.round(k.t * 1000), cm(k.x), k.action ? 1 : 0);
+  return h;
+}
+/** The decor chain of the golden test (theme T3): every decor record's kind, place, height, variant and params. */
+function decorHashChunk(c: Chunk, h: number): number {
+  const w = (...v: number[]) => { h = hash32(h, ...v); };
+  w(c.index, c.decor.length);
+  for (const d of c.decor) {
+    w(d.kind.length, d.kind.charCodeAt(0), d.kind.charCodeAt(d.kind.length - 1), cm(d.s), cm(d.x), cm(d.y), d.variant, Math.round(d.rotY * 1000));
+    if (d.params) for (const [k, v] of Object.entries(d.params)) w(k.length, k.charCodeAt(0), cm(v));
+  }
+  return h;
+}
 /** A generator built with GEN_FLAGS.trench forced (the flag is read once, at construction). */
 function genWith(trench: boolean, cfg: Parameters<typeof createWorldGen>[0]): WorldGen {
   const was = GEN_FLAGS.trench;
   GEN_FLAGS.trench = trench;
   try { return createWorldGen(cfg); } finally { GEN_FLAGS.trench = was; }
 }
-function worldHash(seed: number, chunks: number, o: { startT?: number; trench?: boolean } = {}): number {
-  const { trench, ...rest } = o;
+function worldHash(seed: number, chunks: number, o: { startT?: number; trench?: boolean; chain?: typeof hashChunk } = {}): number {
+  const { trench, chain, ...rest } = o;
   const gen = genWith(trench ?? GEN_FLAGS.trench, { seed, mode: 'normal', ...rest });
   let h = 0x9e3779b9 | 0;
   const first = Math.floor(sAt(o.startT ?? 0) / CHUNK_LEN);
-  for (let i = first; i < first + chunks; i++) h = hashChunk(gen.chunk(i), h);
+  for (let i = first; i < first + chunks; i++) h = (chain ?? hashChunk)(gen.chunk(i), h);
   return h >>> 0;
 }
 function keysOf(gen: WorldGen, s1: number): SafeKey[] {
@@ -53,11 +79,15 @@ function keysOf(gen: WorldGen, s1: number): SafeKey[] {
 const SEEDS = Array.from({ length: 20 }, (_, i) => i + 1);
 
 describe('world/gen determinism', () => {
-  it('golden chunk hashes (100 chunks ≈ 3.2 km) for 3 seeds, S_TRENCH off and on (the default since G0)', () => {
-    // Update deliberately when the generator changes (TECH §5.4).
+  // Two chains (theme T3, RECLAIM §12 check 2): the obstacle chain proves a decor or render change moved no gameplay;
+  // the decor chain is re-baselined deliberately when decor emission changes. Update either only on purpose (TECH §5.4).
+  it('golden OBSTACLE hashes (100 chunks ≈ 3.2 km) for 3 seeds, S_TRENCH off and on (the default since G0)', () => {
     expect(GEN_FLAGS.trench).toBe(true);
-    expect([1, 2, 3].map((s) => worldHash(s, 100, { trench: false }))).toEqual(GOLDEN);
-    expect([1, 2, 3].map((s) => worldHash(s, 100, { trench: true }))).toEqual(GOLDEN_TRENCH);
+    expect([1, 2, 3].map((s) => worldHash(s, 100, { trench: false, chain: obstacleHashChunk }))).toEqual(GOLDEN_OBSTACLES);
+    expect([1, 2, 3].map((s) => worldHash(s, 100, { trench: true, chain: obstacleHashChunk }))).toEqual(GOLDEN_OBSTACLES_TRENCH);
+  });
+  it('golden DECOR hashes (100 chunks) for 3 seeds (re-baselined only when decor emission changes)', () => {
+    expect([1, 2, 3].map((s) => worldHash(s, 100, { trench: true, chain: decorHashChunk }))).toEqual(GOLDEN_DECOR);
   });
   it('the same seed gives the same street, whatever order the chunks are asked for', () => {
     const a = createWorldGen({ seed: 7, mode: 'normal' });
@@ -444,5 +474,76 @@ describe('the Lesson Line (DESIGN §12.3) and the v1 template set (§10.4)', () 
   });
 });
 
-const GOLDEN = [3052969100, 58683428, 2693944971];
-const GOLDEN_TRENCH = [2550334903, 765902276, 613353182];
+describe('RECLAIM decor (theme §4, §6; T3)', () => {
+  const OBJECT_ZONES = new Set(['side', 'overhead', 'backdrop']);
+  /** Neon chunks of the first Neon visit of each seed (generation stops once the run leaves Neon). */
+  function neonChunks(seeds: number): Chunk[] {
+    const out: Chunk[] = [];
+    for (let seed = 1; seed <= seeds; seed++) {
+      const g = createWorldGen({ seed, mode: 'normal' });
+      let seen = false;
+      for (let i = 0; i < 400; i++) {
+        const c = g.chunk(i);
+        if (c.area === 'neon' && !c.blend) { seen = true; out.push(c); } else if (seen && c.area !== 'neon') break;
+      }
+    }
+    return out;
+  }
+  it('Neon is net-negative near the corridor: decor objects at |x| < 6 per chunk ≤ 90% of the pre-theme mean (50 seeds)', () => {
+    // Pre-theme mean (DEV before T3, the same 550 chunks): 19.973 side / overhead / backdrop records at |x| < 6 per Neon
+    // chunk (about 5.3 of them blade signs). Ground decals and ambient emitters draw no object and are not counted.
+    const PRE_THEME = 19.973;
+    const ch = neonChunks(50);
+    expect(ch.length).toBe(550);
+    let n = 0, live = 0, signs = 0;
+    for (const c of ch) for (const d of c.decor) {
+      if (Math.abs(d.x) < 6 && OBJECT_ZONES.has(DECOR_KINDS[d.kind as keyof typeof DECOR_KINDS].zone)) n++;
+      if (d.kind === 'blade_sign') {
+        signs++; live += d.params?.live ?? 0;
+        const w = NEON_SIGN_WORDS[d.params?.word ?? -1];
+        if (w === '出口' || w === '薬局') expect(d.params?.live, w).toBe(0);
+      }
+    }
+    expect(n / ch.length).toBeLessThanOrEqual(0.9 * PRE_THEME);
+    expect(live / signs).toBeGreaterThan(0.6);
+    expect(live / signs).toBeLessThan(0.75);
+  }, 60_000);
+  it('one vista per area visit, at most one animal (none in Neon); nature keeps its zones; arrows only with a crossing', () => {
+    for (const seed of [3, 7]) {
+      const g = createWorldGen({ seed, mode: 'normal' });
+      g.ensure(9000);
+      const vistas: number[] = [], animals: number[] = [];
+      for (let i = 0; (i + 1) * CHUNK_LEN < 9000; i++) {
+        const c = g.chunk(i);
+        const cross = c.decor.filter((d) => d.kind === 'crosswalk');
+        for (const d of c.decor) {
+          const ax = Math.abs(d.x);
+          if (d.kind === 'road_arrow') expect(cross.some((k) => Math.abs(k.s - d.s) < 0.01), `seed ${seed} arrow at ${d.s}`).toBe(true);
+          if (d.kind === 'wild_grass' || d.kind === 'shrub_wild' || d.kind === 'sapling' || d.kind === 'cart_planter') expect(ax, d.kind).toBeGreaterThanOrEqual(4.6);
+          if (d.kind === 'weed_edge' || d.kind === 'moss_patch' || d.kind === 'root_lift') expect(ax, d.kind).toBeGreaterThanOrEqual(3.6);
+          if (d.kind === 'perched_birds') for (const k of ['x0', 'x1']) expect(Math.abs(d.params![k]!), k).toBeGreaterThanOrEqual(4.6);
+          if (d.kind === 'vista') vistas.push(d.s);
+          if (d.kind === 'wildlife') { animals.push(d.s); expect(ax).toBeGreaterThanOrEqual(6); expect(c.area).not.toBe('neon'); }
+        }
+      }
+      // Visits: runs of non-gateway segments of one area (the last one may be cut off at 9 km).
+      const visits: [string, number, number][] = [];
+      for (const sg of g.segments()) {
+        if (sg.gateway || sg.s0 >= 9000) continue;
+        const last = visits[visits.length - 1];
+        if (last && last[0] === sg.area && Math.abs(last[2] - sg.s0) < 1) last[2] = sg.s1; else visits.push([sg.area, sg.s0, sg.s1]);
+      }
+      expect(visits.length).toBeGreaterThanOrEqual(4);
+      for (const [area, a, b] of visits.slice(0, -1)) {
+        expect(vistas.filter((s) => s >= a && s < b).length, `seed ${seed} ${area} vista`).toBe(1);
+        expect(animals.filter((s) => s >= a && s < b).length, `seed ${seed} ${area} animal`).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+});
+
+// Obstacle chain: identical from the T3 split through T7a (the RECLAIM re-skin moves no gameplay); T8 re-baselines it once.
+const GOLDEN_OBSTACLES = [4059795562, 1058502699, 2849456109];
+const GOLDEN_OBSTACLES_TRENCH = [123044223, 3914246493, 2655523978];
+// Decor chain: re-baselined in T3 (RECLAIM decor kinds and emission; was [1783084398, 3361667576, 1795712479] at the split).
+const GOLDEN_DECOR = [3513787741, 2851077237, 3473871542];

@@ -140,6 +140,19 @@ export const GEN = {
   /** Decor across the road (m between): Neon lantern strings, Suburbs overhead wires (with their poles). Sparse, so the
    *  read of the street stays on the ground plane (G1 owner playtest: Neon overhead clutter; was 26 / 32 m). */
   decorOverhead: { neonLanterns: 48, suburbsWires: 40 },
+  /** RECLAIM decor (theme §4, §6; T3). Spacings in m along s (×0.7–1.3 jitter), chances per segment unless noted.
+   *  Neon is net-negative near the corridor: 40% of the blade signs at |x| < 6 are not emitted and 70% of the rest are
+   *  live (出口 and 薬局 never). One vista and at most one animal per area visit, `vistaSec` / `wildlifeSec` into it. */
+  reclaim: {
+    neonSignCut: 0.4, signLive: 0.7, vistaSec: 12, wildlifeSec: 20, leafyCaster: 0.5,
+    grass: { downtown: 5, suburbs: 4.5, docks: 7 } as Readonly<Partial<Record<AreaId, number>>>,
+    weeds: { downtown: 10, suburbs: 9, docks: 14, neon: 12 } as Readonly<Record<AreaId, number>>,
+    shrub: { downtown: 12, suburbs: 9, docks: 16 } as Readonly<Partial<Record<AreaId, number>>>,
+    sapling: 0.3, cart: 0.12, moss: 0.5, birds: 0.6,
+    /** Critters per area: [species, rate per second on screen] (0 butterflies, 1 seeds, 2 moths, 3 dragonflies). */
+    critters: { downtown: [0, 0.4], suburbs: [0, 0.5], docks: [3, 0.3], neon: [2, 0.4] } as Readonly<Record<AreaId, readonly [number, number]>>,
+    drips: 3, leafRate: 3,
+  },
   /** Coins (DESIGN §10.8). Gold Stacks on hard lines from T3 (and transfers, high rails, Neon elevated). */
   coins: { stringSec: 0.12, stringMin: 5, stringMax: 8, edgeUp: 0.35, arcUp: 0.25, padUp: 0.35, groundY: 0.5,
     breatherAmp: 1.4, waveCount: 4, goldFromTier: 3 },

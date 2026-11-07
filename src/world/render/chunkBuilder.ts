@@ -59,6 +59,7 @@ export function* buildChunkSteps(ch: Chunk, w: KitTargets, areas: AreaSource, op
     decal: (d) => { out.decals.push(d); },
     lantern: (l) => { out.lanterns.push(l); },
     contacts: 0,
+    edges: ch.obstacles.flatMap((o) => o.edges),
   };
   streetBase(c, ch, (s) => (sw && areas.areaAt(s).blend ? LOOK[s < sw.s ? sw.from : sw.to].road : roadAt(areas, s)), sw?.s);
   yield;
