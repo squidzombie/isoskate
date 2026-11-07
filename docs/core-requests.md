@@ -295,6 +295,10 @@ The first block is the frozen behaviour later packages (GP, WG, WA, the bots) ca
 - **Mirrors pinned by tests** (save/ may not import meta/): `save/defaults.ts` crate meter `nextAt` 4000 = `CRATE_METER.first`, `save/sanitize.ts` Cardboard max 2 = `CRATE_HELD_MAX.cardboard`.
 - **For M4 (first-3-runs pacing, game/app.ts):** a fresh tap ≥ 0.6 s after run 1's crash still instant-retries, so that player meets the Level 2 crate on the Title (or the next Results row), not before run 2. If M4 wants "run 2 rides as the new skater" for everyone, skip the instant-retry window on the run whose rewards carry `RunRewardsExt.pending` (one `isRewardsExt(r) && r.pending` check in `onCrash`); the UI handles both paths already.
 
+### Final pass (appended; no core change)
+- **Crates prefer items no later level reward grants** (`meta/results.ts › reservedByLevels`, `rollCrate({ reserved })`): the Level 2 "guaranteed Rare skater" is Rook, Lark or Kofi, never Ines (the Level 15 reward) while one of those is unowned. Odds per rarity are unchanged; the fallback is any unowned item, then a duplicate.
+- **The first run of a new day refreshes today's Shop picks** at `applyRun` (same `featuredFor(day, owned)` the Shop uses), so the goal line, `RunRewards.wishlist.need` and the Results wishlist bar quote one price.
+
 ## AU: Audio (W3b)
 
 ### How AU uses the frozen hooks   (status: info)
