@@ -238,7 +238,7 @@ export class Generator implements WorldGen {
     // (its line moves) instead of re-planning the same gate behind a chain of fallbacks.
     if (fallback && !built.row && plan.reason === 'wander') c.gateDueT = Math.max(c.gateDueT, built.t1 + GEN.gate.lead + GEN.gate.fallbackDefer);
     GEN_DEBUG.onCommit?.({ index, t0, tpl: built.plan.tpl.id, reason: built.plan.reason, gateRoom: this.gateLatestStart(t0) - t0, gateDue: c.gateDueT });
-    this.commit(built, index, area, inGw ? gw.id : null, decorRng, rerolls, fallback, phase, inGw ? gw.end : gw.start, rng);
+    this.commit(built, index, area, inGw ? gw.id : null, decorRng, rerolls, fallback, inGw ? gw.end : gw.start, rng);
   }
 
   private makeProps(index: number, area: AreaId, layout: StreetLayout, datum: number): PropCtx {
@@ -393,7 +393,7 @@ export class Generator implements WorldGen {
       row = { t: out.gateT, lanes };
     }
     const rowDue = this.gateLatestStart(t0) + GEN.gate.lead;
-    const wantRow = clocks && !row && !plan.slip && t1 > rowDue - (GEN.gate.lead + 1.4);
+    const wantRow = clocks && !row && !plan.slip && t1 > rowDue - (GEN.gate.lead + GEN.gate.hostAhead);
     // Without a row here, the next one comes in the next segment (or after the gateway): too late → a gate instead.
     const rowLate = (): boolean => {
       const gw = gatewayWindow(t1 - 1e-6, this.startArea);
@@ -507,7 +507,7 @@ export class Generator implements WorldGen {
       const P2 = a2Period(phase);
       let w = trackWander(res.line, t0, t1, c.wander, aOf);
       if (aEnd - w.lastA > P2 + 1e-6) {
-        const tw = this.wallTime(res.line, obstacles, t0, Math.min(t1 - 0.5, tOfA(c.wander.lastA + P2)));
+        const tw = this.wallTime(obstacles, t0, Math.min(t1 - 0.5, tOfA(c.wander.lastA + P2)));
         if (tw !== null) {
           const trial = [...obstacles, ...this.wanderWall(tw, res.line.xAt(tw), props)];
           const r2 = run(trial);
@@ -536,13 +536,12 @@ export class Generator implements WorldGen {
   }
 
   /** The latest time ≤ tLatest a wander wall can stand (head window, spacing from the line's previous action). */
-  private wallTime(line: SafeLine, obs: readonly Obstacle[], t0: number, tLatest: number): number | null {
+  private wallTime(obs: readonly Obstacle[], t0: number, tLatest: number): number | null {
     const c = this.cur;
     const earliest = Math.max(t0 + GEN.noActionHead, c.last ? c.last.t + spacingAfter(c.last.t, c.last.dx) : -Infinity) + T_SHIFT(3.3) + 0.2;
     for (let t = tLatest; t >= earliest; t -= 0.15) {
       const s = sAt(t);
       if (obs.some((o) => o.s < s + 2.5 && o.s + o.len > s - 2.5 && (o.solids.length || o.pits.length))) continue;
-      void line;
       return t;
     }
     return null;
@@ -561,7 +560,7 @@ export class Generator implements WorldGen {
   }
 
   private commit(b: Built, index: number, area: AreaId, gateway: GatewayId | null, decorRng: Sfc32, rerolls: number,
-    fallback: boolean, phase: PhaseId, areaEndT: number, rng: Sfc32): void {
+    fallback: boolean, areaEndT: number, rng: Sfc32): void {
     const c = this.cur;
     const t0 = c.t, s0 = c.s, t1 = b.t1, s1 = b.s1;
     const tier: Tier = b.plan.tier;
@@ -597,7 +596,7 @@ export class Generator implements WorldGen {
     for (const i of touched) this.chunks.get(i)!.obstacles.sort((u, v) => u.s - v.s || u.id - v.id);
     for (const coin of b.coins.coins) {
       this.bucket(ci(coin.p.s)).coins.push(coin);
-      this.coinsTotal += coin.value === 10 ? 1 : 1;
+      this.coinsTotal++;
       if (coin.line === 'trick') this.coinsTrick++;
     }
     for (const d of decor) this.bucket(ci(d.s)).decor.push(d);
@@ -640,7 +639,6 @@ export class Generator implements WorldGen {
       .filter((o) => o.s + o.len >= keepFrom);
     for (const o of b.obstacles) if (o.kind === 'dock_lip' && o.params?.body) c.persistent.push(o);
     c.persistent = c.persistent.filter((o) => o.s + o.len > s1 - 40);
-    void phase;
   }
 }
 

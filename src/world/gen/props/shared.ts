@@ -55,7 +55,7 @@ export function fillerKinds(a: AreaId): { kind: PropKind; len: number; wid: numb
   switch (a) {
     case 'downtown': return [{ kind: 'news_box', len: 0.5, wid: 0.5, hgt: 1.15 }, { kind: 'trash_can', len: 0.6, wid: 0.6, hgt: 1.15 }];
     case 'suburbs': return [{ kind: 'mailbox', len: 0.4, wid: 0.4, hgt: 1.2 }, { kind: 'wheelie_bins', len: 0.7, wid: 1.5, hgt: 1.2 }];
-    case 'docks': return [{ kind: 'pallet_tall', len: 1.0, wid: 1.2, hgt: 1.2 }, { kind: 'drum_cluster', len: 0.7, wid: 1.3, hgt: 1.15 }];
+    case 'docks': return [{ kind: 'pallet_tall', len: 1.2, wid: 1.0, hgt: 1.2 }, { kind: 'drum_cluster', len: 0.7, wid: 1.3, hgt: 1.15 }];
     case 'neon': return [{ kind: 'lantern_stand', len: 0.4, wid: 0.4, hgt: 1.6 }, { kind: 'vending_bank', len: 0.8, wid: 1.0, hgt: 1.8 }];
   }
 }

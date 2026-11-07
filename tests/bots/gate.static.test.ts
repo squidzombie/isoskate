@@ -126,7 +126,7 @@ describe('bots gate: static asserts (gate seeds × 3,000 m)', () => {
     expect(agg.windowMin).toBeGreaterThanOrEqual(0.25 - 1e-6);
     expect(agg.windowMinIndep).toBeGreaterThanOrEqual(0.25 - 1e-6);
   });
-  it('dead ends die within 2.0 s (+ one 1/30 s grid slice)', () => expect(agg.deadEndMax).toBeLessThanOrEqual(2.0 + 1 / 30 + 1e-6));
+  it('dead ends die within 2.0 s', () => expect(agg.deadEndMax).toBeLessThanOrEqual(2.0 + 1e-6));
   it('no forbidden-band solids (0.61–1.14 m)', () => expect(agg.band).toEqual([]));
   it('every area datum closes to y = 0', () => expect(agg.datum).toEqual([]));
   it('trick-coin share ≥ 75 %', () => expect(agg.coinShare).toBeGreaterThanOrEqual(0.75));

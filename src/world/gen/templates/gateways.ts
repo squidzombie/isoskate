@@ -73,7 +73,6 @@ export const GW_harborBridge: Template = {
       c.coins.gold(deck.s + deck.len - 1.0, (x0 + x1) / 2, c.datum + 2.6);
     }
     wave(c, t1);
-    void tAt;
     return { t1, layout: LAYOUTS.harborBridge, noCurbEdges: true, t0Stretch: true };
   },
 };

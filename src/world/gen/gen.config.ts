@@ -29,21 +29,12 @@ export const GEN = {
   } as Record<string, number>,
   /** Area breathers drawn instead of S_OPEN when a breather is due (SB_HILL in the Suburbs). */
   breatherTemplate: { suburbs: 'SB_HILL' } as Partial<Record<AreaId, string>>,
-  /** A1 column rule (DESIGN §10.7): every 0.5 m column meets a tall blocker at least once per period of non-T0 time. */
-  a1: { period: { opening: 8, warm: 6, build: 5, plateau: 4 } as Record<PhaseId, number>, colW: 0.5,
-    /** Plan fillers for columns due before the segment end plus this (the next head window + slack). */
-    lookahead: 1.0,
-    /** At clock start the column deadlines are staggered over [stagger·P, P] (the load spreads over segments). */
-    stagger: 0.45,
-    /** Columns due within this fraction of a period after the segment end get a filler early when one fits. */
-    early: 0.5,
-    /** Lateral clearance of a filler from the safe line (beyond its half width + half hitbox), and from other bodies. */
-    clearLine: 0.55, clearBody: 0.35, tries: 5 },
-  /** A2 wander rule: the safe line shifts ≥ 3 m at least once per period (same periods as A1). */
-  a2: { shift: 3.0, period: { opening: 8, warm: 6, build: 5, plateau: 4 } as Record<PhaseId, number>,
-    /** A forced wander gate is scheduled when the deadline is this close at a segment start (a wander wall needs
-     *  the head window plus a 3.3 m move: ~1.9 s); otherwise walls go into the templates. */
-    gateAt: 1.9 },
+  /** A1 column rule (DESIGN §10.7; measured, the rows of rows.ts carry the straight-bot guarantee): 0.5 m columns, and
+   *  the period a column should meet a tall blocker in (non-T0 time). */
+  a1: { period: { opening: 8, warm: 6, build: 5, plateau: 4 } as Record<PhaseId, number>, colW: 0.5 },
+  /** A2 wander rule: the safe line shifts ≥ 3 m at least once per period (same periods as A1); a template that would
+   *  leave the period without one gets a 6 m wander wall when it fits (generator.ts). */
+  a2: { shift: 3.0, period: { opening: 8, warm: 6, build: 5, plateau: 4 } as Record<PhaseId, number> },
   /** A3: a full-width hazard (S_BARRIER / S_TRENCH area skin) every [min, max] seconds of non-T0 time. */
   a3: { opening: [12, 16], other: [8, 12] } as Record<'opening' | 'other', readonly [number, number]>,
   /** A3 is due (never before its minimum) when less than this much A-time is left to its maximum: a drawn template
@@ -68,6 +59,8 @@ export const GEN = {
     second: { 2: 0.6, 3: 0.3 } as Partial<Record<Tier, number>>, secondOff: [3.6, 6.6] as readonly [number, number],
     /** The gate segment starts this long before its row (head window + a 3 m move). */
     lead: 2.3,
+    /** A template ending later than (deadline − lead − hostAhead) stands the row itself (the next one would be late). */
+    hostAhead: 1.4,
     /** S_GATE approach trick line: chance, and its end ≥ this many seconds before the row; each re-roll stands the
      *  row retryLate s later. */
     feature: 0.95, featureGap: 1.0, retryLate: 0.3,
@@ -124,6 +117,9 @@ export const GEN = {
   datum: { min: -2.4, paybackSec: 15, dropRoomSec: 22, slope: 0.1 },
   /** Downtown: every 3rd segment is a curb-free granite plaza (DESIGN §10.2). Suburbs: driveway cuts every 1.5–2 s. */
   plazaEvery: 3, driveway: { every: [1.5, 2.0] as readonly [number, number], w: 3.0, hazardClear: 1.6 },
+  /** Decor across the road (m between): Neon lantern strings, Suburbs overhead wires (with their poles). Sparse, so the
+   *  read of the street stays on the ground plane. */
+  decorOverhead: { neonLanterns: 26, suburbsWires: 32 },
   /** Coins (DESIGN §10.8). Gold Stacks on hard lines from T3 (and transfers, high rails, Neon elevated). */
   coins: { stringSec: 0.12, stringMin: 5, stringMax: 8, edgeUp: 0.35, arcUp: 0.25, padUp: 0.35, groundY: 0.5,
     breatherAmp: 1.4, waveCount: 4, goldFromTier: 3 },

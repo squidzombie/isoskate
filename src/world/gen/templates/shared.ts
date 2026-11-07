@@ -205,7 +205,7 @@ export const S_STAIRS: Template = {
     const n = c.tier >= 3 && c.datum - stairDrop(7) >= GEN.datum.min ? 7 : 5;
     const tA = contentFrom(c) + 0.5 + c.rng.range(0, 0.3);
     const s = sOf(tA);
-    const ter = put(c, buildTerrace(s, n, c.props));
+    put(c, buildTerrace(s, n, c.props));
     const len = n * STAIR.tread, drop = stairDrop(n);
     c.cuts.push([s, s + len]);
     c.datumAt.push({ s: s + len, datum: round1cm(c.datum - drop) });
@@ -213,7 +213,6 @@ export const S_STAIRS: Template = {
     const rail = put(c, buildHandrail(s, len, rx, c.datum, drop, c.props));
     c.coins.edge(rail.edges[1]!, 0.05, 0.05);
     if (c.tier >= 3) c.coins.gold(s + len, rx, c.datum - drop + 1.2);
-    void ter;
     return { t1: tAt(s + len + 0.5) + 0.6 };
   },
 };

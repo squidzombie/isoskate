@@ -13,7 +13,7 @@ import { HI_MASK, NC, RASTER, SLICE, cellOf, cellX, nG } from './grid';
 import { PATH_FAIL, checkPath, ollieWindow } from './path';
 import { TRICK_FAIL, checkBands, checkOcclusion, checkSpacing, checkTrickLines } from './rules';
 import {
-  DEAD_END_SLICES, EXIT_FAIL, F, B, actionsOf, backward, classOfCell, decisionTime, exitSetViolations, fillViable, forward,
+  DEAD_END_SLICES, EXIT_FAIL, F, B, actionsOf, backward, decisionTime, exitSetViolations, fillViable, forward,
   GUIDES, QUIET, dumpGround, greedyCheck, minActionPath, planesAt, precomputePlanes, rMinAt, worstDeadEnd, type PlaneBits,
 } from './sweep';
 
@@ -51,9 +51,9 @@ export type ValResult =
 
 const HEAD_EPS = 1e-6;
 
-/** Rule (h) tolerance in slices (0.1 s): the grid's air reach (35 %) and slice-interval dilation make it pessimistic, so
- *  a measured 2.07 s is a real pocket of < 2.0 s; the static asserts report the measured maximum. */
-export const DEAD_END_TOL = 1;
+/** Rule (h) tolerance in slices: none. Grid states die at slice granularity (1/30 s) with dilated blockers, so a real
+ *  pocket may outlive its grid twin by up to a slice; the limit is applied to the grid as it stands (≤ 2.0 s). */
+export const DEAD_END_TOL = 0;
 /** Development switch: attach ground-plane dumps to some rejections. */
 export const VAL_DEBUG = { dump: false, calls: 0 };
 
@@ -190,7 +190,6 @@ export function validate(st: ValState, inp: ValInput): ValResult {
     if (!steps[k - 1]!.air && nG(r.j0 + steps[k - 1]!.i) === 1) break;
   }
   const start = stT.air ? { c: stT.c, h: r.classes[stT.h]!, k: stT.k } : { c: stT.c, h: null, k: 0 };
-  void classOfCell;
   return {
     ok: true, line, actions, exitX,
     next: { jH, hist, jE: jT, exitSet, start, lastDir, phase: st.phase },

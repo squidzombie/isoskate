@@ -27,7 +27,6 @@ export const TEMPLATES: Readonly<Partial<Record<TemplateId, Template>>> = Object
 export const DRAWN_SHARED: readonly Template[] = [S_CONES, S_LADDER, S_GATE, S_PADS, S_STAIRS];
 /** Tier-parametric shared templates used when an area has no v1 template of the drawn tier (DESIGN §10.4). */
 export const TIER_FALLBACK: readonly Template[] = [S_GATE, S_STAIRS, S_TRENCH, S_BARRIER];
-void S_STAIRS;
 
 export const templatesFor = (area: AreaId, tier: Tier): Template[] =>
   [...AREA_TEMPLATES[area], ...DRAWN_SHARED].filter((t) => t.tiers.includes(tier) && !(t.id === 'S_STAIRS' && area === 'docks' && tier >= 2));

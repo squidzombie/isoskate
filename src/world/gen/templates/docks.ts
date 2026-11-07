@@ -110,7 +110,6 @@ export const IN_GAUNTLET: Template = {
       put(c, buildDrums(sOf(t), round1cm(sd > 0 ? c.rng.range(1.9, 2.6) : c.rng.range(-0.2, 0.4)), c.rng.int(2, 3), c.props, c.rng.int(0, 3)));
       sd = -sd;
     }
-    void sAt;
     return { t1: tAt(d2.s + d2.len) + 0.9 };
   },
 };

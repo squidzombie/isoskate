@@ -12,6 +12,7 @@ import type { Sfc32 } from '../../core/rng';
 import { speedAt, tAt } from '../../core/tuning';
 import type { Decor } from '../../core/world';
 import { DECOR_BRANDS, DECOR_KINDS, DECOR_LIMITS, NEON_SIGN_WORDS, type DecorKind } from '../../core/decor';
+import { GEN } from './gen.config';
 
 export { DECOR_KINDS, DECOR_LIMITS, isDecorKind, type DecorKind } from '../../core/decor';
 
@@ -111,7 +112,7 @@ export function emitDecor(out: Decor[], env: DecorEnv, rng: Sfc32): number {
       if (rng.chance(0.35)) o.add('hoop', s0 + rng.range(0, len), (rng.chance(0.5) ? -1 : 1) * 5.6, y0, { h: 3.05 });
       if (rng.chance(0.3)) o.add('sprinkler', s0 + rng.range(0, len), (rng.chance(0.5) ? -1 : 1) * 6.2, y0, { r: 2 });
       if (rng.chance(0.35)) o.add('parked_car_side', s0 + rng.range(0, len), (rng.chance(0.5) ? -1 : 1) * 6.0, y0, { color: rng.float(), van: rng.chance(0.3) ? 1 : 0 }, { rotY: Math.PI / 2 });
-      along(20, (s) => { o.add('utility_pole', s, -4.9, y0, { h: 8, arms: 2 }); o.add('overhead_wire', s, 0, datum + 6.2, { x0: -4.9, x1: 4.9, sag: 0.4, count: 2 }); });
+      along(GEN.decorOverhead.suburbsWires, (s) => { o.add('utility_pole', s, -4.9, y0, { h: 8, arms: 2 }); o.add('overhead_wire', s, 0, datum + 6.2, { x0: -4.9, x1: 4.9, sag: 0.4, count: 2 }); });
       for (const d of env.driveways ?? []) o.add('driveway', d[0], d[2] * 3.2, side0, { w: d[1] - d[0] });
       o.add('leaf_emitter', s0, 0, datum, { rate: 4, len });
       if (rng.chance(0.25)) o.add('billboard', s0 + rng.range(0, len), (rng.chance(0.5) ? -1 : 1) * 8, y0, { w: 5, h: 2.5, pole: 3, brand: rng.int(0, 3) });
@@ -131,7 +132,7 @@ export function emitDecor(out: Decor[], env: DecorEnv, rng: Sfc32): number {
       });
       along(9, (s, k) => o.add(rng.pick(['vending_machine', 'food_cart', 'paper_lantern', 'bike_parked', 'potted_plant', 'cherry_tree'] as const), s,
         (k % 2 ? -1 : 1) * 5.15, side0, { count: rng.int(1, 3), hue: rng.float(), word: rng.chance(0.5) ? rng.int(0, NEON_SIGN_WORDS.length - 1) : -1, glow: 1.2, crown: 1.5 }));
-      along(11, (s) => o.add('lantern_string', s, 0, datum + 4.4, { x0: -5.0, x1: 5.0, sag: rng.range(0.3, 0.8), count: rng.int(10, 18), palette: rng.int(0, 2) }));
+      along(GEN.decorOverhead.neonLanterns, (s) => o.add('lantern_string', s, 0, datum + 4.4, { x0: -5.0, x1: 5.0, sag: rng.range(0.3, 0.8), count: rng.int(10, 18), palette: rng.int(0, 2) }));
       if (rng.chance(0.4)) o.add('holo_billboard', s0 + rng.range(0, len), (rng.chance(0.5) ? -1 : 1) * 7.0, side0, { w: 3.5, h: 2.5, pole: 3.5, hue: rng.float(), brand: rng.int(0, 4) });
       o.add('maglev_beam', s0, 0, datum + DECOR_LIMITS.maglevY, { len, gap: 1.6 });
       if (rng.chance(0.3)) o.add('maglev_train', s0, 0, datum + DECOR_LIMITS.maglevY, { period: 20, phase: rng.range(0, 20), len: 40, speed: 45 });

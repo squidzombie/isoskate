@@ -124,7 +124,7 @@ export function planSegment(c: GenCursor, env: PlanEnv, rng: Sfc32): Plan {
   if (!tpl) tpl = pick(TIER_FALLBACK.filter((t) => t.tiers.includes(tier) && ((GEN.weights[t.id] ?? 1) > 0 || (t.id === 'S_GATE' && tier >= 2))));
   if (!tpl) { tTier = 1; tpl = pick(templatesFor(area, 1)); }
   if (!tpl) {
-    if (clocks && left >= gate.durMax && env.gateRoom < 4) return { tpl: gate, tier: Math.max(2, tier) as Tier, reason: 'wander' };
+    if (clocks && left >= gate.durMax && env.gateRoom < GEN.gate.fit + 1.1) return { tpl: gate, tier: Math.max(2, tier) as Tier, reason: 'wander' };
     return { tpl: open, tier: 0, dur: Math.max(GEN.open.minFiller, Math.min(left, GEN.open.dur[0])), reason: 'filler' };
   }
   if (!tpl.tiers.includes(tTier)) tTier = tpl.tiers.reduce((a, b) => (Math.abs(b - tier) < Math.abs(a - tier) ? b : a));
