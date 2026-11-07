@@ -429,7 +429,8 @@ const maglevBeam: DecorFn = (c, d) => {
     // Small signal lights along the outer faces (never a continuous bright line: from the run camera a beam along s
     // projects as a long line, which must not read as a lane marking).
     K.to('e').glowing(1.4, -1, 0);
-    for (let s = d.s + 1; s < d.s + len; s += 4) K.col(s % 8 < 4 ? 0x3ff2ff : 0xff3fa4).box(d.x + dx - 0.095, y + 0.1, s, d.x + dx + 0.095, y + 0.18, s + 0.25, FACE.left | FACE.right | FACE.front | FACE.top);
+    // Magenta and paper (cyan is reserved for sparks, rail-body glow and the contact glow, DESIGN §18.4).
+    for (let s = d.s + 1; s < d.s + len; s += 4) K.col(s % 8 < 4 ? 0xffd39a : 0xff3fa4).box(d.x + dx - 0.095, y + 0.1, s, d.x + dx + 0.095, y + 0.18, s + 0.25, FACE.left | FACE.right | FACE.front | FACE.top);
     K.to('b');
   }
 };

@@ -151,7 +151,9 @@ class VfxImpl implements VfxExt {
     // Integrate and write (alpha ≤ 25% in the look-ahead zone, the upper two-thirds of the screen).
     const H = RIG_STATE.menu ? 0 : RIG_STATE.H;
     const limitY = (CAMERA.anchorFromTop - 2 / 3) * H;   // screen metres above the skater where the zone starts
-    this.parts.update(dt, origin, H > 0 ? (ps, py) => ((ps - s) * SIN_T + (py - gy) * COS_T > limitY ? VFX.lookAheadAlpha : 1) : () => 1);
+    const cap = this.parts.cap0;
+    cap.s = s; cap.y = gy; cap.limit = limitY; cap.sin = SIN_T; cap.cos = COS_T; cap.alpha = H > 0 ? VFX.lookAheadAlpha : 1;
+    this.parts.update(dt, origin);
   }
 
   private spark(s: number, x: number, y: number, m: EdgeMaterial): void {

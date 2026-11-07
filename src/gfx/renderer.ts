@@ -53,9 +53,11 @@ class Gfx implements GfxContext {
     this.applyQuality(q);
   }
 
-  applyQuality(q: QualityTier): void {
+  applyQuality(q: QualityTier, keepShadows = false): void {
     this.quality = q;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, DPR_CAP[q]));
+    // Turning shadows on or off recompiles every lit program: a mid-run change (auto-adjust) keeps them as they are.
+    if (keepShadows) return;
     const size = SHADOW_MAP[q];
     this.renderer.shadowMap.enabled = size > 0;
     this.sun.castShadow = size > 0;
@@ -98,9 +100,10 @@ export function createGfxImpl(canvas: HTMLCanvasElement, q: QualityTier): GfxCon
   return new Gfx(canvas, q);
 }
 
-/** Changes the quality tier at runtime (DPR cap and shadows; MSAA stays as created). */
-export function setGfxQuality(ctx: GfxContext, q: QualityTier): void {
-  if (ctx instanceof Gfx) ctx.applyQuality(q);
+/** Changes the quality tier at runtime (DPR cap and shadows; MSAA stays as created). `keepShadows` (WA auto-adjust
+ *  mid-run) changes the DPR only: the shadow map follows at the next full change (a run start). */
+export function setGfxQuality(ctx: GfxContext, q: QualityTier, keepShadows = false): void {
+  if (ctx instanceof Gfx) ctx.applyQuality(q, keepShadows);
   else ctx.quality = q;
 }
 export function redrawCanvasTextures(ctx: GfxContext): void {

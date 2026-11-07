@@ -49,6 +49,10 @@ export const SHAKE = {
   perfectPunch: { zoom: 0.02, dur: 0.15 },
 } as const;
 
+/** The sun's shadow box (DESIGN §18.2): the receivers x ±halfX, s from the player − (halfS − centreAhead) to
+ *  + (halfS + centreAhead), up to `height` m, fitted in light space. */
+export const SHADOW_BOX = { halfX: 10, halfS: 20, centreAhead: 14, height: 3 } as const;
+
 /** Crash grading (DESIGN §9 / §18.8): 40% desaturate, eased in, cleared on the next run. */
 export const CRASH_LOOK = { desat: 0.4, easeIn: 0.15, flashSec: 0.6, outline: 0.04 } as const;
 

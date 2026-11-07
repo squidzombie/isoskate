@@ -8,6 +8,7 @@ import type { GfxContext } from '../core/view';
 import { sharedUniforms } from '../gfx';
 
 export const SHAPE = { puff: 0, streak: 1, star: 2, flake: 3 } as const;
+const ATTRS = ['aPos', 'aVel', 'aCol', 'aMisc'] as const;
 const lin = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
 
 export interface Spawn {
@@ -106,9 +107,12 @@ export class Particles {
     this.c1[i * 3] = lin(((c1 >> 16) & 255) / 255); this.c1[i * 3 + 1] = lin(((c1 >> 8) & 255) / 255); this.c1[i * 3 + 2] = lin((c1 & 255) / 255);
   }
 
-  /** Integrates, then writes the live particles (rebased by originS) into the first instances. `alphaAt` caps the
-   *  alpha by screen region (look-ahead zone ≤ 25%). */
-  update(dt: number, originS: number, alphaCap: (s: number, y: number) => number): void {
+  /** Integrates, then writes the live particles (rebased by originS) into the first instances. The look-ahead cap
+   *  (no allocation per frame): a particle whose screen height above the skater, (s − capS)·sin θ + (y − capY)·cos θ,
+   *  exceeds capLimit gets at most capAlpha (DESIGN §18.4: ≤ 25% in the upper two-thirds); capAlpha 1 = no cap. */
+  readonly cap0 = { s: 0, y: 0, limit: 0, alpha: 1, sin: 0, cos: 1 };
+  update(dt: number, originS: number): void {
+    const C = this.cap0;
     let k = 0;
     for (let i = 0; i < this.cap; i++) {
       if (this.age[i]! >= this.life[i]!) continue;
@@ -122,7 +126,8 @@ export class Particles {
       this.aPos[o3] = this.x[i]!; this.aPos[o3 + 1] = this.y[i]!; this.aPos[o3 + 2] = -(this.s[i]! - originS);
       this.aVel[o3] = this.vx[i]!; this.aVel[o3 + 1] = this.vy[i]!; this.aVel[o3 + 2] = -this.vs[i]!;
       const fade = this.shape[i] === SHAPE.flake ? Math.min(1, (1 - u) * 4, u * 6) : 1 - u;
-      const alpha = Math.min(this.a0[i]! * fade, alphaCap(this.s[i]!, this.y[i]!));
+      const capped = C.alpha < 1 && (this.s[i]! - C.s) * C.sin + (this.y[i]! - C.y) * C.cos > C.limit;
+      const alpha = Math.min(this.a0[i]! * fade, capped ? C.alpha : 1);
       for (let c = 0; c < 3; c++) this.aCol[o4 + c] = this.c0[i * 3 + c]! + (this.c1[i * 3 + c]! - this.c0[i * 3 + c]!) * u;
       this.aCol[o4 + 3] = alpha;
       this.aMisc[o4] = this.size0[i]! + (this.size1[i]! - this.size0[i]!) * u;
@@ -130,7 +135,7 @@ export class Particles {
       k++;
     }
     this.geo.instanceCount = k;
-    for (const n of ['aPos', 'aVel', 'aCol', 'aMisc']) {
+    for (const n of ATTRS) {
       const at = this.geo.getAttribute(n) as InstancedBufferAttribute;
       at.clearUpdateRanges(); if (k) at.addUpdateRange(0, k * at.itemSize); at.needsUpdate = true;
     }

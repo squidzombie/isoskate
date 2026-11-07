@@ -114,6 +114,49 @@ describe('WorldView streaming', () => {
     expect(view.debugInfo().chunks).toEqual(before);
   });
 
+  it('behind the start, the start street (sidewalk, curb edge, buildings) is continued backward with no seam', () => {
+    // Generated content begins at s = 74 (chunk 2) and the run starts at 75: chunk 1 and the first 10 m of chunk 2 are
+    // filled from that cross-section; nothing is generated before it.
+    const curbAt = (s0: number, s1: number): Chunk['obstacles'][number] => ({ id: 900 + Math.round(s0), kind: 'curb', area: 'downtown', segment: 0, s: s0, x: 3.75,
+      len: s1 - s0, wid: 1.5, hgt: 0.15, rotY: 0, mirror: false, variant: 0, solids: [], pits: [], tags: 0,
+      slabs: [{ s0, s1, x0: 3, x1: 4.5, y0: 0.15, y1: 0.15, layer: 0, surface: 'concrete', kind: 'flat' }],
+      edges: [{ id: 5000 + Math.round(s0), obstacleId: 900 + Math.round(s0), a: { s: s0, x: 3, y: 0.15 }, b: { s: s1, x: 3, y: 0.15 }, kind: 'curb', material: 'concrete', layer: 0, pickOnly: true }] });
+    const chunks = new Map<number, Chunk>();
+    for (let i = 0; i < 8; i++) {
+      const s0 = i * CHUNK_LEN, has = i >= 2;
+      chunks.set(i, { index: i, s0, len: CHUNK_LEN, area: 'downtown', blend: null, coins: [], safe: [], segments: [],
+        obstacles: has ? [curbAt(Math.max(74, s0), s0 + CHUNK_LEN)] : [],
+        decor: has ? [{ kind: 'building', s: Math.max(74, s0) + 1, x: 5.2, y: 0.15, rotY: 0, scale: 1, variant: 1, castShadow: true, params: { w: 8, d: 12, h: 10 } }] : [] });
+    }
+    const view = createWorldView(fakeCtx()) as WorldViewDebug;
+    view.attach(fakeGen(chunks, () => ({ area: 'downtown', blend: null })));
+    for (let k = 0; k < 40 && view.debugInfo().chunks.length < 5; k++) view.update(frame(75));
+    expect(view.debugInfo().chunks).toEqual([1, 2, 3, 4, 5]);
+    // The sidewalk slabs of the live chunks cover 32 … 192 without a gap (the filler meets the generated one at 74).
+    const spans = view.debugInfo().obstacles().filter((o) => o.kind === 'curb').flatMap((o) => o.slabs.map((sl) => [sl.s0, sl.s1] as const)).sort((a, b) => a[0] - b[0]);
+    let reach = 32;
+    for (const [a, b] of spans) { expect(a).toBeLessThanOrEqual(reach + 1e-6); reach = Math.max(reach, b); }
+    expect(reach).toBeGreaterThanOrEqual(6 * CHUNK_LEN - 1e-6);
+    // Its curb edge is continued too.
+    const edges = view.debugInfo().obstacles().flatMap((o) => o.edges).filter((e) => e.b.s <= 74 + 1e-6);
+    expect(edges.length).toBeGreaterThan(0);
+  });
+
+  it('collected coins are hidden, and stay hidden when their chunk is rebuilt after a context restore', () => {
+    const ctx = fakeCtx(), view = createWorldView(ctx) as WorldViewDebug;
+    view.attach(gen([10, 20]));
+    for (let k = 0; k < 6; k++) view.update(frame(5));
+    const coins = ctx.scene.getObjectByName('coins') as unknown as { count: number; instanceMatrix: { array: Float32Array } };
+    const visible = () => { let n = 0; for (let k = 0; k < coins.count; k++) if (Math.abs(coins.instanceMatrix.array[k * 16]!) > 0) n++; return n; };
+    expect(visible()).toBe(2);
+    view.update(frame(5, [{ t: 'coin', tick: 1, id: 1000, value: 1, p: { s: 10, x: 0, y: 0.5 }, chain: 1 }]));
+    expect(visible()).toBe(1);
+    view.rebuildGPU();
+    for (let k = 0; k < 6; k++) view.update(frame(5));
+    expect(view.debugInfo().coinSlotsUsed).toBe(2);
+    expect(visible()).toBe(1);
+  });
+
   it('edges stay ≥ minEdgePx wide on screen at every viewport, even fully zoomed out (10.5 m/s)', () => {
     for (const v of [vp(390, 844), vp(390, 664), vp(375, 548), vp(393, 852, 59), vp(1280, 800)]) {
       const o = buildOptionsFor(v);

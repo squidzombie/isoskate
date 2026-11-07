@@ -3,7 +3,7 @@
 // and coins (8-sided, emissive #FFC94A, 3 rev/s, bob 0.1 m, kept ≥ 12 px on screen). Chunks claim instance slots
 // when built and hand them back when released; origin rebasing rewrites the instance matrices.
 import {
-  CylinderGeometry, DoubleSide, IcosahedronGeometry, InstancedBufferAttribute, InstancedMesh, Matrix4, MeshBasicMaterial,
+  type BufferAttribute, CylinderGeometry, DoubleSide, IcosahedronGeometry, InstancedBufferAttribute, InstancedMesh, Matrix4, MeshBasicMaterial,
   MeshLambertMaterial, PlaneGeometry, Quaternion, Vector3, type Scene, type Texture,
 } from 'three';
 import { CAMERA } from '../../core/tuning';
@@ -19,6 +19,17 @@ const ZERO = new Matrix4().makeScale(0, 0, 0);
 const lin = (hex: number, o: Float32Array, i: number) => {
   o[i] = srgbToLinear(((hex >> 16) & 255) / 255); o[i + 1] = srgbToLinear(((hex >> 8) & 255) / 255); o[i + 2] = srgbToLinear((hex & 255) / 255);
 };
+
+/** Marks instance slot k of an instanced attribute for upload: one merged range per frame (the renderer uploads the
+ *  ranges and clears them), so a chunk claiming its decals does not re-upload the whole layer. */
+function touch(a: BufferAttribute, k: number): void {
+  const n = a.itemSize, r = a.updateRanges;
+  if (r.length === 0) a.addUpdateRange(k * n, n);
+  else { const g = r[0]!, lo = Math.min(g.start, k * n), hi = Math.max(g.start + g.count, (k + 1) * n); g.start = lo; g.count = hi - lo; }
+  a.needsUpdate = true;
+}
+/** A full upload (origin rebase, scale change). */
+function touchAll(a: BufferAttribute): void { a.clearUpdateRanges(); a.needsUpdate = true; }
 
 /** Slot bookkeeping shared by the layers: a free list and a per-slot track-space record. */
 class Slots<T> {
@@ -122,14 +133,14 @@ if (vKind > 0.5 && vKind < 1.5) {
     this.kind[k] = d.kind;
     this.write(k);
     if (k + 1 > this.mesh.count) this.mesh.count = k + 1;
-    this.dirty();
+    this.dirty(k);
     return k;
   }
-  remove(k: number): void { this.slots.give(k); this.mesh.setMatrixAt(k, ZERO); this.mesh.instanceMatrix.needsUpdate = true; }
+  remove(k: number): void { this.slots.give(k); this.mesh.setMatrixAt(k, ZERO); touch(this.mesh.instanceMatrix, k); }
   rebase(originS: number): void {
     this.originS = originS;
     for (let k = 0; k < this.mesh.count; k++) this.write(k);
-    this.mesh.instanceMatrix.needsUpdate = true;
+    touchAll(this.mesh.instanceMatrix);
   }
   get used(): number { return this.slots.used; }
   private write(k: number): void {
@@ -146,9 +157,11 @@ if (vKind > 0.5 && vKind < 1.5) {
     this.q.setFromAxisAngle(this.up, d.rot);
     this.mesh.setMatrixAt(k, this.m.compose(this.v.set(d.x, d.y, -(d.s - this.originS)), this.q, this.sc.set(d.w, 1, d.len)));
   }
-  private dirty(): void {
-    this.mesh.instanceMatrix.needsUpdate = true;
-    for (const n of ['aRect', 'aTint', 'aKind']) (this.mesh.geometry.getAttribute(n) as InstancedBufferAttribute).needsUpdate = true;
+  private dirty(k: number): void {
+    touch(this.mesh.instanceMatrix, k);
+    const g = this.mesh.geometry;
+    touch(g.getAttribute('aRect') as InstancedBufferAttribute, k); touch(g.getAttribute('aTint') as InstancedBufferAttribute, k);
+    touch(g.getAttribute('aKind') as InstancedBufferAttribute, k);
   }
   dispose(): void { this.mesh.geometry.dispose(); (this.mesh.material as MeshLambertMaterial).dispose(); this.mesh.dispose(); }
 }
@@ -204,13 +217,13 @@ vViewPosition = - mvPosition.xyz;`);
     this.phase[k] = l.phase;
     this.write(k);
     if (k + 1 > this.mesh.count) this.mesh.count = k + 1;
-    this.mesh.instanceMatrix.needsUpdate = true;
-    (this.mesh.geometry.getAttribute('aCol') as InstancedBufferAttribute).needsUpdate = true;
-    (this.mesh.geometry.getAttribute('aPhase') as InstancedBufferAttribute).needsUpdate = true;
+    touch(this.mesh.instanceMatrix, k);
+    touch(this.mesh.geometry.getAttribute('aCol') as InstancedBufferAttribute, k);
+    touch(this.mesh.geometry.getAttribute('aPhase') as InstancedBufferAttribute, k);
     return k;
   }
-  remove(k: number): void { this.slots.give(k); this.mesh.setMatrixAt(k, ZERO); this.mesh.instanceMatrix.needsUpdate = true; }
-  rebase(originS: number): void { this.originS = originS; for (let k = 0; k < this.mesh.count; k++) this.write(k); this.mesh.instanceMatrix.needsUpdate = true; }
+  remove(k: number): void { this.slots.give(k); this.mesh.setMatrixAt(k, ZERO); touch(this.mesh.instanceMatrix, k); }
+  rebase(originS: number): void { this.originS = originS; for (let k = 0; k < this.mesh.count; k++) this.write(k); touchAll(this.mesh.instanceMatrix); }
   get used(): number { return this.slots.used; }
   private write(k: number): void {
     const l = this.slots.rec[k];
@@ -268,13 +281,13 @@ transformed.y += ${(COIN.bob / 2).toFixed(3)} * (1.0 + sin(ph * 0.3333));`);
     if (k < 0) return -1;
     this.write(k);
     if (k + 1 > this.mesh.count) this.mesh.count = k + 1;
-    this.mesh.instanceMatrix.needsUpdate = true;
+    touch(this.mesh.instanceMatrix, k);
     return k;
   }
-  remove(k: number): void { this.slots.give(k); this.mesh.setMatrixAt(k, ZERO); this.mesh.instanceMatrix.needsUpdate = true; }
+  remove(k: number): void { this.slots.give(k); this.mesh.setMatrixAt(k, ZERO); touch(this.mesh.instanceMatrix, k); }
   hide(id: number): void {
     this.collected.add(id);
-    for (let k = 0; k < this.mesh.count; k++) if (this.slots.rec[k]?.id === id) { this.mesh.setMatrixAt(k, ZERO); this.mesh.instanceMatrix.needsUpdate = true; }
+    for (let k = 0; k < this.mesh.count; k++) if (this.slots.rec[k]?.id === id) { this.mesh.setMatrixAt(k, ZERO); touch(this.mesh.instanceMatrix, k); }
   }
   clearCollected(): void { this.collected.clear(); }
   get collectedIds(): ReadonlySet<number> { return this.collected; }
@@ -282,7 +295,7 @@ transformed.y += ${(COIN.bob / 2).toFixed(3)} * (1.0 + sin(ph * 0.3333));`);
   rebase(originS: number): void { this.originS = originS; this.writeAll(); }
   setScale(s: number): void { if (Math.abs(s - this.scale) > 0.02) { this.scale = s; this.writeAll(); } }
   get used(): number { return this.slots.used; }
-  writeAll(): void { for (let k = 0; k < this.mesh.count; k++) this.write(k); this.mesh.instanceMatrix.needsUpdate = true; }
+  writeAll(): void { for (let k = 0; k < this.mesh.count; k++) this.write(k); touchAll(this.mesh.instanceMatrix); }
   private write(k: number): void {
     const c = this.slots.rec[k];
     if (!c || this.collected.has(c.id)) { this.mesh.setMatrixAt(k, ZERO); return; }

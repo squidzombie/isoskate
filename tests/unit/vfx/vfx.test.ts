@@ -16,7 +16,7 @@ describe('particles', () => {
     const p = new Particles(ctx, 8);
     for (let i = 0; i < 20; i++) p.spawn(puff(i));
     expect(p.alive).toBe(8);
-    p.update(0.01, 0, () => 1);
+    p.update(0.01, 0);
     const g = p as unknown as Internals;
     expect(g.geo.instanceCount).toBe(8);
     // The survivors are the last 8 spawned (s = 12 … 19); track z = −(s − origin).
@@ -30,9 +30,9 @@ describe('particles', () => {
     p.setCap(VFX.cap.low);
     for (let i = 0; i < 400; i++) p.spawn(puff(i, 0.3));
     expect(p.alive).toBe(VFX.cap.low);
-    p.update(0.2, 0, () => 1);
+    p.update(0.2, 0);
     expect(p.alive).toBe(VFX.cap.low);
-    p.update(0.2, 0, () => 1);
+    p.update(0.2, 0);
     expect(p.alive).toBe(0);
     expect((p as unknown as Internals).geo.instanceCount).toBe(0);
   });
@@ -40,7 +40,9 @@ describe('particles', () => {
   it('the look-ahead alpha cap limits every particle in that zone (DESIGN §18.4: ≤ 25%)', () => {
     const p = new Particles(ctx, 16);
     for (let i = 0; i < 10; i++) p.spawn(puff(i * 3, 2, 0.9));
-    p.update(0.01, 0, (s) => (s > 10 ? VFX.lookAheadAlpha : 1));
+    // The zone starts 10 m ahead along s (sin θ = 1, cos θ = 0 for this test).
+    Object.assign(p.cap0, { s: 0, y: 0, limit: 10, alpha: VFX.lookAheadAlpha, sin: 1, cos: 0 });
+    p.update(0.01, 0);
     const g = p as unknown as Internals;
     for (let k = 0; k < g.geo.instanceCount; k++) {
       const s = -g.aPos[k * 3 + 2]!, a = g.aCol[k * 4 + 3]!;

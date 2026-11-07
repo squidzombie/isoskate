@@ -7,7 +7,7 @@ import { Sfc32, hash32 } from '../../../core/rng';
 export const DECAL = {
   solid: 0, soft: 1, contact: 2, crack1: 3, crack2: 4, patch: 5, oil: 6, arrowS: 7, arrowL: 8, arrowR: 9, drain: 10,
   manGrid: 11, manPlain: 12, manAnchor: 13, manFlower: 14, leaves: 15, petals: 16, puddle: 17, slow: 18, skid: 19,
-  zebra: 20, dashes: 21, parkT: 22, ring: 23, chevrons: 24, stain: 25, grate: 26, scramble: 27, pool: 28,
+  zebra: 20, dashes: 21, parkT: 22, ring: 23, chevrons: 24, stain: 25, grate: 26, scramble: 27,
 } as const;
 export type DecalId = (typeof DECAL)[keyof typeof DECAL];
 export const DECAL_GRID = 8;
@@ -50,10 +50,6 @@ const P: Readonly<Record<number, Painter>> = {
   [DECAL.chevrons]: (c) => { c.fillStyle = W; for (let i = -2; i < 4; i++) { c.beginPath(); c.moveTo(i * 22, 64); c.lineTo(i * 22 + 11, 64); c.lineTo(i * 22 + 43, 0); c.lineTo(i * 22 + 32, 0); c.closePath(); c.fill(); } },
   [DECAL.stain]: (c, r) => { for (let k = 0; k < 3; k++) { const g = c.createRadialGradient(0, 0, 0, 0, 0, 22); g.addColorStop(0, 'rgba(255,255,255,0.5)'); g.addColorStop(1, 'rgba(255,255,255,0)'); c.save(); c.translate(32 + r.range(-8, 8), 32 + r.range(-8, 8)); c.fillStyle = g; c.fillRect(-22, -22, 44, 44); c.restore(); } },
   [DECAL.grate]: (c) => { c.fillStyle = W; c.fillRect(4, 4, 56, 56); c.clearRect(8, 8, 48, 48); c.fillStyle = W; for (let i = 0; i < 8; i++) c.fillRect(10 + i * 6, 8, 2.5, 48); },
-  [DECAL.pool]: (c) => {
-    // Hazard pool: solid across, short soft ends along s (v), so it fills the hazard's ground hull.
-    for (let y = 0; y < C; y++) { const e = Math.min(y, C - 1 - y); c.fillStyle = `rgba(255,255,255,${Math.min(1, (e + 0.5) / 5)})`; c.fillRect(0, y, C, 1); }
-  },
   [DECAL.scramble]: (c) => { c.fillStyle = W; c.save(); c.translate(32, 32); c.rotate(Math.PI / 4); for (let i = -4; i <= 4; i++) c.fillRect(i * 9 - 2.5, -46, 5, 92); c.restore(); },
 };
 function manhole(c: CanvasRenderingContext2D): void {

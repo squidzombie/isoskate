@@ -25,7 +25,7 @@ import { COIN, CoinLayer, DecalLayer, LanternLayer } from './layers';
 import { createWorldMaterials, type WorldMaterials } from './materials';
 import { CONTACT, COLORS, SURFACE_COLOR, sampleLook, samplePalette } from './palette';
 import { AutoQuality } from './quality';
-import { CONTACT_SHADOW, CRASH_LOOK, QUALITY, RENDER, STREAM } from './render.config';
+import { CONTACT_SHADOW, CRASH_LOOK, QUALITY, RENDER, SHADOW_BOX, STREAM } from './render.config';
 import { Sky } from './sky';
 import { drawDecalAtlas, DECAL_ATLAS_SIZE } from './textures/decals';
 import { drawGroundAtlas, GROUND_ATLAS_SIZE } from './textures/ground';
@@ -201,9 +201,11 @@ class WorldViewImpl implements WorldView {
     this.probe.frustumCulled = false; this.probe.renderOrder = -1e9; this.probe.name = 'callProbe';
     this.probe.onBeforeRender = (r) => { this.shadowCalls = r.info.render.calls; if (this.warm.length) this.warmDrawn = true; };
     ctx.scene.add(this.probe);
-    ctx.scene.onAfterRender = (r) => {
+    const prevAfter = ctx.scene.onAfterRender;
+    ctx.scene.onAfterRender = (r, sc, cam, geo, mat, grp) => {
       this.mainCalls = r.info.render.calls - this.shadowCalls;
       if (this.lastFrameStart >= 0) this.workMs = Math.max(0, nowMs() - this.lastFrameStart);
+      prevAfter.call(ctx.scene, r, sc, cam, geo, mat, grp);
     };
     this.auto = new AutoQuality(ctx.quality);
     this.autoOn = autoAllowed();
@@ -211,6 +213,7 @@ class WorldViewImpl implements WorldView {
     scheduleWarmup((ms) => { this.warmupMs = ms; });
   }
   private warmupMs: number[] = [];
+  private autoCheckedAt = 0;
 
   attach(gen: WorldGen): void {
     // Roll-out chunks (−1..1) go to the cache for the new run; the rest are released.
@@ -223,16 +226,20 @@ class WorldViewImpl implements WorldView {
     this.clearFlash();
     this.warnT = 0;
     this.auto.resetRun();
+    if (this.shadowTier) { setGfxQuality(this.ctx, this.shadowTier); this.shadowTier = null; }
   }
 
   update(f: RenderFrame): void {
     if (this.warmDrawn) { for (const m of this.warm) this.ctx.scene.remove(m); this.warm.length = 0; this.warmDrawn = false; }
     const fs = frameStartMs();
+    // The saved quality setting may go back to 'auto' after a manual pick (the save is written ~0.5 s after Settings).
+    const tNow = fs ?? nowMs();
+    if (tNow - this.autoCheckedAt > AUTO_RECHECK_MS) { this.autoCheckedAt = tNow; this.autoOn = autoAllowed(); }
     // Auto quality: last frame's work (frame start → end of render submit) against the frame interval.
     if (fs !== null) {
       if (this.lastFrameStart >= 0 && this.autoOn && this.workMs > 0 && fs > this.lastFrameStart) {
         const next = this.auto.frame(this.workMs, fs - this.lastFrameStart);
-        if (next) this.applyTier(next);
+        if (next) this.applyTier(next, true);
       }
       this.lastFrameStart = fs;
     } else this.lastFrameStart = nowMs();
@@ -310,7 +317,11 @@ class WorldViewImpl implements WorldView {
     this.updateFlash(f, origin);
   }
 
-  setQuality(q: QualityTier): void { this.autoOn = false; this.applyTier(q); }
+  setQuality(q: QualityTier): void {
+    this.autoOn = false;
+    this.autoCheckedAt = (frameStartMs() ?? nowMs());     // re-read the saved setting after it has been written
+    this.applyTier(q);
+  }
   /** After a context restore: every chunk is rebuilt from the generator (deterministic) with the collected coins. */
   rebuildGPU(): void {
     this.abortPending();
@@ -398,10 +409,14 @@ class WorldViewImpl implements WorldView {
   }
 
   // ── internals ─────────────────────────────────────────────────────────────────────────────────────────────────
-  private applyTier(q: QualityTier): void {
-    setGfxQuality(this.ctx, q);
+  /** `midRun`: an auto-adjust step changes the pixel ratio now and the shadow map at the next run start (toggling
+   *  shadows recompiles every lit program, a hitch the run must not see). */
+  private applyTier(q: QualityTier, midRun = false): void {
+    setGfxQuality(this.ctx, q, midRun);
+    this.shadowTier = midRun ? q : null;
     this.auto.tier = q;
   }
+  private shadowTier: QualityTier | null = null;
 
   /** The chunk to draw: generated, or, up to the run's start, the street filled in behind the first content. */
   private chunkFor(index: number): Chunk {
@@ -691,13 +706,22 @@ class WorldViewImpl implements WorldView {
     const dir = this.v1.set(-Math.sin(az) * Math.cos(elev), Math.sin(elev), Math.cos(az) * Math.cos(elev)).normalize();
     const right = this.v2.crossVectors(this.yAxis, dir).normalize();
     const up = this.v3.crossVectors(dir, right).normalize();
-    const half = 24, map = sun.shadow.mapSize.x || 1024, texel = (2 * half) / map;
-    const cz = -(s + 14 - origin);
-    const r0 = Math.round((cz * right.z) / texel) * texel, u0 = Math.round((cz * up.z) / texel) * texel, d0 = cz * dir.z;
+    // The box fits the receivers (x ±10, s − 6 … s + 34, up to 3 m) in light space, its half sizes rounded up to
+    // 0.5 m so a palette blend does not change the texel size every frame; casters further out (off-screen buildings)
+    // lie on the light's rays through it.
+    const map = sun.shadow.mapSize.x || 1024, B = SHADOW_BOX;
+    let hr = 0, hu = 0;
+    for (const x of [-B.halfX, B.halfX]) for (const ds of [-B.halfS, B.halfS]) for (const y of [0, B.height]) {
+      hr = Math.max(hr, Math.abs(x * right.x + y * right.y - ds * right.z)); hu = Math.max(hu, Math.abs(x * up.x + y * up.y - ds * up.z));
+    }
+    hr = Math.ceil((hr + 0.5) * 2) / 2; hu = Math.ceil((hu + 0.5) * 2) / 2;
+    const tr = (2 * hr) / map, tu = (2 * hu) / map;
+    const cz = -(s + B.centreAhead - origin);
+    const r0 = Math.round((cz * right.z) / tr) * tr, u0 = Math.round((cz * up.z) / tu) * tu, d0 = cz * dir.z;
     sun.target.position.set(right.x * r0 + up.x * u0 + dir.x * d0, right.y * r0 + up.y * u0 + dir.y * d0, right.z * r0 + up.z * u0 + dir.z * d0);
     sun.position.copy(sun.target.position).addScaledVector(dir, 90);
     const cam = sun.shadow.camera;
-    cam.left = -half; cam.right = half; cam.top = half; cam.bottom = -half;
+    cam.left = -hr; cam.right = hr; cam.top = hu; cam.bottom = -hu;
     cam.near = 1; cam.far = 200;
     cam.updateProjectionMatrix();
     sun.target.updateMatrixWorld();
@@ -718,6 +742,9 @@ function pushP95(list: number[], v: number): number {
   const sorted = list.slice().sort((a, b) => a - b);
   return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))]!;
 }
+
+/** How often the saved quality setting is re-read (ms), so picking 'auto' again in Settings turns auto-adjust back on. */
+const AUTO_RECHECK_MS = 2000;
 
 /** Auto quality is on unless the URL forces a tier, the saved setting is not 'auto' (read-only; a G2 request asks for
  *  a WorldView hook instead, docs/core-requests.md) or the page is automated (navigator.webdriver). */
