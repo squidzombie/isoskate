@@ -659,3 +659,12 @@ behaviour and is behind a flag.
   `const r = await page.evaluate(() => window.__skate!.renderAudio!('downtown', 1)); expect(r!.sec).toBeCloseTo(1, 2); expect(r!.peak).toBeGreaterThan(0.01); expect(r!.peak).toBeLessThan(0.9);`
 - Why: AU ships `renderOffline` (TECH §4.13, as the debug.ts doc comment anticipates: "resolves null until AU ships"), so this one assertion fails on pkg/au in both projects; every other smoke test passes with audio on. AU may not edit smoke.spec.
 - Local workaround meanwhile: none (the assertion contradicts the deliverable); tests/unit/audio/render-check.mjs covers renderAudio.
+
+## STEER (owner playtest after G1: direct touch steering, pkg/steer)
+
+### core/tuning.ts: STEER_LEAD_MAX and STEER_BRAKE (additive), and a frozen steering behaviour changed   (status: applied @steer; DESIGN §4.2, §5.2, row 67; TECH §4.2, §6.3)
+- File / symbol: core/tuning.ts › STEER_LEAD_MAX (0.8), STEER_BRAKE `{ armLead: 0.6, stopM: 0.03, jitterM: 0.012, restLead: 0.22, ground: 66, air: 40 }`; sim/kinematics.ts › applySteer, lateral; sim/state.ts › SimState.steer; sim/step.ts (a consumed air swipe gives back at most the lead its direction still has).
+- Change: touch `steerDx` never puts targetX more than 0.8 m ahead of the skater (never pulling back a target the magnet or ground align moved); a release brake stops a skater whose thumb outran it within ~0.3 m when the thumb stops or lifts (TECH §6.3 step 2). `steerAxis`, `V_LAT_MAX`, `A_LAT_*`, `STEER_P`, `T_SHIFT` and the validator are unchanged.
+- Why: owner playtest ("it will continue to turn even when I take my finger off it"): a quick slide threw targetX 2.5–5 m ahead and the skater kept sliding 2.3–3.6 m (0.45–0.8 s) after the thumb stopped or lifted.
+- What other packages can rely on: absolute-target drivers (every bot: targetX ≤ 0.55 m ahead, measured; safe 0.47, thumb 0.54 with tremor) are never capped or braked, so bot paths and every bot gate are unchanged. A bot or test that steers with one big instant `steerDx` (a "throw") now moves the skater ≤ ~1 m: drag over several ticks at a human pace (0.08–0.1 m per tick) or set a key target. Touch-input layouts (pkg/ctl's two-thumb split) need nothing: the cap and brake read only `steerDx`.
+- Local workaround meanwhile: n/a.

@@ -103,7 +103,7 @@ The recognizer stays stateless with respect to the game. It labels each swipe wi
 | **Recoil filter** | For 150 ms after a swipe fires, motion within ±60° of the opposite direction is ignored on that stroke |
 | **Re-fire** (same stroke) | A stroke can fire again only when **all three** hold: ≥ 90 ms since its last fire, ≥ 32 px moved since the last fire point, and its speed dipped below 50% of the previous flick's peak in between. One long flick therefore fires once; a deliberate flick-flick fires twice (how doubles work). |
 | **Lift-off swipe** | Disabled for a stroke that fired in the last 150 ms, so a lift never adds a phantom double or triple |
-| **Steering** | Relative. `targetX += dx_px · S`, where `S = 9 m / (0.55 · screenWidthPx)`, about 0.042 m/px on a 390 px phone. Settings slider scales it 0.6–1.6×. Steering starts when SLOP is crossed and counts from the touch-down point, so no motion is lost. Lifting holds the current line; there is no auto-centring. **Gain is 1.0 in every state** that steers. |
+| **Steering** | Relative and **direct** (owner playtest, row 67): the skater moves while the thumb moves and stops when it stops. `targetX += dx_px · S`, where `S = 9 m / (0.55 · screenWidthPx)`, about 0.042 m/px on a 390 px phone. Settings slider scales it 0.6–1.6×. Steering starts when SLOP is crossed and counts from the touch-down point. The target never leads the skater by more than **0.8 m** (`STEER_LEAD_MAX`): a thumb faster than the skater's 5.5 m/s (≈ 0.13 px/ms) loses the excess, so a dodge lasts as long as the thumb moves. **Release brake:** when a thumb that outran the skater stops or lifts, the target drops to ≤ 0.22 m ahead and the skater brakes (66 m/s², 40 in the air), so **lifting or stopping stops the skater within ~0.3 m** (measured 0.20–0.32 m on the ground, 0.22–0.28 m in the air, settled in ≤ 0.07 s). A drag the skater keeps up with ends where the thumb said and holds the line. There is no auto-centring. **Gain is 1.0 in every state** that steers. Keys (`steerAxis`) are never capped or braked. |
 | **`swipeDx`** | The steering that swipe contributed: its 80 ms window, or all steering since touch-down when the stroke is ≤ 150 ms old |
 | **Multi-touch** | The first touch to become a DRAG owns steering. Other touches can TAP, SWIPE or HOLD. A second-finger tap is an ollie. |
 | **`pointercancel`** | Produces no tap or swipe, ends any hold, and passes steering to the next touch that becomes a DRAG |
@@ -184,7 +184,7 @@ A swipe that does not count is plain steering: it was already applied and nothin
 | Playable corridor | **9 m**, `x ∈ [−4.5, +4.5]`, identical in all areas | Soft walls (§5.3) |
 | Lateral speed `V_LAT_MAX` | **5.5 m/s at every forward speed** | Dodges take the same seconds at any speed |
 | Lateral acceleration | 40 m/s² (ground and manual), 16 m/s² (air) | Steering gain is 1.0 in roll, manual and air; 0 in grinds |
-| Line change, measured in sim (settles within 0.1 m) | 1 m 0.30 s · 2 m 0.48 s · 3 m 0.67 s · 4.5 m 0.93 s · full width 1.75 s | |
+| Line change, measured in sim (settles within 0.1 m) | 1 m 0.30 s · 2 m 0.48 s · 3 m 0.67 s · 4.5 m 0.93 s · full width 1.75 s | A key target, or a drag kept up until the skater is there (2 m: 0.43–0.50 s from the touch's first motion; the thumb moves ~0.4 s) |
 | Hitbox | 0.40 W × 0.70 L × 1.50 H | Same for every cosmetic. The visual skater is about 0.55 m wide. |
 | Crash-face inset | 0.08 m | Obstacles are more forgiving than they look |
 | Step-up `STEP_UP` | 0.18 m | Anything this low is a bump, not a wall |
@@ -195,13 +195,14 @@ A swipe that does not count is plain steering: it was already applied and nothin
 ### 5.2 Carve
 - **Target speed:** `desiredVx = clamp(10 · (targetX − x), ±V_LAT_MAX)`. `vx` moves toward `desiredVx` at the state's lateral acceleration.
 - **Target clamp:** `targetX` is clamped to ±4.3.
+- **Touch lead cap and release brake** (§4.2, row 67): touch steering never puts `targetX` more than 0.8 m ahead of the skater (it never pulls back a target the magnet or ground align moved). A drag that put it ≥ 0.6 m ahead (the thumb outran the skater) arms the brake; when that thumb stops or lifts (under ~0.7 px over two ticks; jitter under ~0.3 px a tick is ignored), `targetX` drops to ≤ 0.22 m ahead (or the stopping distance at 66 m/s², 40 in the air) and the skater slows at that rate. The bots (target ≤ 0.55 m ahead), keys, the magnet and every re-anchor never arm it, so lateral capability (`T_SHIFT`, the validator) is unchanged.
 - **Visual only, no effect on physics:**
   - board yaw = `atan2(vx, v)`
   - body lean = 0.8 × yaw, capped at 25°
   - the toeside or heelside pose comes from the sign of lateral acceleration
 
 ### 5.3 Air and edges
-- **Air control:** lateral acceleration 16 m/s² with the same `V_LAT_MAX`, so carve momentum carries through jumps. The air magnet (§6.3) adds on top.
+- **Air control:** lateral acceleration 16 m/s² with the same `V_LAT_MAX`, so carve momentum carries through jumps. The air magnet (§6.3) adds on top. A touch release in the air brakes at 40 m/s² (§5.2), so the board no longer floats past where the thumb stopped (was ~0.1–0.3 m of overshoot).
 - **Soft walls:** beyond |x| = 4.2 a spring (`a = −60·(|x|−4.2)`, lateral) pushes the skater back with a wobble. You can never leave the corridor and never crash on a corridor wall.
 - **Coyote time:** you can ollie up to 0.08 s after rolling off an edge (never over a pit, §7).
 - **Jump buffer:** a tap within the last 0.15 s before touchdown ollies on landing.
@@ -2020,3 +2021,9 @@ Every MUST-FIX was applied. The rows below record decisions where critiques conf
 | 64 | `Decor.y` | WG gave awnings / signs / banners their mounting height in `y`, WA added its own again (awnings at ~5.9 m) | **One convention:** `y` is the surface an element stands on or hangs from; hung kinds carry a `mount` param (lowest point = `y + mount`). Only overhead kinds give their lowest point in `y` (TECH §4.14). |
 | 65 | Palette values | WA's gate tuning moved three colours | **Accepted:** asphalt `#7F7890`, Neon hemi sky `#A69CD8`, ink hazard bodies `#170F24` with `#4A3B6B` tops (§18.1). The pixel gate (`shots --contrast`, silhouette measured) is the source of truth. |
 | 66 | Board identity at 31 px | The grip hides the board graphic in runs | **Accepted:** a thin palette-coloured grip border, one tunable in `skater.config.ts`, default on (M5 if not built earlier). |
+
+### Owner playtest after G1
+
+| # | Topic | Finding | Resolution |
+|---|---|---|---|
+| 67 | Steering kept going after the thumb stopped | Owner on a phone: "if I slide it to the left or right and kind of flick it, it will continue to turn even when I take my finger off it." Relative steering put targetX wherever the thumb went (a 60–120 px slide in 120–250 ms threw it 2.5–5 m), and the skater, limited to 5.5 m/s, kept sliding 2.3–3.6 m for 0.45–0.8 s after the thumb had stopped or lifted (2.4–3.9 m in the air). | **Direct touch steering** (§4.2, §5.2): the target leads the skater by ≤ 0.8 m, and a release brake stops a skater whose thumb outran it within ~0.3 m (measured with recorded thumb traces through the real recognizer: 0.20–0.32 m on the ground, 0.22–0.28 m in the air, no overshoot, settled in ≤ 0.07 s). A 2 m dodge still completes in 0.43–0.50 s (it needs the thumb to keep moving ~0.4 s: 53 px at the skater's pace, 95 px at 0.25 px/ms); a natural 2 m drag of 0.6–1.0 s ends at 1.84–2.04 m, settled as the drag ends; a 40 px flick is a 0.3 m hop (was 1.7 m). **Measured and rejected:** the cap alone (0.6 m: 0.43–0.54 m after a stop, 0.54–0.65 m in the air with a 0.12 m float past; 0.9 m: 0.72–0.84 m); a higher air acceleration (30: no float, but 0.46–0.52 m, and it changes keys, bots and the magnet in the air); a brake to the stopping point with no rest lead (0.12–0.33 m, but a flick moved 0.1 m and natural drags lost up to 0.4 m). Keys, bots (target ≤ 0.55 m ahead, so their paths are unchanged), the magnet, ground align, re-anchors and landing nudges never meet the cap or the brake; `V_LAT_MAX`, the accelerations and `T_SHIFT` are unchanged, so the validator and every generated line are untouched. |
