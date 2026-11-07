@@ -16,17 +16,25 @@ const TICK_MS = DT * 1000;
 const LX = W * 0.25, RX = W * 0.75, Y = H * 0.75;
 const M = steerMetresPerPx(W);
 
-/** A flat street, the real pipeline with the default two-thumb layout (390×844, k = 1), rolled for 0.5 s. */
-function rig(cfg: { swapSides?: boolean; controls?: 'one' | 'two' } = {}) {
+/** A flat street, the real pipeline with the default two-thumb layout (390×844, k = 1), rolled for 0.5 s.
+ *  Touch steering is direct (DESIGN §4.2: the lead cap, fast thumb and release brake), so a fast stroke steers as far
+ *  as the skater can go while the thumb moves, not as far as it drew: "every pixel of the steering" is judged against
+ *  the same traces as pure steering. `steerOnly` drops every swipe (and any swipe give-back) from the frames; `tapMs`
+ *  adds a tap to the frame at that time (a plain ollie on the tick a swipe popped, as a reference). */
+function rig(cfg: { swapSides?: boolean; controls?: 'one' | 'two'; steerOnly?: boolean; tapMs?: number } = {}) {
+  const { steerOnly = false, tapMs, ...pcfg } = cfg;
   const sim = createSim(TRICKS, fixtureWorld([]));
   sim.reset(runCfg({ startT: 2 }));
-  const pipe = new InputPipeline(() => W, { screenW: W, screenH: H, k: 1, deadZoneBottomPx: 12, ...cfg });
+  const pipe = new InputPipeline(() => W, { screenW: W, screenH: H, k: 1, deadZoneBottomPx: 12, ...pcfg });
   let clock = 0, base = 0;
   const events: GameEvent[] = [];
   const until = (ms: number) => {
     while (clock < base + ms && sim.cur.mode !== 'crashed') {
       clock += TICK_MS;
-      for (const e of sim.step(pipe.frame(clock))) events.push({ ...e, tick: clock - base } as GameEvent);
+      let f = pipe.frame(clock);
+      if (steerOnly) f = { ...f, swipe: null, swipeDx: 0 };
+      if (tapMs !== undefined && clock - base === tapMs) f = { ...f, tap: true };
+      for (const e of sim.step(f)) events.push({ ...e, tick: clock - base } as GameEvent);
     }
   };
   until(500);
@@ -48,7 +56,14 @@ describe('two thumbs → sim', () => {
       r.until(1300);
       expect(ollies(r.events), `${a}°`).toHaveLength(1);
       expect(ids(r.events, 'flipStart'), `${a}°`).toEqual([]);
-      expect(r.sim.cur.targetX, `${a}°`).toBeCloseTo((dodge.x - LX) * M, 6);
+      // All of it steers (nothing given back): exactly the same trace as pure steering, in the stroke's direction.
+      const pure = rig({ steerOnly: true });
+      pure.play(tapR(0), new Trace(1, 200, LX, Y).flick(1.4, a, 70).rest(200).up());
+      pure.until(1300);
+      expect(r.sim.cur.targetX, `${a}°`).toBeCloseTo(pure.sim.cur.targetX, 6);
+      expect(r.sim.cur.p.x, `${a}°`).toBeCloseTo(pure.sim.cur.p.x, 6);
+      if (Math.abs(dodge.x - LX) > 20) expect(Math.sign(r.sim.cur.p.x), `${a}°`).toBe(Math.sign(dodge.x - LX));
+      if (Math.abs(dodge.x - LX) > 60) expect(Math.abs(r.sim.cur.p.x), `${a}°`).toBeGreaterThan(0.25);
     }
     // Control: the one-thumb grammar reads that same fresh fast stroke as a kickflip (and gives its dx back).
     const one = rig({ controls: 'one' });
@@ -93,7 +108,13 @@ describe('two thumbs → sim', () => {
     r.play(left, tapR(60), new Trace(2, 260, RX, Y).flick(1.3, 180, 60).up());
     r.until(1300);
     expect(ids(r.events, 'flipStart')).toEqual(['kickflip']);
-    expect(r.sim.cur.targetX).toBeCloseTo(60 * M, 6);
+    const pure = rig({ steerOnly: true });
+    pure.play(new Trace(1, 0, LX, Y).move(-30, 0, 150).move(90, 0, 350).rest(100).up(), tapR(60));
+    pure.until(1300);
+    expect(ids(pure.events, 'flipStart')).toEqual([]);
+    expect(r.sim.cur.targetX).toBeCloseTo(pure.sim.cur.targetX, 6);
+    expect(r.sim.cur.p.x).toBeCloseTo(pure.sim.cur.p.x, 6);
+    expect(r.sim.cur.p.x).toBeGreaterThan(0.25);                      // net right (the thumb outran the air authority)
   });
 
   it('a right flick-flick in the air is a double; ↗ on the ground pops a FS 180 while the left keeps steering', () => {
@@ -107,7 +128,13 @@ describe('two thumbs → sim', () => {
     spin.play(left, new Trace(2, 100, RX - 60, Y).flick(1.0, 45, 60).up());
     spin.until(900);
     expect(ids(spin.events, 'spinStart')).toEqual(['fs180']);
-    expect(spin.sim.cur.targetX).toBeCloseTo(50 * M, 6);
+    const popT = spin.events.find((e) => e.t === 'spinStart')!.tick;
+    const ref = rig({ steerOnly: true, tapMs: popT });                 // the same left drag, popped by a plain tap
+    ref.play(new Trace(1, 0, LX, Y).move(50, 0, 400).up(), new Trace(2, 100, RX - 60, Y).flick(1.0, 45, 60).up());
+    ref.until(900);
+    expect(ollies(ref.events)[0]?.tick).toBe(popT);
+    expect(spin.sim.cur.targetX).toBeCloseTo(ref.sim.cur.targetX, 6);
+    expect(spin.sim.cur.p.x).toBeGreaterThan(0.5 * 50 * M);
   });
 
   it('a right HOLD in the air grabs; a left one never does', () => {
@@ -138,6 +165,10 @@ describe('two thumbs → sim', () => {
     r.until(1300);
     expect(ollies(r.events)).toHaveLength(1);
     expect(ids(r.events, 'flipStart')).toEqual(['heelflip']);
-    expect(r.sim.cur.targetX).toBeCloseTo((right.x - RX) * M, 6);
+    const pure = rig({ swapSides: true, steerOnly: true });
+    pure.play(new Trace(9, 0, LX, Y).rest(60).up(), new Trace(1, 200, RX, Y).flick(1.4, 180, 70).rest(100).up());
+    pure.until(1300);
+    expect(r.sim.cur.targetX).toBeCloseTo(pure.sim.cur.targetX, 6);
+    expect(r.sim.cur.p.x).toBeLessThan(-0.25);                        // it steered left, the way the right thumb flicked
   });
 });

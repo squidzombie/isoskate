@@ -65,11 +65,12 @@ describe.each([[0, 7.0], [160, 10.5]])('feasibility at startT %d (%d m/s)', (sta
         return i === 60 ? { tap: true } : {};
       });
       expect(lock, id).toBeGreaterThan(0);
-      // Replay to the lock + 0.3 s, then pop out and steer away from the rail (pops keep their steering).
+      // Replay to the lock + 0.3 s, then pop out and steer away from the rail (pops keep their steering): the steering
+      // thumb drags left at a human pace (6 m/s, 1.8 m over 0.3 s) while the other finger flicks the flips.
       const sim2 = make([rail({ s: sR, x: 0, len: 12, hgt: 0.30 })], { startT });
       run(sim2, lock + 18, (i) => (i === 60 ? { tap: true } : {}));
       expect(sim2.cur.mode).toBe('grind');
-      const r = airTricks(sim2, 0, dirs.map((d, i) => ({ at: T_SWIPE + i * GAP, dir: d })), (i) => (i === 1 ? { steerDx: -1.6 } : {}));
+      const r = airTricks(sim2, 0, dirs.map((d, i) => ({ at: T_SWIPE + i * GAP, dir: d })), (i) => (i >= 1 && i <= 18 ? { steerDx: -0.1 } : {}));
       expect(first(r.ev, 'ollie')?.from).toBe('grind');
       expect([...r.flips, ...r.ups].at(-1)).toBe(id);
       expect(first(r.ev, 'land')!.airT).toBeCloseTo(0.65, 2);

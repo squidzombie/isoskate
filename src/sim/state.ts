@@ -43,6 +43,12 @@ export interface PredExt {
   magnetEdge: number; magnetX: number;    // magnet candidate (−1) and its axis x at the crossing
 }
 
+/** Direct touch steering bookkeeping (sim/kinematics.ts, core/tuning.ts STEER_FAST / STEER_BRAKE): the direction of
+ *  a drag that outran the skater (0: none), the release brake's deceleration while it runs (0: off), the last 4
+ *  ticks' counted steerDx (newest first), the empty-tick runs before the last 4 ticks with samples, the empty ticks
+ *  since the last one, and what the magnet / ground align added in the armed direction since it armed. */
+export interface SteerExt { armed: number; brake: number; moved: number[]; gaps: number[]; idle: number; assist: number }
+
 /** What the last swipe started (keyboard amend, DESIGN §4.6). */
 export interface StartExt { kind: 'ollie' | 'popOut' | 'flip' | 'pick' | 'switch'; tick: number }
 
@@ -75,6 +81,7 @@ export interface SimState {
   revertTick: number;                   // last revert (pose keeps fakie visible a few ticks)
   shadowY: number;                      // ground under the board (pose height in the air)
   wallSide: -1 | 0 | 1;                 // soft wall currently touched (bump on entry)
+  steer: SteerExt;                      // touch steering lead cap and release brake (sim/kinematics.ts)
   /** Only inside a snapshot: the Lesson rewind ring at that moment (the live ring is kept by the Sim, not the state),
    *  so snapshot → restore replays rewinds exactly too. */
   ring?: SimState[];
@@ -136,6 +143,8 @@ export const freshAir = (): AirExt => ({ reason: 'pop', takeoffTick: -1, takeoff
 
 const freshNear = (): NearExt => ({ ids: [], sEnd: [], side: [], contact: [] });
 
+export const freshSteer = (): SteerExt => ({ armed: 0, brake: 0, moved: [0, 0, 0, 0], gaps: [0, 0, 0, 0], idle: 0, assist: 0 });
+
 export function initState(cfg: RunConfig): SimState {
   const startT = cfg.startT ?? 0;
   const cur = initSkater(startT);
@@ -147,7 +156,7 @@ export function initState(cfg: RunConfig): SimState {
     flipFrom: { roll: 0, yaw: 0, pitch: 0 }, grindSnap: { dx: 0, dy: 0, entry: -1 }, grindPartT0: 0, manualEntry: -1, manualLatch: false,
     manualSrc: null, manualPartT0: 0, manualsSinceAir: 0, manualHeat: false, timedCarry: false, lastStart: null, sw: { tick: -1, dir: null }, pressDown: false, near: freshNear(),
     gapped: new Set(), landmarksPaid: [], rewindsLeft: Math.max(0, Math.min(REWIND.max, Math.floor(cfg.rewinds ?? 0))),
-    revertTick: -1, shadowY: 0, wallSide: 0,
+    revertTick: -1, shadowY: 0, wallSide: 0, steer: freshSteer(),
     landTick: -1, landDrop: 0, slabKind: 'flat', stairStep: -1, groundOb: -1,
     tier: 0, area: startArea, gateway: null, bestPassed: false,
     collected: new Set(), knocked: new Set(), ghosted: new Set(), warned: new Set(),

@@ -23,8 +23,10 @@ import { H, ONE_THUMB, Trace, W } from '../input/trace';
 const TICK_MS = DT * 1000;
 
 /** A flat street, the real pipeline (390×844 screen, k = 1) and a run that has rolled for 0.5 s. Traces are given in
- *  ms relative to `base` (the clock when the rig is ready); `until(ms)` steps the sim to that time. */
-function rig() {
+ *  ms relative to `base` (the clock when the rig is ready); `until(ms)` steps the sim to that time. `steerOnly` drops
+ *  every swipe from the frames: the same trace as pure steering, the reference for "the stroke is only steering";
+ *  `tapMs` adds a tap to the frame at that time (a plain ollie on the tick a swipe popped, as a reference). */
+function rig(steerOnly = false, tapMs?: number) {
   const sim = createSim(TRICKS, fixtureWorld([]));
   sim.reset(runCfg({ startT: 2 }));
   const pipe = new InputPipeline(() => W, { screenW: W, screenH: H, k: 1, deadZoneBottomPx: 12, ...ONE_THUMB });
@@ -36,6 +38,8 @@ function rig() {
       clock += TICK_MS;
       const f = pipe.frame(clock);
       if (f.swipe) swipes.push({ dir: f.swipe, fast: f.swipeFast, fromRest: f.swipeFromRest, steer: f.swipeSteer });
+      if (steerOnly) { f.swipe = null; f.swipeDx = 0; }
+      if (tapMs !== undefined && clock - base === tapMs) f.tap = true;
       for (const e of sim.step(f)) events.push({ ...e, tick: clock - base } as GameEvent);
     }
   };
@@ -117,52 +121,67 @@ describe('recognizer labels → sim (DESIGN §4.3 steering-stroke rule)', () => 
     expect(flips(r.events)).toEqual(['kickflip']);
   });
 
-  /** x after a fresh dodge on the ground (no pop expected unless `pops`). */
-  const dodge = (angle: number, speed = 0.83, ms = 96, x0 = 195) => {
-    const r = rig();
+  /** A fresh dodge on the ground (no pop expected unless it rises far enough). Touch steering is direct (DESIGN §4.2):
+   *  the skater moves while the thumb moves and stops soon after, so a quick 80 px stroke is a short dodge, and its
+   *  steering is judged against the same trace as pure steering (`steerOnly`). */
+  const dodge = (angle: number, speed = 0.83, ms = 96, x0 = 195, steerOnly = false) => {
+    const r = rig(steerOnly);
     r.play(new Trace(1, 0, x0, 700).flick(speed, angle, ms).rest(150).up());
     r.until(1100);
     return r;
   };
 
   it('a fast fresh dodge rising 32° is steering (owner sectors: diagonals ±10°): all of its sideways motion counts', () => {
-    const flat = dodge(0), up32 = dodge(32);
+    const up32 = dodge(32), pure = dodge(32, 0.83, 96, 195, true);
     expect(ollies(up32.events)).toHaveLength(0);
     expect(up32.swipes[0]?.dir).toBe('r');
-    expect(up32.sim.cur.p.x).toBeCloseTo(flat.sim.cur.p.x * Math.cos((32 * Math.PI) / 180), 1);
+    expect(up32.sim.cur.p.x).toBeGreaterThan(0.3);
+    expect(up32.sim.cur.p.x).toBeCloseTo(pure.sim.cur.p.x, 6);                  // exactly its steering, nothing cancelled
   });
 
   it('a fast fresh dodge rising 40° pops a FS 180 and keeps the dodge (ground pops cancel no steering)', () => {
-    const flat = dodge(0), up40 = dodge(40);
-    expect(up40.events.some((e) => e.t === 'spinStart' && e.id === 'fs180')).toBe(true);
-    // The pop takes the skater into the air (lower lateral authority), but the stroke's steering (its horizontal
-    // part: cos 40° of the flat dodge's) stands.
-    expect(up40.sim.cur.targetX).toBeCloseTo(flat.sim.cur.targetX * Math.cos((40 * Math.PI) / 180), 1);
-    expect(up40.sim.cur.p.x).toBeGreaterThan(0.6 * flat.sim.cur.p.x);
+    const up40 = dodge(40);
+    const spin = up40.events.find((e) => e.t === 'spinStart');
+    expect(spin).toMatchObject({ id: 'fs180' });
+    // The reference: the same trace as pure steering, popped by a plain tap on the same tick. The pop takes the
+    // skater into the air (lower lateral authority) either way; a spin pop that gave any of its stroke's steering back
+    // would leave it short of the reference.
+    const ref = rig(true, spin!.tick);
+    ref.play(new Trace(1, 0, 195, 700).flick(0.83, 40, 96).rest(150).up());
+    ref.until(1100);
+    expect(ollies(ref.events)[0]?.tick).toBe(spin!.tick);
+    expect(up40.sim.cur.p.x).toBeGreaterThan(0.2);
+    expect(up40.sim.cur.targetX).toBeCloseTo(ref.sim.cur.targetX, 6);
+    expect(up40.sim.cur.p.x).toBeCloseTo(ref.sim.cur.p.x, 6);
   });
 
   it('a medium-speed fresh dodge (0.5 px/ms) rising 36° does not pop', () => {
-    const r = dodge(36, 0.5, 120);
+    const r = dodge(36, 0.5, 120), pure = dodge(36, 0.5, 120, 195, true);
     expect(ollies(r.events)).toHaveLength(0);
-    expect(r.sim.cur.p.x).toBeGreaterThan(1.8);
+    expect(r.sim.cur.p.x).toBeGreaterThan(0.3);
+    expect(r.sim.cur.p.x).toBeCloseTo(pure.sim.cur.p.x, 6);
   });
 
   it('a steering thumb that flicks 34° up-right while dodging does not pop', () => {
-    const r = rig();
-    r.play(new Trace(1, 0, 195, 700).move(20, 0, 300).flick(0.9, 34, 80).rest(200).up());
-    r.until(1100);
+    const trace = () => new Trace(1, 0, 195, 700).move(20, 0, 300).flick(0.9, 34, 80).rest(200).up();
+    const r = rig(), pure = rig(true);
+    r.play(trace()); pure.play(trace());
+    r.until(1100); pure.until(1100);
     expect(r.swipes[0]).toMatchObject({ dir: 'r', steer: true });
     expect(ollies(r.events)).toHaveLength(0);
-    expect(r.sim.cur.p.x).toBeGreaterThan(2.6);
+    expect(r.sim.cur.p.x).toBeGreaterThan(0.8);
+    expect(r.sim.cur.p.x).toBeCloseTo(pure.sim.cur.p.x, 6);
   });
 
   it('in the air, a fresh medium-speed sideways stroke is steering, a hard fresh flick is a flip', () => {
-    const slow = rig();
-    slow.play(tapAt(0), new Trace(2, 300, 195, 650).flick(0.41, 0, 110).rest(150).up());
-    slow.until(1300);
+    const trace = () => new Trace(2, 300, 195, 650).flick(0.41, 0, 110).rest(150).up();
+    const slow = rig(), pure = rig(true);
+    slow.play(tapAt(0), trace()); pure.play(tapAt(0), trace());
+    slow.until(1300); pure.until(1300);
     expect(slow.swipes.at(-1)).toMatchObject({ dir: 'r', fast: false, steer: false });
     expect(flips(slow.events)).toEqual([]);
-    expect(slow.sim.cur.p.x).toBeGreaterThan(1.5);
+    expect(slow.sim.cur.p.x).toBeGreaterThan(0.25);
+    expect(slow.sim.cur.p.x).toBeCloseTo(pure.sim.cur.p.x, 6);
     const hard = rig();
     hard.play(tapAt(0), new Trace(2, 250, 250, 600).flick(1.2, 180, 50).up());
     hard.until(1300);
@@ -195,16 +214,21 @@ describe('recognizer labels → sim (DESIGN §4.3 steering-stroke rule)', () => 
   });
 
   it('a steering thumb\'s fast ← in the air is no flip and its steering stays; a parked thumb\'s ← kickflips and gives the flick back', () => {
-    const steer = rig();
-    steer.play(new Trace(1, 0, 195, 700).move(-30, 0, 200).flick(1.0, 180, 40).rest(100).up(), tapAt(140));
-    steer.until(1200);
+    const steerTrace = () => new Trace(1, 0, 195, 700).move(-30, 0, 200).flick(1.0, 180, 40).rest(100).up();
+    const steer = rig(), steerPure = rig(true);
+    steer.play(steerTrace(), tapAt(140)); steerPure.play(steerTrace(), tapAt(140));
+    steer.until(1200); steerPure.until(1200);
     expect(flips(steer.events)).toEqual([]);
-    expect(steer.sim.cur.targetX).toBeCloseTo(-70 * 9 / (0.55 * 390), 1);   // all 70 px steered
-    const parked = rig();
-    parked.play(new Trace(1, 0, 195, 700).move(-30, 0, 200).rest(150).flick(1.0, 180, 40).rest(100).up(), tapAt(140));
-    parked.until(1200);
+    expect(steer.sim.cur.p.x).toBeLessThan(-0.5);
+    expect(steer.sim.cur.p.x).toBeCloseTo(steerPure.sim.cur.p.x, 6);           // all of it steered
+    const parkedTrace = () => new Trace(1, 0, 195, 700).move(-30, 0, 200).rest(150).flick(1.0, 180, 40).rest(100).up();
+    const parked = rig(), parkedPure = rig(true);
+    parked.play(parkedTrace(), tapAt(140)); parkedPure.play(parkedTrace(), tapAt(140));
+    parked.until(1200); parkedPure.until(1200);
     expect(flips(parked.events)).toEqual(['kickflip']);
-    expect(parked.sim.cur.targetX).toBeGreaterThan(steer.sim.cur.targetX + 1.0);   // the flick's dx was given back
+    // The flick's steering was given back (as much of it as was still ahead of the skater): the board ends further
+    // right than the same trace steered as pure steering.
+    expect(parked.sim.cur.p.x).toBeGreaterThan(parkedPure.sim.cur.p.x + 0.15);
   });
 
   it('keyboard preset A amend through the real mapper and frames: ↑ then → 60 ms later is a FS 180 ollie; ← then ↓ a Varial', () => {

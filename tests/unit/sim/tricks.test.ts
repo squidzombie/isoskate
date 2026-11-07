@@ -360,8 +360,10 @@ describe('transfer and the pop-out re-capture rule (GP request)', () => {
     const ev2 = run(back, 260, (i, _s, last) => {
       if (lock < 0 && last.some((e) => e.t === 'grindStart')) lock = i - 1;
       if (lock < 0) return i === POP ? { tap: true } : {};
-      return i === lock + 30 ? { tap: true } : i === lock + 32 ? { steerDx: MAGNET.cancelDragM + 0.05 } : {};
+      // Pop out, then drag toward the ledge's other edge at a human pace (4.8 m/s, 0.8 m over 0.17 s ≥ cancelDragM).
+      return i === lock + 30 ? { tap: true } : i >= lock + 32 && i < lock + 42 ? { steerDx: 0.08 } : {};
     });
+    expect(10 * 0.08).toBeGreaterThanOrEqual(MAGNET.cancelDragM);      // the drag counts as steering toward it
     expect(all(ev2, 'grindStart')).toHaveLength(2);
     expect(all(ev2, 'grindStart')[1]!.transfer).toBe(false);          // same obstacle: no Transfer
   });
@@ -381,7 +383,7 @@ describe('transfer and the pop-out re-capture rule (GP request)', () => {
     const ev = run(sim, 300, (i, _s, last) => {
       if (lock < 0 && last.some((e) => e.t === 'grindStart')) lock = i - 1;
       if (lock < 0) return i === POP ? { tap: true } : {};
-      return i === lock + 62 ? { tap: true } : i === lock + 64 ? { steerDx: 1.0 } : {};
+      return i === lock + 62 ? { tap: true } : i >= lock + 64 && i < lock + 76 ? { steerDx: 0.09 } : {};   // drag toward it
     });
     const g = all(ev, 'grindStart');
     expect(g).toHaveLength(2);

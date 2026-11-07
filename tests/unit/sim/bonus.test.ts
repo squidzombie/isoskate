@@ -53,7 +53,7 @@ describe('near miss (DESIGN §7)', () => {
     expect(paid).toBeGreaterThan(0);
     expect(paid).toBeLessThan(tries);
     const bump = make([box({ s: 3, x: 1.4, len: 30, wid: 0.6, hgt: 1.3, top: 'crash' })]);
-    const ev = run(bump, 300, (i) => (i >= 60 && i < 70 ? { steerDx: 0.3 } : {}));
+    const ev = run(bump, 300, (i) => (i >= 60 && i < 85 ? { steerDx: 0.1 } : {}));
     expect(all(ev, 'bump').length).toBeGreaterThan(0);
     expect(all(ev, 'nearMiss')).toHaveLength(0);
   });
@@ -107,7 +107,7 @@ describe('landing details (DESIGN §7)', () => {
   });
   it('touching the soft wall is a harmless bump with a wobble, once per contact', () => {
     const sim = make([]);
-    const ev = run(sim, 240, (i) => ({ steerDx: i < 10 ? 2 : 0 }));
+    const ev = run(sim, 240, (i) => ({ steerDx: i < 120 ? 0.25 : 0 }));   // a thumb dragging right for 2 s
     expect(all(ev, 'bump').map((b) => `${b.kind}:${b.side}`)).toEqual(['wall:1']);
     expect(first(ev, 'crash')).toBeUndefined();
   });

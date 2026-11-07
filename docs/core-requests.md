@@ -743,3 +743,12 @@ recognizer, so the frozen `InputFrame`, the sim, scoring, the generator, replays
 - **Not done here:** Android / iOS edge back gestures near the left edge (the steering thumb may start there): needs a
   real-device check (a web page cannot exclude system gesture areas; the STEER ring sits 24% in from the edge);
   gamepad unaffected.
+
+## STEER (owner playtest after G1: direct touch steering, pkg/steer)
+
+### core/tuning.ts: STEER_LEAD_MAX, STEER_FAST and STEER_BRAKE (additive), and a frozen steering behaviour changed   (status: applied @steer; DESIGN §4.2, §5.2, row 72; TECH §4.2, §6.3)
+- File / symbol: core/tuning.ts › STEER_LEAD_MAX (0.8), STEER_FAST `{ vMax: 7.0, accel: 80 }`, STEER_BRAKE `{ stopM: 0.03, jitterM: 0.012, restLead: 0.2, ground: 66, air: 40, reach: 0.2, winMax: 4 }`; sim/kinematics.ts › applySteer, touchSteer, noteAssist, lateral; sim/state.ts › SimState.steer (SteerExt, freshSteer); sim/step.ts (step 4 reports what the magnet / ground align moved to noteAssist; a consumed air swipe gives back at most the lead its direction still has).
+- Change: touch `steerDx` never puts targetX more than 0.8 m ahead of the skater (never pulling back a target the magnet or ground align moved); a drag the cap held back runs the skater at up to 7 m/s (80 m/s² on the ground) until it stops; then a release brake stops it within ~0.35 m (TECH §6.3 steps 2 and 4). `steerAxis`, `V_LAT_MAX`, `A_LAT_*`, `STEER_P`, `T_SHIFT` and the validator are unchanged.
+- Why: owner playtest ("it will continue to turn even when I take my finger off it"): a quick slide threw targetX 2.5–5 m ahead and the skater kept sliding 2.3–3.6 m (0.45–0.8 s) after the thumb stopped or lifted. The fast thumb (fix pass) gives quick slides back part of the reach the cap took (60 px / 120 ms: 0.45 → 0.6–0.8 m; 120 px / 250 ms: 1.0–1.4 → 1.2–1.8 m).
+- What other packages can rely on: absolute-target drivers (every bot: targetX ≤ 0.66 m ahead, measured over the gate runs) never reach the cap, so they are never capped, sped up or braked: bot paths are bit-identical to before @steer and every bot gate is unchanged. A bot or test that steers with one big instant `steerDx` (a "throw") now moves the skater ≤ ~1 m: drag over several ticks at a human pace (0.08–0.1 m per tick) or set a key target. Touch-input layouts (pkg/ctl's two-thumb split) need nothing: all of it reads only `steerDx` (the stop thresholds are in metres: `jitterM` ≈ 0.3 px and `stopM` ≈ 0.7 px at the default scale).
+- Local workaround meanwhile: n/a.
