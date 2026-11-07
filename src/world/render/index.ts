@@ -1,18 +1,20 @@
-// world/render/: world meshes, palette, lights and the run camera (WA; M0-io ships the grey-box chunk builder).
-// Public surface (TECH §4.13).
+// world/render/: world meshes, palette, lights, sky and the run / menu cameras (WA). Public surface (TECH §4.13): the
+// two factories; the other exports are for vfx/, tests and the gallery harness.
 import type { CameraRig, GfxContext, WorldView } from '../../core/view';
 import { createCameraRigImpl } from './camera';
-import { createGreyboxWorldView } from './view';
+import { createWorldViewImpl } from './view';
 
 export function createWorldView(ctx: GfxContext): WorldView {
-  return createGreyboxWorldView(ctx);
+  return createWorldViewImpl(ctx);
 }
 
 export function createCameraRig(): CameraRig {
   return createCameraRigImpl();
 }
 
-export { solveFraming, lookAheadFor, yawForAspect, hudTopOf, type Framing } from './camera';
-export { heightClass, solidColor } from './chunkBuilder';
-export { COLORS, SURFACE_COLOR, CONTACT } from './palette';
-export { buildOptionsFor, VIEW, type GreyboxView } from './view';
+export { solveFraming, lookAheadFor, yawForAspect, hudTopOf, RIG_STATE, type Framing } from './camera';
+export { heightClass } from './chunkBuilder';
+export { COLORS, SURFACE_COLOR, CONTACT, PRESETS, HAZARD, ACCENTS, samplePalette, blendWeight } from './palette';
+export { buildOptionsFor, worldAmbient, VIEW, type WorldViewDebug } from './view';
+export { QUALITY } from './render.config';
+export type { AmbientRec } from './kits/decor';

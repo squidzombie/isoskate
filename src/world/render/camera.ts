@@ -1,11 +1,22 @@
 // world/render/camera.ts: the run camera rig with the full framing solver (TECH §8.3, DESIGN §8).
-// The solver is pure and unit-tested (tests/unit/render/camera.test.ts). WA owns this file from W2a
-// (shake/punch from events, menu cameras); the solver maths and its guarantees are frozen with the test table.
+// The solver is pure and unit-tested (tests/unit/render/camera.test.ts); its maths and guarantees are frozen with the
+// test table. W2a adds: shake and the Perfect zoom punch driven by GameEvents (DESIGN §8 table, SHAKE in
+// render.config.ts; off with reduced motion), and the menu cameras: the static Title diorama ('title') and the
+// Locker / Shop ('locker'), low perspective cameras (FOV 35°, 1.4 m high) that also see the sky layer (sky.ts).
 import { OrthographicCamera, PerspectiveCamera, Vector3 } from 'three';
 import { clamp, lerp } from '../../core/math';
 import { CAMERA, CORRIDOR_HALF, DT, LOOKAHEAD_TARGET, speedAt } from '../../core/tuning';
 import type { CameraMode, CameraRig, RenderFrame, Viewport } from '../../core/view';
 import { originOf } from '../../gfx';
+import { SHAKE } from './render.config';
+
+/** What the rig did this frame, for the WorldView of the same module (sky layer, haze mode, hidden camera-side decor).
+ *  The world view updates before the rig in a frame, so it reads the previous frame's state (one frame of lag). */
+export const RIG_STATE = { mode: 'run' as CameraMode, yawDeg: 0, hudTop: 0.066, menu: false, H: 20.8, camera: null as OrthographicCamera | PerspectiveCamera | null,
+  /** The track s and origin the camera was last placed for (the world view extrapolates the visible range). */
+  playerS: 0, originS: 0, placed: false };
+/** Layer of the sky dome, clouds, birds and skyline strips (sky.ts): only the menu cameras enable it. */
+const SKY_LAYER = 1;
 
 const DEG = Math.PI / 180;
 const SIN_T = Math.sin(CAMERA.pitchDeg * DEG), COS_T = Math.cos(CAMERA.pitchDeg * DEG);
@@ -76,12 +87,18 @@ export function solveFraming(speed: number, vp: Viewport, out?: Framing): Framin
  *  the skater looking down the street, with the skater's mid-body at 33% from the top (the turntable sits in the top
  *  half, above the item panel). TODO(WA): the Title diorama, sky dome and skyline strips. */
 export const LOCKER_CAM = { fovDeg: 35, height: 1.4, dist: 11, targetY: 0.9, anchorFromTop: 0.33 } as const;
+/** The static Title diorama camera (DESIGN §8): low, behind and to the right of the idling skater, looking down the
+ *  street toward the horizon (the skater sits in the lower third, the sunset sky fills the top). */
+export const TITLE_CAM = { fovDeg: 35, height: 1.4, back: 4.6, side: 0.55, lookAhead: 26, lookY: 1.7, lookX: -0.35,
+  /** Portrait: further back and a wider vertical FOV, so the whole rider stands in the lower third (not cropped at the
+   *  edge) and the sunset sky, sun glow and clouds fill the top. */
+  portrait: { fovDeg: 52, height: 1.75, back: 7.2, side: 0.75, lookAhead: 30, lookY: 3.4, lookX: 0.15 } } as const;
 
 export class RunCameraRig implements CameraRig {
   readonly runCamera = new OrthographicCamera(-1, 1, 1, -1, 1, 200);
   readonly menuCamera = new PerspectiveCamera(LOCKER_CAM.fovDeg, 1, 0.1, 400);
   /** The camera to render with: the ortho run camera, or the perspective camera in 'locker' mode. */
-  get camera(): OrthographicCamera | PerspectiveCamera { return this.mode === 'locker' ? this.menuCamera : this.runCamera; }
+  get camera(): OrthographicCamera | PerspectiveCamera { return this.mode === 'run' ? this.runCamera : this.menuCamera; }
   private mode: CameraMode = 'run';
   private H = 0;
   private yawDeg = 0;
@@ -101,7 +118,8 @@ export class RunCameraRig implements CameraRig {
   last: Framing = solveFraming(7, this.vp);
   private readonly want: Framing = solveFraming(7, this.vp);
 
-  setMode(m: CameraMode): void { this.mode = m; this.lastTick = -1; }
+  constructor() { this.menuCamera.layers.enable(SKY_LAYER); }
+  setMode(m: CameraMode): void { this.mode = m; this.lastTick = -1; RIG_STATE.mode = m; RIG_STATE.menu = m !== 'run'; }
   setReducedMotion(on: boolean): void { this.reduced = on; }
   shake(amp: number, dur: number): void { if (!this.reduced && amp >= this.shakeAmp * (1 - this.shakeT / Math.max(1e-6, this.shakeDur))) { this.shakeAmp = amp; this.shakeDur = dur; this.shakeT = 0; } }
   punch(zoomFrac: number, dur: number): void { if (!this.reduced) { this.punchAmt = zoomFrac; this.punchDur = dur; this.punchT = 0; } }
@@ -113,7 +131,10 @@ export class RunCameraRig implements CameraRig {
   update(f: RenderFrame): void {
     const vp = f.viewport;
     this.vp = vp;
+    RIG_STATE.mode = this.mode; RIG_STATE.menu = this.mode !== 'run'; RIG_STATE.hudTop = hudTopOf(vp); RIG_STATE.camera = this.camera;
     if (this.mode === 'locker') { this.placeLocker(f); return; }
+    if (this.mode === 'title') { this.placeTitle(f); return; }
+    this.events(f);
     const dt = Math.max(0, f.dt);
     const vpChanged = vp.wCss !== this.vpW || vp.hCss !== this.vpH || vp.safeTop !== this.vpSafe;
     const lead = Math.max(f.speed, speedAt(f.cur.t + CAMERA.zoomTau));
@@ -136,6 +157,7 @@ export class RunCameraRig implements CameraRig {
       this.lat += (latWant - this.lat) * (1 - Math.exp(-dtE / 0.4));
     }
     this.yawDeg = want.yawDeg;
+    RIG_STATE.yawDeg = want.yawDeg; RIG_STATE.H = this.H;
     this.xCentre = want.xCentre;
     // `last` is updated in place (read it, don't keep it): one framing object per rig, not per frame.
     Object.assign(this.last, want);
@@ -150,7 +172,47 @@ export class RunCameraRig implements CameraRig {
       const a = this.shakeAmp * (1 - this.shakeT / this.shakeDur);
       shx = a * Math.sin(this.shakeT * 91.7); shy = a * Math.cos(this.shakeT * 77.3);
     }
+    if (this.grinding && !this.reduced) {
+      // Continuous grinding jitter (DESIGN §8: 0.01 m).
+      this.jitterT += dt;
+      shx += SHAKE.grinding * Math.sin(this.jitterT * 63.1); shy += SHAKE.grinding * Math.cos(this.jitterT * 71.9);
+    }
     this.place(f.playerS, this.lat, this.groundY, zoom, shx, shy);
+    RIG_STATE.playerS = f.playerS; RIG_STATE.originS = this.originS; RIG_STATE.placed = true;
+  }
+
+  private grinding = false;
+  private jitterT = 0;
+  /** Shake and punch from this frame's GameEvents (DESIGN §8 table). God-mode crashes are logged, not applied. */
+  private events(f: RenderFrame): void {
+    for (const e of f.events) {
+      if (e.t === 'crash' && !e.god) this.shake(SHAKE.crash.amp, SHAKE.crash.dur);
+      else if (e.t === 'land') {
+        if (e.dropH >= SHAKE.bigLanding.minDrop) this.shake(SHAKE.bigLanding.amp, SHAKE.bigLanding.dur);
+        if (e.quality === 'perfect') this.punch(SHAKE.perfectPunch.zoom, SHAKE.perfectPunch.dur);
+      } else if (e.t === 'grindStart') this.shake(SHAKE.grindLock.amp, SHAKE.grindLock.dur);
+      else if (e.t === 'runStart') { this.shakeT = this.shakeDur; this.punchT = this.punchDur; }
+    }
+    this.grinding = !!f.cur.grind && f.cur.mode === 'grind';
+  }
+
+  /** Title diorama: behind-right of the idling skater, 1.4 m high, looking down the street toward the horizon. */
+  private placeTitle(f: RenderFrame): void {
+    const vp = this.vp, cam = this.menuCamera;
+    const s = f.playerS, x = lerp(f.prev.p.x, f.cur.p.x, f.alpha), gy = lerp(f.prev.groundY, f.cur.groundY, f.alpha);
+    this.originS = originOf(s);
+    const z = -(s - this.originS);
+    cam.clearViewOffset();
+    // Portrait has its own framing (TITLE_CAM.portrait); landscape widens the street view.
+    const c = vp.aspect < 1 ? TITLE_CAM.portrait : TITLE_CAM, k = vp.aspect < 1 ? 1 : 1.35;
+    cam.fov = c.fovDeg; cam.aspect = vp.wCss / Math.max(1, vp.hCss);
+    cam.position.set(x + c.side * k, gy + c.height, z + c.back * k);
+    this.target.set(x + c.lookX, gy + c.lookY, z - c.lookAhead);
+    cam.up.set(0, 1, 0);
+    cam.lookAt(this.target);
+    cam.near = 0.1; cam.far = 600;
+    cam.updateProjectionMatrix();
+    cam.updateMatrixWorld();
   }
 
   /** Positions the ortho camera so the anchor (s, x = lat, y = ground) lands 74% from the top. */
@@ -186,6 +248,7 @@ export class RunCameraRig implements CameraRig {
     // A taller virtual frame (1.4 h, FOV over the full frame) whose centre is the target, cropped so the target sits
     // at anchorFromTop.
     const w = vp.wCss, h = vp.hCss, full = 1.4 * h;
+    cam.fov = LOCKER_CAM.fovDeg; cam.near = 0.1; cam.far = 600;
     cam.aspect = w / full;
     cam.setViewOffset(w, full, 0, full / 2 - LOCKER_CAM.anchorFromTop * h, w, h);
     cam.updateProjectionMatrix();
