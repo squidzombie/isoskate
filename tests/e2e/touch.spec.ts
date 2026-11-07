@@ -115,8 +115,10 @@ test.describe('real touch', () => {
     await touch.start(vp.width * 0.3, y);
     for (let i = 1; i <= 12; i++) { await touch.move(vp.width * 0.3 + i * 10, y); await page.waitForTimeout(16); }
     await touch.end();
-    // 120 px ≈ 120 × 9 / (0.55 × W) m of target offset: the skater carves right.
-    await expect.poll(async () => (await snap(page)).p.x - x0, { timeout: 3000 }).toBeGreaterThan(1.0);
+    // The skater carves right while the thumb moves (direct steering, DESIGN §4.2: a thumb faster than the skater's
+    // 5.5 m/s loses the excess and the skater stops soon after the lift), so how far depends on how long the CDP drag
+    // took under SwiftShader; 120 px at this pace always gives well over 0.5 m.
+    await expect.poll(async () => (await snap(page)).p.x - x0, { timeout: 3000 }).toBeGreaterThan(0.5);
     expect(kinds(await events(page)).filter((k) => k === 'ollie' || k === 'flipStart')).toEqual([]);
     expect(errors).toEqual([]);
   });
@@ -163,7 +165,7 @@ test.describe('real touch', () => {
     await page.mouse.down();
     for (let i = 1; i <= 10; i++) { await page.mouse.move(vp.width * 0.4 - i * 12, vp.height * 0.6); await page.waitForTimeout(16); }
     await page.mouse.up();
-    await expect.poll(async () => (await snap(page)).p.x - x0, { timeout: 3000 }).toBeLessThan(-1.0);
+    await expect.poll(async () => (await snap(page)).p.x - x0, { timeout: 3000 }).toBeLessThan(-0.5);   // as the touch drag
     const t0 = (await snap(page)).tick;
     await page.mouse.click(vp.width / 2, vp.height * 0.6);
     await expect.poll(async () => kinds(await events(page, t0)), { timeout: 3000 }).toContain('ollie');
@@ -231,12 +233,41 @@ test.describe('synthetic traces through the real recognizer (__skate.pointer, ma
     const w = page.viewportSize()!.width;
     const r = await page.evaluate((s) => {
       const before = window.__skate!.snapshot().p.x;
-      window.__skate!.pointer(s); const after = window.__skate!.step(60);
+      window.__skate!.pointer(s); const after = window.__skate!.step(90);
       return { dx: after.p.x - before };
     }, [{ id: 3, tMs: 0, x: 100, y: 500, phase: 'down' as const },
-      ...Array.from({ length: 10 }, (_, i) => ({ id: 3, tMs: 20 + i * 20, x: 100 + (i + 1) * 4, y: 500, phase: 'move' as const })),
-      { id: 3, tMs: 240, x: 140, y: 500, phase: 'up' as const }]);
-    expect(r.dx).toBeCloseTo((40 * 9) / (0.55 * w), 1);          // 40 px of slow drag (no swipe), lifted: holds the line
+      ...Array.from({ length: 20 }, (_, i) => ({ id: 3, tMs: 30 + i * 30, x: 100 + (i + 1) * 2, y: 500, phase: 'move' as const })),
+      { id: 3, tMs: 640, x: 140, y: 500, phase: 'up' as const }]);
+    // 40 px of slow drag (0.07 px/ms: the skater keeps up, no swipe), lifted: it ends where the thumb said and holds the line.
+    expect(r.dx).toBeCloseTo((40 * 9) / (0.55 * w), 1);
+    expect(errors).toEqual([]);
+  });
+
+  test('a quick slide stops the skater within 0.35 m of where the thumb stopped or lifted (owner playtest @steer)', async ({ page }) => {
+    const errors: string[] = [];
+    await boot(page, errors);
+    for (const lift of [true, false]) {
+      await manualRun(page);
+      const r = await page.evaluate((lift) => {
+        // 90 px to the right in 180 ms (minimum jerk, a sample every 8 ms), then lifted or left resting.
+        const s: { id: number; tMs: number; x: number; y: number; phase: 'down' | 'move' | 'up' }[] = [{ id: 4, tMs: 0, x: 120, y: 560, phase: 'down' }];
+        for (let i = 1; i <= 22; i++) {
+          const u = i / 22, p = 10 * u ** 3 - 15 * u ** 4 + 6 * u ** 5;
+          s.push({ id: 4, tMs: 100 + 180 * u, x: 120 + 90 * p, y: 560 - 9 * p, phase: 'move' });
+        }
+        if (lift) s.push({ id: 4, tMs: 281, x: 210, y: 551, phase: 'up' });
+        const x0 = window.__skate!.snapshot().p.x;
+        window.__skate!.pointer(s);
+        const atStop = window.__skate!.step(17).p.x;                   // the tick the thumb stops in (280 ms)
+        const end = window.__skate!.step(60).p.x;
+        if (!lift) window.__skate!.pointer([{ id: 4, tMs: 0, x: 210, y: 551, phase: 'up' }]);
+        window.__skate!.step(2);
+        return { moved: atStop - x0, after: end - atStop };
+      }, lift);
+      expect(r.moved, `lift ${lift}`).toBeGreaterThan(0.3);            // it dodged while the thumb moved
+      expect(r.after, `lift ${lift}`).toBeGreaterThan(0);
+      expect(r.after, `lift ${lift}`).toBeLessThanOrEqual(0.35);       // was ~3.3 m before @steer
+    }
     expect(errors).toEqual([]);
   });
 });
