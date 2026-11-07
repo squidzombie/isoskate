@@ -32,10 +32,10 @@ describe('DiveClock', () => {
     expect(m).toBe(0);
     expect(d.active).toBe(false);
   });
-  it('steps at most 0.1 s per tick (a stalled frame never jumps the dive)', () => {
+  it('keeps to the wall clock, but a stalled frame jumps it at most 0.25 s', () => {
     const c = new DiveClock(false, () => undefined);
     c.tick(2);
-    expect(c.t).toBeCloseTo(0.1, 6);
+    expect(c.t).toBeCloseTo(0.25, 6);
     expect(c.active).toBe(true);
   });
   it('reduced motion: a 0.3 s flat fade, no camera motion', () => {

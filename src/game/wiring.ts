@@ -238,7 +238,7 @@ export function wire(root: HTMLElement): Game {
   try { motionQuery = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null; } catch { motionQuery = null; }
   const reducedMotion = () => !!motionQuery?.matches || save.data.settings.reducedMotion || !save.data.settings.effects;
   const app = new App({ root, play, sim, loop, input, ui, meta, save, audio, analytics, worldView, skater, cameraRig, vfx,
-    gameBus, appBus, session, viewport: () => viewport, applySettings, hints, runEndProps, reducedMotion });
+    gameBus, appBus, session, viewport: () => viewport, applySettings, hints, runEndProps, reducedMotion, now: () => performance.now() });
 
   onViewportChange(() => { applyViewport(); app.checkRotate(sim.cur.vel.s); });
   canvas.addEventListener('webglcontextlost', (e) => {

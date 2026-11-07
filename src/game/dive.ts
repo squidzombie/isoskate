@@ -74,11 +74,12 @@ export class DiveClock {
   /** Tools (shots, title.spec): freeze the dive at `t` seconds (null resumes it). */
   hold: number | null = null;
 
-  /** Advances by dt seconds (clamped to a 0.1 s step, like the loop); hands over when the dive is complete. */
+  /** Advances by dt real seconds (a cinematic keeps to the wall clock: slow frames skip ahead, a stall jumps at most
+   *  0.25 s); hands over when the dive is complete. */
   tick(dt: number): void {
     if (this.state !== 'running') return;
     if (this.hold !== null) { this.t = Math.min(this.dur - 1e-3, Math.max(0, this.hold)); return; }
-    this.t += Math.min(0.1, Math.max(0, Number.isFinite(dt) ? dt : 0));
+    this.t += Math.min(0.25, Math.max(0, Number.isFinite(dt) ? dt : 0));
     if (this.t >= this.dur) this.end();
   }
 

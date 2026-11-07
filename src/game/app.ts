@@ -36,6 +36,8 @@ export interface AppDeps {
   hints?: { start(runsStarted: number, startT: number, god: boolean): void };
   /** The dive plays as a 0.3 s fade (prefers-reduced-motion, Settings › Reduce motion or Reduce effects). */
   reducedMotion?(): boolean;
+  /** Wall clock (ms) for the dive (the loop's frame dt is clamped to 0.1 s; a cinematic keeps to real time). */
+  now?(): number;
   /** DESIGN §21 run_end properties (meta/index.ts runEndProps, passed in by wiring so App imports no module). */
   runEndProps?(r: RunResult, w: RunRewards | null, retryKind: 'instant' | 'results'): Record<string, string | number | boolean>;
 }
@@ -78,6 +80,7 @@ export class App {
   private runEnd: { result: RunResult; rewards: RunRewards | null } | null = null;
   /** The Title → run dive in progress (the run is prepared, the sim and input wait for the hand-over). */
   private dive: DiveClock | null = null;
+  private diveLastMs = -1;
   /** A tap that skipped the dive must not also press what appears under it (the HUD's pause button). */
   private swallowClickUntil = -1;
 
@@ -134,7 +137,13 @@ export class App {
   /** Tools: freeze the dive at `t` seconds (null: let it run on). */
   holdDive(t: number | null): void { if (this.dive?.active) { this.dive.hold = t; this.dive.tick(0); } }
   /** Once per rendered frame, before drawing (real seconds): advances the dive; its end hands over to the run. */
-  frame(dt: number): void { if (this.dive?.active) this.dive.tick(dt); }
+  frame(dt: number): void {
+    if (!this.dive?.active) return;
+    const now = this.d.now?.();
+    if (now === undefined) { this.dive.tick(dt); return; }
+    this.dive.tick(this.diveLastMs < 0 ? 0 : (now - this.diveLastMs) / 1000);
+    this.diveLastMs = now;
+  }
 
   /** Boot → Title: the static diorama (DESIGN §18.7): the start street, the rider idling, the 'title' camera. */
   boot(): void {
@@ -187,6 +196,7 @@ export class App {
       d.loop.setRunning(false);
       d.ui.hud.show(false);
       this.dive = new DiveClock(!!d.reducedMotion?.(), () => this.goLive());
+      this.diveLastMs = d.now?.() ?? -1;
       d.loop.fast = true;                               // the dive renders at the run's 60 fps cap
       d.audio.sfx('dive');
       return;
