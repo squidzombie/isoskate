@@ -9,7 +9,7 @@ import type { GenStats } from '../../core/world';
 import { createSim } from '../../sim';
 import { TRICKS } from '../../tricks';
 import { GEN_FLAGS } from '../../world/gen';
-import { BOTS, type BotKind, type BotOptions } from './registry';
+import { BOTS, type Bot, type BotKind, type BotOptions } from './registry';
 
 export interface BotCrash { cause: string; kind: string | null; t: number; tick: number; x: number; y: number; mode: string; segs: string }
 export interface BotRun {
@@ -26,6 +26,8 @@ export interface BotRun {
   /** Wall time (ms) of the whole run. */
   wallMs: number;
   sim: Sim;
+  /** The bot that drove the run (the thumb gate reports the ThumbBot's gesture counts). */
+  bot: Bot;
 }
 export interface RunOptions {
   ticks: number; startT?: number; bot?: BotOptions; trench?: boolean; mode?: 'normal' | 'lesson';
@@ -71,7 +73,7 @@ export function runBot(kind: BotKind, seed: number, o: RunOptions): BotRun {
     kind, seed, startT: t0, ticks: n, t: sim.cur.t, survivedSec: (crash ? crash.t : sim.cur.t) - t0,
     crash, events, unintended, combos,
     score: sc.total, trickPts: sc.trickPts, distancePts: sc.distancePts,
-    gen: sim.gen.stats(), wallMs: performance.now() - w0, sim,
+    gen: sim.gen.stats(), wallMs: performance.now() - w0, sim, bot,
   };
 }
 

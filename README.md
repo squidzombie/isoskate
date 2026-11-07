@@ -1,6 +1,6 @@
 # Dusklane
 
-*Roll from golden hour into the neon night.* A mobile-first (portrait, one-thumb) isometric endless street-skating
+*Roll from golden hour into the neon night.* A mobile-first (portrait, two-thumb: left steers, right tricks) isometric endless street-skating
 web game: TypeScript + Vite + Three.js, everything procedural.
 
 - **What:** `docs/DESIGN.md` · **How:** `docs/TECH.md` (§4 is the frozen contract in `src/core/`) ·

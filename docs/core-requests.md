@@ -659,3 +659,60 @@ behaviour and is behind a flag.
   `const r = await page.evaluate(() => window.__skate!.renderAudio!('downtown', 1)); expect(r!.sec).toBeCloseTo(1, 2); expect(r!.peak).toBeGreaterThan(0.01); expect(r!.peak).toBeLessThan(0.9);`
 - Why: AU ships `renderOffline` (TECH §4.13, as the debug.ts doc comment anticipates: "resolves null until AU ships"), so this one assertion fails on pkg/au in both projects; every other smoke test passes with audio on. AU may not edit smoke.spec.
 - Local workaround meanwhile: none (the assertion contradicts the deliverable); tests/unit/audio/render-check.mjs covers renderAudio.
+
+## CTL: Two-thumb controls (owner playtest, after G1)
+
+The owner played the G1 build on a phone and asked for "steering on the left thumb and tricks on the right thumb, still
+swiping the way it works now" (DESIGN §24 row 67). Built on `pkg/ctl` from DEV `f543ced`. The split lives in the
+recognizer, so the frozen `InputFrame`, the sim, scoring, the generator, replays and golden hashes are untouched.
+
+### Core additions (additive, optional; status: applied @ctl as instructed, for the gate to confirm; TECH §4.4 / §4.9 updated)
+- `core/input.ts › PointerSample.pointerType?: 'mouse' | 'touch' | 'pen'` (input/pointer.ts stamps it; absent = touch,
+  so synthetic traces and bots are touches).
+- `core/input.ts › RecognizerConfig.controls?: 'two' | 'one'; swapSides?: boolean; splitFrac?: number` (absent = two,
+  false, 0.5). `input/recognizer.ts › RecognizerConfigExt` makes them required; `DEFAULT_RECOGNIZER.controls = 'two'`.
+- `core/input.ts › InputSource.setControls?(controls, swapSides)` (input/index.ts implements it; touches already down
+  keep their role).
+- `core/save.ts › SaveV1.settings.controls?: 'two' | 'one'; swapSides?: boolean`. `save/defaults.ts` DEFAULT_SETTINGS
+  `controls: 'two', swapSides: false`; `save/sanitize.ts` fills both for every save (older saves get the defaults; junk
+  falls back). The App's settings intent writes them like any other key (they are always present after sanitize).
+
+### Rules (DESIGN §4.1–4.4; one thumb in §4.7)
+- At `down` each touch gets a role from `roleOf(x, pointerType, config)`: `both` for `controls: 'one'` or a mouse / pen
+  pointer (the G1 grammar, unchanged); otherwise `steer` when `x < splitFrac · screenW` (the left half; mirrored by
+  `swapSides`; x exactly on the midline is the right), else `trick`. The role lasts until up / cancel.
+- `steer`: never HOLD, never `press`, `tap`, `swipe`, `holdStart` / `holdEnd` or the long tap; it can own steering (the
+  first steer touch to cross SLOP, counted from touch-down, gain 1.0, lift holds the line).
+- `trick`: the full tap / hold / long-tap / swipe / press machine, but never owns steering, so its swipes carry `dxPx` 0
+  and `steer` false (normal thresholds and sectors; arc compensation kept). Nothing for the sim to subtract.
+
+### Files touched
+- input: `recognizer.ts` (roles, `roleOf`, config), `pointer.ts` (pointerType), `index.ts` (`setControls`, exports).
+- game: `wiring.ts` (`applySettings` → `input.setControls?.(st.controls ?? 'two', st.swapSides ?? false)`).
+- debug: `api.ts` (`syncSynth` copies controls / swapSides / splitFrac from the live pipeline: manual-mode
+  `__skate.pointer()` follows the setting); `bots/thumb.ts` (two profiles), `bots/registry.ts` (`BotOptions.layout`,
+  `grammar`), `bots/harness.ts` (`BotRun.bot`: the gate reports the ThumbBot's gesture counts).
+- save: `defaults.ts`, `sanitize.ts`. ui: `hints.ts` (two rings, two-thumb wording `HINT_TEXT[id].twoThumb` / `side`,
+  `touchText()`, the zone cue), `hud.ts` (`HudExt.setControls`), `index.ts` (reads the setting at every runStart),
+  `screens/settings.ts` (Touch controls, Swap sides; rows carry `data-setting`), `ui.config.ts` (`ZONE_CUE`),
+  `styles/hud.css`, `styles/screens.css`.
+- tests: `unit/input/twothumb.test.ts`, `unit/integration/twothumb.test.ts` (new); `unit/input/trace.ts` (`makeRec` is
+  now the one-thumb recognizer, `makeRec2` the two-thumb one), `recognizer.test.ts` / `frames.test.ts` /
+  `integration/labels.test.ts` run with `controls: 'one'`; `unit/save/save.test.ts`, `unit/ui/hud.test.ts`;
+  `bots/gate.thumb.test.ts` (both layouts + control); `e2e/touch.spec.ts`, `e2e/smoke.spec.ts` (the real-time
+  synthetic tap moved to the right half).
+
+### What the gate (and every later package) must know
+- **Any test or script that taps, drags or flicks** must put taps / swipes / holds on the right half and drags on the
+  left half, or switch to one thumb first. A tap at `vp.width / 2` still ollies (the midline belongs to the right);
+  a tap at a fixed x = 195 does not on the desktop project (1280 px: that is the left half). Unit tests that build
+  `InputPipeline` / `createRecognizerImpl` without `controls` get two thumbs; `tests/unit/input/trace.ts › makeRec`
+  and `ONE_THUMB` give the one-thumb grammar. Mouse input (desktop e2e, shots) is unchanged.
+- **Thumb bot** (`BOTS.thumb`): two thumbs by default (`{ layout: 'one' }` for the G1 profile). It imports
+  `createRecognizer`, `FrameBuilder`, `steerMetresPerPx` from `input/index.ts` as before and passes `controls`.
+- **Hints:** `HINT_TEXT[id].touch` keeps the G0 one-thumb wording (hud.test pins it); two-thumb wording is
+  `twoThumb` with `{S}` / `{T}` side tokens. The Lesson Line (M4) should call `hud.hint(id)` as before; the HUD picks
+  the wording, the rings and the cue from `SaveV1.settings` at each runStart. `ZONE_CUE.firstOfSession` also shows the
+  cue on the first run after the app opens (a returning player who updated sees the split once per session).
+- **Not done here:** a one-time re-teach of the two-thumb layout for profiles past run 3 (they get the zone cue but no
+  hint chips; M4's hint re-arming could add it); gamepad unaffected.

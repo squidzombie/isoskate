@@ -283,7 +283,8 @@ test('__skate.pointer() in real time goes through the live recognizer: a synthet
   await page.evaluate(() => { window.__skate!.manual(false); window.__skate!.start({ seed: 4, god: true }); });
   await expect.poll(() => page.evaluate(() => window.__skate!.snapshot().tick)).toBeGreaterThan(10);
   const t0 = await page.evaluate(() => window.__skate!.snapshot().tick);
-  await page.evaluate(() => window.__skate!.pointer([{ id: 5, tMs: 0, x: 195, y: 500, phase: 'down' }, { id: 5, tMs: 90, x: 195, y: 500, phase: 'up' }]));
+  // On the right half: with two thumbs (the default) a tap on the left (steering) half is only steering.
+  await page.evaluate(() => { const x = window.innerWidth * 0.75; window.__skate!.pointer([{ id: 5, tMs: 0, x, y: 500, phase: 'down' }, { id: 5, tMs: 90, x, y: 500, phase: 'up' }]); });
   await expect.poll(() => page.evaluate((s) => window.__skate!.events(s).map((e) => e.t), t0), { timeout: 3000 }).toContain('ollie');
   expect(errors).toEqual([]);
 });
