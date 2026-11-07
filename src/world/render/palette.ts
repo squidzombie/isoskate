@@ -103,6 +103,106 @@ export const NEON_SURFACE: Readonly<Partial<Record<Surface, number>>> = { tile: 
 /** Contact shadow colour (dark blob on light ground) and the cyan contact glow on dark ground (DESIGN §8). */
 export const CONTACT = { shadowRgb: '43,33,64', glow: 0x3ff2ff } as const;
 
+// ── RECLAIM: the quiet, overgrown city (DESIGN §18.1 "RECLAIM tokens", §18.4 dressing rules) ──────────────────────
+// One token table for the re-theme. PRESETS, LOOK, COLORS, HAZARD, ACCENTS and the UI colours above do not change:
+// nature lives in the mid values outside the corridor (in Neon, in the dark values), the value code stays
+// ink = steer around, cream-chrome = grind, amber chevrons = ollie. Relative luminance (sRGB) is noted where a rule
+// depends on it; tests/unit/render/palette.test.ts checks every such number.
+export const RECLAIM = {
+  // Decor flora (Downtown, Suburbs, Docks keep decor foliage at L ≥ 0.10 so "dark = hazard" never leaks).
+  ivyDeep: 0x3f6b3a, ivyLight: 0x6e9a4a,                     // façades, posts (deep only in small patches; L 0.119 / 0.269)
+  moss: 0x5e7a3a, mossLight: 0x7a8f45,                      // decor stone, roofs, ledge faces
+  newLeaf: 0xa8c66c, russetLeaf: 0xb86a3e,                  // crowns, saplings (decor), leaf scatter: never gold
+  meadow: 0x8fa85a, meadowSuburbs: 0xa9b865, dryGrass: 0xc9b67a, seagrass: 0x7e9a5a,
+  /** Wildflowers: never yellow-gold (coins), never white (grind). Poppy only at |x| ≥ 4.6. */
+  flowers: { pink: 0xe98ba6, lilac: 0xb79ad8, cornflower: 0x7fa3e0, poppy: 0xe0674f },
+  cherry: [0xffb7d0, 0xf59bbe],                             // Neon blossom (existing)
+  rust: 0xb5552f, rustDeep: 0x7a3b26, rustLight: 0xd07a48,  // decor metal, carts, rust drips (never crimson)
+  patina: 0x5e8c6a, patinaRail: 0x8fa07a,                   // brass and copper; the DT handrail body
+  /** Faded paint: mix this far toward `fadeTo`, then drop saturation by `fadeDesat` (buildings, awnings, signs). */
+  fadeTo: 0xcdb8a3, fade: 0.25, fadeDesat: 0.2,
+  peeledBoard: 0x9a938c, barnacle: 0xa89f94,                // billboards; the dock water face (≥ 0.3 m below the lip)
+  pickets: 0x8e98a0,                                        // decor fences: 2.78:1 against cream, never white
+  // Vehicles (DESIGN §18.5 vehicle builder): no chrome anywhere.
+  glass: 0x262438, skyStreak: 0x6a6890,                     // dark glass L 0.020 (3.6:1 on asphalt); streak ≤ 10% of a pane
+  bumper: 0x2b2140, hub: 0x3a3448,
+  taillight: 0x6a2a2a,                                      // static vehicles: matte, unlit
+  /** Hazard car paint tops (the top face is the paint; bodies stay the ink family): L 0.076–0.108. */
+  carPaint: { teal: 0x2e6062, oxblood: 0x7a3a48, olive: 0x55603a, slate: 0x575b76 },
+  /** Roof moss per paint, luminance-matched (±10%) to the paint top. */
+  carRoofMoss: { teal: 0x485f37, oxblood: 0x3f5431, olive: 0x485f37, slate: 0x485f37 },
+  /** Neon inverted vehicle bodies (all L ≈ 0.18–0.19, with the emissive rim as today); taxi = steel blue. */
+  neonCarBody: [0x7a6fb0, 0x538078, 0x9f687a, 0x5a78a0],
+  /** Decor (`parked_car_side`) paints: sun-faded mid values, never ink. */
+  decorCarPaint: [0x6f9a94, 0xb07a66, 0x9db4c8, 0x9aae8a, 0xa898b8],
+  // Hazard dressing (luminance-matched to the face it covers; DESIGN §18.4 rule 4).
+  /** Moss on ink tops: on HAZARD.top #5C4B84, and on the darker lid #4A3B6B. */
+  hazardMoss: 0x435b32, hazardMossDark: 0x364928,
+  hazardMossOn: { 0x5c4b84: 0x435b32, 0x4a3b6b: 0x364928 } as Readonly<Record<number, number>>,
+  /** Ink-green hazard foliage (ivy, ferns, vines, crown caps), L 0.021; the lit-side highlight L 0.046 (cap 0.05). */
+  hazardFoliage: 0x1b2b22, hazardFoliageLit: 0x2a4232,
+  inkRust: 0x3a1e14,                                        // car sills, bins: L 0.019, 3.6:1 against asphalt
+  /** Neon hazard moss: on the inverted body #7A6FB0 and on its top #9489C8 (L 0.186 / 0.284). */
+  neonHazardMoss: 0x54825c, neonHazardMossTop: 0x669e70,
+  // Neon decor foliage is dark (≤ 1.3:1 against wet asphalt), because Neon hazards are the mid values.
+  nightLeaf: 0x2e4a48, nightMoss: 0x284440,
+  // Light and life.
+  sunCatch: 0xf2c38a,                                       // 15% of DT/SB windows: unlit sun reflection
+  neonWindows: [0xffc27a, 0xc9b8ff],                        // Neon standby windows (never cyan, which is reserved)
+  deadTube: 0x4a4470,                                       // unlit signs: 1.39:1 against wet asphalt
+  animalMax: 0xa6a3a8,                                      // gull and pigeon: the lightest animal tone near grind edges
+  tabby: [0x6e6a70, 0x8a8690], ginger: 0xc8743a, heron: 0x8a8c94,
+  seeds: 0xa39a8e, seedsAlpha: 0.35,
+  /** Pit floors stay flat with no reflection, glint or ripple in every area (a pit never looks like a puddle). */
+  pitFloor: 0x2f2742, plank: 0xa9744f,
+  /** Lily pads on the fountain: ≤ 30% of the basin, corners only, ≥ 0.3 m from the rim, no blooms. */
+  lilyPad: 0x4a6e45,
+  /** SB picket roses (fence faces only: the one bloom accent on a crash object). */
+  rose: 0xe98ba6,
+  /** Night-owl window level in Neon (was PRESETS.neon.windowLit 0.6; applied by the T2 render pass). */
+  neonWindowLit: 0.35, cityGlowK: 0.85,
+} as const;
+
+/** Per-area flora green-share bands (DESIGN §18.1): fraction of a 390×844 run frame (HUD excluded) with HSV hue
+ *  60–178°, S ≥ 0.20, V ≥ 0.10. Checked by `npm run shots -- --green`. */
+export const GREEN_SHARE: Readonly<Record<AreaId, readonly [number, number]>> = {
+  downtown: [0.06, 0.15], suburbs: [0.12, 0.30], docks: [0.03, 0.10], neon: [0.03, 0.10],
+};
+
+/** sRGB relative luminance of a hex colour (WCAG). */
+export function relLum(hex: number): number {
+  const l = (c: number) => { const v = c / 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+  return 0.2126 * l((hex >> 16) & 255) + 0.7152 * l((hex >> 8) & 255) + 0.0722 * l(hex & 255);
+}
+/** WCAG contrast ratio of two hex colours (≥ 1). */
+export function contrastRatio(a: number, b: number): number {
+  const la = relLum(a), lb = relLum(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+/** The hue of `hex` at relative luminance `L` (scaled in linear light, per channel; a channel that clips at 1 hands
+ *  the rest to the others). Used to luminance-match moss, rust and ivy to the face they cover (DESIGN §18.4 rule 4). */
+export function withLum(hex: number, L: number): number {
+  const toLin = (c: number) => { const v = c / 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+  const toSrgb = (v: number) => Math.round(255 * (v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055));
+  const w = [0.2126, 0.7152, 0.0722];
+  const c = [toLin((hex >> 16) & 255), toLin((hex >> 8) & 255), toLin(hex & 255)];
+  const target = Math.max(0, Math.min(1, L));
+  for (let it = 0; it < 4; it++) {
+    const cur = w[0]! * c[0]! + w[1]! * c[1]! + w[2]! * c[2]!;
+    if (cur <= 1e-6) { c[0] = c[1] = c[2] = target; break; }
+    const k = target / cur;
+    for (let i = 0; i < 3; i++) c[i] = Math.min(1, c[i]! * k);
+    if (Math.abs(w[0]! * c[0]! + w[1]! * c[1]! + w[2]! * c[2]! - target) < 1e-4) break;
+  }
+  return (toSrgb(c[0]!) << 16) | (toSrgb(c[1]!) << 8) | toSrgb(c[2]!);
+}
+/** RECLAIM faded paint: 25% toward the dusty verge tone, then 20% less saturation (buildings, awnings, signs). */
+export function fadePaint(hex: number): number {
+  const m = mixHex(hex, RECLAIM.fadeTo, RECLAIM.fade);
+  const g = Math.round(0.299 * ((m >> 16) & 255) + 0.587 * ((m >> 8) & 255) + 0.114 * (m & 255));
+  return mixHex(m, (g << 16) | (g << 8) | g, RECLAIM.fadeDesat);
+}
+
 // ── blending ────────────────────────────────────────────────────────────────────────────────────────────────────
 const KEYS = ['zenith', 'mid', 'horizon', 'sun', 'sunGlow', 'fog', 'hemiSky', 'hemiGround', 'sunColor'] as const;
 const NUMS = ['sunIntensity', 'sunElevDeg', 'exposure', 'windowLit', 'neonGlow'] as const;

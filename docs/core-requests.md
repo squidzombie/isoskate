@@ -778,3 +778,18 @@ recognizer, so the frozen `InputFrame`, the sim, scoring, the generator, replays
 - **Maglev:** @cam's far-facade guideway, the tune's paper-magenta streak at 22 % (`OCCLUSION.trainAlpha`).
 - **Steering tests:** `steer.test` traces run on the steering half (two thumbs is the default); `twothumb.test` judges
   "all of the steering" against the same traces with swipes removed (the lead cap limits fast strokes).
+
+## THEME: RECLAIM re-theme (owner-approved; DESIGN §24 row 74; work packages T0–T8)
+
+### core/skins.ts: propSkin, the skin chooser (additive, new file)   (status: applied @theme T0 on DEV; TECH §4.15)
+- File / symbol: core/skins.ts › `propSkin(kind, area, id, variant, h, out?)`, `PropSkin`, `SkinBody`, `VehicleBody`, `CarPaint`, `Dress` (bit set), `WEAR_MASK`, `VEHICLE_BODIES`, `CAR_PAINTS`, `SAPLING_KINDS`, `MOVER_KINDS`, `isVehicle`, `newSkin`.
+- Change: a new pure module; nothing existing changes. It imports only `core/ids` (types), `core/rng` (`hash32`) and `core/decor` (`DECOR_BRANDS`, for livery indices).
+- Why: the kits and the crash copy must agree on what an obstacle is drawn as (a car or a pickup, a container or a truck, a barrier board or a log), so the crash line names what the player saw (DESIGN §9, §10.3 skin notes). Both call it with `(ob.kind, ob.area, ob.id, ob.variant, ob.hgt)`.
+- What other packages can rely on: deterministic per argument tuple; never read by world/gen, sim or the validator, so footprints, solids, edges, golden obstacle hashes and every bot gate are untouched. The isolated-filler sapling is a separate flag from the chunk builder and never changes the noun. `kits/dress.ts` `DRESSER.begin` (called by `drawObstacle`) computes the skin per drawn obstacle; kits read `DRESSER.skin`.
+- Local workaround meanwhile: n/a.
+
+### What T1 / T2 / T3 / T6 build on (no further core change in T0)
+- **T1 (kits, vehicle builder):** `DRESSER.skin` (body, paint, dress, livery, nosedIn), `DRESSER.box(K, role, x0, y0, s0, x1, y1, s1, faces?)` for every dressing box (roles `life`, `cat`, `animal`, `foliage`, `wear`, `sapling`), `DRESSER.life` / `lifeDisc` for accents drawn another way, `DRESSER.has(flag)`, `DRESSER.sapling`; colours from `palette.ts` `RECLAIM` and `dress.ts` `mossOn` / `rustOn` / `foliageFor`; `isIsolatedFiller(ob, chunkObstacles)` for the chunk-builder flag, passed as `drawObstacle(c, ob, chunkIndex, first, isolated)`. `tests/unit/render/dress.test.ts` already draws every kit in every skin and checks the life budget, refusals and clean machines.
+- **T2 (render-side overgrowth):** `RECLAIM` tokens, `fadePaint`, `withLum`, `contrastRatio`, the zone helpers `inCleanCore` / `flatWeedOk` / `vegOk`, `edgeBandDecalOk`, `clearOfEdges`, `GREEN_SHARE`.
+- **T3 (decor kinds):** new `DECOR_KINDS` entries come as their own request here, with the split golden test (obstacle chain identical, decor chain re-baselined once).
+- **T6 (copy):** `kindName(kind, area, skin)` reads `PropSkin.noun` and `plural` (no "a"/"an" for plurals).

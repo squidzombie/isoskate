@@ -17,7 +17,9 @@
 
 **Name:** DUSKLANE. A web search on 2026-11-06 found no existing game with this title. Similar names exist (Duskers, DUSK, Dusk Runners), but none is a skate game or a close match.
 
-**Logline:** *"Roll from golden hour into the neon night."* An endless, two-thumb street-skating game (left thumb steers, right thumb tricks). You never push. You carve, pop, flip and grind your way down a never-ending procedural street that drifts from a sunset downtown into the suburbs, past the docks and up into a glowing futuristic city at blue hour.
+**Logline:** *"Roll through a quiet, overgrown city from golden hour into the neon night."* An endless, two-thumb street-skating game (left thumb steers, right thumb tricks). You never push. You carve, pop, flip and grind your way down a never-ending procedural street that drifts from a sunset downtown into the suburbs, past the docks and up into a glowing futuristic city at blue hour.
+
+**Theme: RECLAIM** (internal name; players never see it; §24 row 74). A quiet, peaceful city that nature has slowly moved back into: moss on the stone, wildflowers on the verges, trees through roof terraces, birds on the wires, cars still parked calmly in their bays. A few helper machines keep working (a street sweeper, a forklift, a delivery robot, a self-parking car). The streets stay clean and skateable, the light is the same golden hour sliding into a neon night, and the lo-fi beat still plays. You are the only person on screen: the whole city is your skatepark, and the ledges and rails you grind are the only polished things in sight. Never shown or explained to players: why people left. Never: zombies, people, bodies, gore, crashed or burnt cars, decay theatre, flicker on hazards, fireflies (the full do-not list is in §18.4). Mood words: solitude, calm, wonder, freedom, golden, hopeful.
 
 **Pillars**
 1. **Two-thumb flow** (one thumb in Settings, §4.7).
@@ -39,7 +41,7 @@
    - Cosmetic skaters, boards and helmets, a level track, a Trick Book and area postcards.
    - No energy meters, no streak punishment, no revives, no pay-to-win.
 
-**The first 5 seconds** of every run (§12.4): carve through a coin S-curve, ollie a parking chain at 3.5 s (the first thing you must react to), and get magnetically pulled into your first grind at 6 s.
+**The first 5 seconds** of every run (§12.4): carve through a coin S-curve, ollie a road-works barrier at 3.5 s (the first thing you must react to), and get magnetically pulled into your first grind at 6 s.
 
 ---
 
@@ -623,6 +625,20 @@ Area layouts blend over the 4 s gateway (§12.2).
 - Every crash face is inset 0.08 m.
 - Tall in-corridor solids get the x-ray cap above 1.6 m (§8).
 - Each area re-skins the shared items with its own materials.
+
+**RECLAIM skin notes** (§1 theme, §18.4 dressing rules, §18.5 vehicle builder; §24 row 74). A skin changes only what is drawn: every kind keeps its footprint, class, interaction code, top type, solids, crash-face insets and edges, and the bot gates do not move. `core/skins.ts` `propSkin(kind, area, id, variant, h)` picks the body, paint, dressing flags, livery and crash noun deterministically; the kits and the crash copy (§9) both call it, so the crash line always names what was drawn. Crash nouns are plain ("car", "bin", "gap"), never "abandoned", "overgrown" or "mossy".
+
+| Kind | RECLAIM skin (crash noun) |
+|---|---|
+| `parked_car` | A parked car from the vehicle builder: sedan, estate, pickup or (h ≥ 1.5) small SUV, paint top teal / oxblood / olive / slate, dark glass framing the roof, tyre nubs, one accent stripe, no chrome; 70% show the rear, 30% are nosed in; a grey tabby asleep on 1 in 8 sedans and estates (never in Neon) ("car" / "pickup") |
+| `parked_van` | Panel van in a faded `DECOR_BRANDS` livery (55%) or camper van, curtains drawn ("van") |
+| `container` | 60% rusty container with vines, 25% box truck in Brindle Freight livery, 15% staff shuttle bus in Saltwick Shipping livery ("container" / "truck" / "bus") |
+| `crosswalk_car` / `backout_car` / `forklift` / `delivery_robot` | Helper machines still at work, clean: a street sweeper, a self-parking car, an autonomous forklift, a delivery robot (pictogram screen, no face). Telegraphs unchanged ("street sweeper" / "reversing car" / "forklift" / "delivery robot") |
+| `barrier_low` / `holo_gate` | DT a faded road-works barrier board on two trestles (both height classes, the Roll-out included; no chains anywhere); SB a fallen log with chevron boards on stakes; IN a rusty pipe run on blocks; NE the holo gate. Chevrons stay fresh ("barrier" / "log" / "pipe" / "holo gate") |
+| `trench` | DT sunken road seam under a scaffold plank, SB ditch with a culvert slab, IN quay seam with steel plates, NE cable trench under a grate plank. Jagged honest crack lips within ~0.1 m of the collision edge; the floor stays flat `#2F2742` with no reflection, so a pit never looks like a puddle ("gap" / "ditch" / "gap" / "trench") |
+| `bike_rack` / `wheelie_bins` | Bikes with vines, or nested shopping carts (50/50); a bin pair, or a compact dumpster (50/50) ("bike rack" / "carts"; "bins" / "dumpster") |
+| `kiosk` / `bus_shelter` | A tree grows up through the awning or roof: a flat ink-green crown cap ≤ +0.05 m inside the footprint; every shelter pane in place, a faded poster ("kiosk" / "bus shelter") |
+| everything else | The same object, weathered and dressed under §18.4 (moss, ivy, rust, a bird on a bollard or hoop, a nest in a mailbox, roses on SB pickets, a flower carpet in DT planters). Lidded column fillers outside Neon roll a sapling 1 in 4, drawn only when the filler is isolated |
 - **Top type** follows the interaction codes: **T** = `landable`, **K** = `knock`, everything else = `crash` (§7).
 - **Seconds vs metres.** For length-parametric kinds (ledges, rails, walls, beams, decks) the template's seconds range is authoritative; the catalog's metre range below is wide enough to fit it at `V_MAX` and only clamps extreme jitter. Fixed-size kinds keep their sizes.
 - **"Continuous" kinds** (curbs, neon curbs, the dock lip) are emitted as finite edges per template. No grind edge and no L1 deck crosses a segment boundary.
@@ -637,7 +653,7 @@ Area layouts blend over the 4 s gateway (§12.2).
 | `manual_pad` | 3–6 × 1.2 × 0.15 | Bump | T (manual). Its edges are curb-class grindables (pick only). |
 | `trash_can` | 0.6 × 0.6 × 1.15 | Tall | A. Non-landable. Common column filler. |
 | `cone` | 0.3 × 0.3 × 0.5 | Low | K. A-frame signs use the same rule. |
-| `barrier_low` | 0.6 × full width × 0.50 | Low | **O (full-width hazard)**, with amber/ink chevrons. `crash` top. Skins: DT construction barrier, SB trimmed low hedge, IN pipe run on blocks, NE **holo gate** (a light bar over a solid chevroned base; may have an open 2.0 m slot; pulses at ≤ 2 Hz for the standard 1.6 s warning). |
+| `barrier_low` | 0.6 × full width × 0.50 | Low | **O (full-width hazard)**, with amber/ink chevrons. `crash` top. Skins (RECLAIM): DT road-works barrier board on trestles, SB fallen log with chevron boards, IN pipe run on blocks, NE **holo gate** (a light bar over a solid chevroned base; may have an open 2.0 m slot; pulses at ≤ 2 Hz for the standard 1.6 s warning). |
 | `trench` | gap 0.25–0.35 s·v (1.8–3.7 m) × full width; a 1.2 m-wide plank at some x | Pit | **Full-width hazard.** O across, or steer onto the plank. Pit level = lip level; depth is visual only (§7). Skins: DT utility trench, SB drainage ditch with a 1.4 m culvert slab, IN plate gap with two 0.9 m steel plates, NE cable trench with a grate plank. |
 | `stairs` | 3 / 5 / 7 / 10 steps (rise 0.17, tread 0.30): drops 0.51 / 0.85 / 1.19 / 1.70 m | Drop | Roll (sticky slope) or ollie down. **Full width** (terrace, any count) or a **side set** at 3, 7 or 10 steps only: a side set's platform face is 0.51 m (Low) or ≥ 1.19 m (Tall), never the 0.85 m forbidden band. |
 | `handrail` | follows the stairs: 0.60 above the nosing line, 0.5 m flat kink at the top, 0.05 wide | Low | G. Top end post is a crash face. |
@@ -671,7 +687,7 @@ Area layouts blend over the 4 s gateway (§12.2).
 | `wheelie_bins` | 0.7 × 1.5 × 1.2 (a pair) | Tall | A |
 | `parked_car` / `parked_van` | 4.6 × 1.9 × 1.5 / 1.9 | Tall | A |
 | `porch_steps` | side drop of 2 steps (0.34 m), with a 0.55 rail | Drop | G on the rail. An incline returns you to the street. |
-| `yard_table` | 2.0 × 0.8 × 1.15 (a loaded yard-sale table) | Tall | A |
+| `yard_table` | 2.0 × 0.8 × 1.15 (a potting bench; nothing above the pot rims) | Tall | A |
 | `crate_stack` | 0.6 × 0.4 × 0.30 | Low | O, T |
 | `speed_hump` | 3.0 × full × 0.08 | Bump | B |
 | `hoop_pole` | 0.2 × 0.2 × 3.0 | Tall | A |
@@ -689,12 +705,12 @@ Area layouts blend over the 4 s gateway (§12.2).
 | `drum_cluster` | 2–5 drums on a skid, each 0.6 Ø × 1.15 overall | Tall | A |
 | `spool_standing` | 1.2 Ø × 1.2 | Tall | A |
 | `spool_lying` | 0.8 × 1.0 × 0.50 | Low | O. Non-landable round top. |
-| `mooring_bollard` | 0.5 Ø × 1.15 (bollard with a chain post) | Tall | A. Sits on the apron near the lip, outside every lip grind sweep. |
+| `mooring_bollard` | 0.5 Ø × 1.15 (bollard with a frayed rope; a resting gull) | Tall | A. Sits on the apron near the lip, outside every lip grind sweep. |
 | `dock_lip` | continuous × 0.3 × 0.30 at x +4.2…+4.5 | Low | G: **the signature long grind** (auto-capture; it is Low-class, not curb-class) |
 | `rail_track` | flush embedded rails | Bump | B, with a clack sound |
 | `forklift` | 2.5 × 1.2 × 2.1 | Tall, M | Amber beacon (mover, M5 stretch) |
 
-**Neon City (Hoshimachi Ward).** All signage uses invented brand names (§18.6) and a reviewed list of generic Japanese words. There are no religious structures, no real landmarks and nothing copied from any film, game or anime.
+**Neon City.** All signage uses invented brand names (§18.6) and a reviewed list of generic Japanese words. There are no religious structures, no real landmarks and nothing copied from any film, game or anime.
 
 | Kind | Size | Class | Interaction and notes |
 |---|---|---|---|
@@ -1021,7 +1037,7 @@ Each gateway hides the swap of building kit and carries the palette and music cr
 | t (s) | s (m) | Content | Teaches |
 |---|---|---|---|
 | 0–3 | 0–21 | Plaza roll-out, S-curve of 8 coins | **Drag** (left thumb) to carve |
-| 3.5 | 25 | Full-width low parking chain (`barrier_low`, 0.35 m), coin arc. The first required action. | **Tap** (right thumb) = ollie |
+| 3.5 | 25 | Full-width low road-works barrier (`barrier_low`, 0.35 m: a chevron board on two trestles, ivy on the legs only; no chains, §24 row 74), coin arc. The first required action. | **Tap** (right thumb) = ollie |
 | 6–9 | 42–63 | Granite ledge at x = +2, magnet, coins on top | **First grind within 6 s** |
 | 10–13 | 70–91 | Two bench pairs at x = −2; ghost ↓ as the edge glows and the chevron appears | **Swipe into a rail** (right thumb) picks the grind (watch for the glow) |
 | 14–17 | 98–119 | Parked car centre-right; the left ledge continues | Tall things must be avoided |
@@ -1037,8 +1053,10 @@ The Greenway gateway follows at 40 s.
 ### 12.4 The Roll-out (every later run)
 Every later run starts with the **first 9 s** of the Lesson Line, with no prompts:
 - carve the coin S-curve
-- ollie the chain at 3.5 s (nothing to react to before that, so the instant-retry reward toast is gone in time)
-- grind the ledge at 6–9 s
+- ollie the road-works barrier at 3.5 s (nothing to react to before that, so the instant-retry reward toast is gone in time)
+- grind the mossy granite ledge with its waxed coping at 6–9 s
+
+Geometry, timing and the chunk cache are unchanged by the RECLAIM skin.
 
 This keeps "fun in 5 seconds" and gives veterans a familiar warm-up. Procedural generation (Opening phase) takes over at 9 s, and the A1/A2 clocks start then. The Roll-out's chunks are identical every run, so they are cached and not rebuilt on retry.
 
@@ -1507,6 +1525,39 @@ The palette lerps over 8 s, centred on each gateway. Palettes are looked up by `
 | Docks | rust `#B5552F`, container blue `#2F5D7C`, safety yellow `#F2B630`, patina `#5E8C6A`, steel `#8A8FA0`, water `#4F6A8F` |
 | Neon | magenta `#FF3FA4`, cyan `#3FF2FF`, lantern red `#FF5A3C`, paper `#FFD39A`, violet `#8A5CFF`, sakura `#FFB7D0` |
 
+**RECLAIM tokens** (§1 theme, §24 row 74; `world/render/palette.ts` `RECLAIM`). The presets, blends, sun, hemisphere, fog, exposure, ground colours, `COLORS`, `HAZARD` bodies, accents and UI colours above do **not** change. Nature lives in the mid values outside the corridor (in Neon, in the dark values, because Neon's code is inverted). Luminance values are sRGB relative luminance; `tests/unit/render/palette.test.ts` checks every number below.
+
+| Token | Hex | Use |
+|---|---|---|
+| ivy deep / light | `#3F6B3A` / `#6E9A4A` | Decor façades and posts (DT/SB/IN decor foliage L ≥ 0.10; deep only in small patches) |
+| moss / moss light | `#5E7A3A` / `#7A8F45` | Decor stone, roofs, ledge faces |
+| new leaf / russet leaf | `#A8C66C` / `#B86A3E` | Crowns, saplings, leaf scatter (never gold) |
+| meadow / meadow SB / dry grass / seagrass | `#8FA85A` / `#A9B865` / `#C9B67A` / `#7E9A5A` | Verges, lawns, the docks apron |
+| wildflowers | pink `#E98BA6`, lilac `#B79AD8`, cornflower and morning glory `#7FA3E0`, poppy `#E0674F` (\|x\| ≥ 4.6 only) | Never yellow-gold (coins), never white (grind) |
+| rust / deep / light | `#B5552F` / `#7A3B26` / `#D07A48` | Decor metal, carts, rust drips (orange-brown, never crimson, never on the ground) |
+| patina / rail body | `#5E8C6A` / `#8FA07A` | Brass and copper; the DT handrail body under its polished strip |
+| faded paint | 25% toward `#CDB8A3`, then −20% saturation (`fadePaint`) | Building, awning and sign colours |
+| peeled board / barnacle / pickets | `#9A938C` / `#A89F94` / `#8E98A0` | Billboards; the dock water face; decor fences (2.78:1 against cream, never white) |
+| vehicle glass / sky streak | `#262438` (L 0.020, 3.6:1 on asphalt) / `#6A6890` (≤ 10% of a pane) | Every vehicle |
+| vehicle bumper / hub / taillight | `#2B2140` / `#3A3448` / matte `#6A2A2A` | Every vehicle: no chrome; static vehicles unlit |
+| hazard car paint tops | teal `#2E6062`, oxblood `#7A3A48`, olive `#55603A`, slate `#575B76` (L 0.076–0.108) | The top face is the paint; bodies stay the ink family |
+| hazard car roof moss | `#485F37` (teal, olive, slate), `#3F5431` (oxblood) | Luminance-matched (±10%) to the paint top |
+| hazard moss on ink tops | `#435B32` on `#5C4B84`, `#364928` on `#4A3B6B` | Bins, bollards, drums, lids |
+| hazard foliage | `#1B2B22` (L 0.021), lit-side highlight `#2A4232` (L 0.046) | Ivy, ferns, vines and crown caps on hazards (L ≤ 0.05) |
+| hazard ink rust | `#3A1E14` (L 0.019) | Car sills, bins |
+| Neon hazard moss | `#54825C` on body `#7A6FB0`, `#669E70` on top `#9489C8` | Luminance-matched |
+| Neon inverted vehicle bodies | `#7A6FB0`, sea-glass `#538078`, rose `#9F687A`, taxi steel blue `#5A78A0` (L ≈ 0.18–0.19) | With the emissive rim, as today |
+| Neon night leaf / night moss | `#2E4A48` (1.30:1) / `#284440` (1.18:1) against wet asphalt | Neon decor foliage (dark, because Neon hazards are the mid values) |
+| decor car paints | `#6F9A94`, `#B07A66`, `#9DB4C8`, `#9AAE8A`, `#A898B8` | `parked_car_side`: sun-faded mid values, never ink |
+| sun-catch pane / Neon standby windows | `#F2C38A` / `#FFC27A`, `#C9B8FF` | 15% of DT/SB windows, unlit; Neon windows at 0.35 (never cyan) |
+| dead neon tube | `#4A4470` (1.39:1 on wet asphalt) | Unlit signs |
+| animals | gull and pigeon ≤ `#A6A3A8`, grey tabby `#6E6A70` / `#8A8690`, ginger `#C8743A`, heron `#8A8C94` | Nothing near-white |
+| seeds / lily pad / roses | `#A39A8E` at ≤ 35% alpha / `#4A6E45` / `#E98BA6` | Dandelion seeds; fountain pads (≤ 30%, corners); SB picket roses |
+
+**Per-area flora and green caps** (`GREEN_SHARE`; checked by `npm run shots -- --green`: the share of pixels in a 390×844 run frame, HUD excluded, with HSV hue 60–178°, S ≥ 0.20, V ≥ 0.10): Downtown 6–15% (fig and plane trees, poppies at \|x\| ≥ 4.6, moss in granite joints, ivy on end walls only), Suburbs 12–30% (meadow lawns, pink and lilac flowers, buddleia: the wildest area), Docks 3–10% (seagrass, morning glory: rust is the show), Neon 3–10% (dark teal night foliage, cherry: the lights are the show).
+
+**Per-area deltas** (render side, T2): Downtown façades faded, awning red `#C4473D` → `#B5625A`, brass → patina, window lights 0.20 → 0.04 plus sun-catch panes. Suburbs lawns become meadow with flower dots, moss on roofs, pickets grey, window lights 0.04, 20% of lamps on. Docks rust up, container paints faded, window lights 0.06. Neon about 70% of the remaining signs live, glow cards ≤ 24 per chunk, city glow ×0.85, windows 0.60 → 0.35 in dim `#FFC27A` / `#C9B8FF` ("the city runs on sunlight"), puddles reflect only live signs, pit floors reflect nothing; `neonGlow` and the hazard rims unchanged.
+
 **UI colours**
 
 | Role | Colour |
@@ -1567,6 +1618,29 @@ The **sky dome** (3-stop gradient, sun disc, glow falloff, 5–8 lozenge clouds 
 - **Nothing that is not grindable uses the signature:** no non-grindable prop, decor, trim or light strip is cream or carries the glint, and emissive trim (Neon rims, light bars, vending fronts) is never a thin cream line. "Grind this" = the cream-chrome strip; "ollie this" = a full-width hazard with chevrons; "steer around this" = a tall ink (Neon: lavender) volume.
 - **Coins** glow gold.
 - **Decor** never uses chevrons or the cream edge.
+
+**Dressing rules (RECLAIM, every kit; `world/render/kits/dress.ts` enforces and accounts for them, §24 row 74).** Kits draw dressing through `DRESSER.box(K, role, …)`, which clamps and refuses by these rules; `tests/unit/render/dress.test.ts` draws every kit in every skin.
+1. **Footprint.** In plan view (x, s), dressing stays inside the collision footprint, with at most 0.05 m of overhang (mirrors included).
+2. **Height.** On Bump, Low and landable tops nothing rises above the top surface (moss is a colour there; planter beds are a flat flower carpet at rim level −0.02 m). On Tall props foliage rises at most +0.05 m (flat ink-green crown caps; roof moss is colour only) and animals (cat loaf, resting gull, sparrow) at most +0.22 m. **Exception:** an *isolated* lidded column filler (no other solid within 1.0 m in x or s, never in a gate row, never in Neon; the chunk builder computes it) grows a sapling 1 in 4: trunk at the far (up-screen) edge of the lid, crown radius ≤ 0.35 m, top ≤ +0.6 m, ink-green; the lid stays visible.
+3. **Top face.** Flowers on a top face only on landable or grindable planters (`planter`, `planter_tree`, `cherry_planter` beds) or on scenery. Crash objects carry foliage only on their side faces, in ink-green. The one bloom accent on a crash object is the SB picket roses, on fence faces only. Water in a pit or fountain carries no blooms.
+4. **Value.** Moss and rust on a hazard face are luminance-matched (±10% relative luminance) to the face they cover (§18.1 tokens). Hazard foliage stays at L ≤ 0.05 (ink-green `#1B2B22`; `#2A4232` only for lit-side highlights). Decor foliage in Downtown, Suburbs and Docks stays at L ≥ 0.10, so "dark = hazard" never leaks into the scenery. Neon decor foliage is dark (≤ 1.3:1 against wet asphalt), because Neon hazards are the mid values.
+5. **Signature.** Nothing non-grindable is cream, near-white or chrome, or carries the glint. Vehicles have no chrome at all (ink bumpers `#2B2140`, hubs `#3A3448`, no bright trim). Animals near a grind edge are no lighter than `#A6A3A8`. No foliage, weed decal, crack or root comes within 0.3 m of a grind edge, and grind rims stay straight. The cream-chrome coping is the brightest thin line on screen: "the only polished thing in the city".
+6. **Life-accent budget.** On any hazard, flowers, the cat, lanterns and the area accent stripe together cover ≤ 10% of its top-view silhouette (the 8–12% accent rule above). `dress.ts` accumulates it per prop; a unit test checks it per variant.
+7. **Clean core.** The riding surface at \|x\| ≤ 3.6 gets only the existing decal kinds: cracks, patches, organic puddles and faded paint. The edge band 3.6 ≤ \|x\| ≤ 4.5 may carry flat weed and moss decals at ≤ 1.3:1 against the surface. 3D vegetation grows only at \|x\| ≥ 4.6.
+8. **No flicker.** Hazard emissives are steady; the only time-varying hazard lights are the existing telegraphs (crosswalk signal, reverse lights, forklift beacon, holo-gate pulse ≤ 2 Hz). Decor flickers nowhere either: lights switch on and stay on, and no window lights up as you pass.
+9. **Machines are clean.** Movers carry no moss, rust or plants and share one helper-machine motif: a small rounded sensor dome and a two-tone band in `HAZARD[area].accent2`, inside the life budget. No machine touches, carries or grows plants.
+10. **Parked, not fled.** Every vehicle is axis-aligned and parked (bay, curb, driveway, loading entrance), doors and boots closed, roof racks empty. Never crashed, crumpled, overturned or burnt, never a pile-up or a lane of stopped cars, never mid-lane.
+
+**Do-not list (RECLAIM, every kit, decor kind, effect, cosmetic and line of copy).**
+- No zombies, people or NPCs, bodies, blood, gore, fire, smoke plumes, weapons, military or police gear, quarantine walls, sandbags, barbed wire, warning graffiti or X-marked doors.
+- No crashed, crumpled, overturned or burnt cars, no pile-ups, jams or lanes of stopped cars, no car parked mid-lane, no shattered glass, no open doors or boots, nothing on roof racks, no car alarms.
+- No fungus, spore or mushroom growths. No fireflies, ever. No leaning, toppled or broken towers, collapsed buildings or war damage. No Ferris wheels or amusement parks.
+- No cats in Neon City. No faces or emoticons on robot screens (pictograms only). No machine touches, carries or grows plants.
+- No lone dog, circling birds of prey, deer herd, deer in Neon, wild boars, giraffes or hero animals from known media.
+- No stopped clocks, black bag piles, closure notices, hazard or radiation symbols, dosimeters or masks. No cherry-tree avenue arching over the road.
+- No flicker on any hazard, and no window that flickers or lights up as you pass. No crimson stains: rust drips stay orange-brown, never on the ground or under car doors.
+- Nothing from any existing game or film: no names, characters, logos, locations, signage, story beats, iconic scenes or music signatures (no sparse acoustic-guitar motifs). Signage keeps the invented brands (§18.6) and the reviewed Japanese word list; no new word or brand without review.
+- Player-facing text never uses: zombie, apocalypse, post-apocalyptic, outbreak, infected, quarantine, evacuate, survivor, last, remains, abandoned, "nature is healing" (a unit test greps the string tables), never names or compares to another game or film, and never explains why people left.
 
 **Measured contrast gate** (`scripts/shots.mjs --contrast`, at every palette preset and every gateway blend):
 - Hazard silhouette (mean rendered luminance, accent included) vs the ground around it: **≥ 2.5:1**. Neon targets 3:1.
@@ -1662,6 +1736,11 @@ root (board contact; yaw = heading, roll = carve lean)
   - Flat-shaded, vertex-coloured, low-poly, with chamfered top edges (one bevel ring) so tops catch the light.
   - ≤ 400 triangles per prop and ≤ 1,500 for a car.
   - Built once at boot per kind and variant.
+- **Vehicle builder** (RECLAIM, `kits/car.ts` `drawVehicle`; the body comes from `propSkin`, §10.3). Bodies: sedan, estate, pickup (ink shrubs below the bed rim), SUV (h ≥ 1.5), taxi (decor; Phase B Neon `parked_car`, roof sign a plain textless shape), kei van and panel van (Phase B `van_across`), camper, box truck and shuttle bus (`container`), sweeper (`crosswalk_car`). Every body is stretched to fill its box (L, W ±0.1 m) with no "air" inside the hitbox, long axis along s, no yaw.
+  - **Plan-view signature** (the portrait camera mostly sees the roof): the paint top on roof and bonnet, framed front and back by dark glass `#262438` (one `#6A6890` sky streak ≤ 10% of each pane); four tyre nubs at the box corners (sides inset 0.05 m between the arches); mirrors inside the 0.05 m overhang; one 0.10 m accent stripe along bonnet and roof in `HAZARD[area].accent` (Docks `accent2`, so no amber runs along s; Neon uses its emissive rim).
+  - **Shared parts:** 8-sided wheel and hub, low tyre (bottom flattened 0.04 m), bumpers, light clusters, mirrors, wheel arches, empty roof rack (estate), bed (pickup). Static vehicles are unlit (matte taillights `#6A2A2A`); movers keep their telegraph lights.
+  - **Wear:** roof moss ≤ 20% of roof and bonnet, as edge patches on the rear half of the roof and the bonnet corners, never on glass (the roof rectangle survives); weeds under the car inside the footprint; ink ivy up one wheel arch; rust drips only on side panels, above the door line. No wear on movers. Cats: 1 in 8 sedans and estates (never Neon, never movers): grey tabby on in-corridor hazards, ginger on decor cars; on a crash it only twitches an ear.
+  - **Budgets:** sedan, estate, pickup, taxi ≤ 700 triangles; vans ≤ 800; truck and bus ≤ 1,000 (the 1,500 car cap above).
 - **Building recipe** (decor zone and shadow casters):
   - a base box plus 1–2 setback boxes and a darker cornice (0.15 m overhang)
   - windows from the area facade atlas
@@ -1679,6 +1758,17 @@ root (board contact; yaw = heading, roll = carve lean)
 | Suburbs | Gable houses (seen as roofs and shadows), picket fences, round hedges, mailboxes, driveway curbs, parked cars, bins, hoops, sprinklers, leaf decals, a bus shelter |
 | Docks | Ribbed warehouses, stacked containers, crane silhouettes (casting shadows), loading docks, pallets, drums, chain-link, embedded rail tracks, sun-glitter water beyond the lip |
 | Neon | Slim 8–14-storey towers (shadow casters, roofs at the screen edges at top speed) with vertical blade signs. Lantern strings: catenaries of instanced emissive spheres `#FF5A3C` / `#FFD39A` swaying at 0.5 Hz. Vending banks with lit fronts. Pastel ribbed shop shutters on cross-street end walls. **Holographic billboards** (additive planes with scanlines, 0.2 Hz hue drift, a rare 50 ms flicker) on poles facing the camera. The **Sora Line maglev** guideway overhead as two thin edge beams (no deck over the street): a train passes every ~20 s as a light streak with a whoosh. Guard rails with a cyan body glow and the standard cream grind edge. Cherry trees in planters (clustered icosahedra `#FFB7D0` / `#F59BBE`) shedding petal particles. Paper lantern stands. Bike rows. Wet asphalt with neon puddle smears. |
+
+**The four areas, reclaimed** (RECLAIM, §1; each keeps its preset, layout and flora band, §18.1)
+
+| Area | Portrait reads | Vista (once per visit, a cross street, camera-facing) |
+|---|---|---|
+| Downtown: "the quiet plaza" | Leaf-shadow stripes across the plaza, roof gardens and rooftop figs at the edges, moss-topped awnings with trees through them, the fountain with lily pads in its corners, parked cars in the bays (a grey tabby on one roof), pigeons on the string anchors, poppies in the sidewalk band | The Hotel Amberlane fig: a great fig tree on the hotel's roof terrace, roots draped down its end wall |
+| Suburbs: "wildflower lanes" | Meadow lawns with pink and lilac flowers, crisp hedges on brick bases, mailboxes with nests, vans and estates on the driveways, the fallen log across the road, sparrows on the side spans of the wires, a deer far down a side street | A plain water tower (no lettering) wrapped in vines, swifts round it, its long shadow striping the street |
+| Docks: "the seagrass harbor" | Rust-and-vine containers, box trucks and the staff shuttle in the channel walls, the waxed dock lip against glinting water, grey-backed gulls on bollards, a grey heron on the apron edge, seagrass verges | The heron crane: the tallest gantry with a heron's nest on its boom, a V of geese passing |
+| Neon City: "the night-owl lights" | Live blade signs (40% fewer near the street, 70% of the rest lit), steadily glowing vending fronts, cherry trees shedding petals, wet tiles just after rain with drip ripples (no falling rain), ivy on the viaduct pillars, moths at the live signs; plainly futuristic, no cats | The open sign: a big Kumo Mart 24 sign over a cross street, fully lit, with a single 営業中 underneath |
+
+Neon shots go to a Japanese-speaking reviewer before release. 出口 and 薬局 never appear on live signs or the vista. No Ferris wheels, leaning or broken towers, collapsed buildings, closure notices or warning graffiti anywhere.
 
 **Invented brands** (all original, checked to avoid well-known names)
 
@@ -1699,7 +1789,11 @@ root (board contact; yaw = heading, roll = carve lean)
 - **Decals:** a 512² atlas drawn as instanced quads with `polygonOffset`.
   - cracks, patches, crosswalk zebras, lane dashes, oil stains, arrows, drains, leaves (Suburbs), petals (Neon)
 - **Manhole motifs:** grid (Downtown), anchor (Docks), an original flower (Neon).
-- **Puddles:** decals with the sky-horizon gradient, vertically stretched smears of nearby sign colours, and a UV ripple. Gold at golden hour; magenta and cyan in Neon. No real reflection.
+- **Real scale** (owner playtest, §24 row 74): manholes 0.6–0.75 m across and drains about 0.4 × 0.6 m, in every area; drains get moss rims.
+- **Road arrows** point the way the skater travels, centred in a lane before a crossing; never backwards, sideways or on a lane line. Fewer if in doubt.
+- **Crack lips** (owner playtest): every full-width pit, trench and gap kit shows a jagged, honest crack lip that you obviously jump, with the visible lip within ~0.1 m of the true collision edge; the plank stays. The pit floor is flat `#2F2742` with no reflection, glint or ripple.
+- **RECLAIM ground** (rule 7, §18.4): the clean core keeps only the existing decal kinds; the edge band (3.6–4.5) adds flat weed edges, moss patches and root-lift cracks at ≤ 1.3:1 and ≥ 0.3 m from any grind edge (never geometry, so nothing reads as a bump); grass in the zebra joints only at \|x\| ≥ 3.6; road paint faded (alpha ×0.7); oil stains at half frequency. **Leafy shadow casters** (crown and water-tower silhouettes) stripe the clean street in every area: the headline "overgrown" signal at zero clutter.
+- **Puddles:** decals with the sky-horizon gradient, vertically stretched smears of nearby sign colours, and a UV ripple. Gold at golden hour; magenta and cyan in Neon. No real reflection. RECLAIM: outlines always organic (never rectangular), floating leaves only at \|x\| ≥ 3.6, Neon puddles reflect only live signs and show drip ripples.
 - **Water** beyond the dock lip: a sky-gradient plane with sun-glitter sparkles.
 
 ### 18.8 VFX
@@ -1716,7 +1810,9 @@ All particles come from one pooled additive `InstancedMesh`, capped at 300.
 | Coins | 8-sided, emissive `#FFC94A`, 3 rev/s, bob 0.1 m, twinkle; pickup = 6-star burst |
 | Crash | Cartoon star ring around the head, "BAILED!" sticker (DOM), coral outline flash on the obstacle that caused it, 40% desaturate through a shared material uniform (`uDesat`), never a CSS filter on the canvas |
 | Bank-timer arc | World-space ring around the contact shadow, cream → coral, pulsing in its last 0.25 s (§13.2) |
-| Petals / leaves | Area ambient, 6 per second on screen (off with reduced motion) |
+| Petals / leaves | Area ambient, 6 per second on screen (off with reduced motion). RECLAIM: leaves in every area (rate 3), mixing green `#A8C66C` and russet `#B86A3E`, never gold |
+| Critters (RECLAIM) | Butterflies (lilac `#B79AD8`, sky blue `#9DB4C8`), dandelion seeds (warm grey `#A39A8E`, ≤ 35% alpha), moths at live Neon signs, dragonflies (SB, IN): side bands only (\|x\| ≥ 4.6), never in the HUD band or the top third of the screen, never yellow, gold or white, ≤ 30 particles. Perched birds flutter off outward when the skater passes beneath or a trick lands within 6 m (with the bird-flutter one-shot, §19.3). **No fireflies, ever**, in any emitter, cosmetic or trail |
+| Drips (RECLAIM) | Neon and the Underpass: "it just rained": drips from awning and sign edges in the side bands, ripple rings on puddles, ≤ 40 particles; **no falling rain**; off with "Reduce effects" |
 
 ### 18.9 Lo-fi overlay (DOM, `pointer-events:none`)
 - **Grain:** a 128² grain tile pre-baked to a canvas at boot, shown at **plain alpha 0.05** (no blend modes, which are expensive on mobile GPUs) and moved by `transform` at 8 fps. Off on the low tier; static with reduced motion.
@@ -1810,10 +1906,12 @@ All particles come from one pooled additive `InstancedMesh`, capped at 300.
 
 | Area | Drums | Signature |
 |---|---|---|
-| Downtown | Classic boom-bap, rim on ghost notes | Mallet melody. Distant traffic (brown noise, low-pass 300 Hz, gain 0.03). Pigeon flutters. |
-| Suburbs | Softer kick (decay 0.25 s), brushed snare (decay 0.3 s, gain 0.5) | Plucky mallet. Bird chirps (sine glides 3–5 kHz). Sprinkler ticks. |
-| Docks | Heavier kick (starts at 140 Hz), snare with a metallic ring (squares at 540 / 800 Hz, 60 ms) | Off-beat FM clanks (ratio 1.41). Low foghorn pad. Gulls. Lapping water. |
-| Neon | Crisp hats, a clap layer on 2 and 4 | Brighter electric piano. Chorus on the pad (15 ms ±3 ms at 0.8 Hz). Triangle arp. City hum. Vending-machine buzz. Maglev pass with Doppler. |
+| Downtown | Classic boom-bap, rim on ghost notes | Mallet melody. Pigeon flutters. Ambience (RECLAIM `plaza`, no traffic): wind, leaf rustles, wood-pigeon coos, a faint fountain trickle. |
+| Suburbs | Softer kick (decay 0.25 s), brushed snare (decay 0.3 s, gain 0.5) | Plucky mallet. Bird chirps (sine glides 3–5 kHz, every 2–6 s). Sprinkler ticks only near a sprinkler. RECLAIM: a cricket bed, wind in grass, a far-off woodpecker, an in-key wind chime. |
+| Docks | Heavier kick (starts at 140 Hz), snare with a metallic ring (squares at 540 / 800 Hz, 60 ms) | Off-beat FM clanks (ratio 1.41). Gulls. Lapping water. RECLAIM: the foghorn becomes a buoy bell; hollow wood knocks from moored boats, halyard clinks, an in-key chime; no metal groans. |
+| Neon | Crisp hats, a clap layer on 2 and 4 | Brighter electric piano. Chorus on the pad (15 ms ±3 ms at 0.8 Hz). Triangle arp. Hum of the live signs (quieter). Vending-machine buzz. Maglev pass with Doppler every 40–80 s, softer. RECLAIM: after-rain drips (in-key plinks). |
+
+The music itself (song forms, drums, instruments, tape and vinyl) is unchanged by RECLAIM; no theme sting uses a sparse acoustic-guitar motif. Ambience beds and events live in `audio/mix.config.ts` `AMBIENCE` and `audio/sfx/ambience.ts` (the ambience kind `traffic` becomes `plaza`, an internal id with no save impact). New SFX: a hollow body-panel thunk under a crash into a vehicle (no glass, no alarms), a bird flutter when perched birds take off, a soft in-key reversing chirp on the self-parking car.
 
 **Musical feedback** (§9)
 - Scoring notes go to their own "feedback" bus (mallet timbre). They are quantized to the next 1/16 if that is ≤ 40 ms away.
@@ -2079,3 +2177,4 @@ Every MUST-FIX was applied. The rows below record decisions where critiques conf
 | 71 | Owner playtest: steer left thumb, tricks right thumb | Playing the G1 build on a phone, the owner felt steering and tricks fighting each other on one thumb ("we need steering on the left thumb and tricks on the right thumb; still swiping the way it works now") | **Two thumbs is the default on touch** (§4.1–4.4): the play area splits at the vertical midline; a touch keeps the role of the zone it went down in. The left thumb only steers (never a tap, swipe, hold or press); the right thumb only taps / swipes / holds with the unchanged gestures and never steers (`swipeDx` 0, normal thresholds). The split lives in the recognizer, so the `InputFrame` contract, the sim, replays and golden hashes are unchanged. **One thumb (classic)** (§4.7) stays in Settings, and a mouse or pen always uses it; **Swap sides** for left-handed players. Hints show the two rings and name the thumb; a zone cue shows the split for the first 3 s. Thumb-bot gate on both layouts (0 crashes, 0 unintended tricks); its control (the two-thumb traces read with the one-thumb grammar) misfires. **Review fixes:** the trick ghost hovers (a right thumb resting on the glass is a HOLD: grabs and manuals, measured by the bot's `rest` habit as a trade-off, §4.4 rule 3); a profile from before the change is re-taught once (§12.5) and the session's first-run cue is labelled; wrong-side taps / drags pulse the right ring; hints follow a Settings change mid-run; Swap sides is dimmed with One thumb; a steering-zone DRAG already down takes over steering when the owner lifts and it moves (§4.2). |
 | 72 | Steering kept going after the thumb stopped | Owner on a phone: "if I slide it to the left or right and kind of flick it, it will continue to turn even when I take my finger off it." Relative steering put targetX wherever the thumb went (a 60–120 px slide in 120–250 ms threw it 2.5–5 m), and the skater, limited to 5.5 m/s, kept sliding 2.3–3.6 m for 0.45–0.8 s after the thumb had stopped or lifted (2.4–3.9 m in the air). | **Direct touch steering** (§4.2, §5.2; measured with recorded thumb traces through the real recognizer, table in §4.2): the target leads the skater by ≤ 0.8 m; a thumb that outruns the skater drives it at up to 7 m/s (80 m/s² on the ground); a release brake stops it within ~0.35 m when that thumb stops or lifts (0.1–0.33 m on the ground, 0.20–0.27 m in the air, no overshoot). **The cost:** a quick slide now dodges as far as the skater can go while the thumb moves, not as far as the thumb drew: 60 px / 120 ms moves 0.6–0.8 m (was 2.5 m), 120 px / 250 ms 1.2–1.8 m (was 4.3 m); a 2 m dodge needs the thumb to keep moving ~0.3 s (0.32 s for a 0.5 px/ms thumb kept moving until the skater is there); a 2 m drag drawn in 300 / 400 / 500 / 600 ms ends at 1.1 / 1.5 / 1.9 / 2.0 m; a 40 px flick is a 0.33 m hop (was 1.7 m). Against a late hazard at plateau speed (the latest start before its face that still dodges a crash box centred on the skater): a slide that moves the skater far enough dodges about as late as before or later (1.6 m box: 120 px / 250 ms 0.22 s, was 0.26; 2 m drawn in 300 ms 0.26 s, was 0.32; 90 px / 180 ms 0.30 s, was 0.26), a sustained drag as before (48 px / 600 ms 0.40 s, was 0.40); a slide too short for the hazard does not dodge it at all (60 px / 120 ms never clears a 1.0 m box, was 0.20 s; under ~0.25 s of thumb motion never clears 2.4 m). **The owner should try quick dodges on the preview.** **Measured and rejected:** the cap alone (0.6 m: 0.43–0.54 m after a stop, 0.54–0.65 m in the air with a 0.12 m float past; 0.9 m: 0.72–0.84 m); a higher air acceleration (30: no float, but 0.46–0.52 m, and it changes keys, bots and the magnet in the air); a brake to the stopping point with no rest lead (0.12–0.33 m, but a flick moved 0.1 m and natural drags lost up to 0.4 m); the cap and brake without the fast thumb (first preview, 15cac29: 60 px / 120 ms moved 0.45 m, 120 px / 250 ms 1.0 m; quick slides of 60–90 px never cleared a 1.6 m box); arming the brake at a 0.6 m lead (it also armed for the thumb bot dragging through a hop, 0.62–0.66 m ahead, and changed its path); a higher fast-thumb speed (7.5–8 m/s: +5–6% distance, stops up to 0.355 m, and the board heads more sideways than forward at the 7 m/s start speed); a restLead of 0.35 / 0.4 m for a little throw (+0.15 / +0.2 m per slide, but stops at 0.26–0.48 / 0.31–0.53 m, past the 0.35 m target: the tunable to try if quick dodges feel short). Keys, bots (bit-identical paths to before @steer: never at the cap), the magnet, ground align, re-anchors and landing nudges never meet the cap, the fast thumb or the brake; `V_LAT_MAX`, the accelerations and `T_SHIFT` are unchanged, so the validator and every generated line are untouched. On a phone that delivers one sample every 40–67 ms (no coalesced events below 25 fps) the stop window widens, so a drag stays smooth (3.9–4.0 m of a 4.0 m drag) and the stop takes 0.43–0.54 m. |
 | 73 | Run camera reads flat on phones (@cam) | Owner, after a phone playtest: "I thought it would be like angled view instead of straight down that street… maybe closer perspective?"; DESIGN §8 had ortho, pitch 35°, ψ = 0 in portrait. A prototype of 8 cameras (ortho pitch/yaw variants, telephoto perspective) and three judges: readability (winner perspective p34 ψ 9 FOV 24), art direction (perspective p34 ψ 10 FOV 22), game design (perspective ψ 0, warning that any yaw tilts the lane read; ≤ 4–6° if angled) | **Perspective, pitch 34°, ψ 9° in portrait (30° at aspect ≥ 1.25), window FOV 24°, D solved per frame**, anchor 74%, 15% lateral follow fitted into the solver. It answers both owner points: the street runs diagonally and both walls show (angled), and hazards grow as they approach while the skater stays ~50 px (closer, 31 → 50 px on the SE). Cost: the 2.5 s hazard is 20% smaller at 390×844 (22.7 vs 28.3 px; +22% at 375×548), a ≈ 1.7 m lane tilt 1 s ahead, coarser shadows (the shadow box grows to the ground shown). Same change: grind stripes and coins floored per view depth (constant ~3 px stripes, ink underline down the faces: the contrast gate passes from every angle), x-ray cap 1.6 → 1.2 m, and the occlusion cure the owner asked for separately (Neon decor "covered the skate area"): camera-side cut at the corridor edge, overhead spans faded over the look-ahead zone, the maglev moved to the far facade line. `?debug=1&cam=A` keeps the old camera for comparisons. |
+| 74 | Re-theme "RECLAIM" (owner-approved) | Owner, after a phone playtest: "instead of the weird random shapes that are kind of the blocking parts, it could just be cars"; a quiet, peaceful, nature-reclaimed abandoned city, real objects instead of abstract blockers, overgrowth on buildings and verges, clean skateable streets, no zombies, people or gore; same four areas, lighting, lo-fi vibe and gameplay. Also: pit gaps should look like jagged cracks you obviously jump; manhole and drain decals were far too large; road arrows did not make sense | **Accepted (theme spec, work packages T0–T8).** Phase A changes only look, decor, ambience and copy: every PropKind keeps its footprint, class, top type, solids, edges and hitboxes; the validator, bot gates, controls, scoring, camera rules, contrast gate and perf budgets are unchanged, and the golden obstacle hashes stay identical through the Phase A review (T3 splits the golden test into obstacle and decor chains and re-baselines only decor). The theme lives in §1, §10.3 (skin notes), §12.3/§12.4 (the Roll-out ollie is a road-works barrier on trestles; no chains anywhere), §18.1 (`RECLAIM` tokens, green-share bands), §18.4 (ten dressing rules, enforced and accounted by `kits/dress.ts`, the life budget ≤ 10% checked per variant), §18.5 (vehicle builder: dark glass framing a paint roof, tyre nubs, one accent stripe, no chrome), §18.6–18.8 and §19.1. `core/skins.ts` `propSkin` (additive core request THEME) makes the drawn object and the crash noun one deterministic choice. **Phase B** (T8, same release, owner-requested): cars become the main blocker with a new `van_across` kind and parked-row templates; it re-runs every bot gate and re-baselines the obstacle hash once. Players never see a theme name and are never told why people left. New player-facing strings use the game's name Isoskate where a name appears. |

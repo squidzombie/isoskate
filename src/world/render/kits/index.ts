@@ -5,6 +5,7 @@ import type { PropKind } from '../../../core/ids';
 import type { Obstacle } from '../../../core/world';
 import { CHUNK_LEN } from '../../../core/tuning';
 import { contact, edgesOf, groundOfObstacle, setArea, solidsFallback, type KitCtx } from './common';
+import { DRESSER } from './dress';
 import { HAZARD } from '../palette';
 import { DOCKS_KITS } from './docks';
 import { DOWNTOWN_KITS } from './downtown';
@@ -21,8 +22,10 @@ export const KITS: Readonly<Partial<Record<PropKind, KitDef>>> = {
 export const anchorChunk = (ob: Obstacle) => Math.floor(ob.s / CHUNK_LEN);
 
 /** Draws one obstacle into the chunk the KitCtx covers. `first`: the earliest chunk built for it (compact bodies of
- *  obstacles anchored before the run's first built chunk are drawn there). Returns the far s of what was drawn. */
-export function drawObstacle(c: KitCtx, ob: Obstacle, chunkIndex: number, first = false): number {
+ *  obstacles anchored before the run's first built chunk are drawn there). `isolated`: an isolated column filler
+ *  (the sapling exception, kits/dress.ts isIsolatedFiller; the chunk builder passes it). Returns the far s of what
+ *  was drawn. The kit reads the obstacle's skin and draws its dressing through DRESSER (kits/dress.ts). */
+export function drawObstacle(c: KitCtx, ob: Obstacle, chunkIndex: number, first = false, isolated = false): number {
   setArea(c, ob.area);
   c.hz = HAZARD[c.lookAt(ob.s + Math.min(ob.len, 2) / 2)];
   const K = c.K;
@@ -34,10 +37,14 @@ export function drawObstacle(c: KitCtx, ob: Obstacle, chunkIndex: number, first 
   const contacts0 = c.contacts;
   if (def?.long) {
     K.reset(); K.clip0 = c.s0; K.clip1 = c.s1;
+    DRESSER.begin(ob, c.s0, c.s1, isolated);
     def.draw(c, ob);
+    DRESSER.end();
   } else if (anchored) {
     K.reset();
+    DRESSER.begin(ob, -Infinity, Infinity, isolated);
     if (def) def.draw(c, ob); else solidsFallback(c, ob);
+    DRESSER.end();
     far = ob.s + ob.len + 1;
   }
   K.reset();

@@ -68,7 +68,8 @@ isoskate/
     fonts/     fonts.css (self-hosted @font-face, §1)                          INT
     core/      FROZEN contract (§4): ids, math, rng, tuning, world, input, sim, view,
                tricks, cosmetics, events, bus, save, meta, audio, platform, debug, ui,
-               decor (DECOR_KINDS: the Decor.kind vocabulary, §4.14)                    INT
+               decor (DECOR_KINDS: the Decor.kind vocabulary, §4.14),
+               skins (propSkin: the RECLAIM skin chooser, §4.15)                        INT
     game/      app.ts (screen state machine), loop.ts (fixed step + interpolation),
                wiring.ts (creates all modules), runSession.ts, onboarding.ts        INT
     sim/       index.ts step.ts kinematics.ts ground.ts collide.ts air.ts predict.ts
@@ -82,7 +83,7 @@ isoskate/
                validator/{grid,sweep,path,rules}.ts                                         WG
     world/render/ index.ts camera.ts chunkBuilder.ts pools.ts palette.ts lights.ts sky.ts
                materials.ts decals.ts buildings.ts coins.ts xray.ts quality.ts
-               kits/{shared,downtown,suburbs,docks,neon}.ts      (prop meshes)
+               kits/{shared,downtown,suburbs,docks,neon}.ts      (prop meshes; car.ts vehicle builder, dress.ts RECLAIM dressing rules)
                textures/{atlas,facades,signs,ground,glyphs}.ts                              WA
     vfx/       index.ts particles.ts rings.ts speedlines.ts                                 WA
     gfx/       renderer.ts canvas.ts geom.ts (low-level helpers; INT in M0, WA may add files in W2)
@@ -148,7 +149,7 @@ isoskate/
 ---
 
 ## 4. The frozen contract (`src/core/`)
-Created verbatim in M0. Everything is exported. There are no runtime dependencies except `core/rng.ts`, `core/math.ts`, `core/tuning.ts` and `core/bus.ts`, which contain small implementations. In the listings below, `/*…*/` means "implementation in M0, signature frozen".
+Created verbatim in M0. Everything is exported. There are no runtime dependencies except `core/rng.ts`, `core/math.ts`, `core/tuning.ts` and `core/bus.ts`, which contain small implementations (and `core/skins.ts`, §4.15, a small pure chooser added for the RECLAIM theme). In the listings below, `/*…*/` means "implementation in M0, signature frozen".
 
 ### 4.1 `core/ids.ts`: identifiers
 ```ts
@@ -1138,6 +1139,23 @@ export function renderOffline(area: AreaId, sec: number): Promise<AudioBuffer | 
 - WG emits only these kinds (`world/gen/decor.ts` uses it, never redefines it); WA renders every kind in every listed area skin. `Decor.kind` stays `string` in `core/world.ts` for compatibility.
 - A gateway id in `areas` means "inside that gateway's 4 s segment". The generic street kinds (decals, lamps, sign posts, wires, verge, shadow casters, end walls) list every area **and** every gateway.
 - **`Decor.y` (one definition since G1).** `y` is the base height of the surface the element stands on or hangs from (ground, sidewalk, the foot of the facade or post) for every ground, side and backdrop kind. Kinds hung above that surface take their own mounting height from a documented `mount` param (lowest point = `y + mount`): `awning` (underside, default 2.4 m), `blade_sign` (sign bottom, 2.6 m), `banner` (banner bottom, 3.0 m). Only `overhead` kinds give their lowest point in `y`. WG emits `y` = sidewalk with `mount` 2.6 / 2.8 / 2.4 / 3.0; WA draws at `y + mount`.
+
+
+### 4.15 `core/skins.ts`: the RECLAIM skin chooser (added @theme T0; docs/core-requests.md THEME; DESIGN §10.3, §18.5, §24 row 74)
+```ts
+export type VehicleBody = 'sedan' | 'estate' | 'pickup' | 'suv' | 'taxi' | 'kei_van' | 'panel_van' | 'camper' | 'box_truck' | 'shuttle_bus' | 'sweeper';
+export type SkinBody = VehicleBody | 'kit' | 'container' | 'bikes' | 'carts' | 'bin_pair' | 'dumpster' | 'barrier_board' | 'log' | 'pipe' | 'holo_gate';
+export type CarPaint = 'teal' | 'oxblood' | 'olive' | 'slate';
+export const Dress = { Moss: 1, Rust: 2, Ivy: 4, Flowers: 8, Crown: 16, Cat: 32, Bird: 64, Nest: 128, Sapling: 256, Clean: 512, Livery: 1024, Roses: 2048 } as const;
+export const WEAR_MASK: number;                       // what a Clean skin (helper machine) never carries
+export interface PropSkin { body: SkinBody; paint: CarPaint | null; noun: string; plural: boolean; dress: number; livery: number; nosedIn: boolean }
+export function propSkin(kind: PropKind, area: AreaId, id: number, variant: number, h: number, out?: PropSkin): PropSkin;
+export const VEHICLE_BODIES, CAR_PAINTS, SAPLING_KINDS, MOVER_KINDS; export function isVehicle(b): b is VehicleBody; export function newSkin(): PropSkin;
+```
+- **Pure and deterministic** in `(kind, area, id, variant, h)` (core/rng `hash32`): the kits (through `kits/dress.ts` `DRESSER.begin`, which drawObstacle calls) and the crash copy (`ui/format.ts`, T6) call it with `(ob.kind, ob.area, ob.id, ob.variant, ob.hgt)`, so the crash noun always names what was drawn. `out` avoids an allocation per call.
+- **No gameplay effect.** Footprints, classes, tops, solids, edges and hitboxes come from the generator and never read a skin; the golden obstacle hashes do not change.
+- **Shares:** parked cars sedan / estate / pickup (+ SUV at h ≥ 1.5), four paints, 30% nosed in, a cat on 1 in 8 sedans and estates (never Neon); vans 55% panel (livery index into `DECOR_BRANDS[area]`) / camper; Docks containers 60% container / 25% box truck (Brindle Freight) / 15% shuttle bus (Saltwick Shipping); bike racks bikes / carts and wheelie bins pair / dumpster 50/50; movers `Clean` (slate on the car movers); lidded column fillers outside Neon roll `Sapling` 1 in 4 (drawn only when the chunk builder marks the filler isolated, which never changes the noun). Neon `parked_car` (Phase B) is a taxi with no paint and no cat.
+- **Nouns** are plain (DESIGN §9): "car", "pickup", "van", "truck", "bus", "bin", "bins", "barrier" / "log" / "pipe" / "holo gate", "gap" / "ditch" / "gap" / "trench", …; `plural` marks nouns that take no "a"/"an".
 
 ---
 
