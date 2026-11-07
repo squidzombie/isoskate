@@ -507,7 +507,7 @@ Results (look-ahead is the full-corridor-width view below the HUD band; skater h
 **Non-run cameras**
 - The Title diorama, Locker and Shop use a *low perspective* camera (FOV 35°, 1.4 m high, looking down the street toward the horizon). They render at 30 fps.
 - That is where the sunset sky, sun disc and skyline are seen (§18.3).
-- v1 Title is a **static diorama**: a fixed street vignette in the current palette, with your loadout idling. A live attract run is an M5 stretch goal.
+- v1 Title is a **static diorama**: a fixed street vignette in the current palette, with your loadout idling. A live attract run is an M5 stretch goal. **Superseded (owner request, pkg/title):** the Title is the Earth in space with the equipped board floating in front (§17.2), drawn with its own perspective camera (world/render/title/); the menus opened from the Title sit on it too. Locker and Shop keep the low perspective turntable camera. The dive from the Title into a run ends on the run camera's own first pose (it reads the rig's camera and blends into it in clip space), so it works with any run camera.
 
 ---
 
@@ -1381,7 +1381,7 @@ After the first reveal ever, a tap skips the animation.
 
 ### 17.1 Flow
 ```
-Boot ─▶ Title (diorama) ──tap──▶ Run ──crash──▶ Crash overlay ──(fresh touch ≥ 0.6 s, tap)──▶ Run   (instant retry)
+Boot ─▶ Title (Earth in space) ──tap──▶ dive ──▶ Run ──crash──▶ Crash overlay ──(fresh touch ≥ 0.6 s, tap)──▶ Run   (instant retry)
             │  ▲                                     └──(1.2 s, or no tap)──▶ Results ──RUN AGAIN──▶ Run
             │  └──────────── Home ◀──────────────────────────────────────────────┤
             ├─▶ Locker (equip, try-on, wishlist)                                  ├─▶ Rewards modal (only when an item or crate was earned)
@@ -1396,7 +1396,7 @@ Run ⇄ Pause (pause button, Esc, back gesture, landscape rotation, visibilitych
 | Screen | Content |
 |---|---|
 | **Boot** | Procedural logo on paper `#FFF4E3`. Checks for WebGL2, `structuredClone` and `AudioContext` (iOS 15.4+); if any is missing, a friendly "This browser is too old for Dusklane" card replaces the game. Builds geometry and textures behind a progress bar. Target < 1.5 s on mid-range phones. |
-| **Title** | Static 3D diorama (low perspective camera, real sky, 30 fps): your loadout idles on a golden street. Bungee logo with a sunset gradient fill and 4 px ink stroke. "TAP TO ROLL" pulses every 1.2 s (Space or Enter on desktop). Best score is shown. Bottom tab bar: Play / Locker / Shop / Crates / Stats, plus a Settings gear. A Daily Gift badge appears when the gift is ready. The service-worker "Update ready" toast appears only here and on Results. |
+| **Title** | **The Earth alone in space at golden hour** (owner request): a warm terminator band across the planet, a quiet night side with a few warm lights (the world went quiet), drifting clouds, a soft atmosphere rim, stars and a faint sunset nebula, the sun's glow just off frame, and a pulsing warm point at the run's start city on the dusk band. **Your equipped board floats in front of it like a small moon**, slowly spinning about its long axis (lingering on the graphic and the grip), in the clear band between TAP TO ROLL and the tab bar (beside the logo column on wide screens); it changes the moment another board is equipped. All procedural, 30 fps, 7 draw calls. Bungee logo with a sunset gradient fill and 4 px ink stroke. "TAP TO ROLL" pulses every 1.2 s (Space or Enter on desktop). Best score is shown. Bottom tab bar: Play / Locker / Shop / Crates / Stats, plus a Settings gear. A Daily Gift badge appears when the gift is ready. The service-worker "Update ready" toast appears only here and on Results. **TAP TO ROLL dives** (1.45 s): the camera pushes into the start city behind the board, punches through a warm peach cloud wash, and comes out high over the street, descending into the run camera's exact first pose as the wash clears; the run begins at the hand-over. Any tap skips it; reduced motion (OS, Reduce motion, Reduce effects) is a 0.3 s fade; instant retry, ROLL AGAIN, Restart and every other start skip it. |
 | **Run HUD** | §13.8 |
 | **Pause** | Resume, Restart, Settings, Home. Shows the key list on desktop. Resume calls `ctx.resume()` inside its click handler (covers iOS audio interruptions). A landscape phone sees the "Rotate to portrait" variant instead. |
 | **Crash overlay** | 0.6 s slow-mo tumble. "BAILED!" sticker, the killer obstacle outline-flashing, **one cause line** ("Clipped a bin", "Flip 62% done — flick earlier"), and the lost combo struck through. "Tap to roll again" appears at 0.6 s and accepts only touches that went down after it appeared. Results slide up at 1.2 s. |

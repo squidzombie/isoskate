@@ -104,6 +104,9 @@ async function defaultMode() {
       report.push({ file, tick: snap.tick, t: +snap.t.toFixed(2), area: snap.area, speed: +snap.speed.toFixed(2),
         H: +cam.H.toFixed(2), yawDeg: +cam.yawDeg.toFixed(1), lookAheadSec: +cam.lookAheadSec.toFixed(2), ...extra });
     };
+    // The Title's Earth maps bake in idle slices after boot: shoot it once they are up (a preview Earth until then).
+    await page.waitForFunction(() => !window.__skateTitle || window.__skateTitle.bakeDone(), null, { timeout: 60000, polling: 250 })
+      .catch(() => fail(`[${vp.name}] the Title's Earth maps did not finish baking`));
     await shot(`title-${vp.name}.png`);
     // Run frames.
     await page.evaluate((s) => { window.__skate.start({ seed: s, god: true }); window.__skate.manual(true); }, seed);

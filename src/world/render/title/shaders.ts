@@ -33,6 +33,8 @@ void main() {
   dayC = mix(dayC, duskC, band * 0.88);
   vec3 nightC = alb * vec3(0.16, 0.18, 0.3) + vec3(0.03, 0.03, 0.075);
   vec3 col = mix(nightC, dayC, day);
+  // Golden-hour light scattered along the terminator, whatever lies under it.
+  col += vec3(1.0, 0.52, 0.26) * band * 0.16 * smoothstep(-0.2, 0.05, ndl);
   vec3 H = normalize(uSun + V);
   col += vec3(1.0, 0.8, 0.58) * pow(max(dot(N, H), 0.0), 40.0) * (1.0 - land) * smoothstep(-0.02, 0.25, ndl) * 0.55;
   float night = 1.0 - smoothstep(-0.22, 0.04, ndl);

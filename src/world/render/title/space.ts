@@ -10,7 +10,7 @@
 // under a cloud wash that then opens on the street (handover.ts); see game/dive.ts for the timeline.
 import {
   AdditiveBlending, BackSide, BufferAttribute, BufferGeometry, ClampToEdgeWrapping, type Camera, DataTexture,
-  DirectionalLight, Group, HemisphereLight, LinearFilter, Mesh, type Object3D, OrthographicCamera, PerspectiveCamera,
+  DirectionalLight, Group, HemisphereLight, LinearFilter, Mesh, MirroredRepeatWrapping, OrthographicCamera, PerspectiveCamera,
   Points, Quaternion, RedFormat, RepeatWrapping, RGBAFormat, Scene, ShaderMaterial, SphereGeometry, Vector3, Matrix4,
   type WebGLRenderer,
 } from 'three';
@@ -125,7 +125,7 @@ export class TitleScene {
     this.bake.previewMs = nowMs() - t0;
     this.colorLo = dataTex(pre.color, pre.w, pre.h, true);
     this.cloudsLo = dataTex(pre.clouds, pre.cw, pre.ch, false);
-    this.puffLo = dataTex(pre.puff, pre.pw, pre.pw, false);
+    this.puffLo = mirrored(dataTex(pre.puff, pre.pw, pre.pw, false));
     this.full = new EarthBaker({ city });
 
     const geo = new SphereGeometry(1, 72, 48), geoLo = new SphereGeometry(1, 40, 24);
@@ -397,12 +397,14 @@ export class TitleScene {
     const u = this.earthMat.uniforms;
     u.uMap!.value = this.colorHi; u.uClouds!.value = this.cloudsHi;
     this.cloudMat.uniforms.uClouds!.value = this.cloudsHi;
-    this.puffHi = dataTex(f.puff, f.pw, f.pw, false);
-    this.puffHi.wrapS = ClampToEdgeWrapping;
+    this.puffHi = mirrored(dataTex(f.puff, f.pw, f.pw, false));
     this.washMat.uniforms.uNoise!.value = this.puffHi;
     this.bake.done = true; this.bake.uploadedAt = nowMs();
   }
 }
+
+/** The wash samples its noise past the edges as it zooms: mirrored, so it never smears into streaks. */
+function mirrored(t: DataTexture): DataTexture { t.wrapS = MirroredRepeatWrapping; t.wrapT = MirroredRepeatWrapping; return t; }
 
 function scissored(r: WebGLRenderer, draw: () => void): void {
   const ac = r.autoClear;

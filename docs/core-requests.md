@@ -659,3 +659,17 @@ behaviour and is behind a flag.
   `const r = await page.evaluate(() => window.__skate!.renderAudio!('downtown', 1)); expect(r!.sec).toBeCloseTo(1, 2); expect(r!.peak).toBeGreaterThan(0.01); expect(r!.peak).toBeLessThan(0.9);`
 - Why: AU ships `renderOffline` (TECH §4.13, as the debug.ts doc comment anticipates: "resolves null until AU ships"), so this one assertion fails on pkg/au in both projects; every other smoke test passes with audio on. AU may not edit smoke.spec.
 - Local workaround meanwhile: none (the assertion contradicts the deliverable); tests/unit/audio/render-check.mjs covers renderAudio.
+
+## TITLE: the Title in space and the dive (owner request, branch pkg/title)
+
+### SfxId: 'dive'   (status: open; applied on pkg/title)
+- File / symbol: core/audio.ts › SfxId
+- Change: `| 'dive'` (one union member, after the @G0 internal cues).
+- Why: TAP TO ROLL plays a 1.45 s rising whoosh and a soft Maj9 pad swell under the dive (audio/sfx/ui.ts, `DIVE_CUE` in mix.config.ts; a UI cue on the SFX bus). The music already moves menu → run through `setScene('run')` at the dive's start, so the run song is in by the hand-over.
+- Local workaround meanwhile: none needed (additive).
+
+### Notes for the merge (no other core change)
+- **App** (`game/app.ts`): `startRun(o, dive = false)`; only the Title's `play` intent and Space / Enter on the Title pass `dive`. During the dive the screen is already `'run'` (the Title UI fades out, the HUD waits), the sim is reset and the world attached (its first chunks build during the dive: TECH §8.6's first-frame exception lands on the dive's first frame, or restores from the Roll-out cache the idle Title warmed), input and the sim wait, `loop.fast` renders at 60 fps. The hand-over (`goLive`) runs once: input, sim, HUD, rotate check. A tap (`pointerdown`, stopped at the root so the run never sees it) or any key skips; `home` / `open` / another `startRun` cancel; `pause` (hidden tab, back gesture) finishes the dive first. New: `App.diving`, `App.backdrop` ('space' | 'dive' | 'world'), `App.diveView`, `App.frame(dt)` (called by wiring before each draw), `App.holdDive(t)` (tools); `AppDeps.reducedMotion?()` and `AppDeps.now?()` (the dive keeps to the wall clock).
+- **Loop** (`game/loop.ts`): `GameLoop.fast` (the 60 fps cap while the sim does not step).
+- **Wiring** draws the Title's space scene instead of the world whenever `backdrop === 'space'` (the Title and the menus opened from it; Locker / Shop keep the world turntable), and the dive's frames through `TitleScene.renderDive`. The run camera is read, never written: `HandoverCamera.at(v, cameraRig.camera, rider, aspect)` takes whatever the rig solved this frame (orthographic now, perspective after pkg/cam) and blends into its exact view-projection.
+- **Debug** (`?debug=1` only): `window.__skateTitle` (`stats()`, `dive()`, `bakeDone()`, `hold(t)`, `scene`) for title.spec and the tools; `shots` waits for the Earth bake before the title frame.
