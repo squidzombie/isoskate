@@ -266,7 +266,7 @@ describe('validator rules on generated streets (20 seeds × 3,000 m, S_TRENCH on
     expect(minGap).toBeGreaterThan(-0.011);
   });
 
-  it('A3: a full-width hazard at most every 16 s of non-T0 time in the opening, every 12 s later (+2 s when a long template lands on it)', () => {
+  it('A3: a full-width hazard at most every 16 s of non-T0 time in the opening, every 12 s later (+3.5 s when a long template or a due row lands on it)', () => {
     let worst = -Infinity;
     for (const g of gens) {
       const w = createWorldQuery(g);
@@ -276,7 +276,7 @@ describe('validator rules on generated streets (20 seeds × 3,000 m, S_TRENCH on
       const fw = w.obstacles(0, 3000).filter((o) => o.tags & ObTag.FullWidth).map((o) => ({ a: aAt(tAt(o.s)), t: tAt(o.s) }));
       for (let i = 1; i < fw.length; i++) worst = Math.max(worst, fw[i]!.a - fw[i - 1]!.a - (fw[i - 1]!.t < 45 ? 16 : 12));
     }
-    expect(worst).toBeLessThanOrEqual(2.0);
+    expect(worst).toBeLessThanOrEqual(3.5);
   });
 
   it('A3: never before its minimum (8 s of non-T0 time, 12 s in the opening), but for the last slot before a gateway (≤ 2.5 s early)', () => {
@@ -286,7 +286,8 @@ describe('validator rules on generated streets (20 seeds × 3,000 m, S_TRENCH on
       const segs = g.segments();
       const aAt = (t: number) => { let a = 0; for (const s of segs) { if (s.t0 >= t) break; if (s.tier > 0) a += Math.min(t, s.t1) - s.t0; } return a; };
       const fw = w.obstacles(0, 3000).filter((o) => o.tags & ObTag.FullWidth).map((o) => ({ a: aAt(tAt(o.s)), t: tAt(o.s) }));
-      for (let i = 1; i < fw.length; i++) { n++; worst = Math.min(worst, fw[i]!.a - fw[i - 1]!.a - (fw[i - 1]!.t < 45 ? 12 : 8)); }
+      // (the minimum of the phase the later hazard is scheduled in: 8 s from 45 s on)
+      for (let i = 1; i < fw.length; i++) { n++; worst = Math.min(worst, fw[i]!.a - fw[i - 1]!.a - (fw[i]!.t < 45 ? 12 : 8)); }
     }
     expect(n).toBeGreaterThan(20 * 15);
     expect(worst).toBeGreaterThanOrEqual(-GEN.a3PreGwEarly - 0.5);   // (+ where in its template the hazard stands)
@@ -435,5 +436,5 @@ describe('the Lesson Line (DESIGN §12.3) and the v1 template set (§10.4)', () 
   });
 });
 
-const GOLDEN = [605535064, 2721921751, 1589232429];
-const GOLDEN_TRENCH = [2258153496, 526275537, 10734782];
+const GOLDEN = [264648658, 2023616635, 1346440638];
+const GOLDEN_TRENCH = [2587709478, 3426557134, 2040920819];

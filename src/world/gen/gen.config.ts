@@ -22,7 +22,7 @@ export const GEN = {
    *  only drawn in its own area (shared ones anywhere) and at its tiers. */
   weights: {
     S_CONES: 1.0, S_TRENCH: 0, S_BARRIER: 0, S_LADDER: 1.2, S_GATE: 0.6, S_PADS: 1.0, S_STAIRS: 0.8,
-    DT_LEDGE: 3, DT_BENCHES: 2.5, DT_PLANTERS: 2.5, DT_TERRACE: 1.5, DT_RUSH: 2.5, DT_BIG7: 1.2,
+    DT_LEDGE: 3, DT_BENCHES: 2.5, DT_PLANTERS: 2.5, DT_TERRACE: 1.5, DT_RUSH: 1.2, DT_BIG7: 1.2,
     SB_WALL: 3, SB_HILL: 0, SB_DRIVEWAYS: 2.5, SB_BINDAY: 2.5, SB_PICKET: 2.5, SB_SCOOPS: 2,
     IN_BEAM: 3, IN_LIP: 3, IN_PALLETS: 2.5, IN_CHANNEL: 2.5, IN_DOCK_UP: 2, IN_GAUNTLET: 2,
     NE_RAIL: 3, NE_PILLARS: 2.5, NE_VENDING: 2.5, NE_SAKURA: 2.5, NE_SKYWALK: 1.6, NE_GAUNTLET: 2,
@@ -56,15 +56,17 @@ export const GEN = {
   /** GW_harborBridge deck (DESIGN §12.2): incline from `lead` s in, deck to `exitSec`·v before the gateway ends, ≥ minDeck m. */
   harborBridge: { lead: 0.4, exitSec: 0.6, minDeck: 4 },
   /** S_GATE (DESIGN §10.4): openings 2.5 / 2.2 / 2.0 m by tier, ≥ 3 m (≤ 4.0 m) from the line's x when it moves. */
-  gate: { width: { 0: 2.5, 1: 2.5, 2: 2.5, 3: 2.2, 4: 2.0 } as Record<Tier, number>, maxC: 3.3, shift: [2.8, 4.0] as readonly [number, number],
+  gate: { width: { 0: 2.5, 1: 2.5, 2: 2.5, 3: 2.2, 4: 2.0 } as Record<Tier, number>, maxC: 3.3, shift: [2.8, 3.7] as readonly [number, number],
     second: { 2: 0.6, 3: 0.3 } as Partial<Record<Tier, number>>, secondOff: [3.6, 6.6] as readonly [number, number],
     /** The gate segment starts this long before its row (head window + a 3 m move). */
     lead: 2.3,
+    /** Extra time a row leaves for the move to its opening beyond T_SHIFT (a human thumb's latency and ease-in). */
+    moveSlack: 0.3,
     /** A template ending later than (deadline − lead − hostAhead) stands the row itself (the next one would be late). */
     hostAhead: 1.4,
     /** S_GATE approach trick line: chance, and its end ≥ this many seconds before the row; each re-roll stands the
      *  row retryLate s later. */
-    feature: 0.95, featureGap: 1.0, retryLate: 0.3,
+    feature: 0.95, featureGap: 1.3, retryLate: 0.3,
     /** After a gate the fallback could not stand, the row deadline moves to its end + lead + this. */
     fallbackDefer: 1.0,
     /** A gate carries the A3 barrier only when the line enters within ±a3MaxX (not from the sidewalk edge). */

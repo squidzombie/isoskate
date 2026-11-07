@@ -46,9 +46,9 @@ export const IN_PALLETS: Template = {
     const p2 = put(c, buildPallet(mid, sOf(tA + 0.35), x, c.props));
     const p3 = put(c, buildPallet(3, sOf(tA + 0.75), x, c.props));
     for (const p of [p1, p2, p3]) c.coins.add(p.s + 0.6, x, (p.slabs[0]?.y0 ?? c.datum) + GEN.coins.padUp, 'trick');
-    // The tall one beside the line's end: the staircase reads 1 / 2–3 / tall.
-    const tx = round1cm(x + (x > 0 ? -1.6 : 1.6));
-    put(c, buildPallet(4, sOf(tA + 0.75), tx, c.props));
+    // The tall one beside the line's end: the staircase reads 1 / 2–3 / tall (dropped on the easy re-rolls).
+    const tx = round1cm(x + (x > 0 ? -2.0 : 2.0));
+    if (c.attempt < GEN.easyFrom) put(c, buildPallet(4, sOf(tA + 0.75), tx, c.props));
     return { t1: endAfter(c, 0.75) };
   },
 };

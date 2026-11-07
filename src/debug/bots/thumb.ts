@@ -93,7 +93,13 @@ export class ThumbBot {
     // Drift: the sim clamps targetX at the street edges; keep the bookkeeping on the sim's value.
     let ex: number | null = null;
     while (this.expect.length && this.expect[0]!.t <= c.t + 1e-6) ex = this.expect.shift()!.x;
-    if (ex !== null && Math.abs(c.targetX - ex) > 1e-3) this.steerX += c.targetX - ex;
+    if (ex !== null && Math.abs(c.targetX - ex) > 1e-3) {
+      // Apply the sim's own change once: the moves still in flight were planned from the old bookkeeping, so their
+      // expectations shift by the same amount (else every one of them re-applies it: a delayed loop that diverges).
+      const dd = c.targetX - ex;
+      this.steerX += dd;
+      for (const e of this.expect) e.x += dd;
+    }
     const d = this.safe.decide(sim);
     const tLand = tNow + this.safe.latency;
     // Steering: the plan's x, smoothed, rate-limited, then rendered as thumb motion (+ tremor).
@@ -101,7 +107,9 @@ export class ThumbBot {
     for (let i = 0; i < KERNEL.length; i++) want += KERNEL[i]! * this.safe.planX(tLand + this.safe.lead + ((i - KERNEL_N) / KERNEL_N) * KERNEL_HALF);
     const maxStep = 0.85 * V_LAT_MAX * DT;
     this.desired += Math.max(-maxStep, Math.min(maxStep, want - this.desired));
-    const dxPx = (this.desired - this.steerX) / this.m;
+    // (a thumb moves at most at the planned lateral rate: a catch-up after the sim moved targetX itself, a magnet or a
+    // side bump, must not become a flick)
+    const dxPx = Math.max(-maxStep, Math.min(maxStep, this.desired - this.steerX)) / this.m;
     const [tx, ty] = this.shake(tLand);
     if (Math.abs(dxPx) >= 0.25 || this.queue.length === 0) {
       this.thumbX += dxPx; this.steerX += dxPx * this.m;

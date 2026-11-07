@@ -458,7 +458,7 @@ export class Generator implements WorldGen {
         const moveFrom = Math.max(t0 + GEN.noActionHead, earliest, lastAct ? lastAct.t + spacingAfter(lastAct.t, lastAct.dx) : -Infinity);
         const centres = gateOpenings(rng, x0, c.lastGateOpen, gt, []);
         if (centres) {
-          const tr = Math.max(t1 - 0.3, moveFrom + T_SHIFT(Math.abs(centres[0]! - x0)) + 0.35, tEdge + GEN.gate.edgeClear);
+          const tr = Math.max(t1 - 0.3, moveFrom + T_SHIFT(Math.abs(centres[0]! - x0)) + 0.35 + GEN.gate.moveSlack, tEdge + GEN.gate.edgeClear);
           const keepOut = slotAt(tr);
           // (the longer segment must leave the next one room for the A3 hazard before its maximum)
           const t1x = tAt(sAt(tr) + 1.2) + 0.5;
@@ -469,7 +469,7 @@ export class Generator implements WorldGen {
         }
       }
       // Else one forced move inside the template: openings 2.8–4 m from where the line is before the slot.
-      const tLoMove = Math.max(t0 + GEN.noActionHead, earliest) + T_SHIFT(GEN.gate.shift[0]) + 0.35;
+      const tLoMove = Math.max(t0 + GEN.noActionHead, earliest) + T_SHIFT(GEN.gate.shift[0]) + 0.35 + GEN.gate.moveSlack;
       if (!tries.length) {
         for (let tr = tHi; tr >= tLoMove; tr -= 0.25) {
           const keepOut = slotAt(tr);

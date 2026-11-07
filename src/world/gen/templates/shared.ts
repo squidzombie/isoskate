@@ -144,7 +144,7 @@ export const S_GATE: Template = {
       moveFrom = tTake + Math.max(rMinAt(tTake), 0.9) + 0.05;
     }
     const tRow = atLine ? contentFrom(c) + (c.lastGateOpen.length ? 1.4 : 0.9) + c.rng.range(0, 0.15)
-      : Math.max(moveFrom + T_SHIFT(Math.abs(pick - c.safeX)) + 0.3, c.t0 + 1.7) + c.rng.range(0, 0.15)
+      : Math.max(moveFrom + T_SHIFT(Math.abs(pick - c.safeX)) + 0.3 + GEN.gate.moveSlack, c.t0 + 1.7) + c.rng.range(0, 0.15)
         // (re-rolls stand the row later: the history may ask for an action first, e.g. a hop off the sidewalk)
         + Math.min(c.attempt, GEN.rerolls) * GEN.gate.retryLate;
     const sRow = sOf(tRow);
