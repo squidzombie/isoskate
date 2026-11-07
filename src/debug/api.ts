@@ -23,6 +23,7 @@ import type { ScoreState, SkaterState } from '../core/sim';
 import { DT } from '../core/tuning';
 import { CATALOG } from '../content';
 import { InputPipeline, isInjectable, kForWidth } from '../input';
+import { simDebug } from '../sim';
 import { BOTS, type Bot, type BotKind } from './bots';
 import { measureContrast } from './contrast';
 
@@ -129,7 +130,7 @@ export function installDebugApiImpl(host: DebugHost, tools: DebugTools = {}): De
     for (let i = Math.max(0, Math.floor(s / 32)); i <= Math.floor((s + 40) / 32); i++) {
       for (const k of sim.gen.chunk(i).safe) if (k.s >= s && k.s <= s + 40) safe.push(k);
     }
-    return {
+    const snap: DebugSnapshot = {
       tick: c.tick, t: c.t, mode: c.mode, p: { ...c.p }, vel: { ...c.vel }, speed: c.vel.s,
       area: sim.gen.areaAt(s).area, layer: c.layer, alive: c.mode !== 'crashed',
       score: sc.total, combo: { pts: sc.combo.pending, links: sc.combo.links, window: sc.combo.window }, coins: sc.coins,
@@ -138,6 +139,9 @@ export function installDebugApiImpl(host: DebugHost, tools: DebugTools = {}): De
         .map((o) => ({ id: o.id, kind: o.kind, s: o.s, x: o.x, dist: o.s - s, tags: o.tags })),
       safe,
     };
+    const d = simDebug(sim);                              // DebugSnapshot.sim (applied @G1, GP request 4)
+    if (d) snap.sim = d;
+    return snap;
   };
 
   const toggle = (t: DebugTool | undefined, on?: boolean) => { if (!t) return false; t.set(on ?? !t.on); return t.on; };

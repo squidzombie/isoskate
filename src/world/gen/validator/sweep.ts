@@ -320,6 +320,12 @@ export interface DpResult {
 
 /** Viable ground cells (F ∩ B) per local slice: filled by fillViable() after the passes. */
 const VG = new Int32Array(MAX_SLICES * 2);
+/** Ground-plane masks of slice i after forward / backward / fillViable (debug overlay): reachable (F) and viable
+ *  (F & B: reachable and still survivable), as [lo, hi] cell bit masks written into `out` at `o`. */
+export function groundMasks(i: number, out: Int32Array, o: number): void {
+  const g = fo(i, 0);
+  out[o] = F[g]!; out[o + 1] = F[g + 1]! & HI_MASK; out[o + 2] = VG[i * 2]!; out[o + 3] = VG[i * 2 + 1]!;
+}
 export function fillViable(r: Raster): void {
   for (let i = 0; i < r.n; i++) { const g = fo(i, 0); VG[i * 2] = F[g]! & B[g]!; VG[i * 2 + 1] = F[g + 1]! & B[g + 1]! & HI_MASK; }
 }

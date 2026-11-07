@@ -6,7 +6,7 @@ import type { Obstacle } from '../../core/world';
 import { LAYOUTS } from './props/street';
 import { RASTER, SLICE, cellOf, cellX } from './validator/grid';
 import { ollieWindow } from './validator/path';
-import { GUIDES, QUIET, backward, fillViable, forward, minActionPath, precomputePlanes } from './validator/sweep';
+import { GUIDES, QUIET, backward, fillViable, forward, groundMasks, minActionPath, precomputePlanes } from './validator/sweep';
 
 export interface PlanInput {
   /** Plan start (run time, on the ground) and the board x there. */
@@ -58,4 +58,23 @@ export function plan(inp: PlanInput): PlanOutput | null {
     lands.push(r.t[Math.min(l, dp.steps.length - 1)]! + (tap - tk));
   }
   return { pts, ollies, lands };
+}
+
+/** The validator's reachable set from (t, x) over a short horizon (the debug overlay's safe-line heatmap, TECH §11.5):
+ *  per grid slice its s and four ground-plane cell masks [reachLo, reachHi, viableLo, viableHi] (reach: the forward
+ *  set; viable: reachable and survivable, F & B). Cells are `cellX(c)` (0.25 m from −4.5). Writes into `out` (its
+ *  arrays sized for ≥ 380 slices) and returns the slice count. Shares the validator's scratch like plan(). */
+export interface ReachOut { s: Float64Array; masks: Int32Array }
+export function reachable(inp: Pick<PlanInput, 't' | 'x' | 'horizon' | 'obstacles'>, out: ReachOut): number {
+  const r = RASTER;
+  const j0 = Math.ceil(inp.t / SLICE - 1e-9);
+  const n = Math.min(380, Math.max(8, Math.round(inp.horizon / SLICE)));
+  r.build(j0, n, inp.obstacles, n, { layout: LAYOUTS.downtown, datum: 0, exit: [[-4.5, 4.5]] }, inp.t, inp.t + inp.horizon);
+  precomputePlanes(r);
+  const c0 = cellOf(inp.x);
+  forward(r, [{ h: null, k: 0, lo: c0 < 32 ? 1 << c0 : 0, hi: c0 >= 32 ? 1 << (c0 - 32) : 0 }]);
+  backward(r);
+  fillViable(r);
+  for (let i = 0; i < r.n; i++) { out.s[i] = r.s[i]!; groundMasks(i, out.masks, i * 4); }
+  return r.n;
 }

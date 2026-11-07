@@ -1,8 +1,9 @@
 // game/wiring.ts: the ONLY place modules are instantiated (TECH §2.1). Builds every module through its factory,
 // connects the buses, the loop, the app flow, platform glue and the debug API.
-import { createBus } from '../core/bus';
+import { createBus, type Bus } from '../core/bus';
 import type { AppEvent, GameEvent } from '../core/events';
 import type { QualityTier } from '../core/ids';
+import type { Haptics } from '../core/platform';
 import { clamp } from '../core/math';
 import { CHUNK_LEN, GEN_AHEAD_SEC, sAt, V_MAX } from '../core/tuning';
 import type { RenderFrame, Viewport } from '../core/view';
@@ -11,7 +12,7 @@ import { CATALOG } from '../content';
 import { installDebugApi, type DebugHost } from '../debug';
 import { createGfx, onViewportChange, readViewport, redrawCanvasTextures, setGfxQuality } from '../gfx';
 import { createInput } from '../input';
-import { createAnalytics, createMeta } from '../meta';
+import { createAnalytics, createMeta, runEndProps } from '../meta';
 import { createHaptics, createMonetization, installTouchHygiene, isTouchDevice, readFlags } from '../platform';
 import { createSaveStore } from '../save';
 import { createSim } from '../sim';
@@ -62,15 +63,17 @@ export function wire(root: HTMLElement): Game {
 
   // Simulation, input, audio, meta, UI.
   const sim = createSim(TRICKS);
-  const input = createInput(play, { screenW: () => viewport.wCss, safeBottom: () => viewport.safeBottom });
+  const input = createInput(play, { screenW: () => viewport.wCss, safeBottom: () => viewport.safeBottom, screenH: () => viewport.hCss });
   const audio = createAudio();
   input.onAnyInput(() => { if (!audio.unlocked) void audio.unlock(); });   // retried on every gesture until running
   const meta = createMeta(save, CATALOG);
   const ui = createUi(root);
+  ui.setMonetization?.(monetization);                    // the shared provider (NullProvider; FakeProvider with ?fakeads=1)
   const gameBus = createBus<GameEvent>();
   const appBus = createBus<AppEvent>();
   audio.attach(gameBus, appBus);
   ui.attach(gameBus, appBus, meta);
+  bindHaptics(gameBus, haptics, () => save.data.settings.haptics);
   const session = createRunSession(save, flags.seed);
   const hints = new FirstRunHints(ui.hud, gameBus);
 
@@ -96,6 +99,8 @@ export function wire(root: HTMLElement): Game {
       !!g && SLIDE_GRINDS.has(g.id));
     cameraRig.update(f);
     gfx.renderer.render(gfx.scene, cameraRig.camera);
+    // Work-time auto-adjust (world/render) may step the tier mid-run: tell the UI overlay and analytics (WA request).
+    if (gfx.quality !== shownTier) { shownTier = gfx.quality; appBus.emit({ t: 'quality', tier: shownTier }); }
     if (app.current === 'run' || app.current === 'crash') ui.hud.update(f.score, f.cur, f.dt, cameraRig.project(f.cur.p));
     if (app.current === 'run') hints.update(f.cur.t, f.cur);
     return worldView.stats().chunksBuilt !== before;
@@ -109,11 +114,13 @@ export function wire(root: HTMLElement): Game {
     },
   });
 
+  let shownTier: QualityTier = startTier;               // the tier the 'quality' app event last reported
   const setQuality = (tier: QualityTier) => {
     setGfxQuality(gfx, tier);
     worldView.setQuality(tier);
     vfx.setQuality(tier);
     applyViewport();
+    shownTier = tier;
     appBus.emit({ t: 'quality', tier });
   };
   /** save.data.settings → modules. Called at boot and after every Settings intent (game/app.ts). */
@@ -127,14 +134,16 @@ export function wire(root: HTMLElement): Game {
     haptics.enabled = st.haptics !== 'off';
     loop.batterySaver = st.batterySaver;
     cameraRig.setReducedMotion(st.reducedMotion || !st.shake);
+    vfx.setReducedMotion?.(st.reducedMotion || !st.effects);   // "Reduce effects" also stops speed lines (DESIGN §17.2)
     analytics.setOptOut(st.analyticsOptOut);
     const want: QualityTier = flags.quality ?? (st.quality === 'auto' ? autoTier : st.quality);
     if (want !== tier) { tier = want; setQuality(want); }
+    worldView.setAutoQuality?.(st.quality === 'auto' && !flags.quality);
   };
   applySettings();
 
   const app = new App({ root, play, sim, loop, input, ui, meta, save, audio, analytics, worldView, skater, cameraRig, vfx,
-    gameBus, appBus, session, viewport: () => viewport, applySettings, hints });
+    gameBus, appBus, session, viewport: () => viewport, applySettings, hints, runEndProps });
 
   onViewportChange(() => { applyViewport(); app.checkRotate(sim.cur.vel.s); });
   canvas.addEventListener('webglcontextlost', (e) => {
@@ -172,4 +181,25 @@ export function wire(root: HTMLElement): Game {
   if (flags.bot && window.__skate) { app.startRun(); window.__skate.bot(flags.bot as Parameters<NonNullable<Window['__skate']>['bot']>[0]); }
   analytics.track('session_start', { installDay: save.data.installDay, runsTotal: save.data.stats.runs, platform: 'web', quality: startTier });
   return { app, loop };
+}
+
+/** DESIGN §9 haptic column: Settings › Haptics Off / Key moments / All. "Key" rows pulse unless Off, "All" rows only on
+ *  All; platform/haptics enforces the 15 ms floor and the 120 ms gap. God-mode crashes and replays never pulse. */
+export function bindHaptics(bus: Bus<GameEvent>, h: Haptics, level: () => 'off' | 'key' | 'all'): () => void {
+  const KEY2: number[] = [15, 40, 15];
+  return bus.onAny((e) => {
+    const lv = level();
+    if (lv === 'off') return;
+    const all = lv === 'all';
+    switch (e.t) {
+      case 'ollie': if (all) h.pulse(15); break;
+      case 'land': if (e.quality === 'perfect') h.pulse(KEY2); else if (all) h.pulse(15); break;
+      case 'pickWindow': if (all && e.open) h.pulse(15); break;
+      case 'grindStart': if (e.perfect) h.pulse(KEY2); else if (all) h.pulse(15); break;
+      case 'comboBanked': h.pulse(15); break;
+      case 'bestPassed': h.pulse(20); break;
+      case 'areaEnter': if (e.firstThisRun) h.pulse(15); break;
+      default: break;
+    }
+  });
 }

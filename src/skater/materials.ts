@@ -6,7 +6,9 @@
 //  - holo: a view-angle hue shift (Holo Shift's finish), switched by the uHolo uniform so every board shares one
 //    program (a loadout switch never compiles a shader);
 //  - the outline pushes vertices along aOutline by uOutlineW (set per frame from the camera so the ink line never
-//    drops under OUTLINE.minPx on screen), before skinning.
+//    drops under OUTLINE.minPx on screen), before skinning;
+//  - uDesat: the world's crash desaturation (gfx sharedUniforms(ctx).uDesat, the same object, wired @G1), applied in
+//    output colour space like world/render's grading, so the rider greys with the street during the crash slow-mo.
 import {
   BackSide, Color, DataTexture, FrontSide, type IUniform, MeshBasicMaterial, MeshToonMaterial, NearestFilter, RedFormat,
   type Texture, type WebGLProgramParametersWithUniforms,
@@ -32,11 +34,14 @@ export interface SkaterUniforms {
   uTime: IUniform<number>;
   /** 1 = Holo Shift's view-angle hue shift, 0 = off. */
   uHolo: IUniform<number>;
+  /** Crash desaturation 0..1: the view swaps in the context's shared uniform (gfx sharedUniforms) by reference. */
+  uDesat: IUniform<number>;
 }
 export const newUniforms = (): SkaterUniforms => ({
   uEmitGain: { value: 1 }, uFxColor: { value: new Color(0x000000) }, uRimColor: { value: new Color(SHADE.rimColor) },
-  uRimStrength: { value: SHADE.rimStrength }, uTime: { value: 0 }, uHolo: { value: 0 },
+  uRimStrength: { value: SHADE.rimStrength }, uTime: { value: 0 }, uHolo: { value: 0 }, uDesat: { value: 0 },
 });
+const DESAT_GLSL = 'gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(dot(gl_FragColor.rgb, vec3(0.299, 0.587, 0.114))), uDesat);';
 
 export interface ToonOptions {
   map: Texture | null;
@@ -62,7 +67,7 @@ export function toonMaterial(u: SkaterUniforms, o: ToonOptions): MeshToonMateria
       .replace('#include <common>', `#include <common>
 varying vec2 vEmit;
 uniform float uEmitGain; uniform vec3 uFxColor; uniform vec3 uRimColor; uniform float uRimStrength; uniform float uTime;
-uniform float uHolo;
+uniform float uHolo; uniform float uDesat;
 vec3 skHue(vec3 c, float a) {
   const vec3 k = vec3(0.57735);
   float ca = cos(a);
@@ -76,7 +81,8 @@ totalEmissiveRadiance += diffuseColor.rgb * vEmit.x * uEmitGain + uFxColor * vEm
 {
   float fres = pow(1.0 - clamp(dot(normalize(geometryNormal), geometryViewDir), 0.0, 1.0), ${SHADE.rimPower.toFixed(2)});
   reflectedLight.directDiffuse += uRimColor * fres * uRimStrength * (0.35 + 0.65 * diffuseColor.rgb);
-}`);
+}`)
+      .replace('#include <colorspace_fragment>', `#include <colorspace_fragment>\n${DESAT_GLSL}`);
   };
   m.customProgramCacheKey = () => 'sk-toon';
   return m;
@@ -89,10 +95,10 @@ export function glassMaterial(u: SkaterUniforms, color: number, opacity: number)
   return m;
 }
 
-export interface OutlineUniforms { uOutlineW: IUniform<number> }
-/** The ink outline: back faces of the same buffers, pushed out along aOutline. */
-export function outlineMaterial(): MeshBasicMaterial & { userData: { uniforms: OutlineUniforms } } {
-  const uniforms: OutlineUniforms = { uOutlineW: { value: OUTLINE.width } };
+export interface OutlineUniforms { uOutlineW: IUniform<number>; uDesat: IUniform<number> }
+/** The ink outline: back faces of the same buffers, pushed out along aOutline. `desat`: the shared crash uniform. */
+export function outlineMaterial(desat: IUniform<number> = { value: 0 }): MeshBasicMaterial & { userData: { uniforms: OutlineUniforms } } {
+  const uniforms: OutlineUniforms = { uOutlineW: { value: OUTLINE.width }, uDesat: desat };
   const m = new MeshBasicMaterial({ color: OUTLINE.color, side: BackSide }) as MeshBasicMaterial & { userData: { uniforms: OutlineUniforms } };
   m.userData.uniforms = uniforms;
   m.onBeforeCompile = (sh: WebGLProgramParametersWithUniforms) => {
@@ -100,6 +106,9 @@ export function outlineMaterial(): MeshBasicMaterial & { userData: { uniforms: O
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nattribute vec3 aOutline;\nuniform float uOutlineW;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed += aOutline * uOutlineW;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float uDesat;')
+      .replace('#include <colorspace_fragment>', `#include <colorspace_fragment>\n${DESAT_GLSL}`);
   };
   m.customProgramCacheKey = () => 'sk-outline';
   return m;

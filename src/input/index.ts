@@ -23,7 +23,9 @@ export const isInjectable = (s: InputSource): s is InjectableInput => typeof (s 
 /** `k = clamp(screenW / 390, 0.85, 1.3)`: every recognizer threshold in px is scaled by it (DESIGN units). */
 export const kForWidth = (screenW: number) => clamp(screenW / 390, 0.85, 1.3);
 
-export function createInput(el: HTMLElement, opts: { screenW: () => number; safeBottom: () => number }): InputSource {
+/** `screenH` (optional, added @G1): the cached viewport height, so a touch-down never reads layout (TECH §9; MU's
+ *  layout guard counted window.innerHeight on every down). Without it the recognizer falls back to innerHeight. */
+export function createInput(el: HTMLElement, opts: { screenW: () => number; safeBottom: () => number; screenH?: () => number }): InputSource {
   const pipe = new InputPipeline(opts.screenW);
   const cfg = pipe.rec.config;
   let enabled = false;
@@ -33,7 +35,7 @@ export function createInput(el: HTMLElement, opts: { screenW: () => number; safe
     const w = opts.screenW();
     cfg.k = kForWidth(w);
     cfg.screenW = w;
-    cfg.screenH = typeof window !== 'undefined' ? window.innerHeight : 0;
+    cfg.screenH = opts.screenH ? opts.screenH() : typeof window !== 'undefined' ? window.innerHeight : 0;
     cfg.deadZoneBottomPx = opts.safeBottom() + 12;
   };
   syncMetrics();

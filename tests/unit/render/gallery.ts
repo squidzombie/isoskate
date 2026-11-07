@@ -67,7 +67,7 @@ const kindsFor = (a: AreaId): PropKind[] => {
   const shared: PropKind[] = ['barrier_low', 'trench', 'trash_can', 'cone', 'flatbar', 'bench', 'manual_pad', 'stairs', 'handrail', 'hubba', 'incline', 'terrace', 'filler', 'curb'];
   const own: Record<AreaId, PropKind[]> = {
     downtown: ['granite_ledge', 'planter', 'planter_tree', 'fountain', 'bollard_row', 'kiosk', 'parked_car', 'bike_rack', 'cafe_set', 'news_box', 'crosswalk_car'],
-    suburbs: ['garden_wall', 'hedge', 'picket_fence', 'mailbox', 'wheelie_bins', 'parked_car', 'parked_van', 'porch_steps', 'yard_table', 'crate_stack', 'speed_hump', 'hoop_pole', 'bus_shelter', 'backout_car'],
+    suburbs: ['hedge', 'garden_wall', 'picket_fence', 'mailbox', 'wheelie_bins', 'parked_car', 'parked_van', 'porch_steps', 'yard_table', 'crate_stack', 'speed_hump', 'hoop_pole', 'bus_shelter', 'backout_car'],
     docks: ['container', 'pallet_1', 'pallet_2', 'pallet_3', 'pallet_tall', 'ibeam', 'loading_dock', 'drum_cluster', 'spool_standing', 'spool_lying', 'mooring_bollard', 'dock_lip', 'rail_track', 'forklift'],
     neon: ['guard_rail', 'vending_bank', 'viaduct_pillar', 'holo_gate', 'cherry_planter', 'food_cart', 'bike_row', 'skywalk', 'a_frame_sign', 'lantern_stand', 'neon_curb', 'delivery_robot'],
   };

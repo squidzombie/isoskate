@@ -234,9 +234,14 @@ export function createHud(root: HTMLElement, o: HudOptions): HudExt {
         case 'flipUpgrade': hud.popup(trickName(e.to), 'flip', true); break;
         case 'spinStart': hud.popup(e.out ? `${trickName(e.id)} OUT` : trickName(e.id), 'flip', true); break;
         case 'spinUpgrade': hud.popup(trickName(e.to), 'flip', true); break;
-        case 'grindStart': hud.popup(e.perfect ? 'PERFECT LOCK' : e.transfer ? `TRANSFER · ${trickName(e.id)}` : trickName(e.id), e.transfer ? 'gap' : 'grind'); break;
-        case 'grindSwitch': hud.popup(trickName(e.to), 'grind'); break;
-        case 'manualStart': hud.popup(trickName(e.kind), 'manual'); break;
+        // Grinds and manuals score at their end: the last-trick label follows their start and every switch, so a long
+        // grind never shows the trick before it (G1, GP review #13). The trickScored at the end adds the decay.
+        case 'grindStart':
+          hud.popup(e.perfect ? 'PERFECT LOCK' : e.transfer ? `TRANSFER · ${trickName(e.id)}` : trickName(e.id), e.transfer ? 'gap' : 'grind');
+          hud.lastTrick(trickName(e.id).toUpperCase());
+          break;
+        case 'grindSwitch': hud.popup(trickName(e.to), 'grind'); hud.lastTrick(trickName(e.to).toUpperCase()); break;
+        case 'manualStart': hud.popup(trickName(e.kind), 'manual'); hud.lastTrick(trickName(e.kind).toUpperCase()); break;
         case 'grabStart': hud.popup(trickName(e.id), 'flip'); break;
         case 'revert': hud.popup('REVERT', 'bonus'); break;
         case 'land': if (e.quality === 'perfect') hud.popup('PERFECT', 'perfect'); else if (e.quality === 'sketchy') hud.popup('SKETCHY', 'sketchy'); break;

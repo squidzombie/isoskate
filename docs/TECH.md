@@ -1092,7 +1092,7 @@ export function createWorldGen(cfg: WorldGenConfig): WorldGen;                  
 export function createWorldQuery(gen: WorldGen): WorldQuery;                                      // world/gen
 export function createSim(tables: TrickTables, deps?: SimDeps): Sim;                              // sim (tables from tricks)
 export const TRICKS: TrickTables;                                                                 // tricks
-export function createInput(el: HTMLElement, opts: { screenW: () => number; safeBottom: () => number }): InputSource; // input
+export function createInput(el: HTMLElement, opts: { screenW: () => number; safeBottom: () => number; screenH?: () => number }): InputSource; // input (screenH added @G1: the cached viewport height, no layout read on touch-down)
 export function createRecognizer(cfg?: Partial<RecognizerConfig>): GestureRecognizer;            // input (pure; thumb bot)
 export function createGfx(canvas: HTMLCanvasElement, q: QualityTier): GfxContext;                 // gfx
 export function createWorldView(ctx: GfxContext): WorldView;                                      // world/render

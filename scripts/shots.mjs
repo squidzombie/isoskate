@@ -309,20 +309,31 @@ async function contrastMode() {
     const cases = [...AREAS.map((a) => ({ label: a, area: a, blend: undefined, samples: 14 })),
       ...AREAS.flatMap((a) => BLENDS.map((u) => ({ label: `${a}→${NEXT[a]} ${u}`, area: NEXT[a], blend: u, samples: 4 })))];
     for (const cs of cases) {
-      const { items: r, worst } = await page.evaluate(({ area, blend, samples, gate }) => {
-        window.__skate.previewArea(area, blend);
-        const items = [];
-        let worst = null, worstRel = Infinity;
-        for (let i = 0; i < samples; i++) {
-          window.__skate.step(i === 0 ? 20 : 36);
-          for (const it of window.__skate.ext.contrastReport().items) {
-            items.push(it);
-            const rel = it.ratio / gate[it.cls];
-            if (rel < worstRel) { worstRel = rel; worst = { item: it, tick: window.__skate.snapshot().tick, png: window.__skate.ext.capture().dataUrl }; }
+      // Every preset / blend frame set must measure at least one hazard and one grind edge (G1): when the default
+      // start shows none, the same palette is retried from slightly earlier / later starts (previewArea's run time
+      // ± 1.2 s; blends: the same gateway, ≤ 0.3 of blend weight away), else the case fails with "no hazard".
+      const { items: r, worst, offset } = await page.evaluate(({ area, blend, samples, gate }) => {
+        const ARRIVAL = { downtown: 161, suburbs: 44, docks: 83, neon: 122 };
+        const t0 = blend === undefined ? (area === 'downtown' ? 10 : ARRIVAL[area] + 10) : ARRIVAL[area] - 6 + 8 * blend;
+        let items = [], worst = null, offset = 0;
+        for (const off of [0, -1.2, 1.2, -2.4, 2.4]) {
+          if (off === 0) window.__skate.previewArea(area, blend);
+          else { window.__skate.start({ startT: Math.max(0, t0 + off), god: true }); window.__skate.manual(true); window.__skate.step(1); }
+          items = []; worst = null; offset = off;
+          let worstRel = Infinity;
+          for (let i = 0; i < samples; i++) {
+            window.__skate.step(i === 0 ? 20 : 36);
+            for (const it of window.__skate.ext.contrastReport().items) {
+              items.push(it);
+              const rel = it.ratio / gate[it.cls];
+              if (rel < worstRel) { worstRel = rel; worst = { item: it, tick: window.__skate.snapshot().tick, png: window.__skate.ext.capture().dataUrl }; }
+            }
           }
+          if (items.some((i) => i.cls === 'hazard') && items.some((i) => i.cls === 'edge')) break;
         }
-        return { items, worst };
+        return { items, worst, offset };
       }, { ...cs, gate: GATE });
+      if (offset !== 0) console.log(`    (${cs.label}: measured from a start ${offset > 0 ? '+' : ''}${offset} s off the default)`);
       if (worst) {
         const w = worst.item;
         writeDataUrl(join(dir, `${cs.label.replace(/[^a-z0-9]+/gi, '-')}-${vp.name}-worst.png`), worst.png);
@@ -341,6 +352,8 @@ async function contrastMode() {
         + `${row.worstHazard ? `  worst hazard ${row.worstHazard}` : ''}${row.worstEdge ? `  worst edge ${row.worstEdge}` : ''}`);
       if (row.hazard < GATE.hazard) fail(`contrast ${vp.name} ${cs.label}: hazard ${row.hazard.toFixed(2)} < ${GATE.hazard} (${row.worstHazard})`);
       if (row.edge < GATE.edge) fail(`contrast ${vp.name} ${cs.label}: edge ${row.edge.toFixed(2)} < ${GATE.edge} (${row.worstEdge})`);
+      if (!hz.length) fail(`contrast ${vp.name} ${cs.label}: no hazard in view`);
+      if (!ed.length) fail(`contrast ${vp.name} ${cs.label}: no grind edge in view`);
     }
     await close();
   }

@@ -31,6 +31,8 @@ export interface AppDeps {
   applySettings(): void;
   /** First-runs hints (game/onboarding.ts), armed at every run start. */
   hints?: { start(runsStarted: number, startT: number, god: boolean): void };
+  /** DESIGN §21 run_end properties (meta/index.ts runEndProps, passed in by wiring so App imports no module). */
+  runEndProps?(r: RunResult, w: RunRewards | null, retryKind: 'instant' | 'results'): Record<string, string | number | boolean>;
 }
 
 type UiParams = NonNullable<Parameters<UiApi['show']>[1]>;
@@ -44,6 +46,11 @@ export interface OpenParams extends UiParams {
   yaw?: number;
 }
 const SHOWCASE: ReadonlySet<ScreenId> = new Set<ScreenId>(['locker', 'shop']);
+/** Menu screens that may open another menu directly (DESIGN §17.1: Locker "Get more" → Shop, Shop ⇄ Crates, the
+ *  Results reward rows; MU request). Settings counts only when it was not opened over Pause. */
+const MENUS: ReadonlySet<ScreenId> = new Set<ScreenId>(['locker', 'shop', 'crates', 'stats', 'rewards', 'settings']);
+/** Screens drawn over the run (or the frozen run): the run camera stays. */
+const RUN_SCREENS: ReadonlySet<ScreenId> = new Set<ScreenId>(['run', 'pause', 'crash']);
 
 export class App {
   private screen: ScreenId = 'boot';
@@ -60,6 +67,10 @@ export class App {
   private turnYaw = 0;
   /** Settings opened from Pause (DESIGN §17.2): Back / Esc return to the frozen run's Pause instead of Home. */
   private settingsOverPause = false;
+  /** The sim holds the Title preview (seed 1 at t = 0, the rider idling at the start), not a run. */
+  private previewing = false;
+  /** The ended run's run_end, sent once its retry kind is known (instant retry, or once Results show). */
+  private runEnd: { result: RunResult; rewards: RunRewards | null } | null = null;
 
   constructor(private readonly d: AppDeps) {
     this.back = createBackGuard((during) => {
@@ -93,22 +104,33 @@ export class App {
 
   get current(): ScreenId { return this.screen; }
 
-  /** Boot → Title: a still street preview behind the text-only title. */
+  /** Boot → Title: the static diorama (DESIGN §18.7): the start street, the rider idling, the 'title' camera. */
   boot(): void {
     const d = this.d;
-    d.sim.reset(d.session.next({ seed: 1 }));
-    d.worldView.attach(d.sim.gen);
-    d.skater.setLoadout(d.meta.loadout());
-    d.cameraRig.setMode('run'); this.camMode = 'run';   // TODO(WA): 'title' perspective diorama
+    this.preview();
+    d.cameraRig.setMode('title'); this.camMode = 'title';
     d.loop.start();
     this.home();
+  }
+
+  /** The Title diorama's street: seed 1 at t = 0 (the Roll-out, identical on every run) with the equipped loadout. */
+  private preview(): void {
+    const d = this.d;
+    d.sim.reset(d.session.next({ seed: 1 }));
+    d.loop.resetRun();
+    d.worldView.attach(d.sim.gen);
+    d.vfx.clear();
+    d.skater.setLoadout(d.meta.loadout());
+    this.previewing = true;
   }
 
   /** Title / instant retry / ROLL AGAIN / debug start: a fresh run (no loading; the world regenerates lazily). */
   startRun(o: StartOptions = {}): void {
     const d = this.d;
     this.clearCrashTimers();
+    this.sendRunEnd('results');                          // a run left from Results / Home without a retry tap
     const cfg = d.session.next(o);
+    this.previewing = false;
     d.sim.reset(cfg);
     d.loop.resetRun();
     d.worldView.attach(d.sim.gen);
@@ -159,6 +181,8 @@ export class App {
   home(): void {
     const d = this.d;
     this.clearCrashTimers();
+    this.sendRunEnd('results');
+    if (!this.previewing) this.preview();               // the Title shows the start street, not the crash site
     d.loop.setRunning(false);
     d.input.setEnabled(false);
     d.play.classList.remove('run');
@@ -211,13 +235,14 @@ export class App {
     if (screen !== 'settings') this.settingsOverPause = false;
     this.rotateCard = screen === 'pause' && !!params?.rotate;
     const d = this.d;
-    // Locker / Shop: skater turntable and the locker camera; leaving them restores the equipped loadout.
+    // Locker / Shop: skater turntable and the locker camera; leaving them restores the equipped loadout. Other
+    // menus sit on the Title diorama ('title' camera) when the sim holds the preview, else on the frozen run.
     const show = SHOWCASE.has(screen), was = SHOWCASE.has(from);
     if (show !== was) {
       d.skater.setMode(show ? 'showcase' : 'run');
-      this.setCamera(show ? 'locker' : 'run');   // TODO(WA): 'title' for the Title diorama
       if (show) { this.turnYaw = 0; d.skater.setTurntable?.(0); } else d.skater.setLoadout(d.meta.loadout());
     }
+    this.setCamera(show ? 'locker' : RUN_SCREENS.has(screen) || !this.previewing ? 'run' : 'title');
     d.ui.show(screen, params);
     if (from !== screen) d.appBus.emit({ t: 'screen', screen, from });
   }
@@ -258,7 +283,8 @@ export class App {
       case 'home': if (!this.backToPause()) this.home(); break;
       case 'open':
         if (i.screen === 'settings' && this.screen === 'pause') this.settingsFromPause();
-        else if (this.screen === 'title' || this.screen === 'results') this.open(i.screen);
+        else if (this.screen === 'title' || this.screen === 'results'
+          || (MENUS.has(this.screen) && !this.settingsOverPause && i.screen !== this.screen)) this.open(i.screen);
         break;
       case 'preview': if (SHOWCASE.has(this.screen)) this.showcase({ preview: i.id }); break;
       case 'turntable': if (SHOWCASE.has(this.screen)) { this.turnYaw += i.dYaw; this.d.skater.setTurntable?.(this.turnYaw); } break;
@@ -310,7 +336,7 @@ export class App {
     this.lastResult = d.sim.result();
     this.lastRewards = d.meta.applyRun(this.lastResult);   // instant retry still grants everything
     d.save.flush();
-    d.analytics.track('run_end', { score: this.lastResult.score, distance_m: Math.round(this.lastResult.distance) });
+    this.runEnd = { result: this.lastResult, rewards: this.lastRewards };   // run_end goes once its retry kind is known
     this.setScreen('crash', { result: this.lastResult });
     this.resultsTimer = setTimeout(() => {
       this.resultsTimer = null;
@@ -320,6 +346,7 @@ export class App {
 
   private showResults(): void {
     const d = this.d;
+    this.sendRunEnd('results');
     d.loop.setRunning(false);
     d.ui.hud.show(false);
     d.play.classList.remove('run');
@@ -332,7 +359,18 @@ export class App {
 
   private retry(): void {
     this.d.analytics.track('retry_tap', { ms_since_crash: Math.round(performance.now() - this.crashAtMs) });
+    if (this.screen === 'crash') this.sendRunEnd('instant');
     this.startRun();
+  }
+
+  /** run_end with the DESIGN §21 properties (MU's runEndProps), once per ended run. */
+  private sendRunEnd(kind: 'instant' | 'results'): void {
+    const r = this.runEnd;
+    if (!r) return;
+    this.runEnd = null;
+    const props = this.d.runEndProps?.(r.result, r.rewards, kind)
+      ?? { score: r.result.score, distance_m: Math.round(r.result.distance), retry_kind: kind };
+    this.d.analytics.track('run_end', props);
   }
 
   private clearCrashTimers(): void {

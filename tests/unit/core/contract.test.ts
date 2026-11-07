@@ -23,7 +23,7 @@ export const FACTORY_SIGNATURES: [
   Equals<Gen['createWorldQuery'], (gen: WorldGen) => WorldQuery>,
   Equals<typeof import('../../../src/sim')['createSim'], (tables: TrickTables, deps?: SimDeps) => Sim>,
   Equals<typeof import('../../../src/tricks')['TRICKS'], TrickTables>,
-  Equals<typeof import('../../../src/input')['createInput'], (el: HTMLElement, opts: { screenW: () => number; safeBottom: () => number }) => InputSource>,
+  Equals<typeof import('../../../src/input')['createInput'], (el: HTMLElement, opts: { screenW: () => number; safeBottom: () => number; screenH?: () => number }) => InputSource>,   // screenH added @G1
   Equals<typeof import('../../../src/input')['createRecognizer'], (cfg?: Partial<RecognizerConfig>) => GestureRecognizer>,
   Equals<typeof import('../../../src/gfx')['createGfx'], (canvas: HTMLCanvasElement, q: QualityTier) => GfxContext>,
   Equals<Render['createWorldView'], (ctx: GfxContext) => WorldView>,

@@ -1,9 +1,14 @@
 // debug/contrast.ts: the DESIGN §18.4 readability gate measured on the rendered frame (`__skate.contrast()`,
 // `shots --contrast`). Everything is located with the live camera (CameraRig.project) and read back from the canvas:
 //   - hazard: every `crash`-top solid fully in view below the HUD band (one being scrolled in at the top edge is
-//     measured once it is whole). Its silhouette (convex hull of the projected box, minus nearer solids and the
-//     skater) vs the ground ring around it (the hull dilated by RING_PX, minus every solid): mean relative luminance,
-//     contrast ratio (L1 + 0.05) / (L2 + 0.05). Gate ≥ 2.5:1.
+//     measured once it is whole). Its silhouette: the pixels inside the convex hull of the projected box whose
+//     visible surface lies inside that box and above the ground under it (gfx/silhouette.ts reads the world point
+//     under every pixel; the ground is WorldQuery.groundAt), so the road or sidewalk seen between a barrier's posts or
+//     past a car's bonnet is ground, not hazard (DESIGN §18.4 "hazard silhouette"; without a depth read-back, the
+//     hull minus nearer solids). Minus the skater. A thin grindable (rail, beam, dock lip: ≤ GRIND_TOP_MAX_M across,
+//     one of its own grind edges along its top) is aimed at, not avoided: it is held to the edge rule only. Vs the ground
+//     ring around it (the hull dilated by RING_PX, minus every solid): mean relative luminance, contrast ratio
+//     (L1 + 0.05) / (L2 + 0.05). Gate ≥ 2.5:1.
 //   - edge: every visible grind edge. At 5 points along it, a patch across the projected edge (5 px along it): the
 //     cream stripe is the run of offsets around the brightest one that stays above halfway to the surface, the ink
 //     underline the same around the darkest (a run that fills the search window to its end is a surface, not a
@@ -16,6 +21,7 @@
 import { Box3, Vector3 } from 'three';
 import type { V3 } from '../core/math';
 import { CAMERA } from '../core/tuning';
+import { originOf, readWorldPoints } from '../gfx';
 import type { DebugHost } from './api';
 
 export const CONTRAST_GATE = { hazard: 2.5, edge: 1.8 } as const;
@@ -26,6 +32,11 @@ export const RING_PX = 8;
 export const EDGE_SEARCH_M = 0.1;
 /** Patch length along the edge at each sample point, device px (odd). */
 const ALONG_PX = 5;
+/** A silhouette pixel's world point lies inside its solid's box grown by this much (m), and more than SIL_GROUND_M
+ *  above the box bottom and the ground under it (the ground, the contact shadow and decals are not the hazard). */
+const SIL_PAD_M = 0.05, SIL_GROUND_M = 0.025;
+/** A crash solid at most this wide (m) with one of its obstacle's grind edges along its top is a grindable. */
+const GRIND_TOP_MAX_M = 0.35;
 
 import type { ContrastItem, ContrastReport } from '../core/debug';
 export type { ContrastItem, ContrastReport };
@@ -62,6 +73,13 @@ const median = (v: number[]) => { const s = [...v].sort((a, b) => a - b); return
 
 /** Renders the current frame and measures it. Call in manual mode (`__skate.manual(true)`) for a stable frame. */
 export function measureContrast(host: DebugHost): ContrastReport {
+  // The gate reads the game frame: the debug overlay's lines are hidden while it measures.
+  const overlay = host.gfx.scene.getObjectByName('debugOverlay'), overlayOn = overlay?.visible ?? false;
+  if (overlay) overlay.visible = false;
+  try { return measureFrame(host); } finally { if (overlay) overlay.visible = overlayOn; }
+}
+
+function measureFrame(host: DebugHost): ContrastReport {
   host.loop.renderNow();
   const canvas = host.gfx.renderer.domElement;
   const W = canvas.width, H = canvas.height;
@@ -110,7 +128,7 @@ export function measureContrast(host: DebugHost): ContrastReport {
   const usable = (x: number, y: number) => x >= 0 && y >= hudBottom && x < W && y < H && !inSkater(x, y) && !inCoin(x, y);
 
   const obs = sim.world.obstacles(s - 2, s + ahead);
-  interface Shape { poly: P[]; s0: number; y1: number; top: string; kind: string; id: number; bb: [number, number, number, number] }
+  interface Shape { poly: P[]; s0: number; y1: number; top: string; kind: string; id: number; bb: [number, number, number, number]; box: typeof obs[number]['solids'][number]['box'] }
   const shapes: Shape[] = [];
   for (const o of obs) {
     for (const so of o.solids) {
@@ -119,10 +137,29 @@ export function measureContrast(host: DebugHost): ContrastReport {
       for (let i = 0; i < 8; i++) pts.push(proj({ s: i & 4 ? b.s1 : b.s0, x: i & 1 ? b.x1 : b.x0, y: i & 2 ? b.y1 : b.y0 }));
       const poly = hull(pts);
       const xs = poly.map((p) => p[0]), ys = poly.map((p) => p[1]);
-      shapes.push({ poly, s0: b.s0, y1: b.y1, top: so.top, kind: o.kind, id: o.id, bb: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] });
+      // A thin grindable: one of its obstacle's grind edges runs along its top (sampled at the solid's mid s).
+      const sm = (b.s0 + b.s1) / 2;
+      const grind = Math.min(b.x1 - b.x0, b.s1 - b.s0) <= GRIND_TOP_MAX_M && o.edges.some((e) => {
+        if (e.pickOnly || e.a.s > sm || e.b.s < sm) return false;
+        const u = (sm - e.a.s) / Math.max(1e-6, e.b.s - e.a.s), ex = e.a.x + (e.b.x - e.a.x) * u, ey = e.a.y + (e.b.y - e.a.y) * u;
+        return Math.abs(ey - b.y1) < 0.15 && ex >= b.x0 - 0.06 && ex <= b.x1 + 0.06;
+      });
+      shapes.push({ poly, s0: b.s0, y1: b.y1, top: grind ? 'grind' : so.top, kind: o.kind, id: o.id, bb: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)], box: b });
     }
   }
   const items: ContrastItem[] = [];
+
+  // The world point under every pixel (same scene, same camera), for the silhouette test.
+  const wp = readWorldPoints(host.gfx.renderer, host.gfx.scene, host.cameraRig.camera, W, H);
+  const originS = originOf(s);
+  const inSolid = (b: Shape['box'], x: number, y: number): boolean => {
+    const i = (y * W + x) * 3, xyz = wp!.xyz, wx = xyz[i]!;
+    if (Number.isNaN(wx)) return false;
+    const wy = xyz[i + 1]!, ws = originS - xyz[i + 2]!;
+    if (!(wx >= b.x0 - SIL_PAD_M && wx <= b.x1 + SIL_PAD_M && ws >= b.s0 - SIL_PAD_M && ws <= b.s1 + SIL_PAD_M
+      && wy >= b.y0 + SIL_GROUND_M && wy <= b.y1 + SIL_PAD_M)) return false;
+    return wy >= sim.world.groundAt(ws, wx, wy + 0.01).y + SIL_GROUND_M;
+  };
 
   const ringPx = RING_PX * sx;
   for (const h of shapes) {
@@ -140,7 +177,7 @@ export function measureContrast(host: DebugHost): ContrastReport {
         if (!usable(x, y)) continue;
         const l = L[y * W + x]!, px = x + 0.5, py = y + 0.5;
         if (inside(h.poly, px, py)) {
-          if (!nearer.some((o) => inside(o.poly, px, py))) { fg += l; nf++; }
+          if (wp ? inSolid(h.box, x, y) : !nearer.some((o) => inside(o.poly, px, py))) { fg += l; nf++; }
         } else if (inside(ring, px, py) && !others.some((o) => inside(o.poly, px, py))) { bg += l; nb++; }
       }
     }

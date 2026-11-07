@@ -15,3 +15,4 @@ export { readViewport, onViewportChange } from './canvas';
 export { colorBox, mergeAll } from './geom';
 export { originOf, toWorld } from './space';
 export { GOLDEN } from './palette';
+export { readWorldPoints, type WorldPoints } from './silhouette';   // debug only (the contrast gate); tree-shaken from the game

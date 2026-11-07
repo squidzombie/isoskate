@@ -240,7 +240,7 @@ class WorldViewImpl implements WorldView {
     const fs = frameStartMs();
     // The saved quality setting may go back to 'auto' after a manual pick (the save is written ~0.5 s after Settings).
     const tNow = fs ?? nowMs();
-    if (tNow - this.autoCheckedAt > AUTO_RECHECK_MS) { this.autoCheckedAt = tNow; this.autoOn = autoAllowed(); }
+    if (this.autoWanted === null && tNow - this.autoCheckedAt > AUTO_RECHECK_MS) { this.autoCheckedAt = tNow; this.autoOn = autoAllowed(); }
     // Auto quality: last frame's work (frame start → end of render submit) against the frame interval.
     if (fs !== null) {
       if (this.lastFrameStart >= 0 && this.autoOn && this.workMs > 0 && fs > this.lastFrameStart) {
@@ -324,6 +324,15 @@ class WorldViewImpl implements WorldView {
     this.updateTrain(f, origin);
     this.updateFlash(f, origin);
   }
+
+  /** WorldView.setAutoQuality (core @G1): the App says whether the saved quality is 'auto'. Once called, the saved
+   *  setting is no longer read here; automation and a ?quality= URL still keep auto-adjust off. */
+  setAutoQuality(on: boolean): void {
+    this.autoWanted = on;
+    this.autoOn = on && autoEnvAllowed();
+    if (this.autoOn) this.auto.tier = this.ctx.quality;
+  }
+  private autoWanted: boolean | null = null;
 
   setQuality(q: QualityTier): void {
     this.autoOn = false;
@@ -762,15 +771,22 @@ function pushP95(list: number[], v: number): number {
 /** How often the saved quality setting is re-read (ms), so picking 'auto' again in Settings turns auto-adjust back on. */
 const AUTO_RECHECK_MS = 2000;
 
-/** Auto quality is on unless the URL forces a tier, the saved setting is not 'auto' (read-only; a G2 request asks for
- *  a WorldView hook instead, docs/core-requests.md) or the page is automated (navigator.webdriver). */
-function autoAllowed(): boolean {
+/** Auto quality may run unless the URL forces a tier or the page is automated (navigator.webdriver). */
+function autoEnvAllowed(): boolean {
   try {
-    const g = globalThis as { location?: { search?: string }; localStorage?: Storage; navigator?: { webdriver?: boolean } };
+    const g = globalThis as { location?: { search?: string }; navigator?: { webdriver?: boolean } };
     if (typeof g.location === 'undefined') return false;
     // Under automation (e2e, shots) frame timings are meaningless (SwiftShader): the tier stays where it started.
     if (g.navigator?.webdriver) return false;
-    if (g.location.search && /[?&]quality=/.test(g.location.search)) return false;
+    return !(g.location.search && /[?&]quality=/.test(g.location.search));
+  } catch { return false; }
+}
+/** Before the App calls setAutoQuality (tests, gallery): the environment allows it and the saved setting is 'auto'
+ *  (read-only). In the game the App drives it (WorldView.setAutoQuality, applied @G1). */
+function autoAllowed(): boolean {
+  if (!autoEnvAllowed()) return false;
+  try {
+    const g = globalThis as { localStorage?: Storage };
     const raw = g.localStorage?.getItem('dusklane.save');
     if (raw) { const q = (JSON.parse(raw) as { settings?: { quality?: string } }).settings?.quality; if (q && q !== 'auto') return false; }
     return true;

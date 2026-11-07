@@ -28,4 +28,5 @@ export { LAYOUTS, BAND_CODE, LIP, type StreetLayout } from './props/street';
 export { COLS, covers, colRange } from './antistraight';
 export { AREA_TEMPLATES, SHARED, GATEWAYS, TEMPLATES } from './templates';
 export { Generator } from './generator';
-export { plan as planLine, type PlanInput, type PlanOutput } from './planner';
+export { plan as planLine, reachable, type PlanInput, type PlanOutput, type ReachOut } from './planner';
+export { NC as GRID_CELLS, cellX as gridCellX } from './validator/grid';

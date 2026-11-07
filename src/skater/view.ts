@@ -21,7 +21,7 @@ import { Sfc32 } from '../core/rng';
 import type { GameEvent } from '../core/events';
 import type { GfxContext, RenderFrame, SkaterPose, SkaterView } from '../core/view';
 import type { AreaBlend } from '../core/world';
-import { originOf } from '../gfx';
+import { originOf, sharedUniforms } from '../gfx';
 import { Animator, type AnimInput, type AnimStyle } from './animator';
 import { buildBoard } from './board';
 import { buildBody } from './body';
@@ -113,6 +113,9 @@ export class SkaterViewImpl implements SkaterView {
 
   constructor(private readonly ctx: GfxContext) {
     this.object3d.name = 'skater';
+    // The crash desaturation follows the world's (DESIGN §18.8: one shared material uniform; wired @G1).
+    const desat = sharedUniforms(ctx).uDesat;
+    for (const u of [this.uni.body, this.uni.board, this.uni.helmet]) u.uDesat = desat;
     this.object3d.add(this.turn);
     this.turn.add(this.rig.bone.root);
     // One canvas per slot per view, redrawn in place on a switch. The draw callbacks read the current look, so a
@@ -243,7 +246,7 @@ export class SkaterViewImpl implements SkaterView {
 
   // ── internals ───────────────────────────────────────────────────────────────────────────────────────────────
   private makePart(name: string, tex: Texture, u: SkaterUniforms, skinned: boolean, parent: Object3D): Part {
-    const mat = toonMaterial(u, { map: tex }), omat = outlineMaterial();
+    const mat = toonMaterial(u, { map: tex }), omat = outlineMaterial(sharedUniforms(this.ctx).uDesat);
     let mesh: Mesh, outline: Mesh;
     if (skinned) {
       const sm = new SkinnedMesh(new BufferGeometry(), mat), so = new SkinnedMesh(new BufferGeometry(), omat);
