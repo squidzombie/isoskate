@@ -1424,6 +1424,8 @@ frames.ts: queue of timestamped gestures → InputFrame per tick:
 | Memory | No allocations in steady-state frames. Chunk buffers are pooled. |
 | Bundle | ≤ 350 KB gzip (`scripts/size-check.mjs` in CI) |
 
+**Bundle decision (G1, orchestrator).** At the G1 merge the production build is 410 KB gzip JS + CSS (fonts excluded; 399 KB JS + 11.5 KB CSS), against 268 KB at M0. M4's performance pass trims what is cheap and safe (dead code, duplicated tables, unused three imports, debug-only code). If the honest total is still above 350 KB after that, the budget becomes **420 KB gzip JS + CSS** (fonts excluded): a ~400 KB game loads in about a second on 4G and the PWA caches it. Visible quality cuts are not made to meet 350.
+
 ### 8.5 Skater rendering (SK)
 - **Body.** One **rigid-skinned** `SkinnedMesh`: every vertex is weighted 1.0 to one bone of the DESIGN §18.5 hierarchy.
   - Geometry is built per loadout from procedural parts and merged.

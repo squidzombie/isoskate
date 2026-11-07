@@ -61,13 +61,20 @@ test('Results → ROLL AGAIN takes ≤ 3 s from the crash (ROLL AGAIN works from
   // moment it is visible → the new run's first rendered frame.
   const t = await page.evaluate(() => new Promise<{ results: number; ref: number; click: number; run: number }>((done) => {
     const k = window.__skate!;
+    // The crash moment is when the App arms its 1.2 s Results timer (inside the crashing tick). A debug step also
+    // renders that frame, which under SwiftShader with the full world art takes up to ~1 s, so a clock read after
+    // step() returns would start late (G1). A reference timer with the App's delay is armed at the same moment: on a
+    // loaded CPU both fire late by the same amount.
+    const orig = window.setTimeout;
+    let crashAt = 0, refAt = 0;
+    (window as unknown as { setTimeout: unknown }).setTimeout = (fn: () => void, ms?: number) => {
+      if (ms === 1200 && !crashAt) { crashAt = performance.now(); orig(() => { refAt = performance.now(); }, 1200); }
+      return orig(fn, ms);
+    };
     k.start({ seed: 2 }); k.manual(true);
-    let s = k.step(120);
+    let s = k.step(1);
     while (s.alive && s.tick < 900) s = k.step(1);
-    const crashAt = performance.now();
-    // A reference timer with the App's delay: on a loaded CPU both fire late by the same amount.
-    let refAt = 0;
-    setTimeout(() => { refAt = performance.now(); }, 1200);
+    window.setTimeout = orig;
     const res = document.querySelector<HTMLElement>('#screens [data-screen="results"]')!;
     const obs = new MutationObserver(() => {
       if (!res.classList.contains('on')) return;
@@ -302,17 +309,30 @@ test('the instant-retry reward toast sits in the HUD band and is gone by 3.0 s',
   await boot(page, errors);
   // Crash, then a fresh touch 0.65 s later (dispatched in-page, so CPU load can't push it past the 1.2 s window).
   await page.evaluate(async () => {
-    const k = window.__skate!; k.start({ seed: 1 }); k.manual(true); let s = k.step(60); while (s.alive && s.tick < 900) s = k.step(1);
-    // One timer registered right after the crash: due before the App's 1.2 s Results timer even when a slow frame
-    // makes both overdue (a polling loop could be re-armed after it and lose the race).
-    await new Promise<void>((done) => setTimeout(() => {
-      k.manual(false);
-      const el = document.getElementById('play')!;
-      const o = { pointerId: 7, pointerType: 'touch', isPrimary: true, clientX: 195, clientY: 420, bubbles: true };
-      el.dispatchEvent(new PointerEvent('pointerdown', o));
-      el.dispatchEvent(new PointerEvent('pointerup', o));
-      done();
-    }, 650));
+    // The fresh touch is timed from the moment the App arms its 1.2 s Results timer (inside the crashing tick), with
+    // one timer registered right then: due before the App's timer even when a slow frame makes both overdue (the
+    // debug step renders the crash frame, up to ~1 s under SwiftShader with the full world art; G1).
+    const k = window.__skate!;
+    const orig = window.setTimeout;
+    await new Promise<void>((done) => {
+      const touch = () => {
+        k.manual(false);
+        const el = document.getElementById('play')!;
+        const o = { pointerId: 7, pointerType: 'touch', isPrimary: true, clientX: 195, clientY: 420, bubbles: true };
+        el.dispatchEvent(new PointerEvent('pointerdown', o));
+        el.dispatchEvent(new PointerEvent('pointerup', o));
+        done();
+      };
+      let armed = false;
+      (window as unknown as { setTimeout: unknown }).setTimeout = (fn: () => void, ms?: number) => {
+        if (ms === 1200 && !armed) { armed = true; orig(touch, 650); }
+        return orig(fn, ms);
+      };
+      k.start({ seed: 1 }); k.manual(true);
+      let s = k.step(1);
+      while (s.alive && s.tick < 900) s = k.step(1);
+      window.setTimeout = orig;
+    });
   });
   await expect(screenOn(page, 'crash')).not.toHaveClass(/\bon\b/);
   await expect(screenOn(page, 'results')).not.toHaveClass(/\bon\b/);

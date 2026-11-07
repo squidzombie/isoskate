@@ -56,6 +56,20 @@ Entry format:
 - **HUD (MU keeps them):** `data-hud="score|dist|combo|trick|coins|pause"` on the HUD pieces and an optional `preview(values | null)` on the HudApi object (`__skate.ext.hud`).
 - **`__skate.ext`** is part of the contract now (core/debug.ts › DebugExt); shots.mjs and the e2e specs use only it and the DebugAPI.
 
+### Applied @G1 (gate G1: GP, WG, WA, MU merged; additive, TECH §4 updated to match)
+- `core/input.ts`: `InputFrame.longTap?`, `Gesture` `holdEnd.release?` (GP 1); `longTapMaxMs` 600, touch.spec's prime holds 700 ms.
+- `core/events.ts`: `rewind` gains `cause? / obstacleId? / kind? / left?` (GP 3); `grindSwitch.late?` (GP 6).
+- `core/debug.ts`: `DebugSnapshot.sim?: DebugSimInfo` (GP 4), filled by debug/api.ts from `simDebug(sim)`.
+- `core/save.ts`: `SaveV1.daily.giftBonusDay?`, `SaveV1.crates.queue?` (MU).
+- `core/tuning.ts`: `FIRST_VISIT_SEC`, `VISIT_SEC`, `GATEWAY_SEC` (MU); world/gen/areas.ts re-exports them.
+- `core/view.ts`: `WorldView.setAutoQuality?`, `Vfx.setReducedMotion?` (WA). `core/ui.ts`: `UiApi.setMonetization?` (MU).
+- `core/decor.ts`: one `Decor.y` definition (the surface it stands on / hangs from; hung kinds take a `mount` param).
+- Factory: `createInput(el, { screenW, safeBottom, screenH? })` (the cached viewport height; MU's layout-read finding).
+- Behaviour changes approved at the gate (TECH §6.4–6.6): the 0.15 m edge nudge (GP 9), no re-capture of the edge a
+  pop-out left (GP 2, on), a pre-press manual needs the press to go down in that air (found by the thumb-bot gate
+  on the real recognizer: a 250 ms tap under way at a 0.15 m roll-off started a manual).
+- Rejected: moving `RULES` into core (GP 5): they stay in tricks/score.config.ts.
+
 ## M0-sim (sim/, tricks/, world/gen/ minimum, debug/bots/ SafeKey follower)
 
 No change to `src/core/` is needed for M0 to work: everything below is implemented inside sim/, tricks/, world/gen/
@@ -201,7 +215,7 @@ Everything below is implemented inside sim/, tricks/ and input/ with local exten
 any of these core changes. Requests 1–4 are additive (optional fields); request 2 changes frozen magnet/capture
 behaviour and is behind a flag.
 
-### 1. InputFrame.longTap: a 350–600 ms still press reads as a tap   (status: open; ships with longTapMaxMs 400, see the e2e note)
+### 1. InputFrame.longTap: a 350–600 ms still press reads as a tap   (status: applied @G1: core `InputFrame.longTap?` and `holdEnd.release?`; `longTapMaxMs` 600; touch.spec's prime holds 700 ms)
 - File / symbol: core/input.ts › InputFrame, Gesture; tests/e2e/touch.spec.ts › liveRun (INT)
 - Change: `longTap?: boolean;   // edge: a still touch released after tapMaxMs, ≤ longTapMaxMs after down (a HOLD that never moved)`
   on InputFrame, and `{ k: 'holdEnd'; tMs: number; release?: true }` on Gesture.
@@ -228,7 +242,7 @@ behaviour and is behind a flag.
   Bots and tools that build InputFrames from gestures themselves (WG's thumb bot) should use input's `InputPipeline` /
   `FrameBuilder`, or set `longTap` the same way.
 
-### 2. Magnet and capture: no re-capture of the edge a pop-out left   (status: open; implemented behind `RULES.popOutSkipsOwnEdge`, default true)
+### 2. Magnet and capture: no re-capture of the edge a pop-out left   (status: applied @G1: on (`RULES.popOutSkipsOwnEdge` true); conformance, thumb and trick bot gates green with it; TECH §6.6)
 - File / symbol: sim/magnet.ts, sim/predict.ts, sim/grind.ts (TECH §6.6, frozen at M0); tricks/score.config.ts › RULES
 - Change: after a pop-out (TAP / ↑ / 180 Out) the air magnet skips the edge the board left; capture (and the capture
   prediction behind airLeft and the pick window) skips every edge of that obstacle when its top is landable (a ledge,
@@ -242,7 +256,7 @@ behaviour and is behind a flag.
   landing the validator already models; set the flag false to restore M0 exactly.
 - Local workaround meanwhile: the flag. Tests: tests/unit/sim/tricks.test.ts (transfer and the re-capture rule).
 
-### 3. GameEvent 'rewind' carries the crash it undid   (status: open)
+### 3. GameEvent 'rewind' carries the crash it undid   (status: applied @G1 as optional fields)
 - File / symbol: core/events.ts › GameEvent 'rewind'
 - Change: `{ t: 'rewind'; tick: number; toTick: number; cause?: CrashCause; obstacleId?: number | null; kind?: PropKind | null; left?: number }`
 - Why: the Lesson rewind (RunConfig.rewinds, TECH §6.7) is implemented: a ring of REWIND.ring snapshots every
@@ -251,7 +265,7 @@ behaviour and is behind a flag.
   to know what was hit. The count is `min(cfg.rewinds, REWIND.max)`; the 4th crash is a real one.
 - Local workaround meanwhile: the sim already pushes `sim › RewindEventExt` (those fields, all set).
 
-### 4. DebugSnapshot: the debug overlay data   (status: open)
+### 4. DebugSnapshot: the debug overlay data   (status: applied @G1: `DebugSnapshot.sim?: DebugSimInfo`, filled by debug/api.ts; the overlay draws the pick window, heat and airLeft)
 - File / symbol: core/debug.ts › DebugSnapshot; debug/api.ts › snapshot()
 - Change: `sim?: { airLeft: number; heat: number; window: number; bankIn: number; magnetEdge: number | null; transferArmed: boolean;
   pick: { open: boolean; edgeId: number; tCapture: number; inSec: number; dirs: Dir8[]; grind: GrindId | null } | null;
@@ -261,14 +275,14 @@ behaviour and is behind a flag.
   `ScoreState.combo.heat / bankIn`; the extra fields (picks so far, the grind they select, budget) come from the sim.
 - Local workaround meanwhile: `sim/index.ts › simDebug(sim): SimDebugInfo | null`.
 
-### 5. New trick-rule tunables live in tricks/score.config.ts › RULES   (status: info; move to core/tuning.ts at G1 if preferred)
+### 5. New trick-rule tunables live in tricks/score.config.ts › RULES   (status: rejected @G1 as a move: they stay in tricks/score.config.ts, where DESIGN §22 puts trick and scoring numbers; nothing outside sim/tricks reads them)
 - `manualHoldSec` 0.30 (a resting thumb manuals only after 0.30 s of stillness: the G0 "manual 200 ms into the link
   window" fix), `switchDoubleSec` 0.25 (grind switch doubles), `dropGapMinH` 0.5 (drop gaps), `popOutSkipsOwnEdge`
   (request 2), and two pose constants. The recognizer's `longTapMaxMs` sits with the other recognizer numbers in
   input/recognizer.ts DEFAULT_RECOGNIZER (400 for now, see request 1). Every trick point moved from tricks/defs.ts into score.config.ts › POINTS
   (DESIGN §22: score.config holds every scoring number); TRICKS is unchanged in content.
 
-### 6. GameEvent 'grindSwitch' marks a late re-pick   (status: open; additive optional field)
+### 6. GameEvent 'grindSwitch' marks a late re-pick   (status: applied @G1 as `late?: true`)
 - File / symbol: core/events.ts › GameEvent 'grindSwitch'
 - Change: `{ t: 'grindSwitch'; tick: number; from: GrindId; to: GrindId; late?: true }`
 - Why: a pick swipe in the 0.12 s after lock (DESIGN §6.3) changes the grind just locked; it is not a switch (no new
@@ -276,7 +290,7 @@ behaviour and is behind a flag.
   `late` switch as the grind's real name (update the popup / last-trick label; no switch cue).
 - Local workaround meanwhile: the sim already pushes `sim/grind.ts › GrindSwitchEventExt` with `late: true`.
 
-### 7. Design question: back-to-back manuals keep the heat running   (status: open, for the design owner; no core change)
+### 7. Design question: back-to-back manuals keep the heat running   (status: accepted @G1 by the design owner as built; DESIGN §24 row 60)
 - DESIGN §6.4 last bullet pauses the combo heat in every manual. With that, manual → roll → manual (release and
   re-press, or pulse the manual key one tick) holds a combo for a whole area visit without a real trick (review probe:
   35 manuals, 38 s, 13,992 pending from one kickflip; touch re-press 15 s), against §13.2 "you have to keep doing real
@@ -289,7 +303,7 @@ behaviour and is behind a flag.
   started straight after another one without leaving the ground."
 - Tests: tests/unit/sim/tricks.test.ts (back-to-back manuals, key and touch).
 
-### 8. Design question: a deliberate manual outside a combo starts one   (status: open, for the design owner; no core change)
+### 8. Design question: a deliberate manual outside a combo starts one   (status: accepted @G1 by the design owner as built; DESIGN §24 row 61)
 - §4.4 rule 3 says a manual "scores only inside a combo", §12.3 (Lesson Line, manual pads) says "Hold = manual. The
   combo counter and bank arc appear", §13.2 "any scored trick starts a combo".
 - Shipped: a manual that the touch rules allow outside a combo (a HOLD on a pad or raised landable top, the manual key
@@ -297,7 +311,7 @@ behaviour and is behind a flag.
   (75 + 100/s). The manual key on flat ground outside a combo rides unscored, as a resting thumb there starts nothing
   (rule 3 parity between touch and keys, and no free combo from holding S).
 
-### 9. Frozen M0 contact detail changed by the DESIGN §7 edge nudge   (status: open; info for WG's validator, copy into TECH §6.4)
+### 9. Frozen M0 contact detail changed by the DESIGN §7 edge nudge   (status: applied @G1: copied into TECH §6.4; the validator's grid does not replay landing x, conformance bot 0 crashes on the GP sim)
 - File / symbol: sim/collide.ts (landable top from above), sim/landing.ts › edgeNudge; core/tuning.ts › LAND.edgeNudge (0.15, already in core)
 - Change: an air landing on a raised landable top moves the board centre ≥ LAND.edgeNudge (0.15 m) inside the top's
   side edge (M0: 0.02 m), and targetX with it. Ground contact (rolling onto a top) keeps the M0 0.02 m. Same surface,
@@ -386,7 +400,7 @@ behaviour and is behind a flag.
   is an S_BARRIER and the Lesson Line uses a barrier there. Read once per Generator.
 - Why: hand-off notes. Local workaround: n/a.
 
-### Thumb bot taps are capped at 190 ms where a HOLD would start a manual   (status: info for GP; no core change)
+### Thumb bot taps are capped at 190 ms where a HOLD would start a manual   (status: info; G1: the pre-press manual now needs the press to go down in that air, sim/landing.ts, after the thumb gate found a tap under way at a curb roll-off)
 - File / symbol: debug/bots/thumb.ts; sim interpret (GP) › manualStart on HOLD with an open combo window or on a prop top
 - Change: none. TECH §11.2 asks for 60–260 ms taps; a 2nd-finger tap held ≥ 200 ms becomes a HOLD, which on the ground
   starts a manual when the combo window is open or the board is on a prop top (an unintended trick). The bot caps such
@@ -394,7 +408,7 @@ behaviour and is behind a flag.
   wants 260 ms taps to stay taps there, the recognizer / interpret rule is GP's call.
 - Why: 0 unintended tricks (gate.thumb). Local workaround: the cap.
 
-### BOTS.safe is the planner bot now; record sim fixtures with BOTS.conformance   (status: info for GP; no core change)
+### BOTS.safe is the planner bot now; record sim fixtures with BOTS.conformance   (status: applied @G1: the sim bench records with BOTS.conformance in beforeAll and times only the sim)
 - File / symbol: debug/bots/registry.ts › BOTS.safe, BOTS.conformance; tests/unit/sim/bench.test.ts, replay.test.ts (GP)
 - Change: none. `BOTS.safe` was the SafeKey follower at M0; it is now the planner bot of TECH §11.2 (delayed view,
   latency, jitter), about 5× costlier per tick to record with. The old behaviour is `BOTS.conformance`. GP's sim bench
@@ -458,38 +472,38 @@ behaviour and is behind a flag.
 
 ## WA: World art (W2a)
 
-### App: put the camera in 'title' on the Title screen   (status: open, for G2 / MU; no core change)
+### App: put the camera in 'title' on the Title screen   (status: applied @G1: game/app.ts; the Title and the menus opened from it use 'title', Locker / Shop 'locker'; home() resets the sim to the seed-1 preview)
 - File / symbol: game/app.ts › boot() / home() / open() (the two `TODO(WA)` lines)
 - Change: `this.setCamera('title')` when the Title screen opens (boot and home), `'run'` when a run starts, `'locker'` for Locker / Shop as now. The rig already implements all three (world/render/camera.ts: the 'title' mode is the static perspective diorama; menu cameras see the sky layer).
 - Why: the Title diorama (DESIGN §18.7) only shows when the rig is in 'title'; today the Title sits on the ortho run camera.
 - Local workaround meanwhile: none (gallery `title` scenes and `ui('locker')` show the menu cameras). The portrait Title framing (TITLE_CAM.portrait) shows the whole rider in the lower third with the sun glow and clouds over the vanishing point; coins keep their true size in menu cameras.
 
-### Quality setting → WorldView: an explicit auto-quality switch   (status: open; additive, optional)
+### Quality setting → WorldView: an explicit auto-quality switch   (status: applied @G1: `WorldView.setAutoQuality?`; wiring calls it from applySettings; the localStorage read stays only as the fallback before the App calls it)
 - File / symbol: core/view.ts › WorldView
 - Change: `setAutoQuality?(on: boolean): void;` (App calls it from the saved setting and on Settings changes).
 - Why: auto-adjust (TECH §8.9) must stay off when the player picked a tier. world/render reads it today without a contract.
 - Local workaround meanwhile: world/render/view.ts reads `localStorage['dusklane.save']` read-only (quality ≠ 'auto' → off) at start and every 2 s (so picking 'auto' again turns it back on), and turns auto off for `?quality=`, `navigator.webdriver` and right after an external `setQuality`.
 
-### Vfx reduced motion from the setting   (status: open; additive, optional)
+### Vfx reduced motion from the setting   (status: applied @G1: `Vfx.setReducedMotion?`; wiring passes reducedMotion || !effects)
 - File / symbol: core/view.ts › Vfx
 - Change: `setReducedMotion?(on: boolean): void;` (App calls it with settings.reducedMotion).
 - Why: DESIGN §18.8 reduced motion (no speed lines, no ambient drift, camera shake off). vfx/ implements it; the rig's shake is off with it too.
 - Local workaround meanwhile: vfx/ and the rig follow `matchMedia('(prefers-reduced-motion: reduce)')`; `VfxImpl.setReducedMotion` exists.
 
-### Contrast gate: measure the hazard silhouette, not the hull of its box   (status: open, for INT at G1: debug/contrast.ts; supersedes "thin grindable crash tops")
+### Contrast gate: measure the hazard silhouette, not the hull of its box   (status: applied @G1: patch applied, readWorldPoints exported from gfx/index.ts; still strict: road-coloured Downtown hazards read 1.47)
 - File / symbol: debug/contrast.ts › measureContrast (hazard items). Exact patch: `tests/unit/render/contrast-silhouette.diff` (`git apply tests/unit/render/contrast-silhouette.diff`, ~40 lines).
 - Change: (1) the silhouette of a crash solid is the pixels inside its projected hull whose visible surface lies inside that box and more than 2.5 cm above the ground under it (new `gfx/silhouette.ts › readWorldPoints`: the scene rendered once more into a depth texture with the same materials, unprojected per pixel; the ground is `WorldQuery.groundAt`). Without a read-back it falls back to today's hull. (2) A thin grindable (a crash solid ≤ 0.35 m across with one of its obstacle's non-pick grind edges along its top: handrail, flatbar, ibeam, dock lip) is held to the edge rule only.
 - Why: DESIGN §18.4 asks for the "hazard silhouette (mean rendered luminance, accent included)". The hull counts the road seen between a barrier's bollards, past a car's bonnet or round a bin as hazard, so the only way to pass it was the near-black "ink pool" painted over each hull (the G1 review's black slabs). With the patch the pools are gone: real contact shadows, lighter tops, bollards and chains that read as objects (the brief allows the gate change: "the gate may measure silhouettes the way DESIGN §18.4 intends").
 - Measured (`shots --contrast`, seed 1, 32 presets / blends, 390×844 + 1280×800): WA alone + patch: all pass, min hazard 2.61, min edge 2.41. WA + WG (2282568) + patch: all pass, min hazard 2.83, min edge 2.26. WA alone without the patch fails (min hazard 1.98: bins and news boxes whose hull corners show road). The gallery (`tests/unit/render/gallery.mjs`) uses the same gate and exits 1 on a run-view failure.
 - Local workaround meanwhile: none (without the patch `shots --contrast` fails on pkg/wa).
 
-### Decor.y of hung side kinds   (status: open, doc-only: core/decor.ts field conventions; WA reads both)
+### Decor.y of hung side kinds   (status: applied @G1 with the opposite convention: `y` is the surface it hangs from for every non-overhead kind, and awning / blade_sign / banner get a documented `mount` param; WG emits y = sidewalk + mount 2.6 / 2.8 / 2.4 / 3.0, WA draws at y + mount, its two-way heuristic removed; TECH §4.14)
 - File / symbol: core/decor.ts › header "Field conventions" (`y`).
 - Change: add "Side kinds hung on a facade or a post (awning, blade_sign, banner) give their lowest point in `y`, like overhead kinds" (what world/gen emits: sidewalk + 2.6 / 2.8 / 2.4 / 3.0 m).
 - Why: WA added its own mounting height on top of WG's, so awnings floated at the second floor in the merged game.
 - Local workaround meanwhile: world/render/kits/decor.ts › `hungY`: a `y` ≥ 1.2 m above the sidewalk edge is the lowest point; a ground-level `y` gets the kind's default mount (HUNG). Unit-tested both ways.
 
-### Auto-adjust tier changes → the 'quality' app event   (status: open, for G1 wiring; additive, optional)
+### Auto-adjust tier changes → the 'quality' app event   (status: applied @G1 in wiring only (no core change): render() compares gfx.quality with the last reported tier and emits appBus 'quality')
 - File / symbol: core/view.ts › WorldView (or game/wiring.ts only)
 - Change: `onQualityChange?(cb: (tier: QualityTier) => void): void;` on WorldView, or wiring compares `gfx.quality` with its own `tier` once per frame and emits `appBus { t: 'quality', tier }` on a change.
 - Why: auto-adjust (world/render/quality.ts) lowers the tier mid-run through setGfxQuality; nothing tells MU's overlay (the grain should go with the low tier) or the analytics.
@@ -515,7 +529,7 @@ behaviour and is behind a flag.
 
 ## SK: Skater and cosmetics (W2b)
 
-### Shared crash-desaturation uniform for the skater materials   (status: deferred to WA (W2a): nothing desaturates the world yet; WA adds `sharedUniforms` with the crash grading, SK then patches the toon materials)
+### Shared crash-desaturation uniform for the skater materials   (status: applied @G1: skater toon and outline materials take gfx `sharedUniforms(ctx).uDesat` by reference)
 - File / symbol: gfx/index.ts (INT/WA) › a shared `{ uDesat: IUniform<number> }` (DESIGN §18.8 "40% desaturate through a shared material uniform").
 - Change: `export function sharedUniforms(ctx: GfxContext): { uDesat: IUniform<number> }` (one object per context).
 - Why: the skater's toon materials patch their shaders (skater/materials.ts); with the shared uniform they would desaturate with the world during the crash slow-mo instead of staying fully saturated.
@@ -535,7 +549,7 @@ behaviour and is behind a flag.
 - **Extras on the concrete view** (`skater/index.ts › SkaterViewImpl`): `stats()` (draw calls, triangles incl. outline twins, last switch ms), `snap()`, `setShowcaseTime(t)`, `meshes()`. `content/index.ts` adds `itemById`, `itemsOfSlot`, `loadoutOf`.
 - **Contact sheets:** `PORT=5183 node tests/unit/skater/sheet.mjs` (Vite on $PORT) writes `artifacts/sheets/*.png`; `scripts/shots.mjs --cosmetics` (M0-io) can drive the same items in-game through `__skate.ui('locker', { preview, yaw })`.
 
-### Design question: board identity in the run at 31 px   (status: open, for the design owner at G2; not a contract change)
+### Design question: board identity in the run at 31 px   (status: accepted @G1 by the design owner: a thin palette-coloured grip border, one tunable in skater.config.ts, default on; not built at G1, M5)
 - DESIGN §15.2 gives every board the same grip (`#2E2A33`) and a natural ply edge, and the run camera (35° down, from behind) sees only the grip under the shoes. So in a run a board shows its graphic only during flips (bottom up from about 90° to 270° of roll). It also shows in the Locker / Shop board display and on the card art (below).
 - Proposal: a palette-coloured grip cut at the tail kick (the graphic shows through), or a thin palette-coloured grip border. Either would be one tunable in `skater.config.ts`. Not implemented, because DESIGN fixes the grip.
 
@@ -550,34 +564,34 @@ behaviour and is behind a flag.
 
 ## MU: Meta and UI (W3a)
 
-### App: open a menu screen from another menu screen   (status: open, for G3; no core change)
+### App: open a menu screen from another menu screen   (status: applied @G1: game/app.ts accepts `open` from locker / shop / crates / stats / rewards / settings (not over Pause))
 - File / symbol: game/app.ts › onIntent('open') (INT)
 - Change: also accept `{ k: 'open', screen }` while the current screen is `locker`, `shop`, `crates`, `stats`, `rewards` (and `settings` when it was not opened over Pause), going through the same `open(screen)` path.
 - Why: Locker "Get more" → Shop, Shop → Crates, Crates → Shop and the Results reward rows link menus to each other (DESIGN §17.1).
 - Local workaround meanwhile: `ui/index.ts › ctx.go(screen)` raises `{ k: 'home' }` and then `{ k: 'open', screen }` when the current screen is a menu (both synchronous, so the Title never paints). It keeps working unchanged once the App accepts the direct open.
 
-### UI: the real monetization provider   (status: open, for G3)
+### UI: the real monetization provider   (status: applied @G1: `UiApi.setMonetization?` in core/ui.ts; wiring passes the shared provider)
 - File / symbol: game/wiring.ts (INT) › after `createUi(root)`; optionally core/ui.ts › `UiApi.setMonetization?(p: MonetizationProvider): void`
 - Change: `(ui as { setMonetization?(p: MonetizationProvider): void }).setMonetization?.(monetization);`
 - Why: DESIGN §20 / TECH §4.10: "the UI shows an offer only if eligible() && provider.isAdReady()". The UI runs the whole rewarded flow (Results `results_double_coins` slot: policy `meta/offers.ts` → `provider.showRewarded` → `MetaExt.grantOffer`), so App can keep ignoring `{ k: 'rewarded' }` (it is still raised).
 - Local workaround meanwhile: `ui/index.ts` makes its own provider with `platform › createMonetization({ fakeAds: readFlags().fakeAds })`: the NullProvider in production (no ad UI ever shows), the FakeProvider with `?fakeads=1`. Remove the fallback when wiring injects the shared one.
 
-### Back up / Restore performed by the UI   (status: info, for G3)
+### Back up / Restore performed by the UI   (status: info; accepted @G1: the App keeps ignoring the `backup` / `restore` intents)
 - File / symbol: core/ui.ts › UiIntent `backup` / `restore` (no change)
 - Behaviour: Settings › Export shows `SaveStore.export()` (copy, download, share); Restore takes a pasted code or a picked file, asks once, calls `SaveStore.import(json)` through `MetaExt.importSave`, then **reloads the page** so every module (settings, loadout, audio volumes, quality) re-reads the restored save. Both intents are still raised for the App. G3: the App may keep ignoring them; if it handles `restore`, it must not import a second time (harmless, but pointless) and should not fight the reload.
 
-### SaveV1.daily: the day the rewarded gift bonus was used   (status: open; additive)
+### SaveV1.daily: the day the rewarded gift bonus was used   (status: applied @G1 as `giftBonusDay?`)
 - File / symbol: core/save.ts › SaveV1['daily']
 - Change: `giftBonusDay?: string | null;   // YYYY-MM-DD the daily_gift_bonus offer was granted (once per day, DESIGN §20)`
 - Why: `daily_gift_bonus` is "once per day"; `adsDay`/`adsCount` count every rewarded ad.
 - Local workaround meanwhile: `save/schema.ts › SaveDailyExt`, kept by `save/sanitize.ts` when present; `meta/offers.ts` reads it.
 
-### run_end with the DESIGN §21 properties   (status: open, for G3 / M4)
+### run_end with the DESIGN §21 properties   (status: applied @G1: App tracks run_end once per run with runEndProps (passed in by wiring); retry_kind 'instant' at an instant retry, 'results' once Results show)
 - File / symbol: game/app.ts › onCrash / retry (INT)
 - Change: track `run_end` with `meta/index.ts › runEndProps(result, rewards, retryKind)` (score, distance_m, duration_s, area_reached, max_speed, best_combo, coins, xp, new_best, lost_combo, retry_kind). The retry kind is known at the retry tap ('instant') or at ROLL AGAIN ('results').
 - Why: the App tracks `run_end` with score and distance only. Meta/UI already track their own events: `level_up`, `trick_counts`, `shop_purchase`, `crate_open`, `equip`, `wishlist_set` (meta), and `crash`, `combo_banked` (aggregated per run), `area_reached`, `hint_shown`, `shop_view`, `rewarded_offer_shown/_accepted/_completed` (ui). `hint_learned` belongs to the onboarding driver (M4).
 
-### For GP / INT: a layout read on every touch-down   (status: open; no core change)
+### For GP / INT: a layout read on every touch-down   (status: applied @G1: createInput takes an optional `screenH` (the cached viewport height) from wiring; TECH §4.13)
 - File / symbol: input/index.ts › `syncMetrics` (reads `window.innerHeight` on each pointer `down`)
 - Why: TECH §9 "nothing reads layout during a run"; the dev guard (`ui/guard.ts`, `window.__dusklaneUi.guard` in debug builds) counts it. `innerHeight` can force a style/layout flush. Suggest reading it from the viewport (`opts`) like `screenW`, refreshed on resize. ui.spec drives its guard run with keys for that reason.
 
@@ -590,13 +604,13 @@ behaviour and is behind a flag.
 - **Settings the UI also applies itself:** `effects` / `reducedMotion` / `quality` drive the lo-fi overlay (`#lofi`, MU) directly; the App's `applySettings` still owns everything else. "Reduce effects" should also stop WA's speed lines (G3 wiring through `save.settings.effects`).
 - **Debug hook for the e2e:** debug builds expose `window.__dusklaneUi` (`guard`, `hudStats()`, `current()`, `reveal()`, `modalOpen()`); `tests/e2e/ui.spec.ts` uses it.
 
-### Area timeline constants in core   (status: open; additive)
+### Area timeline constants in core   (status: applied @G1: FIRST_VISIT_SEC / VISIT_SEC / GATEWAY_SEC in core/tuning.ts; world/gen/areas.ts re-exports, meta reads them)
 - File / symbol: core/tuning.ts (next to `ROLLOUT_SEC`, `LESSON_SEC`)
 - Change: `export const FIRST_VISIT_SEC = 40, VISIT_SEC = 35, GATEWAY_SEC = 4;   // DESIGN §12.1 area timeline (world/gen/areas.ts re-exports them)`
 - Why: the Results "next area" goal (`meta/results.ts › arrivalDistance`) needs the timeline; importing `world/gen` (WG's internals) from meta is a merge risk.
 - Local workaround meanwhile: `meta/results.ts › AREA_TIMELINE` mirrors 40 / 35 / 4; `tests/unit/meta/economy.test.ts` pins it against the frozen `WorldGen.areaAt`, so a WG change fails there, not silently on Results.
 
-### SaveV1.crates: reveals queued behind the pending one   (status: open; additive)
+### SaveV1.crates: reveals queued behind the pending one   (status: applied @G1 as `queue?`)
 - File / symbol: core/save.ts › SaveV1['crates']
 - Change: `queue?: { tier: CrateTier; rarity: string; item: ItemId | null; coins: number; dup: boolean }[];   // pre-committed results waiting behind pending (granted at their reveal)`
 - Why: crate contents are granted at the reveal, so a second rolled result (the Level 2 crate after an abandoned gift reveal) must persist, not overwrite or drop.

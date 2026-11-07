@@ -117,6 +117,11 @@ export function createHud(root: HTMLElement, o: HudOptions): HudExt {
   let floatText: string | null = null, stampText: string | null = null, cardText: [string, string] | null = null, rewardText: string | null = null;
   const flip: Record<string, boolean> = {};
   let rewardUntil = Infinity;                     // wall clock: "gone by 3.0 s" is real time, even on slow frames
+  let rewardTimer: ReturnType<typeof setTimeout> | null = null;
+  const hideReward = () => {
+    if (rewardTimer !== null) { clearTimeout(rewardTimer); rewardTimer = null; }
+    rewardUntil = Infinity; reward.classList.remove('on'); band.classList.remove('rewarding');
+  };
   /** Restarts a CSS animation without a layout read: alternate between two identical keyframe classes. */
   const restart = (el: HTMLElement, cls: string) => {
     flip[cls] = !flip[cls];
@@ -168,7 +173,13 @@ export function createHud(root: HTMLElement, o: HudOptions): HudExt {
     if (floatText !== null) { write(floatEl, floatText); floatText = null; restart(floatEl, 'fl'); }
     if (stampText !== null) { write(stamp, stampText); stampText = null; restart(stamp, 'st'); }
     if (cardText !== null) { write(cardTitle, cardText[0]); write(cardSub, cardText[1]); cardText = null; restart(card, 'cd'); }
-    if (rewardText !== null) { write(reward, rewardText); rewardText = null; reward.classList.add('on'); band.classList.add('rewarding'); rewardUntil = t + HUD_TIMING.rewardSec * 1000; }
+    if (rewardText !== null) {
+      write(reward, rewardText); rewardText = null; reward.classList.add('on'); band.classList.add('rewarding'); rewardUntil = t + HUD_TIMING.rewardSec * 1000;
+      // Also a timer: "gone by 3.0 s" must hold through a long frame (the first frames of a run build chunks), so the
+      // hide never waits for the next HUD update (G1: SwiftShader frames of 0.3–1 s left it on past 3 s).
+      if (rewardTimer !== null) clearTimeout(rewardTimer);
+      rewardTimer = setTimeout(hideReward, HUD_TIMING.rewardSec * 1000);
+    }
   };
 
   /** Clears the transient pieces under the band (bank float, speed stamp, area card) and the popup. */
@@ -188,7 +199,7 @@ export function createHud(root: HTMLElement, o: HudOptions): HudExt {
     hints,
     show(on: boolean) {
       root.classList.toggle('on', on);
-      if (!on) { popups.clear(); hints.hide(); reward.classList.remove('on'); band.classList.remove('rewarding'); rewardUntil = Infinity; }
+      if (!on) { popups.clear(); hints.hide(); hideReward(); }
       else force = true;
     },
     update(sc, cur: Readonly<SkaterState>, dt, anchor) {
@@ -207,7 +218,7 @@ export function createHud(root: HTMLElement, o: HudOptions): HudExt {
       if (warn !== ringWarn) { ringWarn = warn; combo.classList.toggle('warn', warn); }
       // Text: one batch at most 15 times a second (wall clock).
       const t = now();
-      if (t >= rewardUntil) { rewardUntil = Infinity; reward.classList.remove('on'); band.classList.remove('rewarding'); }
+      if (t >= rewardUntil) hideReward();
       const gap = t - lastBatch;
       if (!force && gap < 1000 / HUD_TIMING.textHz - 0.5) return;
       if (!force && batches > 0) minGap = Math.min(minGap, gap);

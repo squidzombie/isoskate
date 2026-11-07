@@ -362,7 +362,7 @@ The skater and board rotate together about the vertical axis. Spins start **only
 ### 6.4 Manual
 - **Start:**
   - a HOLD on the ground **while the combo's link window is open**, or on a manual pad or ledge top at any time;
-  - a pre-press held through landing or a grind exit (the touch went down 0.30–0.10 s before touchdown and stayed still);
+  - a pre-press held through landing or a grind exit (the touch went down in that air, 0.30–0.10 s before touchdown, and stayed still; §24 row 61);
   - a grab held through touchdown;
   - or the manual key (S / Shift) held on the ground.
 - **Look and feel:**
@@ -380,7 +380,7 @@ The skater and board rotate together about the vertical axis. Spins start **only
 - **Scoring:**
   - A manual counts as a link once per combo.
   - Manuals are exempt from repetition decay, because the shrinking budget already limits them.
-  - Manualling pauses combo heat (§13.2) but does not reset it, except the one linked manual.
+  - Manualling pauses combo heat (§13.2) but does not reset it, except the one linked manual, and except a manual started straight after another one without leaving the ground (G1, §24 row 60).
 
 ---
 
@@ -1443,15 +1443,16 @@ The palette lerps over 8 s, centred on each gateway. Palettes are looked up by `
 | **Golden** (Downtown) | `#8E7CC3` | `#F2A37B` | `#FFD9A0` | `#FFF1C9` / `#FFC27A` | `#F4C49A` | `#FFD7B0` / `#6B4E8C` | `#FFC48A`, 2.4, 22° | 1.05 |
 | **Late gold** (Suburbs) | `#7B8CC8` | `#F5B08A` | `#FFE2AE` | `#FFF6D8` / `#FFD08A` | `#F2CDA6` | `#FFE0BC` / `#6E5A93` | `#FFD09A`, 2.3, 26° | 1.0 |
 | **Sunset** (Docks) | `#5E5A9E` | `#E8826E` | `#FFB07A` | `#FFE0B0` / `#FF9466` | `#D99A86` | `#F7B79A` / `#5A3F7E` | `#FF9E6E`, 2.0, 12° | 1.05 |
-| **Blue hour** (Neon) | `#1E2350` | `#4B3F86` | `#C9729A` | none (sun has set) | `#3A3466` | `#8C8CE0` / `#3B2A5C` | `#9AA8FF`, 0.6, 30° (moon fill) | 1.2 |
+| **Blue hour** (Neon) | `#1E2350` | `#4B3F86` | `#C9729A` | none (sun has set) | `#3A3466` | `#A69CD8` / `#3B2A5C` (G1: was `#8C8CE0`, lifted so inverted hazards keep their volume) | `#9AA8FF`, 0.6, 30° (moon fill) | 1.2 |
 
 **Ground colours**
 
 | Surface | Colour |
 |---|---|
-| Asphalt | `#79728A` (lightened from `#5B5466`, then from `#6B6478` at G0, so ink hazards reach ≥ 2.5:1 in building shadows and against sun-lit faces) |
+| Asphalt | `#7F7890` (lightened from `#5B5466`, then `#6B6478` at G0, `#79728A` at G1, so ink hazards reach ≥ 2.5:1 in building shadows and against sun-lit faces) |
 | Wet neon asphalt | `#352F55` |
 | Neon hazard body | `#7A6FB0` (mid-value, lighter than the road; see §18.4) |
+| Ink hazard body / top (Downtown, Suburbs, Docks) | `#170F24` / `#4A3B6B` (G1: darker than the `#2B2140` ink so bodies hold 2.5:1 in shadow; tops one value step lighter so tall props read as volumes) |
 | Sidewalk / concrete | `#D9C3AE` |
 | Curb top | `#E8D6C2` |
 | Granite | `#B9A9A0` |
@@ -2007,3 +2008,15 @@ Every MUST-FIX was applied. The rows below record decisions where critiques conf
 | 57 | Dodges read as tricks | A fast dodge rising 30–40° popped a FS/BS 180 and the ground pop subtracted the dodge; a fresh medium-speed sideways stroke in the air heelflipped and lost the dodge | **Steering-thumb sectors** (§4.2, diagonals ±10° for the steering owner unless a parked thumb flicks first), **fresh steering strokes** need `fast` or `fromRest` sideways (§4.3), and **pops cancel no steering** (§4.4 rule 2). |
 | 58 | Sloppy taps | 12–20 px of drift within 100 ms gave nothing | **Sloppy tap** (§4.2): < 20 px (< 15 px sideways), no swipe, lifted ≤ 250 ms. A 350–600 ms press outside a combo is still nothing: it needs a recognizer/sim contract decision and touches the manual rules (GP, W1a). |
 | 59 | First run teaches nothing | No hints until M4 | **Interim first-runs hints** (runs 1–3, Roll-out only): "DRAG TO STEER", "TAP TO OLLIE" 1.2 s before the chain, "OLLIE ONTO THE LEDGE"; the crash cause line now says what to do ("tap to ollie it" / "steer around it"). The Lesson Line hints (M4) replace them. |
+
+### G1 merge gate (design-owner decisions and gate calls)
+
+| # | Topic | Finding | Resolution |
+|---|---|---|---|
+| 60 | Back-to-back manuals | Manual → roll → manual (re-press, or pulse S) held a combo for a whole visit without a real trick (35 manuals, 38 s from one kickflip) | **Accepted as built (GP):** a manual started straight after another one without leaving the ground keeps the combo heat running (`RULES.backToBackManualPausesHeat = false`); the first manual after every touchdown still pauses it, so the 3.0 / 2.2 / 1.6 / 1.2 / 1.0 budgets stay usable. §6.4 reads: "Manualling pauses combo heat, except a manual started straight after another one without leaving the ground." |
+| 61 | A deliberate manual outside a combo | §4.4 rule 3 ("scores only inside a combo") vs §12.3 ("Hold = manual. The combo counter and bank arc appear") | **Accepted as built (GP):** a manual the touch rules allow outside a combo (HOLD on a pad or raised landable top, the manual key on a top, a pre-press held through touchdown, a grab held through touchdown) starts a combo and is its link (75 + 100/s). The manual key on flat ground outside a combo still rides unscored, like a resting thumb. A pre-press must go down **in that air** (a tap already under way at a curb roll-off is an ollie, not a pre-press: the thumb-bot gate). |
+| 62 | The 350–600 ms press | Row 58 left it as "nothing" | **Long tap** (GP): a still press released 350–600 ms after down reads as a TAP wherever its HOLD started nothing (an ollie on the ground, a linked ollie out of a manual it started, the jump buffer, a pop-out). A 700 ms press still does nothing. |
+| 63 | Pop-out re-capture | The magnet re-locked the ledge a pop-out left, so you could not get off a ledge | **No re-capture of that edge** (GP, on): after a pop-out the magnet skips the edge it left, and capture skips every edge of that obstacle when its top is landable, unless you steer toward it. Rails and beams keep re-capture. |
+| 64 | `Decor.y` | WG gave awnings / signs / banners their mounting height in `y`, WA added its own again (awnings at ~5.9 m) | **One convention:** `y` is the surface an element stands on or hangs from; hung kinds carry a `mount` param (lowest point = `y + mount`). Only overhead kinds give their lowest point in `y` (TECH §4.14). |
+| 65 | Palette values | WA's gate tuning moved three colours | **Accepted:** asphalt `#7F7890`, Neon hemi sky `#A69CD8`, ink hazard bodies `#170F24` with `#4A3B6B` tops (§18.1). The pixel gate (`shots --contrast`, silhouette measured) is the source of truth. |
+| 66 | Board identity at 31 px | The grip hides the board graphic in runs | **Accepted:** a thin palette-coloured grip border, one tunable in `skater.config.ts`, default on (M5 if not built earlier). |

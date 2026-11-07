@@ -189,7 +189,7 @@ test.describe('landscape phone', () => {
   });
 });
 
-test('__skate.ui() goes through the app: Locker shows the turntable, Home restores the run camera', async ({ page }) => {
+test('__skate.ui() goes through the app: Locker shows the turntable, Back returns to the Title diorama', async ({ page }) => {
   const errors: string[] = [];
   await boot(page, errors, '&quality=low');
   await page.evaluate(() => window.__skate!.ui('locker', { preview: 'bd_plain_maple', yaw: 30 }));
