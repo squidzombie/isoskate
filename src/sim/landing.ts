@@ -135,7 +135,10 @@ export function touchdown(k: Ctx, g: GroundHit): void {
   else if (!rollOff || tricked || st.score.combo.window < 0) openWindow(st.score);
   if (c.jumpBuffer > 0) { c.jumpBuffer = 0; pop(k, 'roll', null); return; }   // buffered tap: ollie on touchdown
   // Pre-press manual: the press went down 0.30–0.10 s before touchdown and is still a press; or a grab held through.
+  // The press must have gone down in this air (or on the grind this air left): a tap already under way when the
+  // board rolled off a curb is an ollie on its way, not a pre-press (G1, DESIGN §6.4; the thumb bot gate found it).
   const age = c.pressRiseTick >= 0 ? (c.tick - c.pressRiseTick) * DT : -1;
-  if (f.press && age >= MANUAL.prePressMin - EPS && age <= MANUAL.prePressMax + EPS) startManual(k, 'prePress');
+  const pressedInAir = st.air.reason === 'grindEnd' || c.pressRiseTick > st.air.takeoffTick;
+  if (f.press && pressedInAir && age >= MANUAL.prePressMin - EPS && age <= MANUAL.prePressMax + EPS) startManual(k, 'prePress');
   else if (grabbedToLand) startManual(k, 'grab');
 }
