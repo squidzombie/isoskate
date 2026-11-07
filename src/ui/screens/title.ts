@@ -5,7 +5,7 @@
 // never a button, so a first tap always rolls). A crate reveal still waiting (the Level 2 crate after an instant retry,
 // or a reveal interrupted by a reload) opens by itself once per session, with "Later".
 import { GAME_NAME } from '../../core/ids';
-import { isMetaExt } from '../../meta';
+import { isMetaExt, UNLOCK_LEVEL } from '../../meta';
 import { fmtScore } from '../format';
 import { icon, type IconName } from '../icons';
 import { h, setText } from '../h';
@@ -76,7 +76,7 @@ export function titleScreen(ctx: ScreenCtx, getReveal?: () => Reveal): Screen {
       const held = ext ? ext.crateHeld('cardboard') + ext.crateHeld('street') + ext.crateHeld('pro') + ext.pendingCount() : 0;
       setText(bCrates, gift ? 'GIFT' : held ? String(held) : '');
       bCrates.classList.toggle('gift', gift);
-      setText(bShop, ext && !ext.unlocked('shop') ? 'LV 3' : '');
+      setText(bShop, ext && !ext.unlocked('shop') ? `LV ${UNLOCK_LEVEL.shop}` : '');
       bShop.classList.toggle('lock', !!ext && !ext.unlocked('shop'));
       autoReveal();
     },

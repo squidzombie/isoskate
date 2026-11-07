@@ -81,11 +81,11 @@ export function showcaseScreen(ctx: ScreenCtx, id: 'locker' | 'shop'): Screen {
     actWish.setAttribute('aria-pressed', String(wished));
     if (buyable) {
       const price = priceOf(m, it);
-      actBuy.replaceChildren(open ? coinTag(fmtN(price)) : 'LV 3');
+      actBuy.replaceChildren(open ? coinTag(fmtN(price)) : `LV ${UNLOCK_LEVEL.shop}`);
       actBuy.disabled = !open || m.data.wallet.coins < price;
-      actBuy.setAttribute('aria-label', open ? `Buy for ${price} coins` : 'Opens at Level 3');
+      actBuy.setAttribute('aria-label', open ? `Buy for ${price} coins` : `Opens at Level ${UNLOCK_LEVEL.shop}`);
       const need = price - m.data.wallet.coins;
-      setText(dInfo, !open ? 'Opens at Level 3' : need > 0 ? `${fmtN(need)} more coins` : m.price(it.id).featured !== null ? 'Featured today' : 'Try it on, then buy');
+      setText(dInfo, !open ? `Opens at Level ${UNLOCK_LEVEL.shop}` : need > 0 ? `${fmtN(need)} more coins` : m.price(it.id).featured !== null ? 'Featured today' : 'Try it on, then buy');
     } else if (it.source === 'level30' && !owned) setText(dInfo, 'Only from Level 30');
     else setText(dInfo, equipped ? 'On your rider now' : owned ? 'Yours · equipping is free' : '');
   };

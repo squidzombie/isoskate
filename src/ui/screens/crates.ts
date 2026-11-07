@@ -5,13 +5,13 @@
 // was claimed, the reserved `daily_gift_bonus` slot (DESIGN §20) offers one more box for an opt-in rewarded ad: only
 // when the policy allows it AND the provider has an ad ready, which the v1 NullProvider never does.
 import type { CrateTier } from '../../core/ids';
-import { isMetaExt, type MetaExt } from '../../meta';
+import { CARDBOARD_COINS, isMetaExt, UNLOCK_LEVEL, type MetaExt } from '../../meta';
 import { h, setText } from '../h';
 import type { Reveal } from '../reveal';
 import { btn, coinTag, fmtN, header, section, type Screen, type ScreenCtx } from './common';
 
 const TIERS: readonly { tier: CrateTier; name: string; blurb: string }[] = [
-  { tier: 'cardboard', name: 'Cardboard Box', blurb: 'Free once a day: 60–120 coins or an item' },
+  { tier: 'cardboard', name: 'Cardboard Box', blurb: `Free once a day: ${CARDBOARD_COINS.min}–${CARDBOARD_COINS.max} coins or an item` },
   { tier: 'street', name: 'Street Crate', blurb: 'Every rarity' },
   { tier: 'pro', name: 'Pro Crate', blurb: 'Rare or better' },
 ];
@@ -84,11 +84,11 @@ export function cratesScreen(ctx: ScreenCtx, getReveal: () => Reveal): Screen {
         if (!bonusShown) { bonusShown = true; m.track('rewarded_offer_shown', { placement: 'daily_gift_bonus' }); }
       }
       if (tier !== 'cardboard' && m.cratesEnabled()) {
-        const b = btn(shopOpen ? ['Buy', coinTag(fmtN(price))] : 'LV 3', () => buy(tier as 'street' | 'pro'), ctx, 'small buy', shopOpen ? `Buy a ${name} for ${price} coins` : 'Opens at Level 3');
+        const b = btn(shopOpen ? ['Buy', coinTag(fmtN(price))] : `LV ${UNLOCK_LEVEL.shop}`, () => buy(tier as 'street' | 'pro'), ctx, 'small buy', shopOpen ? `Buy a ${name} for ${price} coins` : `Opens at Level ${UNLOCK_LEVEL.shop}`);
         b.disabled = !shopOpen || m.data.wallet.coins < price;
         acts.push(b);
       }
-      const status = tier === 'cardboard' ? (gift ? 'Your daily gift is ready' : held ? 'Held: open it any time' : 'Next gift tomorrow') : held ? `${held} held` : shopOpen ? `${fmtN(price)} coins` : 'Shop opens at Level 3';
+      const status = tier === 'cardboard' ? (gift ? 'Your daily gift is ready' : held ? 'Held: open it any time' : 'Next gift tomorrow') : held ? `${held} held` : shopOpen ? `${fmtN(price)} coins` : `Shop opens at Level ${UNLOCK_LEVEL.shop}`;
       return h('article', { class: `crate-card t-${tier}${gift ? ' ready' : ''}`, dataset: { tier } },
         h('div', { class: 'cc-art' }, h('span', { class: `crate-ico ${tier}`, 'aria-hidden': 'true' })),
         h('div', { class: 'cc-main' }, h('h3', null, name), h('div', { class: 'cc-blurb' }, `${blurb} · ${status}`), oddsList, ...pityLines),
