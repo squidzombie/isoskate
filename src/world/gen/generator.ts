@@ -297,8 +297,11 @@ export class Generator implements WorldGen {
     const datumEnd = datumAt.length ? datumAt[datumAt.length - 1]!.datum : c.datum;
     // Suburbs: driveway curb cuts every 1.5–2 s (alternating sides) where the template left the curb free.
     if (layout.id === 'suburbs') {
+      // (no cut in the second before a full-width hazard: a board rolling off the curb there could not pop in time)
+      const fwT = obstacles.filter((o) => o.tags & ObTag.FullWidth).map((o) => tAt(o.s));
       for (let t = t0 + rng.range(0.3, 1.0); t < t1 - 0.5; t += rng.range(GEN.driveway.every[0], GEN.driveway.every[1])) {
         const sd = rng.chance(0.5) ? -1 : 1, s = sAt(t);
+        if (fwT.some((h) => t > h - GEN.driveway.hazardClear && t < h + 0.3)) continue;
         if (driveways.some((d) => d[2] === sd && d[1] > s - 2 && d[0] < s + GEN.driveway.w + 2)) continue;
         driveways.push([round1cm(s), round1cm(s + GEN.driveway.w), sd]);
       }
@@ -399,13 +402,14 @@ export class Generator implements WorldGen {
     };
     if (wantRow) {
       // A slot: the row beside the template's obstacles (their solids are part of the wall there), never across pits,
-      // slopes or decks, nor where a grind edge ends (exit zone, rail-end rule).
+      // slopes or decks, nor where a grind edge runs or ends (exit zone, rail-end rule).
       const slotAt = (tr: number): [number, number][] | null => {
         const sr = sAt(tr), vr = speedAt(tr);
         const keepOut: [number, number][] = [];
         for (const o of obstacles) {
           if (o.kind === 'curb' || o.kind === 'dock_lip' || o.s > sr + 2.0 || o.s + o.len < sr - Math.max(2.5, vr * 1.1 + 0.3)) continue;
-          if (o.edges.some((e) => e.b.s > sr - vr * 1.1 && e.b.s < sr + 1.0)) return null;
+          // (nor beside an edge a rider is still on: coming off it sideways they would meet the row)
+          if (o.edges.some((e) => e.b.s > sr - vr * 1.1 && e.a.s < sr + 1.0)) return null;
           if (o.s + o.len < sr - 2.5) continue;
           if (o.pits.length || o.slabs.some((sl) => sl.kind !== 'flat' || sl.layer === 1)) return null;
           for (const so of o.solids) keepOut.push([so.box.x0, so.box.x1]);
@@ -414,6 +418,17 @@ export class Generator implements WorldGen {
       };
       const gt = Math.max(2, plan.tier) as Tier, w = GEN.gate.width[gt], pad = GEN.gate.keepPad;
       const clearOf = (x: number, keepOut: readonly [number, number][]) => !keepOut.some(([a, b]) => x + w / 2 > a - pad && x - w / 2 < b + pad);
+      // A rider leaving any of the template's grind edges reaches an opening before the row (trick lines rejoin the
+      // safe line, DESIGN §10.6 d): T_SHIFT from the edge's end x to the nearest opening, plus a landing's worth.
+      const tEdges = obstacles.filter((o) => o.kind !== 'curb' && o.kind !== 'dock_lip').flatMap((o) => o.edges);
+      const reach = (tr: number, centres: readonly number[]): boolean => tEdges.every((e) => {
+        const te = tAt(e.b.s);
+        if (te > tr) return true;
+        // (from either side of the edge: a rider may come off it to the outside)
+        const d = Math.max(...[e.b.x - GEN.gate.edgeSide, e.b.x + GEN.gate.edgeSide].map((xe) =>
+          Math.min(...centres.map((x) => Math.max(0, Math.abs(xe - x) - (w / 2 - HITBOX.w / 2 - 0.15))))));
+        return tr - te >= T_SHIFT(d) + GEN.gate.edgeLand;
+      });
       const line = r0.line;
       const tHi = Math.min(rowDue, t1 - 0.45);
       const tries: { tr: number; centres: number[]; keepOut: [number, number][]; tail?: boolean }[] = [];
@@ -426,6 +441,7 @@ export class Generator implements WorldGen {
         const keepOut = slotAt(tr);
         if (!keepOut || !clearOf(x, keepOut)) continue;
         const centres = [x];
+        if (!reach(tr, centres)) continue;
         const x2 = round1cm(x - Math.sign(x || (rng.chance(0.5) ? 1 : -1)) * rng.range(GEN.gate.secondOff[0], GEN.gate.secondOff[1]));
         if (rng.chance(GEN.gate.second[gt] ?? 0) && Math.abs(x2) <= GEN.gate.maxC && clearOf(x2, keepOut)
           && lanesApart([openingLanes(x2, w)], c.lastGateOpen) && lanesApart([openingLanes(x2, w)], [openingLanes(x, w)], 1.0)) centres.push(x2);
@@ -443,7 +459,7 @@ export class Generator implements WorldGen {
         if (centres) {
           const tr = Math.max(t1 - 0.3, moveFrom + T_SHIFT(Math.abs(centres[0]! - x0)) + 0.35, tEdge + GEN.gate.edgeClear);
           const keepOut = slotAt(tr);
-          if (keepOut && tr <= rowDue + 1e-6 && tAt(sAt(tr) + 1.2) + 0.5 <= maxT1 - GEN.gate.tailRoom && centres.every((x) => clearOf(x, keepOut))) {
+          if (keepOut && tr <= rowDue + 1e-6 && tAt(sAt(tr) + 1.2) + 0.5 <= maxT1 - GEN.gate.tailRoom && centres.every((x) => clearOf(x, keepOut)) && reach(tr, centres)) {
             tries.push({ tr, centres, keepOut, tail: true });
           }
         }
@@ -455,7 +471,7 @@ export class Generator implements WorldGen {
           const keepOut = slotAt(tr);
           if (!keepOut) continue;
           const centres = gateOpenings(rng, line.xAt(tr - 1.3), c.lastGateOpen, gt, keepOut);
-          if (centres) tries.push({ tr, centres, keepOut });
+          if (centres && reach(tr, centres)) tries.push({ tr, centres, keepOut });
           break;
         }
       }

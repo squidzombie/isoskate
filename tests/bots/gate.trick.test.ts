@@ -1,5 +1,5 @@
 // Gate: the trick bot (greedy trick lines, flips, spins, grinds on the safe plan): 50 seeds × 5 min from the
-// plateau. Feasibility: doubles, triples and the 360 spin happen; trick lines are safe to ride (crashes listed).
+// plateau. Trick lines are safe to ride (0 crashes); feasibility: doubles, triples and the 360 spin happen.
 // The score ratio (survival-only ÷ trick bot per minute ≤ 10 %, DESIGN §10.11 A4) and the p95 combo duration
 // (≤ 45 s, comboBanked.durSec) are measured and written to artifacts/bots.json; they gate from G1, with the W1a
 // scoring merged (ROADMAP W1b), so their assertions are `todo` here.
@@ -29,6 +29,9 @@ writeReport('trick', {
 });
 
 describe('bots gate: trick', () => {
+  it('trick bot: no trick-line deaths (DESIGN §10.11): 0 crashes on 50 seeds × 5 min', () => {
+    expect(runs.filter((r) => r.crash).map(crashOf)).toEqual([]);
+  });
   it('trick bot: doubles and the 360 spin are feasible on generated streets; grinds happen', () => {
     expect(feasible.doubles).toBeGreaterThan(0);
     expect(feasible.spin360).toBeGreaterThan(0);

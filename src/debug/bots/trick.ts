@@ -11,7 +11,7 @@ import { Sfc32, hash32 } from '../../core/rng';
 import type { Sim } from '../../core/sim';
 import { DT, FLIP_UPGRADE_MAX_PROGRESS, G, LATE_FLIP_CUTOFF, SPIN_UPGRADE_MAX_PROGRESS, V_LAT_MAX, V_POP, sAt, tAt } from '../../core/tuning';
 import { ObTag, type GrindEdge } from '../../core/world';
-import { FLIPS, SPINS } from '../../tricks';
+import { TRICKS } from '../../tricks';
 import { SafeLine, checkPath } from '../../world/gen';
 import { SafeBot } from './safe';
 
@@ -20,7 +20,7 @@ export interface TrickBotOptions { seed?: number; spinShare?: number; grindShare
 interface Chain { inputs: Dir8[]; dur: number; points: number }
 
 /** Every flip as the swipe chain that reaches it (a base flip and its repeat-swipe upgrades). */
-const CHAINS: readonly Chain[] = FLIPS.map((f) => {
+const CHAINS: readonly Chain[] = TRICKS.flips.map((f) => {
   const inputs: Dir8[] = [...f.input];
   return { inputs, dur: f.dur, points: f.points };
 }).sort((a, b) => b.points - a.points);
@@ -116,7 +116,7 @@ export class TrickBot {
     if (c.mode === 'air') {
       // Spin upgrade (180 → 360) while < 60 % done, if the 360 completes before touchdown.
       if (c.spin && this.spinUp && c.popBleed <= 0) {
-        const up = SPINS.find((s) => s.upgradeOf === c.spin!.id);
+        const up = TRICKS.spins.find((s) => s.upgradeOf === c.spin!.id);
         if (up && c.spin.t / c.spin.dur < SPIN_UPGRADE_MAX_PROGRESS - 0.1 && c.spin.t + c.airLeft >= up.dur + 0.03) { this.spinUp = null; return { ...f, ...swipe(up.input) }; }
         if (c.spin.t / c.spin.dur >= SPIN_UPGRADE_MAX_PROGRESS) this.spinUp = null;
         return f;

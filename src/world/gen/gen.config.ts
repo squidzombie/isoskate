@@ -74,6 +74,9 @@ export const GEN = {
     fallbackDefer: 1.0,
     /** A gate carries the A3 barrier only when the line enters within ±a3MaxX (not from the sidewalk edge). */
     a3MaxX: 3.4,
+    /** A rider leaving a template's grind edge (within ±edgeSide of it) reaches a row's opening T_SHIFT + edgeLand s
+     *  after the edge ends. */
+    edgeLand: 0.5, edgeSide: 0.8,
     /** Anti-straight rows (straight-bot guarantees, rows.ts): every row's lanes are disjoint (≥ apartPad) from the
      *  previous row's, so a straight lane passes at most one of two consecutive rows. Consecutive rows are ≤ `gap`
      *  apart and every second row ≤ `window` after the one two before (run time, T0 stretches included). */
@@ -117,7 +120,7 @@ export const GEN = {
    *  and a full-width drop is drawn only when that payback still fits before the area ends. */
   datum: { min: -2.4, paybackSec: 15, dropRoomSec: 22, slope: 0.1 },
   /** Downtown: every 3rd segment is a curb-free granite plaza (DESIGN §10.2). Suburbs: driveway cuts every 1.5–2 s. */
-  plazaEvery: 3, driveway: { every: [1.5, 2.0] as readonly [number, number], w: 3.0 },
+  plazaEvery: 3, driveway: { every: [1.5, 2.0] as readonly [number, number], w: 3.0, hazardClear: 1.6 },
   /** Coins (DESIGN §10.8). Gold Stacks on hard lines from T3 (and transfers, high rails, Neon elevated). */
   coins: { stringSec: 0.12, stringMin: 5, stringMax: 8, edgeUp: 0.35, arcUp: 0.25, padUp: 0.35, groundY: 0.5,
     breatherAmp: 1.4, waveCount: 4, goldFromTier: 3 },
