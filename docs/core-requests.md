@@ -205,13 +205,13 @@ The first block is the frozen behaviour later packages (GP, WG, WA, the bots) ca
 - File / symbol: game/app.ts › boot() / home() / open() (the two `TODO(WA)` lines)
 - Change: `this.setCamera('title')` when the Title screen opens (boot and home), `'run'` when a run starts, `'locker'` for Locker / Shop as now. The rig already implements all three (world/render/camera.ts: the 'title' mode is the static perspective diorama; menu cameras see the sky layer).
 - Why: the Title diorama (DESIGN §18.7) only shows when the rig is in 'title'; today the Title sits on the ortho run camera.
-- Local workaround meanwhile: none (gallery `title` scenes and `ui('locker')` show the menu cameras).
+- Local workaround meanwhile: none (gallery `title` scenes and `ui('locker')` show the menu cameras). The portrait Title framing (TITLE_CAM.portrait) shows the whole rider in the lower third with the sun glow and clouds over the vanishing point; coins keep their true size in menu cameras.
 
 ### Quality setting → WorldView: an explicit auto-quality switch   (status: open; additive, optional)
 - File / symbol: core/view.ts › WorldView
 - Change: `setAutoQuality?(on: boolean): void;` (App calls it from the saved setting and on Settings changes).
 - Why: auto-adjust (TECH §8.9) must stay off when the player picked a tier. world/render reads it today without a contract.
-- Local workaround meanwhile: world/render/view.ts reads `localStorage['dusklane.save']` read-only (quality ≠ 'auto' → off), and turns auto off for `?quality=`, `navigator.webdriver` and any external `setQuality`.
+- Local workaround meanwhile: world/render/view.ts reads `localStorage['dusklane.save']` read-only (quality ≠ 'auto' → off) at start and every 2 s (so picking 'auto' again turns it back on), and turns auto off for `?quality=`, `navigator.webdriver` and right after an external `setQuality`.
 
 ### Vfx reduced motion from the setting   (status: open; additive, optional)
 - File / symbol: core/view.ts › Vfx
@@ -219,11 +219,24 @@ The first block is the frozen behaviour later packages (GP, WG, WA, the bots) ca
 - Why: DESIGN §18.8 reduced motion (no speed lines, no ambient drift, camera shake off). vfx/ implements it; the rig's shake is off with it too.
 - Local workaround meanwhile: vfx/ and the rig follow `matchMedia('(prefers-reduced-motion: reduce)')`; `VfxImpl.setReducedMotion` exists.
 
-### Contrast gate: thin grindable crash tops   (status: open, for INT: debug/contrast.ts)
-- File / symbol: debug/contrast.ts › hazard items
-- Change: measure a `crash` solid whose top is also a grind edge (handrail, dock_lip, ibeam: < 0.12 m wide on screen) as an edge (its stripes) instead of a hull, or exempt it from the hull measure.
-- Why: their hull is the cream stripe itself; a dark body under a 2 px cream lip cannot reach 2.5:1 as a hull mean against a mid ground without losing the edge rule. Gallery shade scenes: handrail / dock_lip / ibeam 1.3–1.9 (all other hazards pass). Not hit by `shots --contrast` (seed 1).
-- Local workaround meanwhile: none (rails keep the edge rule: cream lip ≥ 1.8:1).
+### Contrast gate: measure the hazard silhouette, not the hull of its box   (status: open, for INT at G1: debug/contrast.ts; supersedes "thin grindable crash tops")
+- File / symbol: debug/contrast.ts › measureContrast (hazard items). Exact patch: `tests/unit/render/contrast-silhouette.diff` (`git apply tests/unit/render/contrast-silhouette.diff`, ~40 lines).
+- Change: (1) the silhouette of a crash solid is the pixels inside its projected hull whose visible surface lies inside that box and more than 2.5 cm above the ground under it (new `gfx/silhouette.ts › readWorldPoints`: the scene rendered once more into a depth texture with the same materials, unprojected per pixel; the ground is `WorldQuery.groundAt`). Without a read-back it falls back to today's hull. (2) A thin grindable (a crash solid ≤ 0.35 m across with one of its obstacle's non-pick grind edges along its top: handrail, flatbar, ibeam, dock lip) is held to the edge rule only.
+- Why: DESIGN §18.4 asks for the "hazard silhouette (mean rendered luminance, accent included)". The hull counts the road seen between a barrier's bollards, past a car's bonnet or round a bin as hazard, so the only way to pass it was the near-black "ink pool" painted over each hull (the G1 review's black slabs). With the patch the pools are gone: real contact shadows, lighter tops, bollards and chains that read as objects (the brief allows the gate change: "the gate may measure silhouettes the way DESIGN §18.4 intends").
+- Measured (`shots --contrast`, seed 1, 32 presets / blends, 390×844 + 1280×800): WA alone + patch: all pass, min hazard 2.61, min edge 2.41. WA + WG (2282568) + patch: all pass, min hazard 2.83, min edge 2.26. WA alone without the patch fails (min hazard 1.98: bins and news boxes whose hull corners show road). The gallery (`tests/unit/render/gallery.mjs`) uses the same gate and exits 1 on a run-view failure.
+- Local workaround meanwhile: none (without the patch `shots --contrast` fails on pkg/wa).
+
+### Decor.y of hung side kinds   (status: open, doc-only: core/decor.ts field conventions; WA reads both)
+- File / symbol: core/decor.ts › header "Field conventions" (`y`).
+- Change: add "Side kinds hung on a facade or a post (awning, blade_sign, banner) give their lowest point in `y`, like overhead kinds" (what world/gen emits: sidewalk + 2.6 / 2.8 / 2.4 / 3.0 m).
+- Why: WA added its own mounting height on top of WG's, so awnings floated at the second floor in the merged game.
+- Local workaround meanwhile: world/render/kits/decor.ts › `hungY`: a `y` ≥ 1.2 m above the sidewalk edge is the lowest point; a ground-level `y` gets the kind's default mount (HUNG). Unit-tested both ways.
+
+### Auto-adjust tier changes → the 'quality' app event   (status: open, for G1 wiring; additive, optional)
+- File / symbol: core/view.ts › WorldView (or game/wiring.ts only)
+- Change: `onQualityChange?(cb: (tier: QualityTier) => void): void;` on WorldView, or wiring compares `gfx.quality` with its own `tier` once per frame and emits `appBus { t: 'quality', tier }` on a change.
+- Why: auto-adjust (world/render/quality.ts) lowers the tier mid-run through setGfxQuality; nothing tells MU's overlay (the grain should go with the low tier) or the analytics.
+- Local workaround meanwhile: none. (A mid-run step now changes only the pixel ratio; the shadow map follows at the next run start, so no program recompiles mid-run.)
 
 ### Shared uniforms and palette routing in gfx/   (status: info; gfx edits WA made, additive)
 - gfx/uniforms.ts (new): `sharedUniforms(ctx)` (uDesat, uTime, haze, emissive / glow / window-lit scales, sky colours) and `GRADING_PARS` (`dlGrade`). SK can now patch the toon materials with `sharedUniforms(ctx).uDesat` (the deferred SK request above).
@@ -231,11 +244,16 @@ The first block is the frozen behaviour later packages (GP, WG, WA, the bots) ca
 
 ### Notes for WG (no contract change)
 - Decor beyond the dock lip (water side) and gaps between side buildings on the sun side give the long sun stripes their depth; both read well and are worth keeping in the layouts.
-- Landscape (yaw > 0): camera-side (+x) decor is hidden so it never covers the corridor; the +x verge then looks bare. Low decor (planters, bins, posts ≤ 1.2 m) on +x could be marked to stay visible in a later param.
+- Landscape (yaw > 0): camera-side (+x) decor now hides only when one of its vertices would cover the corridor on screen (`x − y·sin ψ·cot θ < 4.1`); low props at |x| ≥ 5.1 (bins, planters, bikes, benches ≤ ~1.2 m) keep drawing.
+- The street base follows the datum: after a full-width drop WA's road and verges sit at the lowest ground slab across the corridor (WG's street-base bands), split at slab ends. Curb stones are drawn only on `params.band` 1 (sidewalk) bands.
+- Gateway blends: road colour and hazard looks switch at one s per blend (the weight's 0.5 crossing) moved off every hazard; an obstacle keeps the look of its own `area` (from-area ones before the switch, to-area ones after). Keep `Obstacle.area` = the area whose kit it is.
 
 ### Notes for the gate (behaviour other packages can rely on)
-- `__skate.ext.world()` (WorldView debug info) adds `mainCalls`, `shadowCalls`, `chunksBuilt`, `cacheHits`, `buildMsP95`, `bench(n)` and `obstacles(id?)`; wa.spec reads them.
-- `shots --contrast` (seed 1): all 32 presets / blends pass at 390×844 and 1280×800 (min hazard 2.64, min edge 2.41). The contrast PNGs show the Title UI over the preview run (`previewArea` does not close the Title); harmless for the gate.
+- `__skate.ext.world()` (WorldView debug info) adds `mainCalls`, `shadowCalls`, `chunksBuilt`, `cacheHits`, `buildMsP95` (build work per frame that built), `chunkMsP95` (per finished chunk), `pending`, `warmupMs`, `bench(n, index)` and `obstacles(id?)`; wa.spec reads them.
+- Chunk building (TECH §8.6): a chunk not on screen yet is built in resumable steps (`buildChunkSteps`) within `STREAM.sliceMs` (1.5 ms) of the frame start; a chunk already on screen (debug `step(n)` jumps) is built at once; the first frame of a run builds or restores exactly the 3 chunks around the start. Every kit runs once per area in idle callbacks at boot (`world/render/warmup.ts`). `perf().buildMs` is therefore the per-frame build work; wa.spec gates single builds of every streamed chunk (p95 ≤ 4 ms over ~80 chunks, after a 1 px read-back so SwiftShader's rasterisation does not race the timer).
+- `shots --contrast`: see the silhouette request above (apply the patch at G1). 4 of the 32 frames (the 0.25 gateway blends) still have no hazard in view; shots.mjs could sample further into the blend.
+- Palette deviations from DESIGN §18.1 (the gate is the source of truth): asphalt `#7F7890` (DESIGN `#79728A`), Neon hemi sky `#A69CD8` (`#8C8CE0`), hazard bodies `#170F24` with tops `#4A3B6B` (ink `#2B2140`): a slightly lighter road and darker bodies keep ink hazards ≥ 2.5:1 in building shadows while their tops read as volumes.
+- Bundle: pkg/wa builds to 324 KB gzip (M0 268; world/render + vfx ≈ 58 KB of it). With WG the review measured 354 KB, over the 350 KB of TECH §8.4 before MU and GP land: G1 has to re-budget or split (e.g. load debug/ and the menu sky lazily); WA found no ~30 KB to cut without dropping kits.
 
 ## SK: Skater and cosmetics (W2b)
 
