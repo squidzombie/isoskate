@@ -86,7 +86,7 @@ export const GEN = {
     /** Template obstacles beside a row: the row's pieces keep this far from their solids (grind sweeps). */
     keepPad: 0.3,
     /** No base curb / lip edge ends in this many seconds before a row (its exit zone would face the row). */
-    edgeBan: 2.2,
+    edgeBan: 3.0,
     /** A tail row (after a template's content) stands ≥ this long after the template's last grind edge ends (its exit
      *  zone and rail-end lane), and leaves this much room before a gateway (the cut-down filler). */
     edgeClear: 1.15, tailRoom: 0.8,

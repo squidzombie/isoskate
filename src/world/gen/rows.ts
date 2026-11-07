@@ -81,6 +81,8 @@ export function rowPalette(a: AreaId): RowPiece[] {
   }
 }
 
+/** A Docks row ends this far left of the lip. */
+const LIP_CLEAR = 0.05;
 /** Pieces 0.05–0.14 m apart (with the 0.08 m insets a gap stays < the 0.40 m hitbox), filling [r0, r1] exactly. */
 const GAP_MIN = 0.05, GAP_MAX = 0.14;
 
@@ -94,9 +96,8 @@ export function gateRow(sRow: number, centres: readonly number[], w: number, pro
     .sort((a, b) => a[0] - b[0]);
   const pal = rowPalette(props.area);
   const minW = Math.min(...pal.map((p) => p.wid));
-  // (in the Docks the row stops at the lip: its body blocks a straight roller there, and a rider left on its top
-  // after a grind rolls on past the row)
-  const xEnd = props.area === 'docks' ? LIP.x0 - 0.05 : 4.5;
+  // (in the Docks the row stops at the lip: its body blocks a straight roller there)
+  const xEnd = props.area === 'docks' ? LIP.x0 - LIP_CLEAR : 4.5;
   let a = -4.5;
   const runs: [number, number][] = [];
   for (const [o0, o1] of open) { if (o0 > a) runs.push([a, Math.min(o0, xEnd)]); a = Math.max(a, o1); }
@@ -108,7 +109,9 @@ export function gateRow(sRow: number, centres: readonly number[], w: number, pro
     const pieces = fillRun(L, pal, minW, rng);
     const total = pieces.reduce((s, p) => s + p.wid, 0);
     const gap = pieces.length > 1 ? (L - total) / (pieces.length - 1) : 0;
-    let x = pieces.length === 1 ? (r0 + r1) / 2 - pieces[0]!.wid / 2 : r0;
+    // (a run narrower than its piece: the piece keeps flush with the corridor edge or the lip, else centred)
+    const one = pieces.length === 1 ? pieces[0]!.wid : 0;
+    let x = !one ? r0 : r1 >= xEnd - 1e-6 && one > L ? r1 - one : r0 <= -4.5 + 1e-6 && one > L ? r0 : (r0 + r1) / 2 - one / 2;
     for (const p of pieces) {
       const ob = buildTall(p.kind, sRow, round1cm(x + p.wid / 2), p.len, p.wid, p.hgt, props,
         { variant: variant++ % 3, tags: ObTag.Filler, ...(p.params ? { params: p.params } : {}) });
