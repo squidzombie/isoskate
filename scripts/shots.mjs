@@ -80,8 +80,9 @@ async function openPage(vp, query = '') {
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(String(e)));
-  await page.goto(`${BASE}/?debug=1&seed=${seed}${query}`);
-  await page.waitForFunction(() => !!window.__skate, null, { timeout: 20000 });
+  // (a page load under software GL with other pages rendering can pass 30 s on a shared machine: the tool waits longer)
+  await page.goto(`${BASE}/?debug=1&seed=${seed}${query}`, { timeout: 120000 });
+  await page.waitForFunction(() => !!window.__skate, null, { timeout: 60000 });
   await page.evaluate(() => document.fonts.ready);
   await sleep(250);
   return { page, context, errors, close: async () => { if (errors.length) fail(`[${vp.name}] console errors:\n  ${errors.join('\n  ')}`); await context.close(); } };
