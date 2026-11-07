@@ -695,6 +695,7 @@ recognizer, so the frozen `InputFrame`, the sim, scoring, the generator, replays
 - save: `defaults.ts`, `sanitize.ts`. ui: `hints.ts` (two rings, two-thumb wording `HINT_TEXT[id].twoThumb` / `side`,
   `touchText()`, the zone cue), `hud.ts` (`HudExt.setControls`), `index.ts` (reads the setting at every runStart),
   `screens/settings.ts` (Touch controls, Swap sides; rows carry `data-setting`), `ui.config.ts` (`ZONE_CUE`),
+  `index.ts` also exposes `__dusklaneUi.hint(id)` in debug builds (screenshots of any hint),
   `styles/hud.css`, `styles/screens.css`.
 - tests: `unit/input/twothumb.test.ts`, `unit/integration/twothumb.test.ts` (new); `unit/input/trace.ts` (`makeRec` is
   now the one-thumb recognizer, `makeRec2` the two-thumb one), `recognizer.test.ts` / `frames.test.ts` /
@@ -714,5 +715,8 @@ recognizer, so the frozen `InputFrame`, the sim, scoring, the generator, replays
   `twoThumb` with `{S}` / `{T}` side tokens. The Lesson Line (M4) should call `hud.hint(id)` as before; the HUD picks
   the wording, the rings and the cue from `SaveV1.settings` at each runStart. `ZONE_CUE.firstOfSession` also shows the
   cue on the first run after the app opens (a returning player who updated sees the split once per session).
+- **Two touches in e2e:** CDP `Input.dispatchTouchEvent` releases one of two points only with a `touchEnd` that lists
+  that point (a `touchMove` that leaves it out releases nothing); `touch.spec.ts › Multi` does it. Queue a tap's down
+  and up together (an awaited round trip under SwiftShader can turn it into a hold).
 - **Not done here:** a one-time re-teach of the two-thumb layout for profiles past run 3 (they get the zone cue but no
   hint chips; M4's hint re-arming could add it); gamepad unaffected.

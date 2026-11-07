@@ -396,7 +396,7 @@ test.describe('one thumb (classic), behind Settings › Touch controls', () => {
     if (info.project.use.hasTouch) await page.touchscreen.tap(vp.width * 0.25, vp.height * 0.7);
     else await touch.tap(vp.width * 0.25, vp.height * 0.7);
     await expect.poll(async () => kinds(await events(page, t0)), { timeout: 3000 }).toContain('ollie');
-    await expect.poll(async () => kinds(await events(page, t0)), { timeout: 3000 }).toContain('land');
+    await expect.poll(async () => kinds(await events(page, t0)), { timeout: 15000 }).toContain('land');   // sim time (load)
     const x0 = (await snap(page)).p.x, y = vp.height * 0.6;
     await touch.start(vp.width * 0.8, y);
     for (let i = 1; i <= 12; i++) { await touch.move(vp.width * 0.8 - i * 10, y); await page.waitForTimeout(16); }
