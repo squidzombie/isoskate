@@ -628,14 +628,16 @@ class WorldViewImpl implements WorldView {
     if (vp.wCss === cv.w && vp.hCss === cv.h && vp.safeTop === cv.safeTop && vp.aspect === cv.aspect && speedQ === cv.speedQ) return;
     cv.w = vp.wCss; cv.h = vp.hCss; cv.safeTop = vp.safeTop; cv.aspect = vp.aspect; cv.speedQ = speedQ;
     const fr = solveFraming(speedQ / 20, vp);
+    // Debug camera variants: coins face the pitch but not the yaw, so ψ > 0 narrows them by cos ψ on screen.
+    const yawK = isDefaultCam() ? 1 : 1 / Math.cos((fr.yawDeg * Math.PI) / 180);
     if (fr.proj === 'persp') {
       // Perspective debug variants: per coin, at its own depth (layers.ts COIN_DEPTH_K).
-      COIN_DEPTH_K.value = (CAMERA.minCoinPx * fr.tanH) / Math.max(1, vp.hCss) / COIN.diameter;
+      COIN_DEPTH_K.value = ((CAMERA.minCoinPx * fr.tanH) / Math.max(1, vp.hCss) / COIN.diameter) * yawK;
       this.coinScale = Math.max(1, COIN_DEPTH_K.value * fr.D);
       this.coins.setScale(1);
       return;
     }
-    this.coinScale = Math.max(1, (CAMERA.minCoinPx * fr.H) / Math.max(1, vp.hCss) / COIN.diameter);
+    this.coinScale = Math.max(1, ((CAMERA.minCoinPx * fr.H) / Math.max(1, vp.hCss) / COIN.diameter) * yawK);
     this.coins.setScale(this.coinScale);
   }
 

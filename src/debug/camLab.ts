@@ -75,7 +75,10 @@ export function installCamLab(host: DebugHost): CamLab {
       const sHud = s + hud.s;
       // Coins: ortho scales every coin by coinScale; perspective floors each coin at its own depth (layers.ts
       // COIN_DEPTH_K), i.e. max(natural size, CAMERA.minCoinPx).
-      const coinPx = (sa: number) => (f.proj === 'persp' ? Math.max(across(sa, COIN_D), CAMERA.minCoinPx) : across(sa, coinW));
+      const DEG = Math.PI / 180, cosT = Math.cos(f.pitchDeg * DEG), cosP = Math.cos(f.yawDeg * DEG);
+      const coinK = ((CAMERA.minCoinPx * f.tanH) / vp.hCss / COIN_D) / cosP;          // view.ts updateCoinScale
+      const coinPx = (sa: number) => (f.proj === 'persp'
+        ? across(sa, COIN_D * Math.max(1, coinK * (f.D + (sa - s) * cosT * cosP))) : across(sa, coinW));
       const r = host.gfx.renderer.info.render;
       return {
         variant: camVariant().id, proj: f.proj, pitchDeg: f.pitchDeg, yawDeg: f.yawDeg, speed: v, H: f.H, D: f.D,
