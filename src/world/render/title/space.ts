@@ -66,6 +66,7 @@ export interface TitleBand {
 
 /** One map's texture pair in the shaders: `hi` fades in over `lo` as each bake stage lands. */
 interface Layer { lo: { value: Texture }; hi: { value: Texture }; mix: { value: number }; t: number }
+function fadeStep(l: Layer, dt: number): void { if (l.t < 1) { l.t = Math.min(1, l.t + dt); l.mix.value = ss(0, 1, l.t); } }
 function pushStage(l: Layer, tex: Texture): void {
   if (l.mix.value >= 0.5) l.lo.value = l.hi.value;   // mid-fade: keep whichever of the two dominates
   l.hi.value = tex; l.t = 0; l.mix.value = 0;
@@ -231,7 +232,7 @@ export class TitleScene {
     this.time += d;
     if (vp.wCss !== this.vpW || vp.hCss !== this.vpH || (!this.diving && this.bandMoved())) this.layout(vp);
     const C = TITLE_SCENE, B = C.board, t = this.time;
-    for (const l of [this.colorL, this.cloudL]) if (l.t < 1) { l.t = Math.min(1, l.t + d / C.fadeSec); l.mix.value = ss(0, 1, l.t); }
+    fadeStep(this.colorL, d / C.fadeSec); fadeStep(this.cloudL, d / C.fadeSec);
     if (this.previewUp && this.nebT < 1) { this.nebT = Math.min(1, this.nebT + d / C.fadeSec); this.skyMat.uniforms.uNeb!.value = ss(0, 1, this.nebT); }
     // The vignette behind the logo block: on while the Title UI is up, gone as the dive starts (the UI leaves).
     const band = this.diving ? null : this.band(), on = !!band && band.scrimRx > 0;
