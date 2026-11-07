@@ -211,13 +211,18 @@ const lanternStand: KitFn = (c, ob) => {
   const x = (b.x0 + b.x1) / 2, s = (b.s0 + b.s1) / 2;
   contact(c, b.x0, b.x1, b.s0, b.s1, b.y0 + 0.01, 0.35, 0.15);
   K.capY = b.y0 + 1.6;
-  body(c); K.box(b.x0 + 0.05, b.y0, b.s0 + 0.05, b.x1 - 0.05, b.y0 + 0.06, b.s1 - 0.05);
-  K.cyl(x, s, b.y0 + 0.06, b.y1 - 0.5, 0.04, 6, false);
+  // In the Neon look the whole stand reads light on the wet road (the lighter inverted value, a thicker post, caps
+  // in the emissive rim colour); in an ink look it stays dark.
+  const inv = c.hz.inverted, post = inv ? c.hz.top : c.hz.body;
+  body(c, post); K.box(b.x0 + 0.05, b.y0, b.s0 + 0.05, b.x1 - 0.05, b.y0 + 0.06, b.s1 - 0.05);
+  K.cyl(x, s, b.y0 + 0.06, b.y1 - 0.5, inv ? 0.06 : 0.04, 6, false);
   const red = ob.id % 2 === 0;
   K.to('e').glowing(litK(c, 1.7), -1, FX.noFog).col(red ? 0xff5a3c : 0xffd39a);
   K.cyl(x, s, b.y1 - 0.5, b.y1 - 0.06, 0.17, 8, false);
   K.to('o');
-  body(c, 0x161029); K.cyl(x, s, b.y1 - 0.56, b.y1 - 0.5, 0.19, 8, true); K.cyl(x, s, b.y1 - 0.06, b.y1, 0.19, 8, true);
+  if (inv) K.to('e').glowing(1.4, -1, FX.noFog).col(c.hz.rim); else body(c, 0x161029);
+  K.cyl(x, s, b.y1 - 0.56, b.y1 - 0.5, 0.19, 8, true); K.cyl(x, s, b.y1 - 0.06, b.y1, 0.19, 8, true);
+  K.to('o');
   // A small glow round the lantern only (it never spills over the ground ring the gate reads around the stand).
   if (c.hz.inverted) glowCard(c, x, b.y1 - 0.28, s - 0.2, 0.55, 0.6, red ? 0xff5a3c : 0xffd39a, 0.35);
   rimPost(c, x, s, 0.05, b.y0 + 0.1, b.y1 - 0.6, b.y0 + 0.9);
