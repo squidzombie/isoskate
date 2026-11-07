@@ -10,7 +10,8 @@ import { CHUNK_LEN } from '../../../src/core/tuning';
 import type { Chunk, Obstacle } from '../../../src/core/world';
 import { ObTag } from '../../../src/core/world';
 import { DEFAULT_BUILD, LOOK_SWITCH, buildChunk, chunkHash, heightClass, lookAreaAt, lookSwitch } from '../../../src/world/render/chunkBuilder';
-import { CONTACT_PAD } from '../../../src/world/render/kits/common';
+import { CONTACT_PAD, LIP } from '../../../src/world/render/kits/common';
+import { mayAnimateEmissive, signatureLike } from '../../../src/world/render/kits/dress';
 import { KITS } from '../../../src/world/render/kits/index';
 import { warmupArea, warmupChunk } from '../../../src/world/render/warmup';
 import { DECOR_RENDERERS, HUNG } from '../../../src/world/render/kits/decor';
@@ -196,6 +197,59 @@ describe('kits', () => {
   it('height classes (DESIGN §5.5)', () => {
     expect(heightClass(0.18, 0)).toBe('bump'); expect(heightClass(0.19, 0)).toBe('low'); expect(heightClass(0.6, 0)).toBe('low');
     expect(heightClass(0.61, 0)).toBe('forbidden'); expect(heightClass(1.14, 0)).toBe('forbidden'); expect(heightClass(1.15, 0)).toBe('tall');
+  });
+});
+
+describe('RECLAIM kits (DESIGN §18.4 dressing rules 5 and 8, §18.5 vehicle builder, §18.7 crack lips)', () => {
+  const toHex = (g: PooledGeo, i: number) => {
+    const c = (v: number) => Math.round(255 * (v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055));
+    return (c(g.col[i * 3]!) << 16) | (c(g.col[i * 3 + 1]!) << 8) | c(g.col[i * 3 + 2]!);
+  };
+  it('rule 8: no hazard kit animates an emissive outside its telegraph (crosswalk signal, reverse lights, forklift beacon, holo gate)', () => {
+    for (const area of AREAS) for (const kind of ALL_PROP_KINDS) {
+      resetIds();
+      const { g } = only(obstacleOf(kind, area, 2 * CHUNK_LEN + 6, kind === 'guard_rail' ? 3 : 1), area);
+      let animated = 0;
+      for (let i = 0; i < g.e.count; i++) if (g.e.fx[i * 4 + 3]! > 0) animated++;
+      if (!mayAnimateEmissive(kind, area)) expect(animated, `${area} ${kind}`).toBe(0);
+    }
+  });
+  it('rule 5: vehicles carry no chrome: no cream, near-white or chrome colour on any body, in any skin', () => {
+    for (const area of AREAS) for (const kind of ['parked_car', 'parked_van', 'crosswalk_car', 'backout_car', 'container'] as const) {
+      for (let id = 1; id < 40; id++) {
+        resetIds();
+        const obs = obstacleOf(kind, area, 2 * CHUNK_LEN + 6, 1, id % 4);
+        for (const o of obs) o.id = id;
+        const { g } = only(obs, area);
+        for (const t of ['o', 'x'] as const) for (let i = 0; i < g[t].count; i++) {
+          const hex = toHex(g[t], i);
+          if (signatureLike(hex)) expect.fail(`${area} ${kind} #${id}: ${hex.toString(16)} reads as the grind signature`);
+        }
+      }
+    }
+  });
+  it('crack lips: the visible lip stays within LIP.amp (≤ 0.1 m) of the collision edge; the planks stay', () => {
+    expect(LIP.amp).toBeLessThanOrEqual(0.1);
+    for (const area of AREAS) {
+      resetIds();
+      const obs = obstacleOf('trench', area, 2 * CHUNK_LEN + 6, 0);
+      const ob = obs.find((o) => o.kind === 'trench')!;
+      const { g } = only(obs, area);
+      const s0 = 2 * CHUNK_LEN;
+      for (const p of ob.pits) {
+        let lip = 0;
+        for (const t of ['o', 'x'] as const) for (let i = 0; i < g[t].count; i++) {
+          const x = g[t].pos[i * 3]!, y = g[t].pos[i * 3 + 1]!, s = s0 - g[t].pos[i * 3 + 2]!;
+          if (x < p.x0 + 0.01 || x > p.x1 - 0.01 || Math.abs(y - p.lipY) > 0.006) continue;
+          if (ob.slabs.some((sl) => x >= sl.x0 - 0.2 && x <= sl.x1 + 0.2)) continue;          // the plank
+          if (s > p.s0 + 1e-3 && s < p.s1 - 1e-3) {
+            lip++;
+            expect(Math.min(s - p.s0, p.s1 - s), `${area}: lip vertex ${s.toFixed(3)} in the pit ${p.s0}–${p.s1}`).toBeLessThanOrEqual(LIP.amp + 1e-3);
+          }
+        }
+        expect(lip, `${area}: jagged teeth over the pit`).toBeGreaterThan(8);
+      }
+    }
   });
 });
 

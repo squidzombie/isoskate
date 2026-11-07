@@ -9,6 +9,7 @@ import type { AreaBlend, Chunk, GroundSlab } from '../../core/world';
 import { HEIGHT } from '../../core/tuning';
 import { ambientOf, drawDecor, type AmbientRec } from './kits/decor';
 import { DEFAULT_BUILD, setArea, type BuildOptions, type DecalRec, type KitCtx, type LanternRec } from './kits/common';
+import { isIsolatedFiller } from './kits/dress';
 import { drawObstacle } from './kits/index';
 import { streetBase } from './kits/shared';
 import { HAZARD, LOOK, blendWeight, mixHex } from './palette';
@@ -61,7 +62,9 @@ export function* buildChunkSteps(ch: Chunk, w: KitTargets, areas: AreaSource, op
   };
   streetBase(c, ch, (s) => (sw && areas.areaAt(s).blend ? LOOK[s < sw.s ? sw.from : sw.to].road : roadAt(areas, s)), sw?.s);
   yield;
-  for (const ob of ch.obstacles) { out.far = Math.max(out.far, drawObstacle(c, ob, ch.index, first)); yield; }
+  // The isolated-filler flag (DESIGN §18.4 rule 2 exception: a lidded column filler with no other solid within 1 m may
+  // grow its sapling) comes from this chunk's prop list; it only changes dressing, never the noun or the hitbox.
+  for (const ob of ch.obstacles) { out.far = Math.max(out.far, drawObstacle(c, ob, ch.index, first, isIsolatedFiller(ob, ch.obstacles))); yield; }
   for (const d of ch.decor) {
     setArea(c, areas.areaAt(d.s).area);
     drawDecor(c, d);
