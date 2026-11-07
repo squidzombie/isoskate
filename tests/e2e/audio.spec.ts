@@ -107,6 +107,10 @@ test('2-minute god-mode run with gestures: voices ≤ 32, audio main-thread cost
   expect(r.log.states.every((s) => s === 'running')).toBe(true);
   expect(r.events).toContain('ollie');
   expect(r.perf.frames).toBeGreaterThan(SEC * 5);
-  expect(r.perf.msPerFrame).toBeLessThanOrEqual(0.3);
+  // The 0.3 ms per rendered frame was set at SwiftShader's ~30 fps. The audio scheduler's work follows musical time,
+  // so a slower render (@cam: the perspective run camera shows more of the street; ~14 fps here at DPR 3) packs more of
+  // it into each frame: the bound scales to the ~30 fps it was set at (never looser than 0.3 ms above 30 fps).
+  const fps = r.perf.frames / SEC;
+  expect(r.perf.msPerFrame).toBeLessThanOrEqual(0.3 * Math.max(1, 30 / fps));
   expect(errors).toEqual([]);
 });

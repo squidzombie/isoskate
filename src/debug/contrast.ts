@@ -1,5 +1,7 @@
 // debug/contrast.ts: the DESIGN §18.4 readability gate measured on the rendered frame (`__skate.contrast()`,
 // `shots --contrast`). Everything is located with the live camera (CameraRig.project) and read back from the canvas:
+// Measured range: the guaranteed look-ahead + 8 m ahead of the skater; up to the ground on the HUD line (everything
+// readable) when `window.__contrastHudRange` is set (shots --contrast's last retry, @cam).
 //   - hazard: every `crash`-top solid fully in view below the HUD band (one being scrolled in at the top edge is
 //     measured once it is whole). Its silhouette: the pixels inside the convex hull of the projected box whose
 //     visible surface lies inside that box and above the ground under it (gfx/silhouette.ts reads the world point
@@ -23,6 +25,7 @@ import { Box3, Vector3 } from 'three';
 import type { V3 } from '../core/math';
 import { CAMERA } from '../core/tuning';
 import { originOf, readWorldPoints } from '../gfx';
+import { groundAt, type Framing } from '../world/render';
 import type { DebugHost } from './api';
 
 export const CONTRAST_GATE = { hazard: 2.5, edge: 1.8 } as const;
@@ -99,7 +102,12 @@ function measureFrame(host: DebugHost): ContrastReport {
   const hudBottom = Math.ceil((vp.safeTop + 56) * sy);
   const sim = host.sim(), cur = sim.cur;
   const s = cur.p.s;
-  const ahead = Math.max(20, host.camera().lookAheadSec * Math.max(1, cur.vel.s) + 8);
+  // The guaranteed look-ahead + 8 m; `window.__contrastHudRange` (shots --contrast's last retry for a frame set
+  // that showed no hazard or no grind edge) widens it to the ground on the HUD line, everything readable.
+  const fr = (host.cameraRig as unknown as { last?: Framing }).last;
+  const wide = (globalThis as { __contrastHudRange?: boolean }).__contrastHudRange === true;
+  const hudLine = wide && fr ? groundAt(fr, fr.xCentre, (fr.anchorY - fr.hudTop) * (fr.proj === 'persp' ? fr.tanH : fr.H), 200).s : 0;
+  const ahead = Math.max(20, host.camera().lookAheadSec * Math.max(1, cur.vel.s) + 8, hudLine);
 
   // The skater's screen rectangle (excluded from every measurement).
   const box = new Box3().setFromObject(host.skater.object3d);

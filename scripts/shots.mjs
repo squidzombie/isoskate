@@ -319,25 +319,36 @@ async function contrastMode() {
         const ARRIVAL = { downtown: 161, suburbs: 44, docks: 83, neon: 122 };
         const t0 = blend === undefined ? (area === 'downtown' ? 10 : ARRIVAL[area] + 10) : ARRIVAL[area] - 6 + 8 * blend;
         let items = [], worst = null, offset = 0;
-        // (@cam: the finer offsets come last, so a case that already measured both classes keeps its frames.)
-        for (const off of [0, -1.2, 1.2, -2.4, 2.4, -0.6, 0.6, -1.8, 1.8]) {
-          if (off === 0) window.__skate.previewArea(area, blend);
+        const union = []; let uWorst = null, uRel = Infinity;
+        // (@cam: the finer offsets come last, so a case that already measured both classes keeps its frames; the very
+        // last retry measures the default start over the whole readable range, up to the HUD line: the perspective
+        // camera on a wide screen can show no grindable within look-ahead + 8 m in a whole gateway window. If no
+        // single attempt shows both classes, the case is judged on every frame of every attempt, all in the same
+        // palette window.)
+        for (const off of [0, -1.2, 1.2, -2.4, 2.4, -0.6, 0.6, -1.8, 1.8, 'hud']) {
+          window.__contrastHudRange = off === 'hud';
+          if (off === 0 || off === 'hud') window.__skate.previewArea(area, blend);
           else { window.__skate.start({ startT: Math.max(0, t0 + off), god: true }); window.__skate.manual(true); window.__skate.step(1); }
           items = []; worst = null; offset = off;
           let worstRel = Infinity;
           for (let i = 0; i < samples; i++) {
             window.__skate.step(i === 0 ? 20 : 36);
             for (const it of window.__skate.ext.contrastReport().items) {
-              items.push(it);
+              items.push(it); union.push(it);
               const rel = it.ratio / gate[it.cls];
               if (rel < worstRel) { worstRel = rel; worst = { item: it, tick: window.__skate.snapshot().tick, png: window.__skate.ext.capture().dataUrl }; }
+              if (rel < uRel) { uRel = rel; uWorst = worst; }
             }
           }
           if (items.some((i) => i.cls === 'hazard') && items.some((i) => i.cls === 'edge')) break;
         }
+        window.__contrastHudRange = false;
+        if (!(items.some((i) => i.cls === 'hazard') && items.some((i) => i.cls === 'edge'))) return { items: union, worst: uWorst, offset: 'all' };
         return { items, worst, offset };
       }, { ...cs, gate: GATE });
-      if (offset !== 0) console.log(`    (${cs.label}: measured from a start ${offset > 0 ? '+' : ''}${offset} s off the default)`);
+      if (offset === 'all') console.log(`    (${cs.label}: no single start showed both classes: judged on every attempted frame)`);
+      else if (offset === 'hud') console.log(`    (${cs.label}: measured over the readable range, up to the HUD line)`);
+      else if (offset !== 0) console.log(`    (${cs.label}: measured from a start ${offset > 0 ? '+' : ''}${offset} s off the default)`);
       if (worst) {
         const w = worst.item;
         writeDataUrl(join(dir, `${cs.label.replace(/[^a-z0-9]+/gi, '-')}-${vp.name}-worst.png`), worst.png);

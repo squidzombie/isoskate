@@ -81,6 +81,9 @@ export function surfaceLook(surface: Surface, area: AreaId): { color: number; pa
  *  CAMERA.minEdgePx × EDGE_WIDEN.px, the ink VIEW.inkPadPx beside it; camera.ts edgeWidening), so near edges do not
  *  grow fat and far ones never drop under the floor. The ink band reaches 0.06 m down the faces, so the cream lip
  *  borders ink on every side the camera sees (DESIGN §18.4 "the pair reads" from any angle). */
+/** The cream lip's emissive add (DESIGN §18.4: 0.2 before @cam). The perspective camera often sees the ink underline
+ *  run into a cast shadow on the road, so the cream alone must clear 1.8:1 against a sunlit road or kerb. */
+export const EDGE_CREAM_EMIS = 0.45;
 export function grindEdge(c: KitCtx, e: GrindEdge): void {
   const K = c.K;
   if (e.b.s <= c.s0 || e.a.s >= c.s1) return;
@@ -90,7 +93,7 @@ export function grindEdge(c: KitCtx, e: GrindEdge): void {
   // The ink top sits above any top face that meets the edge (a curb stone band at +0.008, a bench or ledge top), so
   // its pad shows on both sides of the cream lip.
   K.col(COLORS.ink).stripe(e.a.x, e.a.y, e.a.s, e.b.x, e.b.y, e.b.s, ink, -0.07, 0.011, 2);
-  K.col(COLORS.edgeCream).lit(0, 0, FX.noFog, 0.2).stripe(e.a.x, e.a.y, e.a.s - 0.004, e.b.x, e.b.y, e.b.s + 0.004, hw, -0.012, 0.017, 1);
+  K.col(COLORS.edgeCream).lit(0, 0, FX.noFog, EDGE_CREAM_EMIS).stripe(e.a.x, e.a.y, e.a.s - 0.004, e.b.x, e.b.y, e.b.s + 0.004, hw, -0.012, 0.017, 1);
   K.reset();
 }
 export function edgesOf(c: KitCtx, ob: Obstacle): void { for (const e of ob.edges) grindEdge(c, e); }
