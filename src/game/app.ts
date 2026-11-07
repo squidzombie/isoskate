@@ -12,7 +12,7 @@ import type { InputSource } from '../core/input';
 import type { MetaApi, RunRewards } from '../core/meta';
 import type { Analytics } from '../core/platform';
 import type { SaveStore } from '../core/save';
-import type { ItemId, ScreenId } from '../core/ids';
+import type { ItemId, ScreenId, Slot } from '../core/ids';
 import type { RunResult, Sim } from '../core/sim';
 import type { UiApi, UiIntent } from '../core/ui';
 import type { CameraMode, CameraRig, SkaterView, Vfx, Viewport, WorldView } from '../core/view';
@@ -65,6 +65,9 @@ export class App {
   private rotateCard = false;
   private camMode: CameraMode = 'run';
   private turnYaw = 0;
+  /** Locker / Shop try-ons of this visit, one per slot, so trying on a board keeps the skater you tried on (owner
+   *  playtest: picking a board used to snap the rider back to the equipped skater). Reset by every open(). */
+  private tryOn: Partial<Record<Slot, ItemId>> = {};
   /** Settings opened from Pause (DESIGN §17.2): Back / Esc return to the frozen run's Pause instead of Home. */
   private settingsOverPause = false;
   /** The sim holds the Title preview (seed 1 at t = 0, the rider idling at the start), not a run. */
@@ -223,7 +226,7 @@ export class App {
     if (p.rewards) ui.rewards = p.rewards;
     if (p.rotate !== undefined) ui.rotate = p.rotate;
     this.setScreen(screen, ui);
-    if (SHOWCASE.has(screen)) this.showcase(p);
+    if (SHOWCASE.has(screen)) { this.tryOn = {}; this.showcase(p); }
   }
 
   dispose(): void { for (const off of this.offs) off(); this.back.dispose(); this.d.loop.stop(); }
@@ -255,12 +258,19 @@ export class App {
     return this.d.cameraRig.solve(speed, this.d.viewport()).rotate;
   }
 
-  /** Turntable loadout: equipped, then `loadout` slots, then the `preview` item; `yaw` sets the turntable. */
+  /** Turntable loadout: equipped, then `loadout` slots, then this visit's try-ons (one per slot; `preview` adds or
+   *  replaces the try-on of its item's slot, `preview: null` clears them all); `yaw` sets the turntable. */
   private showcase(p: OpenParams): void {
     const d = this.d;
     let l: Loadout = { ...d.meta.loadout(), ...(p.loadout ?? {}) };
-    const item = p.preview ? d.meta.catalog().find((c) => c.id === p.preview) : undefined;
-    if (item) l = { ...l, [item.slot]: item.look } as Loadout;
+    const cat = d.meta.catalog();
+    if (p.preview === null) this.tryOn = {};
+    const item = p.preview ? cat.find((c) => c.id === p.preview) : undefined;
+    if (item) this.tryOn[item.slot] = item.id;
+    for (const id of Object.values(this.tryOn)) {
+      const it = cat.find((c) => c.id === id);
+      if (it) l = { ...l, [it.slot]: it.look } as Loadout;
+    }
     d.skater.setLoadout(l);
     if (typeof p.yaw === 'number') { this.turnYaw = p.yaw; d.skater.setTurntable?.(p.yaw); }
   }

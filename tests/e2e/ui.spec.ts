@@ -107,6 +107,22 @@ test('Results → ROLL AGAIN takes ≤ 3 s from the crash (ROLL AGAIN works from
   expect(errors).toEqual([]);
 });
 
+test('Locker: a tap equips an owned item, and picking a board keeps the skater you picked (owner playtest bug)', async ({ page }) => {
+  const errors: string[] = [];
+  await boot(page, errors);
+  await editSave(page, "s.owned = [...new Set([...s.owned, 'sk_mika', 'bd_mint_chip'])];");
+  await page.evaluate(() => { window.__skate!.ui('title'); window.__skate!.ui('locker'); });
+  const locker = screenOn(page, 'locker');
+  await locker.locator('.card-grid [data-item="sk_mika"]').click();
+  await expect.poll(async () => (await save(page)).equipped.skater).toBe('sk_mika');
+  await locker.getByRole('tab', { name: 'Boards' }).click();
+  await locker.locator('.card-grid [data-item="bd_mint_chip"]').click();
+  await expect.poll(async () => (await save(page)).equipped.board).toBe('bd_mint_chip');
+  expect((await save(page)).equipped.skater).toBe('sk_mika');
+  await expect(locker.locator('.detail .act-equip')).toHaveText(/equipped/i);
+  expect(errors).toEqual([]);
+});
+
 test('buy an item → equip → it persists after a reload', async ({ page }) => {
   const errors: string[] = [];
   await boot(page, errors);
