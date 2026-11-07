@@ -75,4 +75,12 @@ describe('fonts (BRAND §2)', () => {
       .toEqual(['Bungee 400', 'Nunito 700', 'Nunito 800', 'Nunito 900']);
     expect(css).not.toMatch(/latin-ext/);
   });
+  it('arrows are drawn, never typed (§2.1): every UI file with an arrow in a string draws it through ui/arrows.ts', () => {
+    const offenders: string[] = [];
+    for (const f of files(join(ROOT, 'src/ui')).filter((p) => p.endsWith('.ts') && !p.endsWith('arrows.ts'))) {
+      const code = readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+      if (/(['"`])[^'"`\n]*[←→↑↓↖↗↘↙↔][^'"`\n]*\1/.test(code) && !/from '\.{1,2}\/arrows'/.test(code)) offenders.push(f);
+    }
+    expect(offenders).toEqual([]);
+  });
 });

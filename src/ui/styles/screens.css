@@ -41,7 +41,10 @@
 #screens .title-level .lv { font-weight: 900; font-size: 11px; letter-spacing: 0.04em; color: var(--ocean-deep); }
 #screens .title-level b { font-weight: 900; font-size: 18px; }
 #screens .title-level .xp-mini { width: 64px; height: 10px; }
-#screens .title-hero { margin-top: 9vh; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+/* --hero = the logo size; the gap keeps the tagline chip clear of the tilted word and its ink drop (BRAND §3.6). */
+#screens .title-hero { --hero: min(calc(50px * var(--k, 1)), calc(16.6vw - 5.3px)); margin-top: 9vh; display: flex; flex-direction: column;
+  align-items: center; gap: calc(var(--hero) * 0.26); }
+#screens .title .logo { --logo-size: var(--hero); }
 /* ── Logo (BRAND §3): ink layer under, moon-to-sea-glass fill over, the Earth-O; a golden-hour rim glow, then a hard ink drop. */
 #screens .logo { --logo-size: min(calc(50px * var(--k, 1)), calc(16.6vw - 5.3px));
   position: relative; display: inline-block; margin: 0; font-size: var(--logo-size); line-height: 1; transform: rotate(-3deg);
@@ -69,13 +72,21 @@
 /* Desktop / landscape (BRAND §3.4): the hero column centres on the Earth (TITLE_SCENE.landscape.earth.x, 0.37 W) and the
    word crosses the Earth's middle (cap line ≈ 0.40 H); the board floats in the free side region to the right. */
 @media (min-aspect-ratio: 1/1) and (min-width: 900px) {
-  #screens .title .logo { --logo-size: clamp(64px, 7.8vw, 104px); }
-  #screens .title .tagline { font-size: calc(clamp(64px, 7.8vw, 104px) * 0.27); max-width: none; }
+  #screens .title .title-hero { --hero: clamp(64px, min(7.8vw, 13vh), 104px); margin-top: calc(37vh - 64px); }
+  #screens .title .tagline { font-size: calc(var(--hero) * 0.27); max-width: none; }
   #screens .title .title-hero, #screens .title .title-mid { transform: translateX(-13vw); }
-  #screens .title .title-hero { margin-top: calc(37vh - 64px); }
   #screens .title .title-mid { margin-top: 5vh; padding-top: 0; }
 }
-#screens .tabs { width: 100%; max-width: 480px; display: grid; grid-template-columns: 1.25fr 1fr 1fr 1fr 1fr 0.85fr; cursor: default;
+/* Short landscape (a phone on its side, a short window): the same side-by-side layout, sized by the height so the hero,
+   TAP TO ROLL and the whole tab bar fit (the Title scene switches to its landscape layout from W/H >= 0.85). */
+@media (min-aspect-ratio: 1/1) and (max-height: 520px) {
+  #screens .title .title-hero { --hero: clamp(36px, 12vh, 60px); margin-top: 2vh; }
+  #screens .title .tagline { font-size: max(11.5px, calc(var(--hero) * 0.27)); max-width: none; padding: 4px 10px; }
+  #screens .title .title-hero, #screens .title .title-mid { transform: translateX(-13vw); }
+  #screens .title .title-mid { margin-top: 3vh; padding-top: 0; gap: 6px; }
+  #screens .title .tap { font-size: 20px; padding: 10px 18px 12px; }
+}
+#screens .tabs { width: 100%; max-width: 480px; flex-shrink: 0; display: grid; grid-template-columns: 1.25fr 1fr 1fr 1fr 1fr 0.85fr; cursor: default;
   background: var(--paper); border: 3px solid var(--ink); border-radius: 20px; box-shadow: var(--shadow); overflow: hidden; }
 #screens .tabs .tab { flex-direction: column; gap: 3px; min-width: 0; min-height: 60px; padding: 4px 0 2px; border: 0; border-radius: 0;
   box-shadow: none; background: transparent; font-family: var(--font-ui); font-weight: 900; font-size: clamp(10px, 2.9vw, 11.5px); letter-spacing: 0.04em;

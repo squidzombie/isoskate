@@ -44,6 +44,19 @@ describe('TitleScene', () => {
     for (const r of rates) expect(r).toBeCloseTo(w, 6);     // rad/s at every phase: the graphic face, edge-on, the back
     expect(Math.max(...rates) - Math.min(...rates)).toBeLessThan(1e-6);
   });
+  it('the spin follows the wall clock, so frames slower than the 0.1 s step cap keep the same speed', () => {
+    const s = new TitleScene();
+    const w = TAU / TITLE_SCENE.board.spinSec;
+    s.update(1 / 60, vp);
+    let prev = spinOf(s);
+    for (const wall of [0.016, 0.18, 0.033, 0.22, 0.12, 0.05]) {   // 4–8 fps hitches among normal frames
+      s.update(Math.min(0.1, wall), vp, wall);                       // the loop hands over a capped dt
+      const th = spinOf(s);
+      expect(wrap(th - prev) / wall).toBeCloseTo(w, 6);
+      prev = th;
+    }
+    expect(s.spinTime).toBeCloseTo(1 / 60 + 0.016 + 0.18 + 0.033 + 0.22 + 0.12 + 0.05, 9);
+  });
   it('the dive keeps the spin going at the tap (no stop), its tumble adds on top', () => {
     const s = new TitleScene(), d = s as unknown as Diving;
     const dt = 1 / 60, w = TAU / TITLE_SCENE.board.spinSec;

@@ -118,6 +118,9 @@ export class TitleScene {
   private readonly scrimU = { uScrim: { value: new Vector4(0, 0, 1, 1) }, uScrimK: { value: 0 } };
   private scrimK = 0; private readonly scrimBox = { x: 0, y: 0, rx: 0, ry: 0 }; private readonly buf = new Vector2();
   private time = 0;
+  /** The spin's own clock: real elapsed time (the wall clock when the caller passes it), so the board keeps its speed
+   *  on frames slower than the 0.1 s step cap too (owner direction: one constant speed). */
+  private spinT = 0;
   private vpW = -1; private vpH = -1;
   /** The band the layout was made for (compared field by field: nothing allocates per frame). */
   private readonly laid = { on: false, top: 0, bottom: 0, heroTop: 0, heroBottom: 0, colR: 0 };
@@ -225,13 +228,17 @@ export class TitleScene {
     });
   }
 
+  /** Seconds on the spin's clock (tests: the angle advances 2π / spinSec per second of it). */
+  get spinTime(): number { return this.spinT; }
+
   /** Bake progress 0…1 (the full maps). */
   get bakeProgress(): number { return this.full.progress; }
 
   /** Per frame on the Title (and under the menus opened from it): animation and layout. */
-  update(dt: number, vp: Viewport): void {
+  update(dt: number, vp: Viewport, wallSec: number = dt): void {
     const d = Math.min(0.1, Math.max(0, dt));
     this.time += d;
+    this.spinT += Math.min(0.25, Math.max(0, wallSec));     // a longer gap (back from a run, a hidden tab) resumes without a jump
     if (vp.wCss !== this.vpW || vp.hCss !== this.vpH || (!this.diving && this.bandMoved())) this.layout(vp);
     const C = TITLE_SCENE, B = C.board, t = this.time;
     fadeStep(this.colorL, d / C.fadeSec); fadeStep(this.cloudL, d / C.fadeSec);
@@ -245,7 +252,7 @@ export class TitleScene {
     this.clouds.rotation.y = rot;
     this.earthMat.uniforms.uCloudRot!.value = rot / (2 * Math.PI);
     this.starMat.uniforms.uTime!.value = t;
-    this.spinAngle = 2 * Math.PI * ((t / B.spinSec + 0.5) % 1);   // constant angular speed; opens on the graphic (θ = π)
+    this.spinAngle = 2 * Math.PI * ((this.spinT / B.spinSec + 0.5) % 1);   // constant angular speed; opens on the graphic (θ = π)
     if (!this.diving) {
       this.spin.rotation.y = this.spinAngle;
       this.tilt.rotation.set(B.leanDeg * DEG, 0, (B.tiltDeg + B.swayDeg * Math.sin((2 * Math.PI * t) / B.swaySec)) * DEG);

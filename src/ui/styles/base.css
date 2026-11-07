@@ -25,6 +25,8 @@
   --space-bg: radial-gradient(120% 70% at 50% 108%, #ffc870 0, #ff967a 14%, #4a3a7a 42%, #1b1d3f 78%);
 }
 #app, #screens, #hud, #toasts { -webkit-font-smoothing: antialiased; }
+/* Drawn arrows (ui/arrows.ts, BRAND §2.1): the font subset has no ← → or diagonals. */
+#screens svg.arr, #hud svg.arr, #toasts svg.arr { display: inline-block; width: 1em; height: 1em; vertical-align: -0.14em; flex: none; overflow: visible; }
 #screens { font-family: var(--font-ui); color: var(--ink); font-variant-numeric: tabular-nums; }
 #screens h1, #screens h2, #screens h3 { font-family: var(--font-display); margin: 0; letter-spacing: 0.02em; font-weight: 400; }
 #screens .safe-lr, #hud .safe-lr { position: absolute; visibility: hidden; pointer-events: none; width: 0; height: 0;

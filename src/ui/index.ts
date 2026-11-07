@@ -30,6 +30,7 @@ import { createHud, type HudExt } from './hud';
 import { createModal } from './modal';
 import { createLofi } from './overlay';
 import { createReveal, type Reveal } from './reveal';
+import { withArrows } from './arrows';
 import {
   bootScreen, crashScreen, cratesScreen, pauseScreen, resultsScreen, rewardsScreen, settingsScreen, showcaseScreen, statsScreen, titleScreen,
   type Screen, type ScreenCtx, type ScreenParams, type Sfx,
@@ -79,7 +80,7 @@ export function createUiImpl(root: HTMLElement): UiExt {
   // Toasts: informational only (pointer-events:none), at most 2 stacked, below the HUD band.
   const toast = (text: string, ms: number = TOAST.defaultMs) => {
     while (toastsEl.children.length >= TOAST.maxStacked) toastsEl.firstElementChild?.remove();
-    const t = h('div', { class: 'toast' }, text);
+    const t = h('div', { class: 'toast' }, ...withArrows(text));
     toastsEl.append(t);
     setTimeout(() => t.classList.add('out'), Math.max(200, ms - 220));
     setTimeout(() => t.remove(), ms);

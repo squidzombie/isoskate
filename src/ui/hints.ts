@@ -4,8 +4,9 @@
 //   - touch: a ghost thumb inside a faint "rest here" ring 10–16% from the bottom (runs 1–3), below the skater so a
 //     resting thumb doesn't cover it; the ghost acts the gesture (drag, tap, flick, hold) with transform/opacity only;
 //   - keys (fine pointer): chunky key caps in the chip instead ("[A] [D] TO STEER").
-import { h, setText } from './h';
+import { h } from './h';
 import { REST_MARK_SEC } from './ui.config';
+import { setArrowText, withArrows } from './arrows';
 
 export type Gesture = 'drag' | 'tap' | 'swipeL' | 'swipeD' | 'swipeUR' | 'hold';
 export interface HintText { touch: string; keys: string; caps: readonly string[]; keysLabel: string; gesture: Gesture }
@@ -53,8 +54,8 @@ export function createHints(coarse: () => boolean, onShown?: (id: string) => voi
       const t = next ? HINT_TEXT[next] : undefined;
       if (t) {
         touch = coarse();
-        caps.replaceChildren(...(touch ? [] : t.caps.map((c) => h('kbd', { class: c.length > 1 ? 'wide' : '' }, c))));
-        setText(text, touch ? t.touch : t.caps.length ? t.keysLabel : t.keys);
+        caps.replaceChildren(...(touch ? [] : t.caps.map((c) => h('kbd', { class: c.length > 1 ? 'wide' : '' }, ...withArrows(c)))));
+        setArrowText(text, touch ? t.touch : t.caps.length ? t.keysLabel : t.keys);
         chip.dataset.hint = next!;
         rest.dataset.gesture = t.gesture;
         onShown?.(next!);

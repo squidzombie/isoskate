@@ -2,7 +2,7 @@
 // playtest tuning never hunts through the screens. Pure data; the modules import from here.
 
 /** Run HUD (DESIGN §13.8). Text is batched at ≤ textHz; the reward toast must be gone by 3.0 s. */
-export const HUD_TIMING = { textHz: 15, rollSec: 0.3, trickHoldSec: 1.6, trickMinPx: 9, rewardSec: 2.7, bankWarnSec: 0.75 } as const;
+export const HUD_TIMING = { textHz: 15, rollSec: 0.3, trickHoldSec: 1.6, trickMinPx: 10, rewardSec: 2.7, bankWarnSec: 0.75 } as const;
 /** HUD band columns (ui/fit.ts hudColumns; DESIGN §13.8): k = vw / 390 clamped; the score column holds 7 glyphs of
  *  26·k px digits (×3.95 em), coins 17·k px (×3.9 em), the pause hit area is 56 px; the middle takes what is left. */
 export const HUD_LAYOUT = { kMin: 0.85, kMax: 1.3, refW: 390, padL: 10, padR: 4, gap: 6, pause: 56, scorePx: 26, scoreEm: 3.95,
@@ -10,7 +10,7 @@ export const HUD_LAYOUT = { kMin: 0.85, kMax: 1.3, refW: 390, padL: 10, padR: 4,
   /** The coin chip's padding + border (hud.css .hud-coins, BRAND §4.4): taken off the text's width. */
   coinChip: 18,
   /** Text fitting (ui/hud.ts): base sizes (× k, as in hud.css) and the smallest a long value may shrink to. */
-  comboPx: 15, trickPx: 11, scoreMinPx: 14, coinMinPx: 10, comboMinPx: 9, comboPad: 20 } as const;
+  comboPx: 15, trickPx: 11, trickTrack: 0.04, scoreMinPx: 14, coinMinPx: 10, comboMinPx: 9, comboPad: 20 } as const;
 /** Popups beside the skater (DESIGN §17.4): one at a time, ≤ 0.5 s, 0.6 → 1.1 → 1 in 120 ms; offsets in CSS px. */
 export const POPUP = { sec: 0.5, popIn: 0.12, holdTo: 0.3, dx: 72, dy: -46, pool: 4, edge: 64 } as const;
 /** The "rest here" ring stays up this long into runs 1–3 even without a hint (the Roll-out). */

@@ -10,7 +10,7 @@ interface TitleTools {
   dive(): { frames: number; maxWorkMs: number; startedAt: number; liveAt: number; skipped: boolean | null };
   hold(t: number | null): void;
   bakeDone(): boolean;
-  scene: { camera: import('three').PerspectiveCamera; boardSlot: import('three').Object3D; time: number };
+  scene: { camera: import('three').PerspectiveCamera; boardSlot: import('three').Object3D; time: number; spinTime: number };
 }
 
 async function boot(page: Page, errors: string[]): Promise<void> {
@@ -76,20 +76,42 @@ test('the Title draws the Earth in space with the equipped board clear of the UI
   expect(r.box.y0).toBeGreaterThan(0); expect(r.box.y1).toBeLessThan(r.h);
   expect(Math.max(r.box.x1 - r.box.x0, r.box.y1 - r.box.y0)).toBeGreaterThan(0.18 * Math.min(r.w, r.h));
   expect(r.overlaps).toEqual([]);
-  // The board spins at one constant rate (owner direction): the same angular speed over every interval.
-  const rates = await page.evaluate(async () => {
+  // The board spins at one constant rate (owner direction): the same angular speed over every interval of its clock,
+  // and that clock keeps pace with the wall clock (frames slower than the sim's 0.1 s cap do not slow it).
+  const { rates, wallRatio } = await page.evaluate(async () => {
     const S = (window as unknown as { __skateTitle: TitleTools }).__skateTitle.scene, out: number[] = [];
-    let a = S.boardSlot.parent!.rotation.y, t = S.time;
+    let a = S.boardSlot.parent!.rotation.y, t = S.spinTime;
+    const t0 = S.spinTime, w0 = performance.now();
     for (let i = 0; i < 8; i++) {
       await new Promise((res) => setTimeout(res, 250));
-      const b = S.boardSlot.parent!.rotation.y, u = S.time;
+      const b = S.boardSlot.parent!.rotation.y, u = S.spinTime;
       if (u > t) out.push((((b - a) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) / (u - t));
       a = b; t = u;
     }
-    return out;
+    return { rates: out, wallRatio: (S.spinTime - t0) / ((performance.now() - w0) / 1000) };
   });
   expect(rates.length).toBeGreaterThan(4);
   for (const w of rates) expect(w).toBeCloseTo((2 * Math.PI) / 11, 3);
+  expect(wallRatio).toBeGreaterThan(0.85); expect(wallRatio).toBeLessThan(1.1);   // frame quantisation at the ends
+  expect(errors).toEqual([]);
+});
+
+test('a phone on its side (844×390) keeps the whole tab bar under the hero, with no sideways scroll', async ({ page }) => {
+  const errors: string[] = [];
+  await page.setViewportSize({ width: 844, height: 390 });
+  await boot(page, errors);
+  await expect(screenOn(page, 'title')).toHaveClass(/\bon\b/);
+  await page.evaluate(() => document.fonts.ready);
+  await page.waitForTimeout(300);
+  const r = await page.evaluate(() => {
+    const rect = (s: string) => { const b = document.querySelector(`#screens [data-screen="title"] ${s}`)!.getBoundingClientRect(); return { x0: b.left, y0: b.top, x1: b.right, y1: b.bottom }; };
+    return { tabs: rect('.tabs'), tap: rect('.tap'), tagline: rect('.tagline'), top: rect('.title-top'), sw: document.documentElement.scrollWidth };
+  });
+  expect(r.tabs.y1 - r.tabs.y0).toBeGreaterThanOrEqual(60);                  // labels and icons whole (a squeezed bar was 35 px)
+  expect(r.tabs.y1).toBeLessThanOrEqual(390);
+  expect(r.tap.y1).toBeLessThan(r.tabs.y0);
+  expect(r.tagline.y0).toBeGreaterThan(r.top.y1);
+  expect(r.sw).toBeLessThanOrEqual(844);
   expect(errors).toEqual([]);
 });
 

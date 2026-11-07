@@ -75,14 +75,19 @@ export function wire(root: HTMLElement): Game {
     const block = q('.title-hero') ?? logo;              // logo + tagline: the scene darkens softly behind it
     if (!logo || !tap || !tabs) { bandVal = null; return null; }
     const under = Math.max(tap.bottom, best?.height ? best.bottom : 0, keys?.height ? keys.bottom : 0);
-    const colR = Math.max(logo.right, tap.right, best?.width ? best.right : 0, keys?.width ? keys.right : 0);
-    bandVal = tabs.top - under > 60
+    const colR = Math.max(logo.right, block?.width ? block.right : 0, tap.right, best?.width ? best.right : 0, keys?.width ? keys.right : 0);
+    // Landscape places the board in the side region right of the hero column (TitleScene.layout), so a short band is fine.
+    const W = viewport.wCss, H = Math.max(1, viewport.hCss), side = W / H >= 0.85 && W - (colR + 16) > 0.24 * W;
+    bandVal = tabs.top - under > 60 || side
       ? { top: under + 10, bottom: tabs.top - 10, heroTop: logo.top, heroBottom: tap.bottom, colR: colR + 16, sideTop: (top?.bottom ?? 0) + 16,
         scrimX: block ? (block.left + block.right) / 2 : 0, scrimY: block ? (block.top + block.bottom) / 2 : 0,
         scrimRx: block?.width ? block.width / 2 : 0, scrimRy: block?.height ? block.height / 2 : 0 } : null;
     return bandVal;
   };
   const title = new TitleScene(titleBand);
+  // The board's spin runs on the wall clock (the frame dt is capped at 0.1 s for the sim), so it never slows on a slow frame.
+  let titleWallMs = -1;
+  const titleWall = (dt: number): number => { const now = performance.now(), s = titleWallMs < 0 ? dt : (now - titleWallMs) / 1000; titleWallMs = now; return s; };
   title.boardSlot.add(hero.object3d);
   let spaceUp = false;                                  // the bake runs only while the space backdrop is drawn
   title.startBake(() => spaceUp);
@@ -150,7 +155,7 @@ export function wire(root: HTMLElement): Game {
       title.endDive();
       syncHero();
       hero.update(f.dt);
-      title.update(f.dt, viewport);
+      title.update(f.dt, viewport, titleWall(f.dt));
       if (worldWarm !== 1 && worldWarm < 3 && ++spaceFrames > 1) warmWorld(f);
       title.render(gfx.renderer);
       return false;
@@ -180,7 +185,7 @@ export function wire(root: HTMLElement): Game {
         diveWorks.length = 0;
       }
       hero.update(f.dt);
-      title.update(f.dt, viewport);
+      title.update(f.dt, viewport, titleWall(f.dt));
       const diveFocus = title.worldPos(skater.object3d);  // world space, whatever the rider is parented to
       // A chunk built during the space phase is uploaded the frame after (a 1-pixel draw from high above), so the
       // first world frame of the dive does not upload them all at once.

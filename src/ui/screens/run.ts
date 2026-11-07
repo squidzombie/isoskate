@@ -6,6 +6,7 @@ import { fmtScore } from '../format';
 import { isMetaExt } from '../../meta';
 import { h, setText } from '../h';
 import { btn, finePointer, section, type Screen, type ScreenCtx } from './common';
+import { withArrows } from '../arrows';
 
 export function crashScreen(): Screen {
   const cause = h('div', { class: 'cause' }, '');
@@ -41,7 +42,7 @@ export function pauseScreen(ctx: ScreenCtx): Screen {
   const fillKeys = (preset: 'A' | 'B') => {
     if (preset === keysFor) return;
     keysFor = preset;
-    keys.replaceChildren(...KEYS[preset].map(([k, v]) => h('div', { class: 'keyrow' }, h('kbd', null, k), h('span', null, v))));
+    keys.replaceChildren(...KEYS[preset].map(([k, v]) => h('div', { class: 'keyrow' }, h('kbd', null, ...withArrows(k)), h('span', null, v))));
   };
   const resume = btn('Resume', { k: 'resume' }, ctx, 'primary big');
   const card = h('div', { class: 'pause-card' },
