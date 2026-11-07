@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import { CHUNK_LEN, HEIGHT, T_SHIFT, sAt } from '../../src/core/tuning';
 import type { Obstacle, SafeKey } from '../../src/core/world';
 import { createWorldGen, createWorldQuery, Generator, rMinAt } from '../../src/world/gen';
+import { ollieWindow } from '../../src/world/gen/validator/path';
 import { seedsFor, writeReport } from './suites';
 
 const S_END = 3000;
@@ -17,8 +18,8 @@ const COT35 = 1 / Math.tan((35 * Math.PI) / 180);
 const seeds = seedsFor(100);
 
 interface Measure {
-  seed: number; segments: number; rerolls: number; fallbacks: number; coinShare: number;
-  decisionMin: number; windowMin: number; deadEndMax: number;
+  seed: number; segments: number; rerolls: number; fallbacks: number; coinShare: number; valCalls: number; valFails: number; replans: number;
+  decisionMin: number; windowMin: number; windowMinIndep: number; deadEndMax: number;
   spacingMin: number; band: string[]; datum: string[]; hidden: string[];
 }
 
@@ -81,9 +82,18 @@ function measure(seed: number): Measure {
       break;
     }
   }
+  // Required ollie windows re-measured on the committed street (independent of the validator's own numbers): the exact
+  // tick-grid take-off window around every ollie key (60 Hz from t = 0).
+  let windowMinIndep = Infinity;
+  for (const k of keys) {
+    if (k.action !== 'ollie' || k.s > S_END - 50) continue;
+    const win = ollieWindow(w.obstacles(k.s - 20, k.s + 40), k.x, k.t, 0);
+    windowMinIndep = Math.min(windowMinIndep, win ? win.tb - win.ta + 1 / 60 : 0);
+  }
   const st = gen.stats(), vs = gen.valStats;
-  return { seed, segments: st.segments, rerolls: st.rerolls, fallbacks: st.fallbacks, coinShare: st.trickCoinShare,
-    decisionMin: vs.decisionMin, windowMin: vs.windowMin, deadEndMax: vs.deadEndMax, spacingMin, band, datum, hidden };
+  const replans = Object.entries(st.rejections).filter(([k]) => k.startsWith('replan:')).reduce((a, [, v]) => a + v, 0);
+  return { seed, segments: st.segments, rerolls: st.rerolls, fallbacks: st.fallbacks, coinShare: st.trickCoinShare, valCalls: gen.valCalls, valFails: gen.valFails, replans,
+    decisionMin: vs.decisionMin, windowMin: vs.windowMin, windowMinIndep, deadEndMax: vs.deadEndMax, spacingMin, band, datum, hidden };
 }
 
 const ms = seeds.map(measure);
@@ -92,12 +102,16 @@ const agg = {
   seeds: ms.length, sEnd: S_END,
   decisionMin: +Math.min(...ms.map((m) => m.decisionMin)).toFixed(3),
   windowMin: +Math.min(...ms.map((m) => m.windowMin)).toFixed(3),
+  windowMinIndep: +Math.min(...ms.map((m) => m.windowMinIndep)).toFixed(3),
   deadEndMax: +Math.max(...ms.map((m) => m.deadEndMax)).toFixed(3),
   spacingMarginMin: +Math.min(...ms.map((m) => m.spacingMin)).toFixed(3),
   coinShare: +(sum((m) => m.coinShare * m.segments) / sum((m) => m.segments)).toFixed(3),
   coinShareMin: +Math.min(...ms.map((m) => m.coinShare)).toFixed(3),
   rerollRate: +(sum((m) => m.rerolls) / sum((m) => m.segments)).toFixed(4),
   fallbackRate: +(sum((m) => m.fallbacks) / sum((m) => m.segments)).toFixed(4),
+  // Every validation that failed (row-overlay tries and edge trims included), and scheduling re-plans per segment.
+  validationFailRate: +(sum((m) => m.valFails) / sum((m) => m.valCalls)).toFixed(4),
+  replanRate: +(sum((m) => m.replans) / sum((m) => m.segments)).toFixed(4),
   band: ms.flatMap((m) => m.band.map((b) => `seed ${m.seed}: ${b}`)),
   datum: ms.flatMap((m) => m.datum.map((b) => `seed ${m.seed}: ${b}`)),
   hidden: ms.flatMap((m) => m.hidden.map((b) => `seed ${m.seed}: ${b}`)),
@@ -108,10 +122,15 @@ describe('bots gate: static asserts (gate seeds × 3,000 m)', () => {
   it('every hazard the safe line meets is visible (no crash face in a taller solid’s 35° shadow)', () => expect(agg.hidden).toEqual([]));
   it('decision time ≥ 1.2 s (one 1/30 s slice of grid tolerance)', () => expect(agg.decisionMin).toBeGreaterThanOrEqual(1.2 - 1 / 30 - 1e-6));
   it('required-action spacing ≥ max(R_MIN, T_SHIFT(dx))', () => expect(agg.spacingMarginMin).toBeGreaterThanOrEqual(-0.011));
-  it('required ollie windows ≥ 0.25 s', () => expect(agg.windowMin).toBeGreaterThanOrEqual(0.25 - 1e-6));
+  it('required ollie windows ≥ 0.25 s (validator, and re-measured on the committed street)', () => {
+    expect(agg.windowMin).toBeGreaterThanOrEqual(0.25 - 1e-6);
+    expect(agg.windowMinIndep).toBeGreaterThanOrEqual(0.25 - 1e-6);
+  });
   it('dead ends die within 2.0 s (+ one 1/30 s grid slice)', () => expect(agg.deadEndMax).toBeLessThanOrEqual(2.0 + 1 / 30 + 1e-6));
   it('no forbidden-band solids (0.61–1.14 m)', () => expect(agg.band).toEqual([]));
   it('every area datum closes to y = 0', () => expect(agg.datum).toEqual([]));
   it('trick-coin share ≥ 75 %', () => expect(agg.coinShare).toBeGreaterThanOrEqual(0.75));
-  it('validator rejections < 5 %, fallbacks < 1 %', () => { expect(agg.rerollRate).toBeLessThan(0.05); expect(agg.fallbackRate).toBeLessThan(0.01); });
+  it('validator rejections < 5 % of segments, fallbacks < 1 % (every failed validation, probes included, < 20 %)', () => {
+    expect(agg.rerollRate).toBeLessThan(0.05); expect(agg.fallbackRate).toBeLessThan(0.01); expect(agg.validationFailRate).toBeLessThan(0.2);
+  });
 });

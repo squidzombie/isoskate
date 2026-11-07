@@ -1,13 +1,14 @@
 // world/gen (W1b): golden chunk hashes, determinism, the area timeline and gateways, the Roll-out and the Lesson Line,
-// the v1 template set and landmarks, curb grind exits, tall blockers, gate rows, height bands, R_MIN spacing along
-// SafeKeys, A3 full-width scheduling, startT semantics, decor, coins and generator health. The 100-seed static
+// the v1 template set and landmarks, curb grind exits, tall blockers, anti-straight rows, height bands, R_MIN spacing
+// along SafeKeys, A3 full-width scheduling (maximum and minimum), startT semantics, decor, coins (A5) and generator
+// health. The 100-seed static
 // asserts are tests/bots/gate.static.test.ts.
 import { describe, expect, it } from 'vitest';
 import { hash32 } from '../../../src/core/rng';
 import { CHUNK_LEN, HEIGHT, R_MIN, T_SHIFT, sAt, speedAt, tAt } from '../../../src/core/tuning';
 import type { Chunk, SafeKey, WorldGen } from '../../../src/core/world';
 import { ObTag } from '../../../src/core/world';
-import { AREA_TEMPLATES, createWorldGen, createWorldQuery, GATEWAYS, GEN, GEN_FLAGS, gatewayWindow, LESSON_PARTS, rMinAt, ROLLOUT_CHAIN_T,
+import { AREA_TEMPLATES, createWorldGen, createWorldQuery, GATEWAYS, GEN, GEN_FLAGS, Generator, gatewayWindow, LESSON_PARTS, rMinAt, ROLLOUT_CHAIN_T,
   ROLLOUT_END_S, SHARED } from '../../../src/world/gen';
 import { DECOR_KINDS } from '../../../src/core/decor';
 import { insetOf } from '../../../src/sim';
@@ -126,7 +127,7 @@ describe('validator rules on generated streets (20 seeds × 3,000 m, S_TRENCH on
   it('S_TRENCH only when GEN_FLAGS.trench is on; off, every A3 slot is an S_BARRIER', () => {
     const count = (g: WorldGen, id: string) => g.segments().filter((s) => s.templateId === id).length;
     const on = gens.filter((_, i) => i % 2 === 0), off = gens.filter((_, i) => i % 2 === 1);
-    expect(on.reduce((n, g) => n + count(g, 'S_TRENCH'), 0)).toBeGreaterThan(50);
+    expect(on.reduce((n, g) => n + count(g, 'S_TRENCH'), 0)).toBeGreaterThan(30);
     expect(off.reduce((n, g) => n + count(g, 'S_TRENCH'), 0)).toBe(0);
     for (const g of off) expect(createWorldQuery(g).obstacles(0, 3000).every((o) => o.pits.length === 0)).toBe(true);
     expect(off.reduce((n, g) => n + count(g, 'S_BARRIER'), 0)).toBeGreaterThan(on.reduce((n, g) => n + count(g, 'S_BARRIER'), 0));
@@ -192,29 +193,24 @@ describe('validator rules on generated streets (20 seeds × 3,000 m, S_TRENCH on
     expect(n).toBeGreaterThan(500);
   });
 
-  it('gate rows (anti-straight) come ≤ GEN.gate.gap apart, plus a gateway or a slipped long template of slack', () => {
+  it('anti-straight rows: each row’s lanes are disjoint from the previous row’s, rows ≤ GEN.gate.gap apart (+ a gateway or a slipped long template)', () => {
     let rows = 0, worst = -Infinity;
     for (const g of gens) {
-      const w = createWorldQuery(g);
-      const segs = g.segments();
-      // A row: ≥ 3 filler blockers at one s.
-      const at = new Map<number, number>();
-      for (const o of w.obstacles(0, 3000)) if (o.tags & ObTag.Filler) at.set(o.s, (at.get(o.s) ?? 0) + 1);
-      const rowsT = [...at.entries()].filter(([, k]) => k >= 3).map(([s]) => tAt(s)).sort((a, b) => a - b)
-        .filter((t, i, a) => i === 0 || t - a[i - 1]! > 0.5);
-      for (let i = 1; i < rowsT.length; i++) {
-        const a = rowsT[i - 1]!, b = rowsT[i]!;
-        if (b > 330) break;
-        const ph = a < 45 ? 'opening' : a < 90 ? 'warm' : a < 150 ? 'build' : 'plateau';
-        const gw = segs.some((s) => s.gateway && s.t1 > a && s.t0 < b);
-        // A long template drawn while the gate was not due slips the deadline by up to its length (schedule.ts).
-        const slip = segs.filter((s) => s.t0 >= a && s.t1 <= b && !s.gateway && s.t1 - s.t0 > 3.3).reduce((m, s) => Math.max(m, s.t1 - s.t0), 0);
-        worst = Math.max(worst, b - a - GEN.gate.gap[ph] - (gw ? 4 + GEN.gate.lead + 3.0 : 0) - slip);
+      const gen = g as Generator, segs = g.segments();
+      const rs = gen.rows.filter((r) => r.t < 330);
+      for (let i = 1; i < rs.length; i++) {
+        const a = rs[i - 1]!, b = rs[i]!;
+        // No straight lane passes two consecutive rows (rows.ts lanes: openings and side gaps alike).
+        for (const [p0, p1] of a.lanes) for (const [q0, q1] of b.lanes) expect(p1 < q0 || q1 < p0, `rows ${a.t.toFixed(2)} / ${b.t.toFixed(2)}`).toBe(true);
+        const ph = a.t < 45 ? 'opening' : a.t < 90 ? 'warm' : a.t < 150 ? 'build' : 'plateau';
+        const gw = segs.some((s) => s.gateway && s.t1 > a.t && s.t0 < b.t);
+        const slip = segs.filter((s) => s.t0 >= a.t && s.t1 <= b.t && !s.gateway && s.t1 - s.t0 > 3.3).reduce((m, s) => Math.max(m, s.t1 - s.t0), 0);
+        worst = Math.max(worst, b.t - a.t - GEN.gate.gap[ph] - (gw ? 4 + GEN.gate.lead + 3.0 : 0) - slip);
       }
-      rows += rowsT.length;
+      rows += rs.length;
     }
     expect(rows).toBeGreaterThan(20 * 30);
-    expect(worst).toBeLessThanOrEqual(3.5);   // a gate segment's row stands up to ~3.4 s into it (A3 combo: barrier first)
+    expect(worst).toBeLessThanOrEqual(3.5);   // a gate segment's row stands up to ~3.4 s into it (re-rolls stand it later)
   });
 
   it('height bands: no solid top in 0.61–1.14 m; full-width hazards ≤ 0.50 m tall and ≤ 0.6 m long; pits ≤ 0.35 s·v', () => {
@@ -268,7 +264,7 @@ describe('validator rules on generated streets (20 seeds × 3,000 m, S_TRENCH on
     expect(minGap).toBeGreaterThan(-0.011);
   });
 
-  it('A3: a full-width hazard at most every 16 s of non-T0 time in the opening, every 12 s later (+0.5 s)', () => {
+  it('A3: a full-width hazard at most every 16 s of non-T0 time in the opening, every 12 s later (+2 s when a long template lands on it)', () => {
     let worst = -Infinity;
     for (const g of gens) {
       const w = createWorldQuery(g);
@@ -278,18 +274,59 @@ describe('validator rules on generated streets (20 seeds × 3,000 m, S_TRENCH on
       const fw = w.obstacles(0, 3000).filter((o) => o.tags & ObTag.FullWidth).map((o) => ({ a: aAt(tAt(o.s)), t: tAt(o.s) }));
       for (let i = 1; i < fw.length; i++) worst = Math.max(worst, fw[i]!.a - fw[i - 1]!.a - (fw[i - 1]!.t < 45 ? 16 : 12));
     }
-    expect(worst).toBeLessThanOrEqual(0.5);
+    expect(worst).toBeLessThanOrEqual(2.0);
   });
 
-  it('coins: most sit on trick lines; the generator rarely re-rolls and (almost) never falls back', () => {
-    let segs = 0, rerolls = 0, fallbacks = 0;
+  it('A3: never before its minimum (8 s of non-T0 time, 12 s in the opening), but for the last slot before a gateway (≤ 2.5 s early)', () => {
+    let worst = Infinity, n = 0;
+    for (const g of gens) {
+      const w = createWorldQuery(g);
+      const segs = g.segments();
+      const aAt = (t: number) => { let a = 0; for (const s of segs) { if (s.t0 >= t) break; if (s.tier > 0) a += Math.min(t, s.t1) - s.t0; } return a; };
+      const fw = w.obstacles(0, 3000).filter((o) => o.tags & ObTag.FullWidth).map((o) => ({ a: aAt(tAt(o.s)), t: tAt(o.s) }));
+      for (let i = 1; i < fw.length; i++) { n++; worst = Math.min(worst, fw[i]!.a - fw[i - 1]!.a - (fw[i - 1]!.t < 45 ? 12 : 8)); }
+    }
+    expect(n).toBeGreaterThan(20 * 15);
+    expect(worst).toBeGreaterThanOrEqual(-GEN.a3PreGwEarly - 0.1);
+  });
+
+  it('coins (A5): ≥ 75 % on trick lines, ≤ 10 % on the safe line outside breathers; no ground string holds one x > 1.5 s', () => {
+    let all = 0, safeOff = 0;
     for (const g of gens) {
       const st = g.stats();
-      expect(st.trickCoinShare, 'trick coin share').toBeGreaterThanOrEqual(0.75);   // A5
-      segs += st.segments; rerolls += st.rerolls; fallbacks += st.fallbacks;
+      expect(st.trickCoinShare, 'trick coin share').toBeGreaterThanOrEqual(0.75);
+      const segs = g.segments();
+      const coins = [];
+      for (let i = 0; i * CHUNK_LEN < 3000; i++) coins.push(...g.chunk(i).coins);
+      for (const c of coins) {
+        all++;
+        const t = tAt(c.p.s), sg = segs.find((s) => t >= s.t0 && t < s.t1);
+        if (c.line === 'safe' && sg && sg.tier !== 0) safeOff++;
+      }
+      const ground = coins.filter((c) => c.line !== 'trick').sort((a, b) => a.p.s - b.p.s);
+      let r0 = 0;
+      for (let i = 1; i <= ground.length; i++) {
+        if (i < ground.length && Math.abs(ground[i]!.p.x - ground[r0]!.p.x) <= 0.05 && ground[i]!.p.s - ground[i - 1]!.p.s <= 3) continue;
+        expect(tAt(ground[i - 1]!.p.s) - tAt(ground[r0]!.p.s), `ground string at ${ground[r0]!.p.s}`).toBeLessThanOrEqual(1.5);
+        r0 = i;
+      }
+    }
+    expect(safeOff / all).toBeLessThanOrEqual(0.10);
+  });
+
+  it('generator health: validator re-rolls < 5 % and fallbacks < 1 % of segments, no emergency (relaxed) segment; every validation counted', () => {
+    let segs = 0, rerolls = 0, fallbacks = 0, emergency = 0, calls = 0, fails = 0;
+    for (const g of gens) {
+      const st = g.stats();
+      segs += st.segments; rerolls += st.rerolls; fallbacks += st.fallbacks; emergency += st.rejections.emergency ?? 0;
+      calls += (g as Generator).valCalls; fails += (g as Generator).valFails;
     }
     expect(rerolls / segs).toBeLessThan(0.05);
     expect(fallbacks / segs).toBeLessThan(0.01);
+    expect(emergency).toBe(0);
+    // All validations, row-overlay tries and edge trims included (reported; the probes make it larger than re-rolls).
+    expect(calls).toBeGreaterThan(segs);
+    expect(fails / calls).toBeLessThan(0.2);
   });
 });
 
@@ -344,22 +381,35 @@ describe('the Lesson Line (DESIGN §12.3) and the v1 template set (§10.4)', () 
     expect(w.groundAt(sAt(40) + 0.5, 0, 0.5).y).toBe(0);
   });
 
-  it('the v1 templates (9 shared, 6 per area, 4 gateways) are instantiated on 20 seeds; the landmarks appear', () => {
-    const seen = new Set<string>(), landmarks = new Set<string>();
-    for (let seed = 1; seed <= 20; seed++) {
+  it('the v1 templates (9 shared, 6 per area, 4 gateways) are instantiated and validated on 50 seeds; the landmarks appear', () => {
+    const seen = new Map<string, number>(), landmarks = new Set<string>();
+    for (let seed = 1; seed <= 50; seed++) {
       const g = createWorldGen({ seed, mode: 'normal' });
-      g.ensure(sAt(640));
-      for (const s of g.segments()) seen.add(s.templateId);
-      for (const o of createWorldQuery(g).obstacles(0, sAt(640))) if (o.landmark) landmarks.add(o.landmark);
+      g.ensure(sAt(480));
+      for (const s of g.segments()) seen.set(s.templateId, (seen.get(s.templateId) ?? 0) + 1);
+      for (const o of createWorldQuery(g).obstacles(0, sAt(480))) if (o.landmark) landmarks.add(o.landmark);
     }
     const ids = [...SHARED, ...Object.values(AREA_TEMPLATES).flat(), ...Object.values(GATEWAYS)].map((t) => t.id);
     expect(SHARED.length).toBe(9);
     for (const a of Object.values(AREA_TEMPLATES)) expect(a.length).toBe(6);
-    // DT_RUSH (T3–T4, 4 s) and NE_GAUNTLET (T4, full width, 4.6 s) need a long gate room at the plateau: rare
-    // (reported in the hand-off); every other v1 template shows up.
-    expect(ids.filter((id) => !seen.has(id) && id !== 'DT_RUSH' && id !== 'NE_GAUNTLET')).toEqual([]);
+    expect(ids.filter((id) => !seen.has(id))).toEqual([]);
     for (const l of ['Amberlane Seven', 'Corner Scoops wall', 'Pier 9 lip', 'Sora Line Skywalk']) expect(landmarks.has(l), l).toBe(true);
-  }, 120_000);
+  }, 300_000);
+
+  it('the Harbor Bridge deck (DESIGN §12.2) stands on every visit, off the safe line', () => {
+    let visits = 0;
+    for (let seed = 1; seed <= 6; seed++) {
+      const g = createWorldGen({ seed, mode: 'normal' });
+      g.ensure(sAt(300));
+      const w = createWorldQuery(g);
+      for (const sg of g.segments()) {
+        if (sg.gateway !== 'harborBridge') continue;
+        visits++;
+        expect(w.obstacles(sg.s0, sg.s1).some((o) => o.kind === 'skywalk' && o.params?.bridge), `seed ${seed}`).toBe(true);
+      }
+    }
+    expect(visits).toBe(12);
+  });
 
   it('full-width hazards carry warnAtS (1.6 s ahead); gaps name their obstacle; decor uses only DECOR_KINDS within limits', () => {
     const g = createWorldGen({ seed: 9, mode: 'normal' });

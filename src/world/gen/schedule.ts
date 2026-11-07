@@ -87,7 +87,9 @@ export function planSegment(c: GenCursor, env: PlanEnv, rng: Sfc32): Plan {
   const a3MaxLeft = c.lastFwA + a3Hi - c.aClock;
   const a3Min = c.aClock + 1.0 >= c.lastFwA + a3Lo;
   const preGw = left < GEN.a3PreGwLeft && a3MaxLeft - left < GEN.a3PreGw;
-  const a3Due = clocks && left >= 2.4 && (env.force === 'a3' || (a3Min && (c.aClock + 0.5 >= c.fwDueA || a3MaxLeft < GEN.a3Lead || preGw)));
+  // (the last slot before a gateway may come up to a3PreGwEarly s before the minimum, or the maximum would fall in it)
+  const preGwOK = preGw && c.aClock + 1.0 >= c.lastFwA + a3Lo - GEN.a3PreGwEarly;
+  const a3Due = clocks && left >= 2.4 && (env.force === 'a3' || preGwOK || (a3Min && (c.aClock + 0.5 >= c.fwDueA || a3MaxLeft < GEN.a3Lead)));
   if (a3Due && env.gateRoom >= 2.4) return a3Plan(rng, tier, env.trench, area, Math.min(left, env.gateRoom + 2.3));
   if (clocks && (gateNow || a3Due) && left >= gate.durMax) {
     // Both due: the gate segment carries the hazard in its approach when there is room for both.

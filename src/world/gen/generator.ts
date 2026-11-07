@@ -459,7 +459,10 @@ export class Generator implements WorldGen {
         if (centres) {
           const tr = Math.max(t1 - 0.3, moveFrom + T_SHIFT(Math.abs(centres[0]! - x0)) + 0.35, tEdge + GEN.gate.edgeClear);
           const keepOut = slotAt(tr);
-          if (keepOut && tr <= rowDue + 1e-6 && tAt(sAt(tr) + 1.2) + 0.5 <= maxT1 - GEN.gate.tailRoom && centres.every((x) => clearOf(x, keepOut)) && reach(tr, centres)) {
+          // (the longer segment must leave the next one room for the A3 hazard before its maximum)
+          const t1x = tAt(sAt(tr) + 1.2) + 0.5;
+          const a3ok = fullWidthA !== null || aOf(t1x) <= c.lastFwA + a3Range(phase)[1] - GEN.gate.tailA3Room;
+          if (keepOut && a3ok && tr <= rowDue + 1e-6 && t1x <= maxT1 - GEN.gate.tailRoom && centres.every((x) => clearOf(x, keepOut)) && reach(tr, centres)) {
             tries.push({ tr, centres, keepOut, tail: true });
           }
         }

@@ -56,8 +56,9 @@ export const GEN = {
   landmarks: { downtown: 'DT_BIG7', suburbs: 'SB_SCOOPS', docks: 'IN_LIP', neon: 'NE_SKYWALK' } as Record<AreaId, string>,
   landmarkBoost: 4,
   /** Before a gateway (T0: the A-clock pauses) the last slot that fits the hazard takes it when its maximum would come
-   *  within this much A-time after the gateway; such a slot needs `preGwLeft` s left in the visit. */
-  a3PreGw: 2.6, a3PreGwLeft: 9.0,
+   *  within this much A-time after the gateway; such a slot needs `preGwLeft` s left in the visit and may come up to
+   *  `preGwEarly` s before the A3 minimum. */
+  a3PreGw: 2.6, a3PreGwLeft: 9.0, a3PreGwEarly: 2.5,
   /** The line enters a gateway within ±this x (its corridor; gateways are T0). */
   gwEntry: 2.5,
   /** GW_harborBridge deck (DESIGN §12.2): incline from `lead` s in, deck to `exitSec`·v before the gateway ends, ≥ minDeck m. */
@@ -93,6 +94,8 @@ export const GEN = {
     /** A tail row (after a template's content) stands ≥ this long after the template's last grind edge ends (its exit
      *  zone and rail-end lane), and leaves this much room before a gateway (the cut-down filler). */
     edgeClear: 1.15, tailRoom: 0.8,
+    /** ... and ends ≥ tailA3Room s of A-time before the A3 maximum (the next segment can still carry the hazard). */
+    tailA3Room: 2.6,
     /** Planning: the shortest gate segment. A gate segment carries the A3 hazard too (both due) only after this
      *  many seconds of a run's clock (its first rows must stand on time). */
     fit: 2.9, combineAfter: 12,
