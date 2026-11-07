@@ -35,8 +35,6 @@ import {
   type Screen, type ScreenCtx, type ScreenParams, type Sfx,
 } from './screens';
 
-/** Menu screens the App opens only from Title / Results (game/app.ts onIntent 'open'). */
-const MENUS: ReadonlySet<ScreenId> = new Set<ScreenId>(['locker', 'shop', 'crates', 'stats', 'settings', 'rewards']);
 const DT = 1 / 60;
 const ARROW: Readonly<Record<string, string>> = { u: '↑', d: '↓', l: '←', r: '→', ul: '↖', ur: '↗', dl: '↙', dr: '↘' };
 /** The swipe that makes each trick ("↙ VARIAL KICKFLIP — new!"); grinds show their pick, spins their diagonal. */
@@ -95,8 +93,7 @@ export function createUiImpl(root: HTMLElement): UiExt {
     sfx: (s: Sfx) => appBus?.emit({ t: 'ui', sfx: s }),
     go(screen) {
       if (screen === current) return;
-      if (current !== 'title' && current !== 'results' && MENUS.has(current)) raise({ k: 'home' });
-      raise({ k: 'open', screen });
+      raise({ k: 'open', screen });        // the App opens a menu from another menu directly (applied @G1)
     },
     current: () => current,
     modal, toast, lofi, monetization: () => monetization, coarse,

@@ -1690,7 +1690,7 @@ frames.ts: queue of timestamped gestures → InputFrame per tick:
 |---|---|---|
 | `npm run typecheck` | `tsc --noEmit` | Every commit |
 | `npm run lint` | `node scripts/lint.mjs` (determinism bans + import boundaries) | Every commit |
-| `npm test` | Unit + `bots.quick` + benches (sim ≤ 0.05 ms per tick: `tests/unit/sim/bench.test.ts`; segment ≤ 3 ms p95: `tests/unit/gen/bench.test.ts`; best of repeats, since CPU noise only adds time) | Every commit |
+| `npm test` | Unit + `bots.quick` + benches (sim ≤ 0.05 ms per tick: `tests/unit/sim/bench.test.ts`; segment ≤ 3 ms p95: `tests/unit/gen/bench.test.ts`; single chunk builds ≤ 4 ms p95 on real plateau content: `tests/unit/render/build.bench.test.ts`, G1; best of repeats, since CPU noise only adds time) | Every commit |
 | `npm run test:bots` | Gate bot suite (§11.2); `--release` doubles the seeds | Merge gates; `--release` at M5 |
 | `npm run e2e` | Playwright (after build) | Merge gates |
 | `npm run shots -- --contrast` | Readability pixel gate | Merge gates from G2 |
