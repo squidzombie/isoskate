@@ -18,7 +18,7 @@ import { createSaveStore } from '../save';
 import { createSim } from '../sim';
 import { createSkaterView } from '../skater';
 import { TRICKS } from '../tricks';
-import { createUi } from '../ui';
+import { createUi, type UiExt } from '../ui';
 import { createVfx, onBirdFlutter } from '../vfx';
 import { createCameraRig, createWorldView, setCamVariant } from '../world/render';
 import { App } from './app';
@@ -72,6 +72,7 @@ export function wire(root: HTMLElement): Game {
   const meta = createMeta(save, CATALOG);
   const ui = createUi(root);
   ui.setMonetization?.(monetization);                    // the shared provider (NullProvider; FakeProvider with ?fakeads=1)
+  (ui as Partial<UiExt>).setObstacleLookup?.((id) => sim.world.obstacle(id));   // crash lines name the drawn skin (THEME §9)
   const gameBus = createBus<GameEvent>();
   const appBus = createBus<AppEvent>();
   audio.attach(gameBus, appBus);

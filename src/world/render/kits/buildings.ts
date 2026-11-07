@@ -25,10 +25,10 @@ export const opt = (d: Decor, k: string, salt: number, f: (h: number) => number)
 /** Decor foliage per area (DESIGN §18.4 rule 4): DT, SB and IN at relative luminance ≥ 0.10, so "dark = hazard" never
  *  leaks into the scenery; Neon dark (≤ 1.3:1 against wet asphalt), because its hazards are the mid values. */
 export const FLORA: Readonly<Record<AreaId, { readonly leaf: readonly number[]; readonly moss: readonly number[]; readonly ivy: readonly number[] }>> = {
-  downtown: { leaf: [0x4f7a46, 0x6e9a4a, 0x5b8a48], moss: [0x5e7a3a, 0x7a8f45], ivy: [0x3f6b3a, 0x6e9a4a] },
-  suburbs: { leaf: [0x7f9a5a, 0x9db36b, 0xa8c66c], moss: [0x7a8f45, 0x8fa85a], ivy: [0x6e9a4a, 0x3f6b3a] },
-  docks: { leaf: [0x6e9a4a, 0x7e9a5a, 0x5e8c6a], moss: [0x5e7a3a, 0x7e9a5a], ivy: [0x3f6b3a, 0x6e9a4a] },
-  neon: { leaf: [RECLAIM.nightLeaf, 0x34524e, 0x2a4644], moss: [RECLAIM.nightMoss, RECLAIM.nightLeaf], ivy: [RECLAIM.nightLeaf, RECLAIM.nightMoss] },
+  downtown: { leaf: [0x467b51, 0x539e4c, 0x498c4e], moss: [0x497e3c, 0x629448], ivy: [0x3a6b47, 0x539e4c] },
+  suburbs: { leaf: [0x639f5d, 0x7eba6f, 0x80ce70], moss: [0x599548, 0x6caf5e], ivy: [0x4d9f51, 0x3a6b4e] },
+  docks: { leaf: [0x4c9e65, 0x5d9f6a, 0x5c8a8a], moss: [0x3d7f49, 0x5d9f6a], ivy: [0x396a59, 0x4c9e65] },
+  neon: { leaf: [RECLAIM.nightLeaf, 0x395335, 0x2d472b], moss: [RECLAIM.nightMoss, RECLAIM.nightLeaf], ivy: [RECLAIM.nightLeaf, RECLAIM.nightMoss] },
 };
 /** Window level per area (theme §5: DT and SB 0.04, Docks 0.06, Neon 0.35, "the city runs on sunlight"). The
  *  presets keep their windowLit; each window's random is remapped so that at its own area's preset exactly this share
@@ -85,7 +85,7 @@ export function wallDrape(K: Kit, plane: 'side' | 'front', dir: number, face: nu
 }
 /** Moss and grass on a flat roof: a few patches at its edges, `amount` 0..1 (≤ ~40% of the roof at 1). */
 function roofMoss(K: Kit, area: AreaId, seed: number, x0: number, x1: number, s0: number, s1: number, y: number, amount: number, flags: number): void {
-  const f = FLORA[area], n = 1 + Math.round(amount * 4), W = x1 - x0, L = s1 - s0;
+  const f = FLORA[area], n = (area === 'downtown' ? 2 : 1) + Math.round(amount * 4), W = x1 - x0, L = s1 - s0;   // (T7a: DT +1)
   for (let i = 0; i < n; i++) {
     const w = W * (0.22 + 0.3 * rnd(seed, i, 3)), l = L * (0.18 + 0.28 * rnd(seed, i, 4));
     const edge = i % 3, xa = edge === 0 ? x0 + 0.1 : edge === 1 ? x1 - w - 0.1 : x0 + (W - w) * rnd(seed, i, 1);
@@ -131,6 +131,22 @@ export function board(K: Kit, key: string, x0: number, x1: number, y0: number, y
   if (normalX === 0) K.quad(x0, y0, s, x1, y0, s, x1, y1, s, x0, y1, s, uv);
   else if (normalX > 0) K.quad(x0, y0, s, x0, y0, x1, x0, y1, x1, x0, y1, s, uv);    // a face looking +x: x0 = plane x, s..x1 along s
   else K.quad(x0, y0, x1, x0, y0, s, x0, y1, s, x0, y1, x1, uv);                     // a face looking −x
+}
+
+/** T7a (theme §5 Downtown green share; §1 "roof gardens"): planted window boxes under a share of the street-face
+ *  windows, the same grid as `windows` on a 'side' plane (faces dir·x at x = face). Scenery: blooms allowed. */
+function windowBoxes(K: Kit, area: AreaId, seed: number, a0: number, a1: number, face: number, dir: number, y0: number, y1: number,
+  cell: number, share: number, flags: number): void {
+  const floors = Math.max(1, Math.floor((y1 - y0) / 3.2)), fh = (y1 - y0) / floors;
+  const cols = Math.max(1, Math.floor((a1 - a0) / cell)), cw = (a1 - a0) / cols, f = FLORA[area];
+  for (let fl = 0; fl < floors; fl++) for (let i = 0; i < cols; i++) {
+    if (rnd(seed, fl, i, 81) >= share) continue;
+    const ya = y0 + fl * fh + fh * 0.3, ua = a0 + i * cw + cw * 0.16, ub = a0 + i * cw + cw * 0.84, xo = face + dir * 0.26;
+    K.lit(0, 0, flags).col(0x6b4a3a).box(Math.min(face, xo), ya - 0.2, ua, Math.max(face, xo), ya - 0.04, ub);
+    K.lit(PAT.grass, 0.3, flags).col(f.leaf[(fl + i) % f.leaf.length]!)
+      .box(Math.min(face, xo + dir * 0.05), ya - 0.04, ua - 0.04, Math.max(face, xo + dir * 0.05), ya + 0.16, ub + 0.04, FACE.top | FACE.sides5);
+    if (rnd(seed, fl, i, 82) < 0.5) K.lit(0, 0, flags).col(RECLAIM.flowers.poppy).box(Math.min(xo, xo + dir * 0.04), ya + 0.1, ua + cw * 0.2, Math.max(xo, xo + dir * 0.04), ya + 0.18, ua + cw * 0.32);
+  }
 }
 
 /** Window grid on a facade. `plane` is 'front' (faces −s at s = sFace, spans x0..x1) or 'side' (faces `dir`·x at
@@ -205,6 +221,7 @@ export function building(c: KitCtx, d: Decor): void {
   const warm = area === 'neon' ? 0xffd39a : 0xffc98a;
   const lit = num(d, 'lit', 0);
   windows(c, (d.s * 13 + d.x * 7) | 0, 'side', s0 + 0.5, s1 - 0.5, xin, -out, y + 3.6, y + h - 0.6, 2.6, warm, flags);
+  if (area === 'downtown') windowBoxes(K, area, (d.s * 13 + d.x * 7) | 0, s0 + 0.5, s1 - 0.5, xin, -out, y + 3.6, y + h - 0.6, 2.6, 0.45 + 0.3 * hz(d, 25), near);
   windows(c, (d.s * 17 + d.x * 5) | 0, 'front', x0 + 0.4, x1 - 0.4, s0, 0, y + 3.6, y + h - 0.6, 2.6, warm, flags);
   void lit;
   // Ground floor: a lit shopfront band on the street face and the front, a brand board above it, an awning.
@@ -269,8 +286,8 @@ export function house(c: KitCtx, d: Decor): void {
   const wall = mixHex(FACADES.suburbs[d.variant % FACADES.suburbs.length]!, fadePaint(FACADES.suburbs[d.variant % FACADES.suburbs.length]!), fade);
   const roof = ACCENTS.suburbs[num(d, 'roof', 4) % 5]!;
   const roofCol = fadePaint(roof === 0xf7efe3 ? 0xb5645a : roof);
-  // RECLAIM (theme §4): moss on the roof, ivy on 25–45% of the walls, 1 in 5 with a tree through the porch roof.
-  const roofGreen = opt(d, 'roofGreen', 22, (h) => 0.3 + 0.7 * h), ivy = opt(d, 'ivy', 24, (h) => 0.25 + 0.2 * h);
+  // RECLAIM (theme §4): moss on the roof, ivy on 32–52% of the walls, 1 in 5 with a tree through the porch roof.
+  const roofGreen = opt(d, 'roofGreen', 22, (h) => 0.3 + 0.7 * h), ivy = opt(d, 'ivy', 24, (h) => 0.32 + 0.2 * h);   // (T7a: ivy +0.07)
   const porchTree = opt(d, 'roofTree', 23, (h) => (h < 0.2 ? 1 : 0)) > 0;
   K.reset().to('b').lit(0, 0, near).col(wall).box(x0, y, s0, x1, y + h, s1);
   // Gable roof: ridge along s, eaves overhang.
@@ -282,10 +299,11 @@ export function house(c: KitCtx, d: Decor): void {
   K.tri(x0, y + h, s0, x1, y + h, s0, xm, y + h + rh - 0.2, s0);
   K.tri(x1, y + h, s1, x0, y + h, s1, xm, y + h + rh - 0.2, s1);
   // Roof moss: patches lying on both slopes (offset along the slope normal), more toward the eaves.
-  const fl = FLORA.suburbs, mossN = 1 + Math.round(roofGreen * 3);
+  // (T7a: three to six patches, longer and further up the slope: the wildest area's §5 green share.)
+  const fl = FLORA.suburbs, mossN = 3 + Math.round(roofGreen * 3);
   for (let i = 0; i < mossN; i++) {
-    const side = i % 2 ? 1 : -1, xe = side < 0 ? x0 - eave : x1 + eave, sa = s0 + (dd - 2) * rnd(d.s, i, 31), sb = sa + 1.2 + rnd(d.s, i, 32) * 2.2;
-    const u0 = 0.05, u1 = 0.35 + 0.35 * rnd(d.s, i, 33);
+    const side = i % 2 ? 1 : -1, xe = side < 0 ? x0 - eave : x1 + eave, sa = s0 + (dd - 2) * rnd(d.s, i, 31), sb = sa + 1.6 + rnd(d.s, i, 32) * 2.8;
+    const u0 = 0.05, u1 = 0.4 + 0.4 * rnd(d.s, i, 33);
     const at = (u: number) => [xe + (xm - xe) * u, y + h - 0.2 + (rh + 0.2) * u + 0.04] as const;
     const [xa, ya] = at(u0), [xb, yb] = at(u1);
     K.lit(PAT.grass, 0, near).col(fl.moss[i % 2]!);
@@ -339,10 +357,22 @@ export function warehouse(c: KitCtx, d: Decor): void {
   K.reset().to('b').lit(PAT.ribsV, 0, near).col(col).box(x0, y, s0, x1, y + h, s1);
   // RECLAIM: vines down the ribs and rust streaks from the roof line (street face and the camera-facing front).
   const ivy = opt(d, 'ivy', 24, (h2) => 0.2 + 0.4 * h2);
-  wallDrape(K, 'side', -out, d.x, s0 + 0.5, s1 - 0.5, y + h - 0.1, y + 0.5, ivy * 0.5, FLORA.docks.ivy, (d.s * 5) | 0, near, Math.max(4, Math.round(dd / 1.6)), PAT.grass, false, true);
+  wallDrape(K, 'side', -out, d.x, s0 + 0.5, s1 - 0.5, y + h - 0.1, y + 0.5, ivy * 0.7, FLORA.docks.ivy, (d.s * 5) | 0, near, Math.max(4, Math.round(dd / 1.6)), PAT.grass, false, true);
   wallDrape(K, 'front', 0, s0, x0 + 0.5, x1 - 0.5, y + h - 0.1, y + h - 3.5, 0.35, [RECLAIM.rust, RECLAIM.rustLight], (d.s * 11) | 0, near, 6, 0);
   K.lit(PAT.ribsH, 0, near).col(shade(col, -0.25)).quad(x0 - 0.3, y + h, s0 - 0.3, (x0 + x1) / 2, y + h + 1.6, s0 - 0.3, (x0 + x1) / 2, y + h + 1.6, s1 + 0.3, x0 - 0.3, y + h, s1 + 0.3);
   K.quad((x0 + x1) / 2, y + h + 1.6, s0 - 0.3, x1 + 0.3, y + h, s0 - 0.3, x1 + 0.3, y + h, s1 + 0.3, (x0 + x1) / 2, y + h + 1.6, s1 + 0.3);
+  // T7a: moss and seagrass patches on the street-side slope (the slope the run camera sees), from the eave up.
+  {
+    const xe = out < 0 ? x1 + 0.3 : x0 - 0.3, xm = (x0 + x1) / 2, n = 2 + Math.round(ivy * 4);
+    const at = (u: number) => [xe + (xm - xe) * u, y + h + 1.6 * u + 0.04] as const;
+    for (let i = 0; i < n; i++) {
+      const sa = s0 + (dd - 3) * rnd(d.s, i, 51), sb = Math.min(s1, sa + 2 + 3.5 * rnd(d.s, i, 52));
+      const [xa, ya] = at(0.04), [xb, yb] = at(0.35 + 0.4 * rnd(d.s, i, 53));
+      K.lit(PAT.grass, 0, near).col(FLORA.docks.moss[i % 2]!);
+      if (out < 0) K.quad(xb, yb, sa, xa, ya, sa, xa, ya, sb, xb, yb, sb);
+      else K.quad(xa, ya, sa, xb, yb, sa, xb, yb, sb, xa, ya, sb);
+    }
+  }
   K.lit(0, 0, near).col(col).tri(x0, y + h, s0, x1, y + h, s0, (x0 + x1) / 2, y + h + 1.6, s0);
   if (num(d, 'door', 1)) {
     const sm = (s0 + s1) / 2;
@@ -504,7 +534,8 @@ export function containerStack(c: KitCtx, d: Decor): void {
     K.lit(0, 0, near).col(shade(col, -0.3)).box(xa + 0.3, y + 0.2, s - 0.02, xb - 0.3, y + 2.4, s, FACE.front);
     // RECLAIM: rust streaks on the doors, moss on the top tier, vines down the street face of the bottom tier.
     wallDrape(K, 'front', 0, s - 0.03, xa + 0.35, xb - 0.35, y + 2.35, y + 1.2, 0.4, [RECLAIM.rust, RECLAIM.rustLight], (d.s * 3 + i * 7 + j) | 0, near, 4, 0);
-    if (j === rows - 1) K.lit(PAT.grass, 0, near).col(FLORA.docks.moss[(i + k) % 2]!).box(xa + 0.2, y + 2.6, s + 0.3, xb - 0.6, y + 2.63, s + 2.4 + rnd(d.s, i, k) * 2, FACE.top);
+    // (T7a: the top-tier moss covers up to ~60% of the lid: the camera looks down on the stacks; §5 Docks share.)
+    if (j === rows - 1) K.lit(PAT.grass, 0, near).col(FLORA.docks.moss[(i + k) % 2]!).box(xa + 0.15, y + 2.6, s + 0.3, xb - 0.4, y + 2.63, s + 3.0 + rnd(d.s, i, k) * 2.6, FACE.top);
     if (j === 0 && i === 0 && rnd(d.s, k, 5) < 0.5) wallDrape(K, 'side', -out, x, s + 0.3, s + 5.8, y + 2.5, y + 0.2, 0.45, FLORA.docks.ivy, (d.s * 5 + k) | 0, near, 5);
   }
 }

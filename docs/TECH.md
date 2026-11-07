@@ -1729,6 +1729,7 @@ A `steer` touch never enters HOLD, never emits `press`, `tap`, `swipe`, `holdSta
   - default: each area at blend 0 and in the gateway blends, each UI screen;
   - `--cosmetics`: the 40-item contact sheet and the Locker with 6 loadouts;
   - `--contrast`: the DESIGN §18.4 pixel gate (hazard ≥ 2.5:1, grind edge ≥ 1.8:1) at every preset and blend; exits non-zero on failure;
+  - `--green`: THEME §5 green share per area (390×844 run frames, canvas only so the HUD is excluded; 3 seeds × 3 frames; HSV hue 60–178°, S ≥ 0.20, V ≥ 0.10) against each area's band (Downtown 6–15%, Suburbs 12–30%, Docks 3–10%, Neon 3–10%); exits non-zero outside a band (T7a);
   - `--hud`: HUD layouts at 320 / 360 / 390 px;
   - `--audio`: 20 s `OfflineAudioContext` renders per area to `artifacts/audio/*.wav` with a peak check.
 - Viewports: 390×844, 390×664 (Safari toolbars) and 1280×800. Output goes to `artifacts/shots/`.
@@ -1759,6 +1760,7 @@ A `steer` touch never enters HOLD, never emits `press`, `tap`, `swipe`, `holdSta
 | `npm run test:bots` | Gate bot suite (§11.2); `--release` doubles the seeds | Merge gates; `--release` at M5 |
 | `npm run e2e` | Playwright (after build) | Merge gates |
 | `npm run shots -- --contrast` | Readability pixel gate | Merge gates from G2 |
+| `npm run shots -- --green` | RECLAIM green share per area (THEME §5) | Theme reviews T7a / T7b |
 | `npm run size` | JS + CSS ≤ 350 KB gzip (fonts excluded, ≤ 150 KB) | Merge gates from M4 |
 
 ---

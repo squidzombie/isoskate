@@ -110,10 +110,14 @@ export const CONTACT = { shadowRgb: '43,33,64', glow: 0x3ff2ff } as const;
 // depends on it; tests/unit/render/palette.test.ts checks every such number.
 export const RECLAIM = {
   // Decor flora (Downtown, Suburbs, Docks keep decor foliage at L ≥ 0.10 so "dark = hazard" never leaks).
-  ivyDeep: 0x3f6b3a, ivyLight: 0x6e9a4a,                     // façades, posts (deep only in small patches; L 0.119 / 0.269)
-  moss: 0x5e7a3a, mossLight: 0x7a8f45,                      // decor stone, roofs, ledge faces
-  newLeaf: 0xa8c66c, russetLeaf: 0xb86a3e,                  // crowns, saplings (decor), leaf scatter: never gold
-  meadow: 0x8fa85a, meadowSuburbs: 0xa9b865, dryGrass: 0xc9b67a, seagrass: 0x7e9a5a,
+  // T7a: every flora token is the theme §5 colour turned toward blue-green at the same relative luminance (DT/SB/IN
+  // +25°, SB meadow +30°, seagrass +45°, Neon night foliage −60°), because the warm golden/sunset light (and Neon's
+  // blue light) moved the rendered hue out of green: the §5 green share is measured on rendered frames
+  // (shots --green). Luminance, and so every contrast number, is unchanged.
+  ivyDeep: 0x3a6b49, ivyLight: 0x509f4c,                     // façades, posts (deep only in small patches; L 0.119 / 0.269)
+  moss: 0x467e3c, mossLight: 0x5f9448,                      // decor stone, roofs, ledge faces
+  newLeaf: 0x87cd70, russetLeaf: 0xb86a3e,                  // crowns, saplings (decor), leaf scatter: never gold
+  meadow: 0x73ae5d, meadowSuburbs: 0x85c06a, dryGrass: 0xc9b67a, seagrass: 0x5d9f6a,
   /** Wildflowers: never yellow-gold (coins), never white (grind). Poppy only at |x| ≥ 4.6. */
   flowers: { pink: 0xe98ba6, lilac: 0xb79ad8, cornflower: 0x7fa3e0, poppy: 0xe0674f },
   cherry: [0xffb7d0, 0xf59bbe],                             // Neon blossom (existing)
@@ -145,7 +149,7 @@ export const RECLAIM = {
   /** Neon hazard moss: on the inverted body #7A6FB0 and on its top #9489C8 (L 0.186 / 0.284). */
   neonHazardMoss: 0x54825c, neonHazardMossTop: 0x669e70,
   // Neon decor foliage is dark (≤ 1.3:1 against wet asphalt), because Neon hazards are the mid values.
-  nightLeaf: 0x2e4a48, nightMoss: 0x284440,
+  nightLeaf: 0x314b2f, nightMoss: 0x1e4e26,
   // Light and life.
   sunCatch: 0xf2c38a,                                       // 15% of DT/SB windows: unlit sun reflection
   neonWindows: [0xffc27a, 0xc9b8ff],                        // Neon standby windows (never cyan, which is reserved)

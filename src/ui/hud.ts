@@ -15,6 +15,7 @@ import type { GameEvent } from '../core/events';
 import type { ScoreState, SkaterState } from '../core/sim';
 import type { HudApi, UiIntent } from '../core/ui';
 import { areaName, fmtScore, fmtShort, trickName } from './format';
+import { AREA_SUBTITLES } from './copy';
 import { DISPLAY_FONT, fitPx, hudColumns, UI_FONT, type HudColumns } from './fit';
 import { h, setText } from './h';
 import { createHints, type Hints } from './hints';
@@ -271,7 +272,7 @@ export function createHud(root: HTMLElement, o: HudOptions): HudExt {
         case 'comboLost': combo.classList.add('lost'); break;
         case 'coin': restart(coinIcon, 'cp'); break;
         case 'speedTier': if (e.tier > 0) stampText = SPEED_STAMP[e.tier]; break;
-        case 'areaEnter': if (e.tick > 1) cardText = [areaName(e.area).toUpperCase(), e.firstThisRun ? '+500 NEW GROUND' : 'WELCOME BACK']; break;
+        case 'areaEnter': if (e.tick > 1) cardText = [areaName(e.area).toUpperCase(), e.firstThisRun ? '+500 NEW GROUND' : AREA_SUBTITLES[e.area].toUpperCase()]; break;   // revisits: the THEME §9 subtitle
         case 'crash': if (!e.god) { clearTransients(); hints.hide(); } break;   // BAILED! gets the screen to itself
         default: break;
       }

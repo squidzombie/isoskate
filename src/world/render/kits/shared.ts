@@ -11,6 +11,7 @@ import { PAT } from '../textures/ground';
 import { FACE, FX } from '../writer';
 import { WARN, chevrons, contact, groundChevrons, groundOf, isFull, rnd, setArea, solidsFallback, surfaceLook, type KitCtx } from './common';
 import { DRESS, DRESSER, clearOfEdges, mossOn, rustOn, type DressRole } from './dress';
+import { FLORA } from './buildings';
 
 export type KitFn = (c: KitCtx, ob: Obstacle) => void;
 export interface KitDef { draw: KitFn; long?: boolean }
@@ -46,9 +47,37 @@ export const inChunk = (c: KitCtx, s: number) => s >= c.s0 && s < c.s1;
 
 // ── street base (per chunk) ─────────────────────────────────────────────────────────────────────────────────────
 const VERGE: Readonly<Record<AreaId, { color: number; pat: number }>> = {
-  downtown: { color: 0xcdb8a3, pat: PAT.slabs }, suburbs: { color: 0x9db36b, pat: PAT.grass },
+  downtown: { color: 0xcdb8a3, pat: PAT.slabs }, suburbs: { color: 0x7eba6f, pat: PAT.grass },
   docks: { color: 0xc9b9a6, pat: PAT.apron }, neon: { color: 0x48426a, pat: PAT.tile },
 };
+/** RECLAIM (T7a; theme §5 green share, §1 "moss softens every stone"): grass and moss where the sidewalk meets the
+ *  building line, flat (≤ 7 mm over the verge) in hash-gapped runs (doorways, bare stretches). |x| 4.85–5.3: beyond
+ *  the 4.6 m vegetation line and 0.35 m clear of the curb's grind edge (rule 5, checked against every edge of the chunk
+ *  too). Suburbs has its lawns instead; Neon grows the dark night moss (≤ 1.3:1 against its surfaces, rule 4). Not on
+ *  the Docks harbor side (no wall behind it: a fringe on the open quay reads as a dashed lane line). */
+function footGrowth(c: KitCtx, area: AreaId, a: number, b: number, y: number): void {
+  if (area === 'suburbs') return;
+  const K = c.K, f = FLORA[area], cols = area === 'neon' ? f.moss : [f.moss[0]!, f.leaf[1]!, f.moss[1]!];
+  for (const side of [-1, 1] as const) {
+    if (area === 'docks' && side > 0) continue;   // the open harbor side: a fringe on the quay reads as a dashed lane line
+    const xo = 5.3;
+    let s = a + 0.6 * rnd(a, side, 41);
+    for (let i = 0; s < b - 0.2 && i < 8; i++) {
+      const len = 0.9 + 2.1 * rnd(a, side, i, 42), e = Math.min(b, s + len), w = 0.22 + 0.23 * rnd(a, side, i, 44);
+      const x0 = side * Math.max(4.85, xo - w), x1 = side * xo, lo = Math.min(x0, x1), hi = Math.max(x0, x1);
+      if (rnd(a, side, i, 45) < 0.78 && clearOfEdges(lo, hi, s, e, y - 0.5, y + 0.5, c.edges, 0.3)) {
+        K.lit(PAT.grass).col(cols[i % cols.length]!)   // ground level: under the camera-side cut, no `near` flag.box(lo, y, s, hi, y + 0.007, e, FACE.top);
+        // A tongue toward the curb on some runs (growth spreading from the wall), still ≥ 4.85.
+        if (rnd(a, side, i, 46) < 0.4) {
+          const t0 = s + len * 0.2, t1 = Math.min(e, t0 + len * 0.45), tx = side * Math.max(4.85, Math.abs(lo + hi) / 2 - 0.25);
+          K.col(cols[(i + 1) % cols.length]!).box(Math.min(tx, x0), y + 0.002, t0, Math.max(tx, x0), y + 0.006, t1, FACE.top);
+        }
+      }
+      s = e + 0.25 + 1.1 * rnd(a, side, i, 43);
+    }
+  }
+}
+
 /** Road under the corridor in 4 m strips (colour by area along s, so a gateway blends the ground), cut around pits,
  *  and the verges beyond ±4.5 at sidewalk height. Both follow the street datum: the lowest ground slab across the
  *  corridor at s (world/gen lowers it after a full-width drop and lays its own bands, stairs and inclines), never
@@ -97,6 +126,7 @@ export function streetBase(c: KitCtx, ch: Chunk, roadAt: (s: number) => number =
       verge(4.5, 5.1, 0.3, FACE.top | FACE.right);
       K.lit(0).col(COLORS.water).box(5.1, lo - 1.6, a, 18, lo - 0.9, b, FACE.top);
     } else verge(4.5, 18, 0.15, FACE.top | FACE.left | FACE.front);
+    if (flat) footGrowth(c, area, a, b, ya + 0.15);
   }
   K.reset();
 }

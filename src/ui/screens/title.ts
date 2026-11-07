@@ -32,7 +32,7 @@ export function titleScreen(ctx: ScreenCtx, getReveal?: () => Reveal): Screen {
   const logo = h('h1', { class: 'logo', 'aria-label': GAME_NAME }, ...GAME_NAME.toUpperCase().split('').map((ch, i) => h('span', { style: `--i:${i}` }, ch)));
   const el = section('title', 'title',
     top,
-    h('div', { class: 'title-hero' }, logo, h('div', { class: 'tagline' }, 'Roll from golden hour into the neon\u00a0night.')),
+    h('div', { class: 'title-hero' }, logo, h('div', { class: 'tagline' }, 'The city’s quiet. The streets are\u00a0yours.')),
     h('div', { class: 'title-mid' }, h('div', { class: 'tap' }, 'TAP TO ROLL'), keys, best),
     h('div', { class: 'spacer' }), tabs);
   el.addEventListener('click', () => ctx.raise({ k: 'play' }));

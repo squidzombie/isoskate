@@ -38,7 +38,8 @@ describe('crash cause line (DESIGN §9)', () => {
     expect(e({ cause: 'badLanding', kind: 'parked_car' })).toBe('Landed on a car');
     expect(e({ cause: 'badLanding', flipProgress: 0.62 })).toBe('Flip 62% done — flick earlier');
     expect(e({ cause: 'badLanding', spinProgress: 0.4 })).toBe('Spin 40% done — flick earlier');
-    expect(e({ cause: 'fall' })).toBe('Fell in the trench — ollie it or take the plank');
+    expect(e({ cause: 'fall' })).toBe('Dropped into the gap — ollie it or take the plank');   // THEME §9 (Downtown: gap)
+    expect(e({ cause: 'badLanding' })).toBe('Bailed the landing');
     expect(e({ cause: 'slam', kind: 'forklift' })).toBe('Clipped a forklift — steer around it');
   });
 });

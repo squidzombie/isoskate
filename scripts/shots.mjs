@@ -14,6 +14,9 @@
 //                  checks; exits 1 on a failure                                          → artifacts/shots/hud/
 //     --audio      20 s renderAudio per area as 16-bit WAV with the peak in dBFS; a null render (the M0 audio stub)
 //                  prints a note and exits 0; a peak ≥ 1.0 or silence exits 1 (above −1 dBFS warns) → artifacts/audio/
+//     --green      THEME §5 green share per area (390×844 run frames, canvas only so the HUD is excluded; 3 seeds × 3
+//                  frames; HSV hue 60–178°, S ≥ 0.20, V ≥ 0.10) against each area's band; exits 1 outside a band
+//                                                                                        → artifacts/shots/green/
 //     --cam ID     every page runs the debug camera variant ID (?cam=, world/render/camVariants.ts; default A)
 // Several modes may be combined. Uses the preview server on $PORT (default 5173) if one is up; otherwise builds
 // (unless --no-build) and starts `vite preview`. Chromium comes from /opt/pw-browsers (never `playwright install`).
@@ -44,7 +47,7 @@ const opt = (name, def) => { const i = argv.indexOf(`--${name}`); return i >= 0 
 const seed = Number(opt('seed', '1'));
 const cam = opt('cam', '');
 const ticksList = opt('ticks', '60,330,600').split(',').map(Number).filter((n) => n >= 0);
-const MODES = ['cosmetics', 'contrast', 'hud', 'audio'].filter(flag);
+const MODES = ['cosmetics', 'contrast', 'green', 'hud', 'audio'].filter(flag);
 const VIEWPORTS = [
   { name: '390x844', width: 390, height: 844, mobile: true },
   { name: '390x664', width: 390, height: 664, mobile: true },
@@ -381,6 +384,72 @@ async function contrastMode() {
   console.log(`contrast: ${rows.length} presets/blends; min hazard ${all('hazard').toFixed(2)} (gate ${GATE.hazard}), min edge ${all('edge').toFixed(2)} (gate ${GATE.edge})`);
 }
 
+// ── --green ────────────────────────────────────────────────────────────────────────────────────────────────────
+/** THEME §5 per-area green-share bands (RECLAIM): each area keeps its own flora and amount of it. */
+const GREEN_BAND = { downtown: [0.06, 0.15], suburbs: [0.12, 0.30], docks: [0.03, 0.10], neon: [0.03, 0.10] };
+async function greenMode() {
+  const dir = join(OUT, 'green');
+  mkdirSync(dir, { recursive: true });
+  const vp = VIEWPORTS[0];
+  const { page, close } = await openPage(vp);
+  const rows = [];
+  for (const area of AREAS) {
+    const frames = [];
+    for (const sd of [seed, seed + 1, seed + 2]) {
+      // Three frames per seed, 4 s apart, mid-visit (previewArea's start: arrival + 10 s; Downtown from 10 s); a frame
+      // that is not in the area (a seed whose schedule differs) moves on by 2 s, up to four times.
+      const got = await page.evaluate(({ area, sd }) => {
+        const ARRIVAL = { downtown: 161, suburbs: 44, docks: 83, neon: 122 };
+        const t0 = area === 'downtown' ? 14 : ARRIVAL[area] + 10;
+        const share = () => {
+          const gl = document.querySelector('canvas#gl');
+          const c = document.createElement('canvas'); c.width = gl.width; c.height = gl.height;
+          const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(gl, 0, 0);
+          const d = x.getImageData(0, 0, c.width, c.height).data;
+          let g = 0;
+          for (let i = 0; i < d.length; i += 4) {
+            const r = d[i], gg = d[i + 1], b = d[i + 2], mx = Math.max(r, gg, b), mn = Math.min(r, gg, b);
+            if (mx < 25.5 || mx - mn < 0.2 * mx) continue;                           // V ≥ 0.10, S ≥ 0.20
+            const dd = mx - mn;
+            let hue = mx === r ? ((gg - b) / dd) % 6 : mx === gg ? (b - r) / dd + 2 : (r - gg) / dd + 4;
+            hue *= 60; if (hue < 0) hue += 360;
+            if (hue >= 60 && hue <= 178) g++;
+          }
+          return g / (d.length / 4);
+        };
+        const out = [];
+        for (let k = 0; k < 3; k++) {
+          let t = t0 + 4 * k, snap = null;
+          for (let tries = 0; tries < 5; tries++, t += 2) {
+            window.__skate.start({ seed: sd, startT: t, god: true }); window.__skate.manual(true);
+            window.__skate.step(20);
+            snap = window.__skate.snapshot();
+            if (snap.area === area) break;
+          }
+          window.__skate.renderNow();
+          out.push({ t, area: snap.area, share: share(), png: k === 0 ? window.__skate.ext.capture({ size: 4096 }).dataUrl : null });
+        }
+        return out;
+      }, { area, sd });
+      for (const f of got) {
+        if (f.png) writeDataUrl(join(dir, `${area}-s${sd}.png`), f.png);
+        frames.push({ seed: sd, t: f.t, area: f.area, share: f.share });
+      }
+    }
+    const inArea = frames.filter((f) => f.area === area);
+    const mean = inArea.reduce((a, f) => a + f.share, 0) / Math.max(1, inArea.length);
+    const [lo, hi] = GREEN_BAND[area];
+    const ok = inArea.length >= 6 && mean >= lo && mean <= hi;
+    rows.push({ area, mean, band: [lo, hi], frames });
+    console.log(`${area.padEnd(9)} green ${(100 * mean).toFixed(1).padStart(5)}%  band ${100 * lo}–${100 * hi}%  `
+      + `(${inArea.length}/9 frames: ${inArea.map((f) => (100 * f.share).toFixed(1)).join(' ')})  ${ok ? 'ok' : 'FAIL'}`);
+    if (inArea.length < 6) fail(`green ${area}: only ${inArea.length}/9 frames were in the area`);
+    else if (!ok) fail(`green ${area}: ${(100 * mean).toFixed(1)}% outside ${100 * lo}–${100 * hi}%`);
+  }
+  await close();
+  writeFileSync(join(dir, 'report.json'), JSON.stringify(rows, null, 2));
+}
+
 // ── --hud ──────────────────────────────────────────────────────────────────────────────────────────────────────
 async function hudMode() {
   const dir = join(OUT, 'hud');
@@ -468,6 +537,7 @@ try {
     console.log(`\n── shots --${m} ──`);
     if (m === 'cosmetics') await cosmeticsMode();
     if (m === 'contrast') await contrastMode();
+    if (m === 'green') await greenMode();
     if (m === 'hud') await hudMode();
     if (m === 'audio') await audioMode();
   }

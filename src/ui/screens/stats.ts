@@ -6,6 +6,7 @@ import { isMetaExt, xpToNext } from '../../meta';
 import { TRICK_BOOK } from '../../save';
 import { TRICKS } from '../../tricks';
 import { postcardArt } from '../art';
+import { AREA_SUBTITLES, EMPTY } from '../copy';
 import { areaName, fmtScore, trickName } from '../format';
 import { h, setText } from '../h';
 import { bar, fmtN, header, section, type Screen, type ScreenCtx } from './common';
@@ -27,12 +28,16 @@ export function statsScreen(ctx: ScreenCtx): Screen {
   const bookCount = h('span', { class: 'count' }, '');
   const book = h('div', { class: 'book' });
   const cards = h('div', { class: 'postcards' });
+  // Empty states (THEME §9): a fresh profile reads an invitation, not a table of zeros.
+  const EMPTY_STYLE = 'margin:2px 0 8px;opacity:.8;font-weight:700';
+  const noRuns = h('p', { class: 'st-empty', style: EMPTY_STYLE }, EMPTY.noRuns);
+  const noTricks = h('p', { class: 'st-empty', style: EMPTY_STYLE }, EMPTY.trickBook);
   const pcCount = h('span', { class: 'count' }, '');
   const el = section('stats', 'stats', header('STATS', ctx),
     h('div', { class: 'scroll' },
       h('div', { class: 'st-level' }, h('span', { class: 'lv' }, 'LEVEL'), lv, h('div', { class: 'xp-wrap' }, xp.el, xpText), titles),
-      h('h3', null, 'Bests'), bests, h('h3', null, 'Totals'), totals,
-      h('h3', null, 'Trick Book ', bookCount), book,
+      h('h3', null, 'Bests'), noRuns, bests, h('h3', null, 'Totals'), totals,
+      h('h3', null, 'Trick Book ', bookCount), noTricks, book,
       h('h3', null, 'Postcards ', pcCount), cards));
   const cell = (k: string, v: string) => h('div', { class: 'st-cell' }, h('span', null, k), h('b', null, v));
   return {
@@ -54,6 +59,8 @@ export function statsScreen(ctx: ScreenCtx): Screen {
       totals.replaceChildren(cell('Runs', fmtN(s?.runs ?? 0)), cell('Distance', km(s?.totalDist ?? 0)), cell('Tricks', fmtN(tricksTotal)),
         cell('Time', mmss(s?.totalTime ?? 0)));
       const found = new Set(ext?.data.trickBook ?? []);
+      noRuns.hidden = (s?.runs ?? 0) > 0;
+      noTricks.hidden = found.size > 0;
       setText(bookCount, `${found.size}/${TRICK_BOOK.length}`);
       book.replaceChildren(...TRICK_BOOK.map((id) => {
         const got = found.has(id);
@@ -65,7 +72,8 @@ export function statsScreen(ctx: ScreenCtx): Screen {
       cards.replaceChildren(...AREA_ORDER.map((a) => {
         const got = pcs.has(a);
         const img = h('img', { alt: got ? areaName(a) : 'Locked postcard' }); img.src = postcardArt(a, got);
-        return h('figure', { class: `pc${got ? ' got' : ''} a-${a}` }, img, h('figcaption', null, got ? areaName(a) : a === 'neon' ? 'Neon City ?' : '???'));
+        return h('figure', { class: `pc${got ? ' got' : ''} a-${a}`, title: got ? AREA_SUBTITLES[a] : '' }, img,
+          h('figcaption', null, got ? areaName(a) : a === 'neon' ? 'Neon City ?' : '???', got ? h('small', { style: 'display:block;font-weight:600;opacity:.72;font-size:.82em' }, AREA_SUBTITLES[a]) : null));
       }));
     },
   };

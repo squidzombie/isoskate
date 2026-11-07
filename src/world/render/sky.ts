@@ -182,7 +182,17 @@ function birdGeometry(): BufferGeometry {
 /** A strip of building silhouettes on an arc at `dist` (k = 0 far, 1 near), optional window dots (near strip). */
 function skylineGeometry(k: number, dist: number): { body: BufferGeometry; windows: BufferGeometry | null } {
   const r = new Sfc32(hash32(0x5c1, k));
+  // RECLAIM (THEME §7 menu backdrop: "a skyline of trees on rooftops"): its own stream, so the buildings stay put.
+  const rt = new Sfc32(hash32(0x7ee5, k));
   const pos: number[] = [], win: number[] = [];
+  /** A rounded crown silhouette (a 7-gon fan) centred at (cx, cy, cz) on the strip's arc, radius rr. */
+  const crown = (cx: number, cy: number, cz: number, rr: number, tx: number, tz: number) => {
+    for (let i = 0; i < 7; i++) {
+      const a0 = (i / 7) * Math.PI * 2, a1 = ((i + 1) / 7) * Math.PI * 2;
+      pos.push(cx, cy, cz, cx + Math.cos(a0) * rr * tx, cy + Math.sin(a0) * rr * 0.8, cz + Math.cos(a0) * rr * tz,
+        cx + Math.cos(a1) * rr * tx, cy + Math.sin(a1) * rr * 0.8, cz + Math.cos(a1) * rr * tz);
+    }
+  };
   const quad = (o: number[], ax: number, ay: number, az: number, bx: number, by: number, bz: number, cx: number, cy: number, cz: number, dx: number, dy: number, dz: number) => {
     o.push(ax, ay, az, bx, by, bz, cx, cy, cz, ax, ay, az, cx, cy, cz, dx, dy, dz);
   };
@@ -191,6 +201,14 @@ function skylineGeometry(k: number, dist: number): { body: BufferGeometry; windo
     const x0 = Math.sin(a) * dist, z0 = -Math.cos(a) * dist, x1 = Math.sin(a + w) * dist, z1 = -Math.cos(a + w) * dist;
     quad(pos, x0, -4, z0, x1, -4, z1, x1, h, z1, x0, h, z0);
     if (r.chance(0.25)) { const t = h + r.range(4, 12); quad(pos, (x0 * 0.7 + x1 * 0.3), h, (z0 * 0.7 + z1 * 0.3), (x0 * 0.5 + x1 * 0.5), h, (z0 * 0.5 + z1 * 0.5), (x0 * 0.5 + x1 * 0.5), t, (z0 * 0.5 + z1 * 0.5), (x0 * 0.7 + x1 * 0.3), t, (z0 * 0.7 + z1 * 0.3)); }
+    if (rt.chance(0.32)) {
+      // A roof garden or a tree through the roof: two or three crowns sitting on the roof line.
+      const n = 2 + (rt.chance(0.4) ? 1 : 0), span = Math.hypot(x1 - x0, z1 - z0), tx = (x1 - x0) / span, tz = (z1 - z0) / span;
+      for (let j = 0; j < n; j++) {
+        const u = 0.2 + 0.6 * rt.float(), rr = span * rt.range(0.12, 0.22);
+        crown(x0 + (x1 - x0) * u, h + rr * rt.range(0.2, 0.6), z0 + (z1 - z0) * u, rr, tx, tz);
+      }
+    }
     if (k === 1) {
       for (let y = 3; y < h - 2; y += 3.2) for (let u = 0.15; u < 0.9; u += 0.22) {
         if (!r.chance(0.35)) continue;

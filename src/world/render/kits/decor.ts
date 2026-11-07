@@ -120,7 +120,7 @@ const tree: DecorFn = (c, d) => {
     // Plane: a tall pale-barked trunk, a broad crown. Fig: a short thick trunk, a wide low dense crown. Birch: a slim
     // grey trunk and a light, taller oval crown. Solid lumps (no cards), crowns kept outside the corridor.
     const [bark, tr, th, r, lumps, cols] = species === 3 ? [0x8a7d6a, 0.16, trunkH + 0.8, crown * 1.15, 5, fl.leaf] as const
-      : species === 4 ? [0x6b5a4a, 0.24, trunkH * 0.75, crown * 1.3, 6, [fl.leaf[0]!, 0x3f6b3a, fl.leaf[2]!]] as const
+      : species === 4 ? [0x6b5a4a, 0.24, trunkH * 0.75, crown * 1.3, 6, [fl.leaf[0]!, 0x3a6b49, fl.leaf[2]!]] as const
       : [0xa39d94, 0.09, trunkH + 0.6, crown * 0.85, 4, [RECLAIM.newLeaf, fl.leaf[1]!]] as const;
     const ccx = Math.sign(d.x) * Math.max(Math.abs(d.x), 4.6 + r * 0.85);
     K.col(bark).frustum(d.x, d.s, d.y, d.y + th, tr * sc, tr * 0.6 * sc, 6, false);
@@ -130,7 +130,7 @@ const tree: DecorFn = (c, d) => {
     return;
   }
   K.frustum(d.x, d.s, d.y, d.y + trunkH, 0.14 * sc, 0.1 * sc, 6, false);
-  const leaf = area === 'neon' ? fl.leaf : area === 'suburbs' ? [0x7f9a5a, 0x9db36b, RECLAIM.newLeaf] : [0x6f8f4e, 0x86a05a, fl.leaf[1]!];
+  const leaf = area === 'neon' ? fl.leaf : area === 'suburbs' ? [0x679f5d, 0x83b96e, RECLAIM.newLeaf] : [0x579351, 0x6ca55d, fl.leaf[1]!];
   if (species === 2) {
     for (let k = 0; k < 3; k++) K.lit(0, sway, nf).col(shade(0x3f6a48, k * 0.06)).frustum(cx, d.s, d.y + trunkH * 0.6 + k * crown * 0.6, d.y + trunkH * 0.6 + (k + 1.4) * crown * 0.6, crown * (1 - k * 0.25), 0.05, 7, false);
     return;
@@ -159,8 +159,8 @@ const cherryTree: DecorFn = (c, d) => {
 
 const hedgeRound: DecorFn = (c, d) => {
   const K = c.K, r = num(d, 'r', 0.7) * (d.scale || 1), sq = num(d, 'squash', 0.85);
-  K.reset().to('b').lit(PAT.grass, 0.1, nearOf(d)).col(0x5f7f4a).sphere(d.x, d.y + r * sq, d.s, r, 7, 4, sq);
-  K.col(0x7f9a5a).sphere(d.x + 0.1, d.y + r * sq * 1.35, d.s - 0.1, r * 0.55, 5, 3, sq);
+  K.reset().to('b').lit(PAT.grass, 0.1, nearOf(d)).col(0x4c824d).sphere(d.x, d.y + r * sq, d.s, r, 7, 4, sq);
+  K.col(0x679f5d).sphere(d.x + 0.1, d.y + r * sq * 1.35, d.s - 0.1, r * 0.55, 5, 3, sq);
   // RECLAIM: shaggy (two wild lumps), 1 in 3 a flowering buddleia (lilac spikes; decor, so blooms are fine).
   K.col(0x6f8f4e).sphere(d.x - r * 0.45, d.y + r * sq * 1.2, d.s + r * 0.3, r * 0.4, 5, 3, 1);
   K.sphere(d.x + r * 0.35, d.y + r * sq * 1.25, d.s + r * 0.4, r * 0.35, 5, 3, 1);
@@ -401,7 +401,7 @@ const pottedPlant: DecorFn = (c, d) => {
   const K = c.K, h = num(d, 'h', 0.9), nf = nearOf(d);
   K.reset().to('b').lit(0, 0, nf).col(0xb5645a).frustum(d.x, d.s, d.y, d.y + h * 0.4, 0.22, 0.28, 7, true);
   K.lit(0, 0.3, nf).col(0x5f7f4a).sphere(d.x, d.y + h * 0.65, d.s, h * 0.35, 6, 4, 1);
-  K.col(0x7f9a5a).sphere(d.x + 0.1, d.y + h * 0.85, d.s - 0.05, h * 0.2, 5, 3, 1);
+  K.col(0x679f5d).sphere(d.x + 0.1, d.y + h * 0.85, d.s - 0.05, h * 0.2, 5, 3, 1);
   // RECLAIM: bursting, spilling up to 0.3 m over the rim, with a few flowers (scenery).
   const f = FLORA[c.areaAt(d.s)];
   for (let i = 0; i < 3; i++) { const a = i * 2.1 + hz(d, 78) * 3; K.col(f.leaf[i % f.leaf.length]!).sphere(d.x + Math.cos(a) * 0.3, d.y + h * 0.45, d.s + Math.sin(a) * 0.3, 0.16, 5, 3, 0.8); }
@@ -701,8 +701,9 @@ const verge: DecorFn = (c, d) => {
   const surf = (['asphalt', 'wetAsphalt', 'concrete', 'tile', 'granite', 'wood', 'metal', 'grass'] as const)[Math.max(0, Math.min(7, si))]!;
   const area = c.areaAt(d.s), look = surfaceLook(surf, area);
   const xa = Math.sign(d.x) * Math.max(4.5, Math.abs(d.x)), xb = xa + Math.sign(d.x) * w;
-  // RECLAIM: grass verges become meadow (SB #A9B865, Docks seagrass #7E9A5A, elsewhere #8FA85A).
-  const meadow = area === 'suburbs' ? 0xa9b865 : area === 'docks' ? 0x7e9a5a : area === 'neon' ? look.color : 0x8fa85a;
+  // RECLAIM: grass verges become meadow (SB meadowSuburbs, Docks seagrass, elsewhere meadow; theme §5 tokens,
+  // hue-compensated for the warm presets: see palette.ts RECLAIM).
+  const meadow = area === 'suburbs' ? RECLAIM.meadowSuburbs : area === 'docks' ? RECLAIM.seagrass : area === 'neon' ? look.color : RECLAIM.meadow;
   K.reset().to('o').lit(look.pat).col(surf === 'grass' ? meadow : look.color).box(Math.min(xa, xb), d.y - 0.1, d.s, Math.max(xa, xb), d.y + 0.004, d.s + len, FACE.top);
 };
 /** Neon after-rain mist rises from the kerb drains (theme §4 `steam_vent`): a drain-sized grate in the gutter. */

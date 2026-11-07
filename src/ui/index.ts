@@ -23,7 +23,7 @@ import { createMonetization, readFlags } from '../platform';
 import { clearMeasureCache } from './fit';
 import { TOAST } from './ui.config';
 import { TRICKS } from '../tricks';
-import { crashCause, fmtShort, trickName } from './format';
+import { crashCause, fmtShort, trickName, type SkinRef } from './format';
 import { createLayoutGuard, type LayoutGuard } from './guard';
 import { h } from './h';
 import { createHud, type HudExt } from './hud';
@@ -50,6 +50,8 @@ export interface UiExt extends UiApi {
   /** The real monetization provider (wiring at G3; until then a NullProvider, or the FakeProvider with ?fakeads=1). */
   setMonetization(p: MonetizationProvider): void;
   readonly guard: LayoutGuard;
+  /** RECLAIM (THEME §9): the live obstacle lookup (sim.world.obstacle), so a crash line names the drawn skin. */
+  setObstacleLookup(f: (id: number) => SkinRef | undefined): void;
 }
 
 /** Frozen factory (TECH §4.13). The returned object is a UiExt (duck-type `setMonetization` / `guard`). */
@@ -109,6 +111,7 @@ export function createUiImpl(root: HTMLElement): UiExt {
     screensEl.insertBefore(s.el, modal.layer);
   }
   let lastCause = '', lastLost = 0, best = 0;
+  let obstacleLookup: ((id: number) => SkinRef | undefined) | null = null;
 
   // HUD columns: measured at boot and on resize only (allowed reads), never per frame.
   const probe = h('div', { class: 'safe-lr', 'aria-hidden': 'true' });
@@ -144,6 +147,7 @@ export function createUiImpl(root: HTMLElement): UiExt {
     hud, guard,
     get current() { return current; },
     setMonetization(p) { monetization = p; },
+    setObstacleLookup(f) { obstacleLookup = f; },
     show(screen, params) {
       const prev = screens.get(current);
       if (current !== screen) { prev?.hide?.(); if (modal.open) modal.close(); }
@@ -210,7 +214,8 @@ export function createUiImpl(root: HTMLElement): UiExt {
         }),
         game.on('crash', (e) => {
           if (e.god) return;
-          lastCause = crashCause(e);
+          const ob = e.obstacleId === null ? undefined : obstacleLookup?.(e.obstacleId);
+          lastCause = crashCause(e, run.area, ob);
           track('crash', { cause: e.cause, obstacle_kind: e.kind ?? 'none', area: run.area, speed: Math.round(e.speed * 100) / 100,
             t_s: Math.round(e.tick * DT * 10) / 10, state: e.state === 'crashed' ? 'roll' : e.state, flip_progress: e.flipProgress, spin_progress: e.spinProgress });
           flushRun();
