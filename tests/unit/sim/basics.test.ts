@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { GameEvent } from '../../../src/core/events';
 import type { InputFrame } from '../../../src/core/input';
 import type { Sim, SimSnapshot } from '../../../src/core/sim';
-import { DT, FACE_INSET, V_POP, sAt, speedAt } from '../../../src/core/tuning';
+import { DT, FACE_INSET, V_LAT_MAX, V_POP, sAt, speedAt } from '../../../src/core/tuning';
 import type { Obstacle } from '../../../src/core/world';
 import { createSim } from '../../../src/sim';
 import { TRICKS } from '../../../src/tricks';
@@ -63,27 +63,33 @@ describe('speed and air', () => {
     expect(Math.abs(speedAt(90) - 8.99)).toBeLessThan(0.05);
   });
 
-  it.each([[0], [160]])('a 2 m line change settles (within 0.1 m) in ≤ 0.50 s (startT %d)', (startT) => {
-    const settle = (dx: number) => {
+  it.each([[0], [160]])('a 2 m line change settles (within 0.1 m) in ≤ 0.50 s (startT %d): a key target, and a drag kept up until the skater gets there', (startT) => {
+    /** Ticks until x stays within 0.1 m of `dx`: `drive` steers for tick i given the sim. */
+    const settle = (dx: number, drive: (i: number, sim: Sim) => Partial<InputFrame>) => {
       const sim = make([], startT);
       const xs: number[] = [];
-      run(sim, 150, (i) => (i === 0 ? { steerDx: dx } : {}));
-      // Re-run recording x (run() stops on crash only; record via a second sim to keep it simple).
-      const s2 = make([], startT);
-      for (let i = 0; i < 150; i++) { s2.step(frame(i === 0 ? { steerDx: dx } : {})); xs.push(s2.cur.p.x); }
+      for (let i = 0; i < 150; i++) { sim.step(frame(drive(i, sim))); xs.push(sim.cur.p.x); }
       let last = -1;
       for (let i = 0; i < xs.length; i++) if (Math.abs(xs[i]! - dx) > 0.1) last = i;
       return (last + 1) * DT;
     };
-    expect(settle(2)).toBeLessThanOrEqual(0.5);
-    expect(settle(1)).toBeLessThanOrEqual(0.35);
-    expect(settle(3)).toBeLessThanOrEqual(0.75);
+    // Keys move targetX at V_LAT_MAX (never capped or braked): held for dx / V_LAT_MAX.
+    const keys = (dx: number) => settle(dx, (i) => ({ steerAxis: i < Math.round(dx / (V_LAT_MAX * DT)) ? 1 : 0 }));
+    // A quick thumb (0.36 px/ms, 15 m/s: it outruns the skater) that keeps moving until the skater is 0.35 m short of
+    // the goal, then stops dead: the release brake stops the skater within those 0.35 m (DESIGN §4.2).
+    const thumb = (dx: number) => settle(dx, (_i, sim) => ({ steerDx: sim.cur.p.x < dx - 0.35 ? 0.25 : 0 }));
+    for (const line of [keys, thumb]) {
+      expect(line(2)).toBeLessThanOrEqual(0.5);
+      expect(line(1)).toBeLessThanOrEqual(0.35);
+      expect(line(3)).toBeLessThanOrEqual(0.75);
+    }
   });
 
   it('soft walls keep the skater inside the corridor', () => {
     const sim = make([]);
     let maxX = 0;
-    for (let i = 0; i < 240; i++) { sim.step(frame({ steerDx: i < 10 ? 2 : 0 })); maxX = Math.max(maxX, sim.cur.p.x); }
+    // A thumb that keeps dragging right for 2 s, far faster than the skater.
+    for (let i = 0; i < 240; i++) { sim.step(frame({ steerDx: i < 120 ? 0.25 : 0 })); maxX = Math.max(maxX, sim.cur.p.x); }
     expect(maxX).toBeLessThanOrEqual(4.5);
     expect(sim.cur.targetX).toBeCloseTo(4.3, 9);
     expect(sim.cur.p.x).toBeGreaterThan(4.1);
@@ -145,7 +151,7 @@ describe('contacts (frozen, TECH §6.4)', () => {
 
   it('side contact is a bump: pushed out, re-anchored, no crash', () => {
     const sim = make([box({ s: 3, x: 1.4, len: 60, wid: 0.6, hgt: 1.3, top: 'crash' })]);
-    const ev = run(sim, 300, (i) => (i >= 60 && i < 70 ? { steerDx: 0.3 } : {}));
+    const ev = run(sim, 300, (i) => (i >= 60 && i < 85 ? { steerDx: 0.1 } : {}));   // a drag into it (6 m/s of thumb)
     expect(crashOf(ev)).toBeUndefined();
     const bumps = ev.filter((e) => e.t === 'bump') as Extract<GameEvent, { t: 'bump' }>[];
     expect(bumps.length).toBeGreaterThan(0);

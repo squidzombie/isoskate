@@ -43,11 +43,25 @@ export const SPEED_TIERS = [8.0, 9.0, 10.5] as const;   // tier 1/2/3 thresholds
 export const G = 22, V_POP = 6.6, T_AIR_FLAT = 0.6;
 export const CORRIDOR_HALF = 4.5, SOFT_WALL_X = 4.2, SOFT_WALL_K = 60, TARGET_X_MAX = 4.3;
 export const V_LAT_MAX = 5.5, A_LAT_GROUND = 40, A_LAT_AIR = 16, STEER_P = 10;
-/** Touch steering never puts targetX more than this far ahead of the skater in the drag's direction (owner playtest:
- *  a quick slide or flick ran far ahead of the skater, which kept sliding after the thumb stopped or lifted). Just
- *  above V_LAT_MAX / STEER_P (0.55 m), so a drag still commands full lateral speed and lateral capability (T_SHIFT,
- *  the validator) is unchanged; when the thumb stops, the skater stops within about this distance. Added @steer. */
-export const STEER_LEAD_MAX = 0.6;
+/** Touch steering (DESIGN §4.2, §5.2; owner playtest @steer: a quick slide or flick ran metres ahead of the skater,
+ *  which kept sliding for up to 0.8 s after the thumb had stopped or lifted). Touch `steerDx` never puts targetX more
+ *  than STEER_LEAD_MAX ahead of the skater in its direction (a thumb faster than the skater loses the excess, so the
+ *  skater moves while the thumb moves) and never pulls back a target the magnet or ground align moved further. The
+ *  cap is above V_LAT_MAX / STEER_P (0.55 m), so a drag still commands full lateral speed and lateral capability
+ *  (T_SHIFT, the validator) is unchanged; 0.8 m leaves room for a natural drag whose peak outruns the skater (2 m in
+ *  0.6–0.7 s, peak 1.2–1.4× the skater's speed, still ends within 0.16 m of 2 m). Keys (steerAxis) are never capped.
+ *  Added @steer. */
+export const STEER_LEAD_MAX = 0.8;
+/** Release brake for touch steering (DESIGN §4.2, §5.2; added @steer). A drag that put targetX ≥ `armLead` ahead of
+ *  the skater (the thumb outran it: the skater is commanded at full speed) arms it. When that thumb then stops or
+ *  lifts (its steering over the last 2 ticks nets < `stopM` in the armed direction, about 0.7 px; a tick's steering
+ *  below `jitterM`, about 0.3 px, is a resting thumb's jitter and counts as none), targetX drops to at most `restLead`
+ *  ahead of the skater (or its stopping distance at the brake deceleration, if longer) and the skater slows at
+ *  `ground` / `air` m/s² until it stops or the thumb drives it again: it stops within about 0.3 m of where the thumb
+ *  stopped (measured 0.20–0.32 m on the ground, 0.22–0.28 m in the air, was 2.3–3.9 m). Bots steer with targetX
+ *  ≤ 0.55 m ahead (measured) and keys never steer through steerDx, so neither arms it; nor does it act while the air
+ *  magnet holds an edge. */
+export const STEER_BRAKE = { armLead: 0.6, stopM: 0.03, jitterM: 0.012, restLead: 0.22, ground: 66, air: 40 } as const;
 export const STEER_GAIN = { roll: 1.0, manual: 1.0, air: 1.0, grind: 0, crashed: 0 } as const;
 export const HITBOX = { w: 0.40, l: 0.70, h: 1.50 } as const;
 export const FACE_INSET = 0.08, STEP_UP = 0.18, PIT_FALL_EPS = 0.02;   // pit level = lip level (DESIGN §7)

@@ -51,7 +51,7 @@ describe('GameEvent coverage', () => {
     add(run(near, 150));
     add(run(make([slab({ s: 10, len: 3, x0: -4.5, x1: 4.5, y: 0, y1: -0.85, kind: 'stairs', steps: 5 }),
       slab({ s: 13, len: 30, x0: -4.5, x1: 4.5, y: -0.85 })]), 200));
-    add(run(make([box({ s: 3, x: 1.4, len: 30, wid: 0.6, hgt: 1.3, top: 'crash' })]), 300, (i) => (i >= 60 && i < 70 ? { steerDx: 0.3 } : {})));
+    add(run(make([box({ s: 3, x: 1.4, len: 30, wid: 0.6, hgt: 1.3, top: 'crash' })]), 300, (i) => (i >= 60 && i < 85 ? { steerDx: 0.1 } : {})));
     add(run(make([pit({ s: 30, len: 2 })], { rewinds: 1 }), 400, (i) => (i === 5 ? { tap: true } : {})));   // rewind, then the real fall
     add(run(make([box({ s: 12, x: 0, len: 0.6, wid: 2, hgt: 0.5, top: 'crash' })]), 200, (i) => (i === 60 ? { tap: true } : {})));   // combo lost
 

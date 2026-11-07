@@ -43,6 +43,10 @@ export interface PredExt {
   magnetEdge: number; magnetX: number;    // magnet candidate (−1) and its axis x at the crossing
 }
 
+/** Touch steering bookkeeping for the release brake (sim/kinematics.ts, core/tuning.ts STEER_BRAKE): the direction a
+ *  drag armed it in (0: not armed), whether it is braking, and the previous tick's steerDx (stop detection). */
+export interface SteerExt { armed: number; braking: boolean; prevSd: number }
+
 /** What the last swipe started (keyboard amend, DESIGN §4.6). */
 export interface StartExt { kind: 'ollie' | 'popOut' | 'flip' | 'pick' | 'switch'; tick: number }
 
@@ -75,6 +79,7 @@ export interface SimState {
   revertTick: number;                   // last revert (pose keeps fakie visible a few ticks)
   shadowY: number;                      // ground under the board (pose height in the air)
   wallSide: -1 | 0 | 1;                 // soft wall currently touched (bump on entry)
+  steer: SteerExt;                      // touch steering lead cap and release brake (sim/kinematics.ts)
   /** Only inside a snapshot: the Lesson rewind ring at that moment (the live ring is kept by the Sim, not the state),
    *  so snapshot → restore replays rewinds exactly too. */
   ring?: SimState[];
@@ -147,7 +152,7 @@ export function initState(cfg: RunConfig): SimState {
     flipFrom: { roll: 0, yaw: 0, pitch: 0 }, grindSnap: { dx: 0, dy: 0, entry: -1 }, grindPartT0: 0, manualEntry: -1, manualLatch: false,
     manualSrc: null, manualPartT0: 0, manualsSinceAir: 0, manualHeat: false, timedCarry: false, lastStart: null, sw: { tick: -1, dir: null }, pressDown: false, near: freshNear(),
     gapped: new Set(), landmarksPaid: [], rewindsLeft: Math.max(0, Math.min(REWIND.max, Math.floor(cfg.rewinds ?? 0))),
-    revertTick: -1, shadowY: 0, wallSide: 0,
+    revertTick: -1, shadowY: 0, wallSide: 0, steer: { armed: 0, braking: false, prevSd: 0 },
     landTick: -1, landDrop: 0, slabKind: 'flat', stairStep: -1, groundOb: -1,
     tier: 0, area: startArea, gateway: null, bestPassed: false,
     collected: new Set(), knocked: new Set(), ghosted: new Set(), warned: new Set(),
