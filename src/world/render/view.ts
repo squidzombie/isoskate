@@ -209,6 +209,10 @@ class WorldViewImpl implements WorldView {
     };
     this.auto = new AutoQuality(ctx.quality);
     this.autoOn = autoAllowed();
+    // Every geometry the streaming can hold at once exists (and is registered with the renderer) from the first frame:
+    // live chunks (1 behind + 3 ahead + STREAM.maxBehind kept), one being built, the Roll-out cache (TECH §8.4: GPU
+    // geometries stay bounded, bot-survival).
+    for (const t of TARGETS) for (const g of this.pools[t].prewarm(STREAM.poolChunks)) this.warmGeo(g);
     // Run every kit once per area skin in idle time (warmup.ts), so a run's first dense chunks are not cold code.
     scheduleWarmup((ms) => { this.warmupMs = ms; });
   }
@@ -406,7 +410,7 @@ class WorldViewImpl implements WorldView {
       buildChunk(ch, w, this.areaSrc, this.opts, QUALITY[this.ctx.quality].glowCards);
       t.push(nowMs() - t0);
       tris = 0;
-      for (const tg of TARGETS) { tris += w[tg].tris; this.pools[tg].release(w[tg].end()); }
+      for (const tg of TARGETS) { tris += w[tg].tris; this.releaseGeo(tg, w[tg].end()); }
     }
     t.sort((a, b) => a - b);
     return { p50: t[Math.floor(n / 2)]!, p95: t[Math.min(n - 1, Math.floor(n * 0.95))]!, min: t[0]!, max: t[n - 1]!, tris };
@@ -513,7 +517,7 @@ class WorldViewImpl implements WorldView {
     for (const t of TARGETS) {
       tris += w[t].tris;
       const geo = w[t].end();
-      if (geo.count === 0) { this.pools[t].release(geo); continue; }
+      if (geo.count === 0) { this.releaseGeo(t, geo); continue; }
       const mesh = this.meshPool.pop() ?? new Mesh();
       mesh.geometry = geo.geo;
       mesh.material = this.matOf[t];
@@ -523,12 +527,7 @@ class WorldViewImpl implements WorldView {
       mesh.name = `chunk${index}:${t}`;
       group.add(mesh);
       parts[t] = { mesh, geo };
-      if (!this.warmed.has(geo.geo)) {
-        this.warmed.add(geo.geo);
-        const wm = new Mesh(geo.geo, this.warmMat);
-        wm.frustumCulled = false; wm.name = 'warm';
-        this.warm.push(wm); this.ctx.scene.add(wm);
-      }
+      this.warmGeo(geo);
     }
     const lc: LiveChunk = { index, s0: ch.s0, group, parts, coinSlots: [], decalSlots: [], lanternSlots: [], decals: out.decals,
       lanterns: out.lanterns, ambient: out.ambient, far: out.far, key: this.optsKey, hash, chunk: ch, tris };
@@ -539,14 +538,27 @@ class WorldViewImpl implements WorldView {
     this.refreshAmbient();
   }
 
+  /** One frame on an invisible-material mesh registers a pooled geometry with the renderer when it is made (not when
+   *  it first scrolls into view), so the GPU geometry count only moves when a pool really grows. */
+  private warmGeo(geo: PooledGeo): void {
+    if (this.warmed.has(geo.geo) && !geo.grown) return;
+    this.warmed.add(geo.geo);
+    geo.grown = false;
+    const wm = new Mesh(geo.geo, this.warmMat);
+    wm.frustumCulled = false; wm.name = 'warm';
+    this.warm.push(wm); this.ctx.scene.add(wm);
+  }
+
   /** Drops a build in progress (its buffers go back to the pools). */
   private abortPending(): void {
     const p = this.pending;
     if (!p) return;
     this.pending = null;
     p.gen.return(undefined as never);
-    for (const t of TARGETS) this.pools[t].release(this.writers[t].end());
+    for (const t of TARGETS) this.releaseGeo(t, this.writers[t].end());
   }
+  /** Back to its pool; a geometry that grew while being written is registered again first. */
+  private releaseGeo(t: Target, geo: PooledGeo): void { if (geo.grown) this.warmGeo(geo); this.pools[t].release(geo); }
 
   private claimLayers(c: LiveChunk, coins: readonly Coin[]): void {
     c.coinSlots.length = 0; c.decalSlots.length = 0; c.lanternSlots.length = 0;

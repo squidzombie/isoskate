@@ -14,6 +14,8 @@ export class PooledGeo {
   cap = 0;
   /** Vertices written by the current owner. */
   count = 0;
+  /** Set when `ensure` re-allocated (and disposed the GPU side); the owner clears it. */
+  grown = false;
   private readonly sphere = new Sphere(new Vector3(), 1);
 
   constructor(cap: number) { this.alloc(cap); }
@@ -25,6 +27,7 @@ export class PooledGeo {
     while (cap < n) cap *= 2;
     const { pos, nrm, col, uv, fx } = this;
     this.geo.dispose();                      // frees the GPU buffers of the old arrays
+    this.grown = true;                       // the view registers it again at once (stable GPU geometry count)
     this.alloc(cap);
     const k = this.count;
     this.pos.set(pos.subarray(0, k * 3)); this.nrm.set(nrm.subarray(0, k * 3)); this.col.set(col.subarray(0, k * 3));
@@ -80,6 +83,13 @@ export class GeoPool {
     return new PooledGeo(this.initialCap);
   }
   release(g: PooledGeo): void { g.count = 0; this.free.push(g); }
+  /** Creates small geometries until `n` exist (they grow on first use; a grown one keeps its BufferGeometry), so the
+   *  pool's high-water mark is reached at boot, not whenever a run first needs one more. Returns the new ones. */
+  prewarm(n: number, cap = 16): PooledGeo[] {
+    const out: PooledGeo[] = [];
+    while (this.created < n) { this.created++; const g = new PooledGeo(cap); out.push(g); this.free.unshift(g); }
+    return out;
+  }
   get idle(): number { return this.free.length; }
   dispose(): void { for (const g of this.free) g.dispose(); this.free.length = 0; }
 }
