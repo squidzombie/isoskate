@@ -19,6 +19,8 @@ import { put, sOf } from './util';
 const wave = (c: TemplateCtx, t1: number) =>
   c.coins.wave(c.t0 + 0.4, t1 - 0.4, c.safeX, GEN.coins.breatherAmp, c.coinRng.range(0, 6.28), c.datum + GEN.coins.groundY);
 const end = (c: TemplateCtx) => Math.min(c.t0 + (c.dur ?? 4), c.maxT1);
+/** Harbor Bridge deck: incline start after the gateway starts (s), exit room before it ends (s·v), shortest deck (m). */
+const GW_BRIDGE = GEN.harborBridge;
 
 export const GW_greenway: Template = {
   id: 'GW_greenway', area: 'fixed', tiers: [0], durMax: 4, mirror: false,
@@ -58,10 +60,12 @@ export const GW_harborBridge: Template = {
     // The deck goes on the side away from the safe line (the open road beside it is the safe line).
     const sd = c.safeX <= 0 ? 1 : -1;
     const x0 = sd > 0 ? 1.6 : -4.5, x1 = sd > 0 ? 4.5 : -1.6;
-    const tA = c.t0 + 1.2;
-    const sA = sOf(tA), sEnd = sAt(t1) - 0.6 * c.v;
-    const inc = 20, deckLen = round1cm(clamp(sEnd - sA - inc, 4, 20));
-    if (sEnd - sA - inc >= 4) {
+    // 1:10 up 2.0 m (20 m) from 0.4 s in, the deck to 0.6 s·v before the gateway ends (its exit zone and the 3.4 m
+    // clear road beyond the drop stay inside the gateway): ~10 m of deck at v ≈ 10.
+    const tA = c.t0 + GW_BRIDGE.lead;
+    const sA = sOf(tA), sEnd = sAt(t1) - GW_BRIDGE.exitSec * c.v;
+    const inc = 20, deckLen = round1cm(clamp(sEnd - sA - inc, GW_BRIDGE.minDeck, 20));
+    if (sEnd - sA - inc >= GW_BRIDGE.minDeck) {
       const deck = put(c, buildDeck({ kind: 'skywalk', s: sA, inclineLen: inc, deckLen, x0, x1, h: 2.0, body: 'plate', rails: 'both',
         material: 'neon', variant: 1 }, c.props));
       deck.params = { ...deck.params, bridge: 1 };

@@ -127,7 +127,7 @@ export function validate(st: ValState, inp: ValInput): ValResult {
   }
   // (b) spacing.
   const sp = checkSpacing(acts.map((a) => ({ t: a.t, dx: a.dx })), inp.last);
-  if (sp) return { ok: false, why: sp };
+  if (sp) return { ok: false, why: sp, detail: acts.map((a) => `${a.kind}@${a.t.toFixed(2)}:${a.dx}`).join(' ') + (inp.last ? ` last ${inp.last.t.toFixed(2)}:${inp.last.dx}` : '') };
   // (c) decision time.
   let decisionMin = Infinity;
   for (const a of acts) {

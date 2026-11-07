@@ -49,20 +49,31 @@ export const GEN = {
   /** A3 is due (never before its minimum) when less than this much A-time is left to its maximum: a drawn template
    *  (≤ ~3.6 s) would overrun it, and the hazard itself stands ~1 s into its own template. */
   a3Lead: 4.6,
-  /** Share of the A3 slots that are an S_TRENCH (with GEN_FLAGS.trench; the rest are S_BARRIER). */
-  a3Trench: 0.5,
+  /** Share of the A3 slots that are an S_TRENCH (with GEN_FLAGS.trench; the rest are S_BARRIER), and of the Neon A3 slots
+   *  from T3 on that are an NE_GAUNTLET (its holo gate is the hazard). */
+  a3Trench: 0.5, a3Gauntlet: 0.35,
+  /** Each area's landmark template, drawn landmarkBoost× more often until it has appeared in the current visit. */
+  landmarks: { downtown: 'DT_BIG7', suburbs: 'SB_SCOOPS', docks: 'IN_LIP', neon: 'NE_SKYWALK' } as Record<AreaId, string>,
+  landmarkBoost: 4,
   /** Before a gateway (T0: the A-clock pauses) the last slot that fits the hazard takes it when its maximum would come
    *  within this much A-time after the gateway; such a slot needs `preGwLeft` s left in the visit. */
   a3PreGw: 2.6, a3PreGwLeft: 9.0,
   /** The line enters a gateway within ±this x (its corridor; gateways are T0). */
   gwEntry: 2.5,
+  /** GW_harborBridge deck (DESIGN §12.2): incline from `lead` s in, deck to `exitSec`·v before the gateway ends, ≥ minDeck m. */
+  harborBridge: { lead: 0.4, exitSec: 0.6, minDeck: 4 },
   /** S_GATE (DESIGN §10.4): openings 2.5 / 2.2 / 2.0 m by tier, ≥ 3 m (≤ 4.0 m) from the line's x when it moves. */
   gate: { width: { 0: 2.5, 1: 2.5, 2: 2.5, 3: 2.2, 4: 2.0 } as Record<Tier, number>, maxC: 3.3, shift: [2.8, 4.0] as readonly [number, number],
     second: { 2: 0.6, 3: 0.3 } as Partial<Record<Tier, number>>, secondOff: [3.6, 6.6] as readonly [number, number],
     /** The gate segment starts this long before its row (head window + a 3 m move). */
     lead: 2.3,
-    /** S_GATE approach trick line: chance, and its end ≥ this many seconds before the row. */
-    feature: 0.75, featureGap: 1.0,
+    /** S_GATE approach trick line: chance, and its end ≥ this many seconds before the row; each re-roll stands the
+     *  row retryLate s later. */
+    feature: 0.95, featureGap: 1.0, retryLate: 0.3,
+    /** After a gate the fallback could not stand, the row deadline moves to its end + lead + this. */
+    fallbackDefer: 1.0,
+    /** A gate carries the A3 barrier only when the line enters within ±a3MaxX (not from the sidewalk edge). */
+    a3MaxX: 3.4,
     /** Anti-straight rows (straight-bot guarantees, rows.ts): every row's lanes are disjoint (≥ apartPad) from the
      *  previous row's, so a straight lane passes at most one of two consecutive rows. Consecutive rows are ≤ `gap`
      *  apart and every second row ≤ `window` after the one two before (run time, T0 stretches included). */
@@ -81,7 +92,10 @@ export const GEN = {
     edgeClear: 1.15, tailRoom: 0.8,
     /** Planning: the shortest gate segment. A gate segment carries the A3 hazard too (both due) only after this
      *  many seconds of a run's clock (its first rows must stand on time). */
-    fit: 2.9, combineAfter: 12 },
+    fit: 2.9, combineAfter: 12,
+    /** A template longer than the room before the row (+ slipPad) slips the row deadline (schedule.ts), only with
+     *  slipGwRoom s to spare before the next gateway. */
+    slipPad: 0.3, slipGwRoom: 2.0 },
   /** S_TRENCH: gap per tier (s·v, DESIGN §10.3 0.25 / 0.30 / 0.35) and the plank offset from the safe x per tier. */
   trench: { gapSec: { 0: 0.25, 1: 0.25, 2: 0.30, 3: 0.33, 4: 0.33 } as Record<Tier, number>,
     plankOff: { 0: [0, 1], 1: [0, 1], 2: [1, 2], 3: [1.5, 2.5], 4: [1.5, 2.5] } as Record<Tier, readonly [number, number]>, depth: 0.6 },

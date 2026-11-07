@@ -40,11 +40,15 @@ export function drawTier(phase: PhaseId, rng: Sfc32, lastTier: Tier): Tier {
 }
 
 export type PlanReason = 'rollout' | 'lesson' | 'gateway' | 'filler' | 'payback' | 'a3' | 'wander' | 'breather' | 'draw';
-/** a3: the gate segment also carries the A3 full-width hazard (both deadlines at once). */
-export interface Plan { tpl: Template; tier: Tier; dur?: number; reason: PlanReason; a3?: boolean }
+/** a3: the gate segment also carries the A3 full-width hazard (both deadlines at once). slip: a long template drawn
+ *  when the row is not yet due: no row overlay, the row follows it (the deadline slips by ≤ its length). */
+export interface Plan { tpl: Template; tier: Tier; dur?: number; reason: PlanReason; a3?: boolean; slip?: boolean }
 
-/** The A3 hazard: S_TRENCH (when enabled) or S_BARRIER (area skins). */
-export function a3Plan(rng: Sfc32, tier: Tier, trench: boolean): Plan {
+/** The A3 hazard: S_TRENCH (when enabled) or S_BARRIER (area skins); in Neon from T3 on, sometimes NE_GAUNTLET (its
+ *  holo gate is the full-width hazard, after the rail transfer). */
+export function a3Plan(rng: Sfc32, tier: Tier, trench: boolean, area?: AreaId, left = Infinity): Plan {
+  const g = TEMPLATES.NE_GAUNTLET!;
+  if (area === 'neon' && tier >= 3 && left >= g.durMax && rng.chance(GEN.a3Gauntlet)) return { tpl: g, tier: 4, reason: 'a3' };
   const useTrench = trench && rng.chance(GEN.a3Trench);
   return { tpl: TEMPLATES[useTrench ? 'S_TRENCH' : 'S_BARRIER']!, tier: (useTrench ? Math.max(1, Math.min(3, tier)) : Math.max(1, Math.min(2, tier))) as Tier, reason: 'a3' };
 }
@@ -84,27 +88,33 @@ export function planSegment(c: GenCursor, env: PlanEnv, rng: Sfc32): Plan {
   const a3Min = c.aClock + 1.0 >= c.lastFwA + a3Lo;
   const preGw = left < GEN.a3PreGwLeft && a3MaxLeft - left < GEN.a3PreGw;
   const a3Due = clocks && left >= 2.4 && (env.force === 'a3' || (a3Min && (c.aClock + 0.5 >= c.fwDueA || a3MaxLeft < GEN.a3Lead || preGw)));
-  if (a3Due && env.gateRoom >= 2.4) return a3Plan(rng, tier, env.trench);
+  if (a3Due && env.gateRoom >= 2.4) return a3Plan(rng, tier, env.trench, area, Math.min(left, env.gateRoom + 2.3));
   if (clocks && (gateNow || a3Due) && left >= gate.durMax) {
     // Both due: the gate segment carries the hazard in its approach when there is room for both.
     // (Not in a run's first 12 s: its first rows must stand on time for the straight-bot guarantee.)
     const both = a3Due && left >= gate.durMax + 1.2 && env.t >= c.clockFromT + GEN.gate.combineAfter;
     return { tpl: gate, tier: Math.max(2, tier) as Tier, reason: 'wander', ...(both ? { a3: true } : {}) };
   }
-  if (a3Due) return a3Plan(rng, tier, env.trench);
-  // A due breather (T0: the A-clocks pause), when the row can still come right after it.
+  if (a3Due) return a3Plan(rng, tier, env.trench, area, Math.min(left, env.gateRoom + 2.3));
+  // A due breather (T0: the A-clocks pause; the row comes right after it).
   const br = GEN.breather[phase];
-  if (br && env.t >= c.breatherDueT && br.dur + 0.5 <= left && (!clocks || env.gateRoom >= br.dur + 0.3)) {
+  if (br && env.t >= c.breatherDueT && br.dur + 0.5 <= left && !gateNow) {
     const tpl = TEMPLATES[(GEN.breatherTemplate[area] ?? 'S_OPEN') as 'S_OPEN'] ?? open;
     return { tpl, tier: 0, dur: tpl === open ? br.dur : undefined, reason: 'breather' };
   }
-  // The draw. A template longer than the room before the row must stand it (generator.ts overlays the row, or the
-  // attempt is re-planned as an S_GATE). A full-width hazard is drawn only after the A3 minimum.
-  const fits = (t: Template) => t.durMax <= left && (t.fullWidth ? a3Min : t.durMax + 1.6 <= a3MaxLeft || !clocks)
+  // The draw. A template longer than the room before the row must start hosts no row: it may slip the row deadline
+  // by ≤ its length (after the opening phase and a run's first 12 s, whose rows the straight-bot guarantees need on
+  // time, and not right before a gateway) when the row is not due yet. A full-width hazard only after the A3 minimum.
+  const slip = (t: Template) => clocks && t.durMax > env.gateRoom + GEN.gate.slipPad;
+  const slipOK = (t: Template) => phase !== 'opening' && env.t >= c.clockFromT + GEN.gate.combineAfter && env.gateRoom >= 0.6
+    && left >= t.durMax + GEN.gate.slipGwRoom;
+  const fits = (t: Template) => t.durMax <= left && (!slip(t) || slipOK(t)) && (t.fullWidth ? a3Min : t.durMax + 1.6 <= a3MaxLeft || !clocks)
     && (t.fromT === undefined || env.t >= t.fromT)
     && (!t.drop || (c.datum - t.drop >= GEN.datum.min - 1e-6 && left >= GEN.datum.dropRoomSec));
+  // An area's landmark not seen yet this visit is drawn more often (DESIGN §10.4: each area's landmark is v1 content).
+  const w8 = (t: Template) => (GEN.weights[t.id] ?? 1) * (!c.landmarkDone && GEN.landmarks[area] === t.id ? GEN.landmarkBoost : 1);
   const pick = (list: readonly Template[]): Template | null => {
-    const items = list.filter(fits).map((t) => [t, GEN.weights[t.id] ?? 1] as const).filter(([, w]) => w > 0);
+    const items = list.filter(fits).map((t) => [t, w8(t)] as const).filter(([, w]) => w > 0);
     return items.length ? rng.weighted(items) : null;
   };
   let tpl = pick(templatesFor(area, tier));
@@ -116,5 +126,5 @@ export function planSegment(c: GenCursor, env: PlanEnv, rng: Sfc32): Plan {
     return { tpl: open, tier: 0, dur: Math.max(GEN.open.minFiller, Math.min(left, GEN.open.dur[0])), reason: 'filler' };
   }
   if (!tpl.tiers.includes(tTier)) tTier = tpl.tiers.reduce((a, b) => (Math.abs(b - tier) < Math.abs(a - tier) ? b : a));
-  return { tpl, tier: tTier, reason: 'draw' };
+  return { tpl, tier: tTier, reason: 'draw', ...(slip(tpl) ? { slip: true } : {}) };
 }

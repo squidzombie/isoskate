@@ -133,21 +133,25 @@ export const S_GATE: Template = {
     const centres = atLine ? [round1cm(c.safeX)] : gateOpenings(c.rng, c.safeX, c.lastGateOpen, c.tier);
     if (!centres) return null;
     const pick = centres[0]!;
-    // With the A3 hazard: a full-width barrier first (ollie), the move to the opening after the landing and R_MIN.
+    // With the A3 hazard: a full-width barrier first (ollie), the move to the opening after the landing and R_MIN (not
+    // before a long move: the hazard then comes in the next segment).
     let moveFrom = actFrom(c);
-    if (c.a3) {
+    const withA3 = !!c.a3 && Math.abs(pick - c.safeX) <= GEN.gate.shift[1] && Math.abs(c.safeX) <= GEN.gate.a3MaxX;
+    if (withA3) {
       const tTake = actFrom(c) + 0.15 + c.rng.range(0, 0.2);
       const hgt = round1cm(c.rng.range(0.38, 0.48));
       put(c, buildBarrier(round1cm(sAt(tTake + 0.3) - 0.3), hgt, speedAt(tTake), c.props));
       moveFrom = tTake + Math.max(rMinAt(tTake), 0.9) + 0.05;
     }
     const tRow = atLine ? contentFrom(c) + (c.lastGateOpen.length ? 1.4 : 0.9) + c.rng.range(0, 0.15)
-      : Math.max(moveFrom + T_SHIFT(Math.abs(pick - c.safeX)) + 0.3, c.t0 + 1.7) + c.rng.range(0, 0.15);
+      : Math.max(moveFrom + T_SHIFT(Math.abs(pick - c.safeX)) + 0.3, c.t0 + 1.7) + c.rng.range(0, 0.15)
+        // (re-rolls stand the row later: the history may ask for an action first, e.g. a hop off the sidewalk)
+        + Math.min(c.attempt, GEN.rerolls) * GEN.gate.retryLate;
     const sRow = sOf(tRow);
     // The approach carries a trick line beyond the opening (away from the entry, off the move path): a bench or a
     // flat bar ending ≥ 1 s before the row (its exit zone stays clear of the blockers), coins along it.
     const fA = contentFrom(c) + 0.2, fB = tRow - GEN.gate.featureGap;
-    if (!c.a3 && fB - fA >= 0.45 && c.rng.chance(GEN.gate.feature)) {
+    if (!withA3 && fB - fA >= 0.45 && c.rng.chance(GEN.gate.feature)) {
       const dir = Math.sign(pick - c.safeX) || 1;
       const fx = round1cm(clamp(pick + dir * c.rng.range(1.3, 1.7), -3.3, 3.3));
       if (Math.abs(fx - c.safeX) >= 1.2) {
@@ -159,7 +163,7 @@ export const S_GATE: Template = {
     }
     for (const ob of gateRow(sRow, centres, w, c.props, c.rng)) put(c, ob);
     const tr = tAt(sRow);
-    return { t1: tAt(sRow + 1.2) + 0.5, gateX: centres, gateT: tr, ...(c.a3 ? { fullWidth: true } : {}),
+    return { t1: tAt(sRow + 1.2) + 0.5, gateX: centres, gateT: tr, ...(withA3 ? { fullWidth: true } : {}),
       guides: [{ t0: tr - 0.45, t1: tr + 0.15, x0: pick - 0.25, x1: pick + 0.25 }] };
   },
 };

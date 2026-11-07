@@ -100,33 +100,37 @@ export const DT_BIG7: Template = {
 };
 
 export const DT_RUSH: Template = {
-  id: 'DT_RUSH', area: 'downtown', tiers: [3, 4], durMax: 4.0, mirror: true,
+  id: 'DT_RUSH', area: 'downtown', tiers: [3, 4], durMax: 4.6, mirror: true,
   build(c: TemplateCtx): TemplateOut {
-    // Parking lanes at ±2.05 full of cars, each lane with one gap; a double-parked car in the centre beside the gap
-    // of one lane (zig into it and back). Trick lines on the sidewalks: a granite ledge on one, a flat bar on the other.
-    const v = c.v, tA = contentFrom(c) + 0.6;
+    // Parking lanes at ±2.15 full of cars, each lane with one gap, the gaps 0.9 s apart (zig-zag); a double-parked car
+    // in the centre beside the first gap (zig into it and back). The cars start ≥ 1.5 s in (the entry fan, a myopic
+    // player's look-ahead). Trick lines on the sidewalks, running past the cars on their side and ending ≥ 0.8 s after
+    // them (their exit zones and rail-end lanes stay clear): a granite ledge on one, a flat bar on the other.
+    const v = c.v, tA = contentFrom(c) + 0.9, carsSec = 2.4;
     const carLen = 4.4, gapLen = Math.max(7.5, v * 0.95);
     const gapSide = side(c);
-    const sStart = sOf(tA), sEndCars = sOf(tA + 2.6);
-    const sGap = sOf(tA + 1.0);
+    const sStart = sOf(tA), sEndCars = sOf(tA + carsSec);
+    const sGap = sOf(tA + 0.8);
+    let sLast = sStart;
     for (const sd of [-1, 1] as const) {
-      const x = round1cm(sd * 2.05);
-      const g0 = sd === gapSide ? sGap : sGap + v * 0.9 + (c.tier >= 4 ? 0 : 1.0);
+      const x = round1cm(sd * 2.15);
+      const g0 = sd === gapSide ? sGap : sGap + v * 0.9 + (c.tier >= 4 ? 0 : 0.8);
       let s = sStart;
       while (s + carLen <= sEndCars + 0.01) {
         if (s + carLen > g0 && s < g0 + gapLen) { s = g0 + gapLen; continue; }
         put(c, buildParkedCar(round1cm(s), x, c.props, c.rng.int(0, 5)));
+        sLast = Math.max(sLast, s + carLen);
         s += carLen + c.rng.range(0.6, 1.1);
       }
     }
     // The double-parked car: centre, alongside the gap side's gap.
-    put(c, buildParkedCar(round1cm(sGap + 1.0), round1cm(-gapSide * 0.3), c.props, c.rng.int(0, 5)));
-    if (c.tier >= 4) put(c, buildParkedCar(round1cm(sGap + v * 1.4 + 1.0), round1cm(gapSide * 0.3), c.props, c.rng.int(0, 5)));
+    put(c, buildParkedCar(round1cm(sGap + 1.0), round1cm(-gapSide * 0.35), c.props, c.rng.int(0, 5)));
+    if (c.tier >= 4) put(c, buildParkedCar(round1cm(sGap + v * 1.4 + 1.0), round1cm(gapSide * 0.35), c.props, c.rng.int(0, 5)));
     if (c.layout.curbX !== null) {
-      const ls = side(c);
-      const ledge = put(c, buildLedge(sStart + 1.0, round1cm(ls * 3.75), v * 1.2, c.props));
+      const ls = side(c), sEnd = sLast + v * 0.8;
+      const ledge = put(c, buildLedge(round1cm(sStart + v * 0.4), round1cm(ls * 3.75), round1cm(sEnd - sStart - v * 0.4), c.props));
       edgeCoins(c, ledge);
-      const bar = put(c, buildFlatbar(sStart + 2.0, round1cm(-ls * 3.75), v * 1.0, 0.4, c.props));
+      const bar = put(c, buildFlatbar(round1cm(sStart + v * 0.8), round1cm(-ls * 3.75), round1cm(sEnd - sStart - v * 0.8), 0.4, c.props));
       c.coins.edge(bar.edges[0]!);
       if (c.tier >= 3) c.coins.gold(bar.s + bar.len - 0.5, bar.x, bar.solids[0]!.box.y1 + 0.6);
     }

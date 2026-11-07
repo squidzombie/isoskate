@@ -80,6 +80,11 @@ export class Generator implements WorldGen {
   /** Validator stats of the committed segments (static asserts read them). */
   readonly valStats = { decisionMin: Infinity, windowMin: Infinity, deadEndMax: 0, actions: 0, fillers: 0, walls: 0 };
   readonly internals: GenInternals = { obstacleById: new Map(), edgeById: new Map() };
+  /** Validator runs of this generator and the failed ones (by rule): the rejection rate counts every failed
+   *  validation, the overlay tries and edge trims included (DESIGN §10.6.7). */
+  valCalls = 0;
+  valFails = 0;
+  readonly valFailWhy: Record<string, number> = {};
   /** Anti-straight rows stood so far (run time, lanes): tests and analysis read them. */
   readonly rows: { t: number; lanes: [number, number][] }[] = [];
 
@@ -103,7 +108,7 @@ export class Generator implements WorldGen {
       gateDueT: clockFromT + (this.rollout ? 1.6 : GEN.spawnGrace + 1.6), lastRowT: -Infinity, prevRowT: -Infinity, lastGateOpen: [],
       lastFwA: 0, fwDueA: nextFullWidthDue(0, phaseAt(clockFromT), rng),
       breatherDueT: Math.max(45, this.startT) + rng.range(br.every[0], br.every[1]) / 2,
-      lastTier: 0, areaSegs: 0, lessonPart: 0, ids: { ob: 0, coin: 0, edge: 0 }, history: [], persistent: [],
+      lastTier: 0, areaSegs: 0, landmarkDone: false, lessonPart: 0, ids: { ob: 0, coin: 0, edge: 0 }, history: [], persistent: [],
     };
     this.decorState.nextEndWall = sAt(this.startT) + 20;
     this.decorState.backNext = [sAt(this.startT), sAt(this.startT)];
@@ -177,7 +182,7 @@ export class Generator implements WorldGen {
     const gw = gatewayWindow(t0, this.startArea);
     const inGw = t0 >= gw.start - 1e-6 && t0 < gw.end - 1e-6;
     const area = areaAtTime(t0 + 1e-6, this.startArea).area;
-    if (area !== c.area) { c.area = area; c.areaSegs = 0; }
+    if (area !== c.area) { c.area = area; c.areaSegs = 0; c.landmarkDone = false; }
     const phase = phaseAt(t0);
     const isRollout = index === 0 && this.rollout;
     const isLesson = !isRollout && this.lesson && c.lessonPart < LESSON_PARTS.length;
@@ -229,6 +234,9 @@ export class Generator implements WorldGen {
       }
     }
     this.rerolls += rerolls;
+    // A row the fallback could not stand: the deadline moves on by one template, so the next segment draws normally
+    // (its line moves) instead of re-planning the same gate behind a chain of fallbacks.
+    if (fallback && !built.row && plan.reason === 'wander') c.gateDueT = Math.max(c.gateDueT, built.t1 + GEN.gate.lead + GEN.gate.fallbackDefer);
     GEN_DEBUG.onCommit?.({ index, t0, tpl: built.plan.tpl.id, reason: built.plan.reason, gateRoom: this.gateLatestStart(t0) - t0, gateDue: c.gateDueT });
     this.commit(built, index, area, inGw ? gw.id : null, decorRng, rerolls, fallback, phase, inGw ? gw.end : gw.start, rng);
   }
@@ -275,6 +283,9 @@ export class Generator implements WorldGen {
     if (!out) return fail('tpl');
     let t1 = plan.dur !== undefined && (tpl.id === 'S_OPEN' || tpl.id.startsWith('GW_')) ? Math.min(out.t1, t0 + plan.dur) : out.t1;
     if (t1 > maxT1 + 1e-6) return fail('fit');
+    // A segment that would end less than GEN.minTemplateSec before a gateway runs on to it (empty road): a cut-down
+    // filler there would be T0 and could not bring the line into the gateway's corridor.
+    if (!gateway && Number.isFinite(maxT1) && maxT1 - t1 > 1e-6 && maxT1 - t1 < GEN.minTemplateSec) t1 = maxT1;
     if (t1 - t0 < 0.3) {
       if (maxT1 - t0 < 0.3 + 1e-6) t1 = maxT1; else return fail('short');
     }
@@ -342,12 +353,16 @@ export class Generator implements WorldGen {
     const run1 = (obs: Obstacle[], guides?: readonly { t0: number; t1: number; x0: number; x1: number }[]): ValResult => {
       const seg = [...obs, ...persistentNew, ...base(obs)];
       const win = [...c.history, ...c.persistent.filter((o) => o.s + o.len > s0 - 30 && o.s < s1 + 30), ...seg];
-      return validate(c.val, {
+      const r = validate(c.val, {
         obstacles: win, seg, t0, t1, s1, layoutEnd: layout, datumEnd, exit,
         earliest: Math.max(c.firstActionT, t0), last: c.last, noActions: t0Stretch,
         headSec: fixed ? 0.3 : GEN.noActionHead, tailSec: fixed ? 0.2 : GEN.noActionTail,
         groundHi, greedy: true, guides: [...(out.guides ?? []), ...(guides ?? [])], relax: bare && attempt > GEN.rerolls + 2,
       });
+      // Every validation counts (DESIGN §10.6.7 rejection rate): overlays, edge trims and re-rolls alike.
+      this.valCalls++;
+      if (!r.ok) { this.valFails++; this.valFailWhy[r.why] = (this.valFailWhy[r.why] ?? 0) + 1; }
+      return r;
     };
     // A-clock mapping for this segment (clocks pause in T0 and before clockFromT).
     const clocks = !t0Stretch && !bare && !fixed;
@@ -361,7 +376,7 @@ export class Generator implements WorldGen {
     if (clocks && t1 > c.clockFromT && !fw && plan.reason === 'draw' && aEnd > c.lastFwA + a3Range(phase)[1] + 0.5) return fail('a3');
     // The template alone first: every later step (the row overlay, the A2 wall) starts from its committed line.
     const r0 = run(obstacles);
-    if (!r0.ok) { if (GEN_DEBUG.onReject && r0.detail) GEN_DEBUG.onReject({ index, t0, tpl: tpl.id, tier: plan.tier, attempt, why: `  detail ${r0.detail}` }); return fail(r0.why); }
+    if (!r0.ok) { if (GEN_DEBUG.onReject && r0.detail) GEN_DEBUG.onReject({ index, t0, tpl: tpl.id, tier: plan.tier, attempt, why: `  detail ${r0.detail} gate=${out.gateX ?? ''} x0=${c.safeX} obs=${[...c.history, ...obstacles].filter((o) => o.s < sAt(t0 + 1.6) && o.s + o.len > sAt(t0 + 0.5)).map((o) => `${o.kind}@${tAt(o.s).toFixed(2)}x${o.x.toFixed(1)}`).join(',')}` }); return fail(r0.why); }
     let res: Extract<ValResult, { ok: true }> = r0;
     // The anti-straight row (rows.ts). S_GATE stands its own; a row due inside another template is overlaid on it by
     // the deadline: where the template's own line already passes (an opening at the line, no extra move), else as a
@@ -375,7 +390,7 @@ export class Generator implements WorldGen {
       row = { t: out.gateT, lanes };
     }
     const rowDue = this.gateLatestStart(t0) + GEN.gate.lead;
-    const wantRow = clocks && !row && t1 > rowDue - (GEN.gate.lead + 1.4);
+    const wantRow = clocks && !row && !plan.slip && t1 > rowDue - (GEN.gate.lead + 1.4);
     // Without a row here, the next one comes in the next segment (or after the gateway): too late → a gate instead.
     const rowLate = (): boolean => {
       const gw = gatewayWindow(t1 - 1e-6, this.startArea);
@@ -599,6 +614,7 @@ export class Generator implements WorldGen {
     if (lastAction) c.last = { t: lastAction.t, dx: lastAction.dx };
     c.t = t1; c.s = s1; c.datum = b.datumEnd; c.safeX = res.exitX; c.val = res.next; c.lastTier = tier;
     if (!gateway) c.areaSegs++;
+    if (GEN.landmarks[area] === b.plan.tpl.id) c.landmarkDone = true;
     if (b.plan.reason === 'lesson') c.lessonPart++;
     const keepFrom = sAt(t1 - HISTORY_KEEP_SEC) - 2;
     c.history = [...c.history, ...b.obstacles].filter((o) => o.kind !== 'dock_lip' || !(o.params?.body))
