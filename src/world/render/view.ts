@@ -32,6 +32,7 @@ import { drawGroundAtlas, GROUND_ATLAS_SIZE } from './textures/ground';
 import { drawSignAtlas, SIGN_ATLAS } from './textures/signs';
 import { GeoPool, type PooledGeo } from './pools';
 import { GeoWriter, srgbToLinear, type KitTargets } from './writer';
+import { scheduleWarmup } from './warmup';
 
 export const VIEW = {
   coinCapacity: COIN.capacity, coinDiameter: COIN.diameter,
@@ -206,7 +207,10 @@ class WorldViewImpl implements WorldView {
     };
     this.auto = new AutoQuality(ctx.quality);
     this.autoOn = autoAllowed();
+    // Run every kit once per area skin in idle time (warmup.ts), so a run's first dense chunks are not cold code.
+    scheduleWarmup((ms) => { this.warmupMs = ms; });
   }
+  private warmupMs: number[] = [];
 
   attach(gen: WorldGen): void {
     // Roll-out chunks (−1..1) go to the cache for the new run; the rest are released.
@@ -293,7 +297,9 @@ class WorldViewImpl implements WorldView {
           if (target === null) for (let i = ci; i <= hi && target === null; i++) { const c = this.chunks.get(i); if (c && c.key !== this.optsKey) target = i; }
           if (target !== null) this.pending = this.startBuild(target, this.chunks.get(target) ?? null);
         }
-        if (this.pending) this.stepPending((fs ?? nowMs()) + STREAM.sliceMs);
+        // The slice budget counts from the frame start (rAF); a stale timeline (manual debug steps) counts from now.
+        const now = nowMs(), from = fs !== null && now - fs >= 0 && now - fs < 20 ? fs : now;
+        if (this.pending) this.stepPending(from + STREAM.sliceMs);
       }
     }
     if (this.frameWork > 0) this.recordBuild(this.frameWork);
@@ -348,6 +354,7 @@ class WorldViewImpl implements WorldView {
       verts, chunkTris: tris, maxChunkTris, coinSlotsUsed: this.coins.used, decalsUsed: this.decals.used, lanternsUsed: this.lanterns.used,
       originS: this.originS, edgeHalfW: this.opts.edgeHalfW, mainCalls: this.mainCalls, shadowCalls: this.shadowCalls,
       chunksBuilt: this.built, cacheHits: this.cacheHits, buildMsP95: this.buildP95, chunkMsP95: this.chunkP95, pending: this.pending?.index ?? null,
+      warmupMs: this.warmupMs,
       quality: this.ctx.quality, autoQuality: this.autoOn,
       bench: (n?: number, index?: number) => this.benchBuild(n, index),
       obstacles: (id?: number) => [...this.chunks.values()].flatMap((c) => c.chunk.obstacles).filter((o) => id === undefined || o.id === id),

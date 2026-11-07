@@ -1,11 +1,11 @@
 // wa.spec (W2a, world art): the per-area budgets at the plateau, the run's first frame and the Roll-out cache, and
 // context loss. Everything goes through window.__skate (DebugAPI + ext.world(): world/render WorldView.debugInfo).
-//   - each area at the plateau (startT past 150 s, safe bot, god mode, 30 s): main-pass draw calls ≤ 70, all calls ≤ 120
-//     (the shadow pass included), triangles ≤ 120k (TECH §8.4, DESIGN §24 row 23); chunk build p95 ≤ 4 ms across the
-//     chunks the run streams in, each rebuilt 7× in place (ext.world().bench) and its best time kept, so frame-render
-//     contention under SwiftShader and other processes are not counted (FPS under SwiftShader is not a metric);
+//   - each area at the plateau (startT past 150 s, safe bot, god mode, 45 s): main-pass draw calls ≤ 70, all calls ≤ 120
+//     (the shadow pass included), triangles ≤ 120k (TECH §8.4, DESIGN §24 row 23); chunk build p95 ≤ 4 ms over single
+//     builds of every chunk the run streams in (each built once more alone, after the GPU is idle); the in-run
+//     __skate.perf().buildMs (build work per frame; chunks off screen are sliced over frames, TECH §8.6) is logged;
 //   - the first frame of a run makes exactly the three chunks the camera sees (TECH §8.6 exception); a retry restores
-//     the Roll-out chunks from the cache instead of building them;
+//     them from the Roll-out cache instead of building them;
 //   - WEBGL_lose_context → restore → Resume: the scene is rebuilt and renders again.
 import { expect, test, type Page } from '@playwright/test';
 
@@ -13,7 +13,7 @@ declare global { interface Window { __skate?: import('../../src/core/debug').Deb
 
 interface WorldInfo {
   chunks: number[]; cached: number[]; mainCalls: number; shadowCalls: number; chunksBuilt: number; cacheHits: number;
-  maxChunkTris: number; bench(n?: number, index?: number): { p50: number; p95: number; min: number; max: number; tris: number };
+  maxChunkTris: number; buildMsP95: number; chunkMsP95: number; bench(n?: number, index?: number): { p50: number; p95: number; min: number; max: number };
 }
 const world = (page: Page) => page.evaluate(() => {
   const w = (window.__skate as unknown as { ext: { world(): WorldInfo } }).ext.world();
@@ -32,6 +32,9 @@ test('each area at the plateau stays within the draw-call, triangle and chunk-bu
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   await page.goto('/?debug=1&quality=med');
   await page.waitForFunction(() => !!window.__skate);
+  // The boot warm-up (world/render/warmup.ts) runs every kit in idle time while the Title shows.
+  await page.waitForFunction(() => ((window.__skate as unknown as { ext: { world(): { warmupMs: number[] } } }).ext.world().warmupMs.length === 4), null, { timeout: 30_000 });
+  const builds: number[] = [];
   for (const [area, startT] of PLATEAU) {
     const r = await page.evaluate(([startT]) => {
       const s = window.__skate!;
@@ -41,30 +44,47 @@ test('each area at the plateau stays within the draw-call, triangle and chunk-bu
       let main = 0, calls = 0, tris = 0, chunkTris = 0;
       const w = () => (s as unknown as { ext: { world(): WorldInfo } }).ext.world();
       const area = s.step(1).area;
-      // Build time per chunk: every chunk the run streams in is rebuilt 7 times into scratch buffers and its best time
-      // kept (TECH §11.6: CPU noise from other processes only adds time); the budget is the p95 across chunks.
-      const perChunk = new Map<number, number>();
-      const benchNew = () => { for (const i of w().chunks) if (!perChunk.has(i)) perChunk.set(i, w().bench(7, i).min); };
+      const built0 = w().chunksBuilt;
+      // SwiftShader rasterises on the CPU after the draw calls are flushed, so a chunk build timed during a frame races
+      // the previous frame's rasterisation (a real GPU runs beside the CPU). Every chunk the run streams in is built
+      // once more, alone, after a 1-pixel read-back has waited for the GPU: single builds, no best-of.
+      const gl = (document.getElementById('gl') as HTMLCanvasElement).getContext('webgl2')!, px = new Uint8Array(4);
+      const single = new Map<number, number>();
+      const benchNew = () => {
+        for (const i of w().chunks) if (!single.has(i)) { gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); single.set(i, w().bench(1, i).max); }
+      };
       benchNew();
-      for (let k = 0; k < 50; k++) {
+      for (let k = 0; k < 90; k++) {
         s.step(30);
         const p = s.perf(), wi = w();
         main = Math.max(main, wi.mainCalls); calls = Math.max(calls, p.calls); tris = Math.max(tris, p.tris); chunkTris = Math.max(chunkTris, wi.maxChunkTris);
         benchNew();
       }
-      const t = [...perChunk.values()].sort((a, b) => a - b);
-      const bench = { n: t.length, p50: t[Math.floor(t.length / 2)]!, p95: t[Math.min(t.length - 1, Math.floor(t.length * 0.95))]!, max: t[t.length - 1]! };
+      const t = [...single.values()].sort((a, b) => a - b);
+      const wi = w();
       s.bot('off');
-      return { area, main, calls, tris, chunkTris, bench };
+      return { area, main, calls, tris, chunkTris, frameMs: s.perf().buildMs, chunkMs: wi.chunkMsP95, built: wi.chunksBuilt - built0,
+        all: t, single: { n: t.length, p50: t[t.length >> 1]!, p95: t[Math.min(t.length - 1, Math.floor(t.length * 0.95))]!, max: t[t.length - 1]! } };
     }, [startT] as const);
-    console.log(`wa ${area}: main ${r.main} / all ${r.calls} calls, ${r.tris} tris, chunk ≤ ${r.chunkTris} tris, build p50 ${r.bench.p50.toFixed(2)} p95 ${r.bench.p95.toFixed(2)} max ${r.bench.max.toFixed(2)} ms over ${r.bench.n} chunks`);
+    console.log(`wa ${area}: main ${r.main} / all ${r.calls} calls, ${r.tris} tris, chunk ≤ ${r.chunkTris} tris; single builds p50 ${r.single.p50.toFixed(2)} `
+      + `p95 ${r.single.p95.toFixed(2)} max ${r.single.max.toFixed(2)} ms over ${r.single.n} chunks; in-run perf().buildMs ${r.frameMs.toFixed(2)} ms per frame, `
+      + `${r.chunkMs.toFixed(2)} ms per chunk (racing SwiftShader)`);
     expect(r.area).toBe(area);
     expect(r.main).toBeLessThanOrEqual(BUDGET.main);
     expect(r.calls).toBeLessThanOrEqual(BUDGET.calls);
     expect(r.tris).toBeLessThanOrEqual(BUDGET.tris);
     expect(r.chunkTris).toBeLessThanOrEqual(BUDGET.chunkTris);
-    expect(r.bench.p95).toBeLessThanOrEqual(BUDGET.buildP95);
+    expect(r.built).toBeGreaterThanOrEqual(8);
+    expect(r.single.n).toBeGreaterThanOrEqual(15);
+    expect(r.single.p50).toBeLessThanOrEqual(BUDGET.buildP95 / 2);
+    builds.push(...r.all);
   }
+  // The budget is the p95 over every chunk the four plateaus stream in (one CPU hiccup from another process is not
+  // the p95 of ~100 builds).
+  builds.sort((a, b) => a - b);
+  const p95 = builds[Math.min(builds.length - 1, Math.floor(builds.length * 0.95))]!;
+  console.log(`wa: single chunk builds p95 ${p95.toFixed(2)} ms over ${builds.length} chunks (max ${builds[builds.length - 1]!.toFixed(2)})`);
+  expect(p95).toBeLessThanOrEqual(BUDGET.buildP95);
   expect(errors).toEqual([]);
 });
 
@@ -81,20 +101,23 @@ test('a run starts with exactly the three chunks on screen; a retry restores the
     const b = w();
     return { built: b.chunksBuilt - a.chunksBuilt, hits: b.cacheHits - a.cacheHits, chunks: b.chunks };
   });
-  // The first frame makes 3 chunks available (built, or restored from the Title preview's cache), plus whatever the
-  // catch-up render of step() adds ahead; at least the three around the start are there.
-  expect(first.chunks).toEqual(expect.arrayContaining([-1, 0, 1]));
+  // The first frame makes exactly the 3 chunks around the start available: built, or restored from the cache the
+  // Title preview run left (TECH §8.6 exception).
+  expect(first.chunks).toEqual([-1, 0, 1]);
+  expect(first.built + first.hits).toBe(3);
   const retry = await page.evaluate(() => {
     const s = window.__skate!, w = () => (s as unknown as { ext: { world(): WorldInfo } }).ext.world();
     s.step(600);                                   // leave the Roll-out behind (its chunks go to the cache)
     const a = w();
     s.start({ seed: 12, god: true });              // a retry: same Roll-out, new seed after it
-    s.renderNow();
+    s.renderNow();                                 // the retry's first frame
     const b = w();
-    return { built: b.chunksBuilt - a.chunksBuilt, hits: b.cacheHits - a.cacheHits, cachedBefore: a.cached };
+    return { built: b.chunksBuilt - a.chunksBuilt, hits: b.cacheHits - a.cacheHits, chunks: b.chunks };
   });
-  expect(retry.cachedBefore).toEqual(expect.arrayContaining([-1, 0]));
+  // The Roll-out chunks still live at the retry (a long backdrop keeps chunk 0) go to the cache with the others.
+  expect(retry.chunks).toEqual([-1, 0, 1]);
   expect(retry.hits).toBeGreaterThanOrEqual(3);
+  expect(retry.built + retry.hits).toBe(3);
 });
 
 test('context loss → restore → Resume rebuilds the scene and renders it again', async ({ page }) => {

@@ -119,10 +119,20 @@ const lowWall: DecorFn = (c, d) => {
   K.reset().to('b').lit(PAT.pavers, 0, nearOf(d)).col(0xc4b2a6).chamfer(d.x - 0.2, d.y, d.s, d.x + 0.2, d.y + h, d.s + len, 0.03);
 };
 
+/** The lowest point of a decor element hung on a facade or a post (awning, blade sign, banner). world/gen gives it in
+ *  `y` (as overhead kinds give theirs; docs/core-requests.md WA "Decor.y of hung side kinds"); a `y` at the ground
+ *  it stands on (less than HUNG.minMount above the sidewalk edge) gets the kind's default mounting height. */
+export const HUNG = { minMount: 1.2, awning: 2.4, blade: 2.6, banner: 3.0 } as const;
+function hungY(c: KitCtx, d: Decor, mount: number): number {
+  const ground = c.groundAt(d.s + 0.01, Math.max(-4.45, Math.min(4.45, d.x)));
+  return d.y - ground >= HUNG.minMount ? d.y : d.y + mount;
+}
+
 const awning: DecorFn = (c, d) => {
   const area = c.areaAt(d.s), w = num(d, 'w', 4), depth = num(d, 'depth', 1.0);
   const face = Math.sign(d.x) * (Math.abs(d.x) + depth);
-  awningAt(c, face, d.s, d.s + w, d.y + 2.6 + 0.5, area, num(d, 'color', d.variant), nearOf(d), depth);
+  // awningAt draws the canopy down 0.5 m from yTop and its valance 0.25 m below that.
+  awningAt(c, face, d.s, d.s + w, hungY(c, d, HUNG.awning) + 0.75, area, num(d, 'color', d.variant), nearOf(d), depth);
 };
 
 const bladeSign: DecorFn = (c, d) => {
@@ -131,15 +141,15 @@ const bladeSign: DecorFn = (c, d) => {
   const brands = DECOR_BRANDS[area].length;
   const pick = area === 'neon' && word >= 0 ? brands + (word % NEON_SIGN_WORDS.length) : Math.max(0, brand) % brands;
   const xFace = Math.sign(d.x) * Math.max(Math.abs(d.x) + w, 4.9 + w);
-  bladeSignAt(c, xFace, d.s, d.y + 2.6, h, w, pick, area, nearOf(d));
+  bladeSignAt(c, xFace, d.s, hungY(c, d, HUNG.blade), h, w, pick, area, nearOf(d));
 };
 
 const banner: DecorFn = (c, d) => {
   const K = c.K, area = c.areaAt(d.s), h = num(d, 'h', 1.2), col = ACCENTS[area][num(d, 'color', d.variant) % ACCENTS[area].length]!;
-  const x = d.x + inward(d) * 0.05;
+  const x = d.x + inward(d) * 0.05, y0 = hungY(c, d, HUNG.banner);
   K.reset().to('b').lit(0, 0.4, nearOf(d)).col(col);
-  K.quad(x - 0.3, d.y + 3, d.s - 0.02, x + 0.3, d.y + 3, d.s - 0.02, x + 0.3, d.y + 3 + h, d.s - 0.02, x - 0.3, d.y + 3 + h, d.s - 0.02);
-  K.col(shade(col, 0.4)).quad(x - 0.22, d.y + 3 + h * 0.6, d.s - 0.025, x + 0.22, d.y + 3 + h * 0.6, d.s - 0.025, x + 0.22, d.y + 3 + h * 0.75, d.s - 0.025, x - 0.22, d.y + 3 + h * 0.75, d.s - 0.025);
+  K.quad(x - 0.3, y0, d.s - 0.02, x + 0.3, y0, d.s - 0.02, x + 0.3, y0 + h, d.s - 0.02, x - 0.3, y0 + h, d.s - 0.02);
+  K.col(shade(col, 0.4)).quad(x - 0.22, y0 + h * 0.6, d.s - 0.025, x + 0.22, y0 + h * 0.6, d.s - 0.025, x + 0.22, y0 + h * 0.75, d.s - 0.025, x - 0.22, y0 + h * 0.75, d.s - 0.025);
 };
 
 const billboard: DecorFn = (c, d) => {

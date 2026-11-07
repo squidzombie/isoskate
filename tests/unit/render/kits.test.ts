@@ -12,7 +12,8 @@ import { ObTag } from '../../../src/core/world';
 import { DEFAULT_BUILD, LOOK_SWITCH, buildChunk, chunkHash, heightClass, lookAreaAt, lookSwitch } from '../../../src/world/render/chunkBuilder';
 import { CONTACT_PAD } from '../../../src/world/render/kits/common';
 import { KITS } from '../../../src/world/render/kits/index';
-import { DECOR_RENDERERS } from '../../../src/world/render/kits/decor';
+import { warmupArea, warmupChunk } from '../../../src/world/render/warmup';
+import { DECOR_RENDERERS, HUNG } from '../../../src/world/render/kits/decor';
 import { COLORS, HAZARD } from '../../../src/world/render/palette';
 import { GeoPool, type PooledGeo } from '../../../src/world/render/pools';
 import { DECAL } from '../../../src/world/render/textures/decals';
@@ -172,6 +173,13 @@ describe('kits', () => {
     expect(roadTop).toBeCloseTo(-0.85, 2);
     expect(vergeTop).toBeCloseTo(-0.7, 2);
   });
+  it('the idle-time warm-up runs every kit and decor renderer in every area skin without throwing', () => {
+    for (const area of AREAS) {
+      const ch = warmupChunk(area);
+      expect(new Set(ch.obstacles.map((o) => o.kind)).size).toBe(Object.keys(KITS).length);
+      expect(warmupArea(area)).toBeGreaterThanOrEqual(0);
+    }
+  });
   it('a dense street chunk stays inside the per-chunk triangle budget (≤ 12k)', () => {
     for (const area of AREAS) {
       resetIds();
@@ -235,6 +243,20 @@ describe('decor renderers', () => {
 });
 
 describe('textures', () => {
+  it('hung side decor (awning, blade sign, banner) reads y as its lowest point when world/gen gives the mounting height', () => {
+    for (const [kind, area, mount] of [['awning', 'downtown', 2.6], ['blade_sign', 'downtown', 2.8], ['blade_sign', 'neon', 2.4], ['banner', 'suburbs', 3]] as const) {
+      for (const y of [0.15 + mount, 0.15]) {
+        const ch = emptyChunk(2, area);
+        ch.decor = [{ ...decorOf(kind, area, 2 * CHUNK_LEN + 4, 1, 3), y }];
+        const { g } = build(ch, area);
+        let lowest = Infinity;
+        for (const t of ['o', 'b', 'e'] as const) for (let i = 0; i < g[t].count; i++) if (g[t].pos[i * 3]! > 4.55 && g[t].pos[i * 3 + 1]! > 0.2) lowest = Math.min(lowest, g[t].pos[i * 3 + 1]!);
+        // WG style (y = sidewalk + mount): the element starts at y; a ground-level y takes the kind's default mount.
+        const want = y > 1 ? y : 0.15 + (kind === 'awning' ? HUNG.awning : kind === 'banner' ? HUNG.banner : HUNG.blade);
+        expect(lowest, `${kind} ${area} y=${y}`).toBeCloseTo(want, 1);
+      }
+    }
+  });
   it('the sign atlas packs every entry inside 1024² (brands of every area, the reviewed words, holo panels)', () => {
     for (const area of AREAS) expect(SIGN_RECTS.get(`b:${area}:0`)).toBeDefined();
     for (let i = 0; i < NEON_SIGN_WORDS.length; i++) { expect(SIGN_RECTS.get(`w:${i}`)).toBeDefined(); expect(SIGN_RECTS.get(`wt:${i}`)).toBeDefined(); }

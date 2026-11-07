@@ -22,7 +22,7 @@ export const RENDER = {
 export const STREAM = { buildBudgetMs: 4, keepBehindM: 14, maxBehind: 3, rebuildFrac: 0.1, rebuildYawDeg: 1,
   /** Build work per frame for a chunk not on screen yet: the build pauses after the item that crosses it (ms from
    *  the frame start). */
-  sliceMs: 2.5 } as const;
+  sliceMs: 1.5 } as const;
 
 /** Per-tier world settings (TECH §8.9): glow cards per chunk, particle cap (vfx reads it), shadow map size. */
 export const QUALITY: Readonly<Record<QualityTier, { glowCards: number; particles: number; shadow: number; dpr: number }>> = {
