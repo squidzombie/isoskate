@@ -12,7 +12,8 @@ export function createCameraRig(): CameraRig {
   return createCameraRigImpl();
 }
 
-export { solveFraming, lookAheadFor, yawForAspect, hudTopOf, RIG_STATE, type Framing } from './camera';
+export { solveFraming, lookAheadFor, lookAheadPersp, yawForAspect, hudTopOf, edgeMetresPerPx, farMetresPerPx, framePx, groundAt, groundDepthAt, RIG_STATE, type Framing } from './camera';
+export { CAM_VARIANTS, camVariant, isDefaultCam, parseCamVariant, setCamVariant, type CamVariant } from './camVariants';
 export { heightClass } from './chunkBuilder';
 export { COLORS, SURFACE_COLOR, CONTACT, PRESETS, HAZARD, ACCENTS, samplePalette, blendWeight } from './palette';
 export { buildOptionsFor, worldAmbient, VIEW, type WorldViewDebug } from './view';

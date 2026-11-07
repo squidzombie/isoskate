@@ -4,6 +4,8 @@ import type { QualityTier } from '../core/ids';
 export interface Flags {
   debug: boolean; seed: number | null; quality: QualityTier | null; fakeAds: boolean; bot: string | null;
   nosw: boolean; reset: boolean;
+  /** Debug builds only: the run camera variant (world/render/camVariants.ts), e.g. ?debug=1&cam=E. */
+  cam: string | null;
 }
 
 export function readFlags(search: string = typeof location !== 'undefined' ? location.search : ''): Flags {
@@ -18,6 +20,7 @@ export function readFlags(search: string = typeof location !== 'undefined' ? loc
     bot: q.get('bot'),
     nosw: q.get('nosw') === '1',
     reset: q.get('reset') === '1',
+    cam: q.get('cam'),
   };
 }
 

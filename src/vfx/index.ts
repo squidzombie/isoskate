@@ -19,7 +19,6 @@ import { Particles, SHAPE } from './particles';
 import { Rings } from './rings';
 import { VFX } from './vfx.config';
 
-const SIN_T = Math.sin((CAMERA.pitchDeg * Math.PI) / 180), COS_T = Math.cos((CAMERA.pitchDeg * Math.PI) / 180);
 const lighten = (hex: number, k: number) => {
   const ch = (sh: number) => Math.round(((hex >> sh) & 255) + (255 - ((hex >> sh) & 255)) * k);
   return (ch(16) << 16) | (ch(8) << 8) | ch(0);
@@ -152,7 +151,7 @@ class VfxImpl implements VfxExt {
     const H = RIG_STATE.menu ? 0 : RIG_STATE.H;
     const limitY = (CAMERA.anchorFromTop - 2 / 3) * H;   // screen metres above the skater where the zone starts
     const cap = this.parts.cap0;
-    cap.s = s; cap.y = gy; cap.limit = limitY; cap.sin = SIN_T; cap.cos = COS_T; cap.alpha = H > 0 ? VFX.lookAheadAlpha : 1;
+    cap.s = s; cap.y = gy; cap.limit = limitY; cap.sin = Math.sin((RIG_STATE.pitchDeg * Math.PI) / 180); cap.cos = Math.cos((RIG_STATE.pitchDeg * Math.PI) / 180); cap.alpha = H > 0 ? VFX.lookAheadAlpha : 1;
     this.parts.update(dt, origin);
   }
 

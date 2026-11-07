@@ -6,10 +6,10 @@ import {
   type BufferAttribute, CylinderGeometry, DoubleSide, IcosahedronGeometry, InstancedBufferAttribute, InstancedMesh, Matrix4, MeshBasicMaterial,
   MeshLambertMaterial, PlaneGeometry, Quaternion, Vector3, type Scene, type Texture,
 } from 'three';
-import { CAMERA } from '../../core/tuning';
 import type { GfxContext } from '../../core/view';
 import type { Coin } from '../../core/world';
 import { GRADING_PARS, sharedUniforms } from '../../gfx';
+import { camVariant } from './camVariants';
 import type { DecalRec, LanternRec } from './kits/common';
 import { COLORS } from './palette';
 import { DECAL_GRID } from './textures/decals';
@@ -235,6 +235,10 @@ vViewPosition = - mvPosition.xyz;`);
 
 // ── coins ───────────────────────────────────────────────────────────────────────────────────────────────────────
 export const COIN = { capacity: 256, diameter: 0.32, spinHz: 3, bob: 0.1, minWidth: 0.35 } as const;
+/** Perspective debug camera variants only (camVariants.ts): the coin scale floor per metre of view depth,
+ *  CAMERA.minCoinPx · tanH / (hCss · diameter), applied per coin in the vertex shader (each coin ≥ minCoinPx at its own
+ *  depth, without inflating near coins). The ortho default keeps the instance-matrix scale (setScale). */
+export const COIN_DEPTH_K = { value: 0 };
 
 export class CoinLayer {
   readonly mesh: InstancedMesh;
@@ -249,9 +253,10 @@ export class CoinLayer {
     const geo = new CylinderGeometry(COIN.diameter / 2, COIN.diameter / 2, 0.05, 8).rotateX(Math.PI / 2);
     const mat = new MeshBasicMaterial({ color: COLORS.coin, toneMapped: false, side: DoubleSide });
     mat.onBeforeCompile = (sh) => {
-      Object.assign(sh.uniforms, { uTime: u.uTime, uDesat: u.uDesat });
+      const depthK = camVariant().proj === 'persp';
+      Object.assign(sh.uniforms, { uTime: u.uTime, uDesat: u.uDesat, ...(depthK ? { uCoinK: COIN_DEPTH_K } : {}) });
       sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nuniform float uTime;\nvarying float vShade;')
+        .replace('#include <common>', `#include <common>\nuniform float uTime;\nvarying float vShade;${depthK ? '\nuniform float uCoinK;' : ''}`)
         .replace('#include <begin_vertex>', `#include <begin_vertex>
 float ph = uTime * ${(COIN.spinHz * Math.PI * 2).toFixed(4)};
 #ifdef USE_INSTANCING
@@ -261,9 +266,12 @@ float cs = cos(ph);
 float w = sign(cs) * max(abs(cs), ${COIN.minWidth.toFixed(2)});
 transformed.x *= w;
 vShade = 0.78 + 0.22 * abs(cs);
-float cp = cos(${((CAMERA.pitchDeg * Math.PI) / 180).toFixed(5)}), sp = sin(${((CAMERA.pitchDeg * Math.PI) / 180).toFixed(5)});
+float cp = cos(${((camVariant().pitchDeg * Math.PI) / 180).toFixed(5)}), sp = sin(${((camVariant().pitchDeg * Math.PI) / 180).toFixed(5)});
 transformed = vec3(transformed.x, transformed.y * cp + transformed.z * sp, -transformed.y * sp + transformed.z * cp);
-transformed.y += ${(COIN.bob / 2).toFixed(3)} * (1.0 + sin(ph * 0.3333));`);
+${depthK ? `#ifdef USE_INSTANCING
+transformed *= max(1.0, uCoinK * -(modelViewMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).z);
+#endif
+` : ''}transformed.y += ${(COIN.bob / 2).toFixed(3)} * (1.0 + sin(ph * 0.3333));`);
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', '#include <common>\nuniform float uDesat;\nvarying float vShade;')
         .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= vShade;\nfloat dl = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));\ndiffuseColor.rgb = mix(diffuseColor.rgb, vec3(dl), uDesat);');

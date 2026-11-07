@@ -14,6 +14,7 @@
 //                  checks; exits 1 on a failure                                          → artifacts/shots/hud/
 //     --audio      20 s renderAudio per area as 16-bit WAV with the peak in dBFS; a null render (the M0 audio stub)
 //                  prints a note and exits 0; a peak ≥ 1.0 or silence exits 1 (above −1 dBFS warns) → artifacts/audio/
+//     --cam ID     every page runs the debug camera variant ID (?cam=, world/render/camVariants.ts; default A)
 // Several modes may be combined. Uses the preview server on $PORT (default 5173) if one is up; otherwise builds
 // (unless --no-build) and starts `vite preview`. Chromium comes from /opt/pw-browsers (never `playwright install`).
 import { execSync, spawn } from 'node:child_process';
@@ -25,7 +26,8 @@ process.env.PLAYWRIGHT_BROWSERS_PATH ??= '/opt/pw-browsers';
 const { chromium } = await import('@playwright/test');
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const OUT = join(ROOT, 'artifacts', 'shots');
+const CAM_ARG = process.argv.indexOf('--cam');
+const OUT = join(ROOT, 'artifacts', CAM_ARG > 0 && process.argv[CAM_ARG + 1] ? `shots-cam-${process.argv[CAM_ARG + 1]}` : 'shots');
 const AUDIO_OUT = join(ROOT, 'artifacts', 'audio');
 const PORT = Number(process.env.PORT ?? 5173);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -40,6 +42,7 @@ const argv = process.argv.slice(2);
 const flag = (name) => argv.includes(`--${name}`);
 const opt = (name, def) => { const i = argv.indexOf(`--${name}`); return i >= 0 && argv[i + 1] ? argv[i + 1] : def; };
 const seed = Number(opt('seed', '1'));
+const cam = opt('cam', '');
 const ticksList = opt('ticks', '60,330,600').split(',').map(Number).filter((n) => n >= 0);
 const MODES = ['cosmetics', 'contrast', 'hud', 'audio'].filter(flag);
 const VIEWPORTS = [
@@ -80,7 +83,7 @@ async function openPage(vp, query = '') {
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(String(e)));
-  await page.goto(`${BASE}/?debug=1&seed=${seed}${query}`);
+  await page.goto(`${BASE}/?debug=1&seed=${seed}${cam ? `&cam=${encodeURIComponent(cam)}` : ''}${query}`);
   await page.waitForFunction(() => !!window.__skate, null, { timeout: 20000 });
   await page.evaluate(() => document.fonts.ready);
   await sleep(250);

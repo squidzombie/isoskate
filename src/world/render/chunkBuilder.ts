@@ -6,7 +6,8 @@
 import type { AreaId } from '../../core/ids';
 import { hash32 } from '../../core/rng';
 import type { AreaBlend, Chunk, GroundSlab } from '../../core/world';
-import { CAMERA, CORRIDOR_HALF, HEIGHT } from '../../core/tuning';
+import { CORRIDOR_HALF, HEIGHT } from '../../core/tuning';
+import { camVariant } from './camVariants';
 import { DECOR_ZONE, ambientOf, drawDecor, type AmbientRec } from './kits/decor';
 import { DEFAULT_BUILD, setArea, type BuildOptions, type DecalRec, type KitCtx, type LanternRec } from './kits/common';
 import { drawObstacle } from './kits/index';
@@ -83,7 +84,7 @@ export function* buildChunkSteps(ch: Chunk, w: KitTargets, areas: AreaSource, op
 export const NEAR = { limit: CORRIDOR_HALF - 0.4 } as const;
 function nearKeep(yawDeg: number): { k: number } | null {
   if (yawDeg <= 0) return null;
-  const yaw = (yawDeg * Math.PI) / 180, th = (CAMERA.pitchDeg * Math.PI) / 180;
+  const yaw = (yawDeg * Math.PI) / 180, th = (camVariant().pitchDeg * Math.PI) / 180;
   return { k: (Math.sin(yaw) * Math.cos(th)) / Math.sin(th) };
 }
 type Counts = Record<keyof KitTargets, number>;

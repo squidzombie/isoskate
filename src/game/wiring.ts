@@ -20,7 +20,7 @@ import { createSkaterView } from '../skater';
 import { TRICKS } from '../tricks';
 import { createUi } from '../ui';
 import { createVfx } from '../vfx';
-import { createCameraRig, createWorldView } from '../world/render';
+import { createCameraRig, createWorldView, setCamVariant } from '../world/render';
 import { App } from './app';
 import { GameLoop } from './loop';
 import { FirstRunHints } from './onboarding';
@@ -48,6 +48,8 @@ export function wire(root: HTMLElement): Game {
   const autoTier: QualityTier = isTouchDevice() ? 'med' : 'high';
   const startTier: QualityTier = flags.quality ?? (savedQ === 'auto' ? autoTier : savedQ);
   const gfx = createGfx(canvas, startTier);
+  // Debug camera variants (world/render/camVariants.ts): chosen before any world material compiles; production keeps A.
+  if (flags.debug && flags.cam && !setCamVariant(flags.cam)) console.warn(`[camera] unknown ?cam=${flags.cam}; using the default`);
   const worldView = createWorldView(gfx);
   const cameraRig = createCameraRig();
   const vfx = createVfx(gfx);

@@ -17,11 +17,12 @@ import { CAMERA, CHUNK_LEN, CHUNK_WINDOW, V_MAX, speedAt } from '../../core/tuni
 import type { GfxContext, PaletteSample, RenderFrame, Viewport, WorldView } from '../../core/view';
 import type { Chunk, Coin, Decor, Obstacle, WorldGen } from '../../core/world';
 import { LIGHT_SCALE, getHemi, getSun, originOf, setGfxQuality, setPaletteSource, sharedUniforms, type SharedUniforms } from '../../gfx';
-import { RIG_STATE, solveFraming, yawForAspect } from './camera';
+import { RIG_STATE, edgeMetresPerPx, farMetresPerPx, shadowBoxFor, solveFraming, yawForAspect, type ShadowBox } from './camera';
+import { isDefaultCam } from './camVariants';
 import { buildChunk, buildChunkSteps, chunkHash, type AreaSource, type ChunkBuildOut } from './chunkBuilder';
 import { DEFAULT_BUILD, type BuildOptions, type DecalRec, type LanternRec } from './kits/common';
 import type { AmbientRec } from './kits/decor';
-import { COIN, CoinLayer, DecalLayer, LanternLayer } from './layers';
+import { COIN, COIN_DEPTH_K, CoinLayer, DecalLayer, LanternLayer } from './layers';
 import { createWorldMaterials, type WorldMaterials } from './materials';
 import { CONTACT, COLORS, SURFACE_COLOR, sampleLook, samplePalette } from './palette';
 import { AutoQuality } from './quality';
@@ -50,9 +51,11 @@ interface LiveChunk {
   key: number; hash: number; chunk: Chunk; tris: number;
 }
 
-/** Edge stripe width so a grind edge stays ≥ CAMERA.minEdgePx wide at this viewport's widest run framing. */
+/** Edge stripe width so a grind edge stays ≥ CAMERA.minEdgePx wide at this viewport's widest run framing (debug camera
+ *  variants: measured across the stripe on screen at the farthest readable depth, the HUD line; camera.ts). */
 export function buildOptionsFor(vp: Viewport): BuildOptions {
-  const mPerPx = solveFraming(V_MAX, vp).H / Math.max(1, vp.hCss);
+  const f = solveFraming(V_MAX, vp);
+  const mPerPx = isDefaultCam() ? f.H / Math.max(1, vp.hCss) : edgeMetresPerPx(f, vp);
   const hw = Math.max(DEFAULT_BUILD.edgeHalfW, (CAMERA.minEdgePx * mPerPx) / 2);
   return { edgeHalfW: hw, inkPad: Math.max(DEFAULT_BUILD.inkPad, VIEW.inkPadPx * mPerPx), yawDeg: yawForAspect(vp.aspect) };
 }
@@ -380,7 +383,7 @@ class WorldViewImpl implements WorldView {
     for (const p of Object.values(this.pools)) { geosCreated += p.created; geosIdle += p.idle; }
     return { chunks: [...this.chunks.keys()].sort((a, b) => a - b), cached: [...this.cache.keys()].sort((a, b) => a - b), geosCreated, geosIdle,
       verts, chunkTris: tris, maxChunkTris, coinSlotsUsed: this.coins.used, decalsUsed: this.decals.used, lanternsUsed: this.lanterns.used,
-      originS: this.originS, edgeHalfW: this.opts.edgeHalfW, mainCalls: this.mainCalls, shadowCalls: this.shadowCalls,
+      originS: this.originS, edgeHalfW: this.opts.edgeHalfW, coinScale: this.coinScale, shadowBox: this.shadowBox?.box ?? SHADOW_BOX, mainCalls: this.mainCalls, shadowCalls: this.shadowCalls,
       chunksBuilt: this.built, cacheHits: this.cacheHits, buildMsP95: this.buildP95, chunkMsP95: this.chunkP95, pending: this.pending?.index ?? null,
       warmupMs: this.warmupMs, firstFrame: this.lastFresh,
       quality: this.ctx.quality, autoQuality: this.autoOn,
@@ -612,6 +615,9 @@ class WorldViewImpl implements WorldView {
     AMBIENT.set(this.ctx, list);
   }
 
+  private coinScale = 1;
+  /** Shadow box of a non-default debug camera variant (camVariants.ts) for the viewport it was computed for. */
+  private shadowBox: { w: number; h: number; safeTop: number; box: ShadowBox } | null = null;
   /** Coins stay ≥ CAMERA.minCoinPx on screen however far the camera zooms out (DESIGN §8). */
   private updateCoinScale(f: RenderFrame): void {
     const vp = f.viewport, cv = this.coinVp;
@@ -621,8 +627,16 @@ class WorldViewImpl implements WorldView {
     const speedQ = Math.round(lead * 20);
     if (vp.wCss === cv.w && vp.hCss === cv.h && vp.safeTop === cv.safeTop && vp.aspect === cv.aspect && speedQ === cv.speedQ) return;
     cv.w = vp.wCss; cv.h = vp.hCss; cv.safeTop = vp.safeTop; cv.aspect = vp.aspect; cv.speedQ = speedQ;
-    const H = solveFraming(speedQ / 20, vp).H;
-    this.coins.setScale(Math.max(1, (CAMERA.minCoinPx * H) / Math.max(1, vp.hCss) / COIN.diameter));
+    const fr = solveFraming(speedQ / 20, vp);
+    if (fr.proj === 'persp') {
+      // Perspective debug variants: per coin, at its own depth (layers.ts COIN_DEPTH_K).
+      COIN_DEPTH_K.value = (CAMERA.minCoinPx * fr.tanH) / Math.max(1, vp.hCss) / COIN.diameter;
+      this.coinScale = Math.max(1, COIN_DEPTH_K.value * fr.D);
+      this.coins.setScale(1);
+      return;
+    }
+    this.coinScale = Math.max(1, (CAMERA.minCoinPx * fr.H) / Math.max(1, vp.hCss) / COIN.diameter);
+    this.coins.setScale(this.coinScale);
   }
 
   /** Palette → lights, exposure, background, haze, emissive / glow / window-lit uniforms, sky (DESIGN §18.1–18.3). */
@@ -734,7 +748,7 @@ class WorldViewImpl implements WorldView {
     // The box fits the receivers (x ±10, s − 6 … s + 34, up to 3 m) in light space, its half sizes rounded up to
     // 0.5 m so a palette blend does not change the texel size every frame; casters further out (off-screen buildings)
     // lie on the light's rays through it.
-    const map = sun.shadow.mapSize.x || 1024, B = SHADOW_BOX;
+    const map = sun.shadow.mapSize.x || 1024, B = this.shadowBoxOf(f.viewport);
     let hr = 0, hu = 0;
     for (const x of [-B.halfX, B.halfX]) for (const ds of [-B.halfS, B.halfS]) for (const y of [0, B.height]) {
       hr = Math.max(hr, Math.abs(x * right.x + y * right.y - ds * right.z)); hu = Math.max(hu, Math.abs(x * up.x + y * up.y - ds * up.z));
@@ -750,6 +764,17 @@ class WorldViewImpl implements WorldView {
     cam.near = 1; cam.far = 200;
     cam.updateProjectionMatrix();
     sun.target.updateMatrixWorld();
+  }
+
+  /** SHADOW_BOX, or for a non-default debug camera variant that box grown to what the variant shows (camera.ts). */
+  private shadowBoxOf(vp: Viewport): ShadowBox {
+    if (isDefaultCam()) return SHADOW_BOX;
+    const c = this.shadowBox;
+    if (c && c.w === vp.wCss && c.h === vp.hCss && c.safeTop === vp.safeTop) return c.box;
+    const box = shadowBoxFor(vp, SHADOW_BOX);
+    this.shadowBox = { w: vp.wCss, h: vp.hCss, safeTop: vp.safeTop, box };
+    RIG_STATE.shadowBox = box;
+    return box;
   }
 
   /** Keeps the build work of the last 120 frames that built (ms) and its p95 (cache restores are not builds). */
