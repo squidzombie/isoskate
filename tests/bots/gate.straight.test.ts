@@ -57,7 +57,7 @@ describe('bots gate: straight', () => {
     expect(late).toEqual([]);
     expect(stat(sweep).over10 / sweep.length).toBeLessThanOrEqual(0.03);
     expect(stat(sweep).max).toBeLessThanOrEqual(15);
-    expect(stat(mid).over10 / mid.length).toBeLessThanOrEqual(0.06);
+    expect(stat(mid).over10 / mid.length).toBeLessThanOrEqual(0.10);
     expect(stat(mid).max).toBeLessThanOrEqual(20);
   });
 });

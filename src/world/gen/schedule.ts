@@ -61,7 +61,7 @@ export interface PlanEnv {
   /** Seconds from t in which the next gate segment must start (generator.gateLatestStart). */
   gateRoom: number;
   /** A previous attempt asked for this instead. */
-  force?: 'wander' | 'a3' | 'filler' | 'easy';
+  force?: 'wander' | 'a3' | 'filler' | 'easy' | 'draw';
 }
 
 /** The template for the next procedural segment (before instantiation and validation). Priorities: the cut-down
@@ -79,7 +79,9 @@ export function planSegment(c: GenCursor, env: PlanEnv, rng: Sfc32): Plan {
   const gate = TEMPLATES.S_GATE!;
   // The row is due now (S_GATE) when the next one can start no later; the first segment of a run (after the Roll-out,
   // or at a startT) is a gate whose row opens at the line, inside the spawn grace.
-  const gateNow = env.force === 'wander' || env.gateRoom < 0.6 || (clocks && !Number.isFinite(c.lastRowT) && env.t < c.clockFromT + 0.5);
+  // ('draw': the last segment was a fallback; this one draws a template, so a stuck line moves on: no gate, no A3)
+  const drawOnly = env.force === 'draw';
+  const gateNow = !drawOnly && (env.force === 'wander' || env.gateRoom < 0.6 || (clocks && !Number.isFinite(c.lastRowT) && env.t < c.clockFromT + 0.5));
   // A3 (DESIGN §10.7): a full-width hazard every [min, max] of A-time; never before the minimum (the hazard stands
   // ~1 s into its template); due at its drawn time or when a drawn template could overrun the maximum. Before a
   // gateway (T0: the clock pauses) the last slot that fits takes it when the maximum would fall soon after it.
@@ -89,7 +91,7 @@ export function planSegment(c: GenCursor, env: PlanEnv, rng: Sfc32): Plan {
   const preGw = left < GEN.a3PreGwLeft && a3MaxLeft - left < GEN.a3PreGw;
   // (the last slot before a gateway may come up to a3PreGwEarly s before the minimum, or the maximum would fall in it)
   const preGwOK = preGw && c.aClock + 1.0 >= c.lastFwA + a3Lo - GEN.a3PreGwEarly;
-  const a3Due = clocks && left >= 2.4 && (env.force === 'a3' || preGwOK || (a3Min && (c.aClock + 0.5 >= c.fwDueA || a3MaxLeft < GEN.a3Lead)));
+  const a3Due = !drawOnly && clocks && left >= 2.4 && (env.force === 'a3' || preGwOK || (a3Min && (c.aClock + 0.5 >= c.fwDueA || a3MaxLeft < GEN.a3Lead)));
   if (a3Due && env.gateRoom >= 2.4) return a3Plan(rng, tier, env.trench, area, Math.min(left, env.gateRoom + 2.3));
   if (clocks && (gateNow || a3Due) && left >= gate.durMax) {
     // Both due: the gate segment carries the hazard in its approach when there is room for both.

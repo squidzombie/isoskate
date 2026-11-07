@@ -33,6 +33,8 @@ export interface GenCursor {
   /** Run time the next breather is due. */
   breatherDueT: number;
   lastTier: Tier;
+  /** The last segment was the constructive fallback (the next one draws a template first). */
+  lastFallback: boolean;
   /** Downtown segments this visit (every 3rd is a plaza); has this visit's landmark appeared yet. */
   areaSegs: number; landmarkDone: boolean;
   /** Lesson Line part index (mode 'lesson'). */

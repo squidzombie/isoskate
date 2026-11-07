@@ -13,6 +13,7 @@ import { ObTag } from '../../core/world';
 import type { Sfc32 } from '../../core/rng';
 import { GEN, type Tier } from './gen.config';
 import { buildTall, type PropCtx } from './props/common';
+import { LIP } from './props/street';
 import type { AreaId } from '../../core/ids';
 import type { PropKind } from '../../core/ids';
 
@@ -93,10 +94,13 @@ export function gateRow(sRow: number, centres: readonly number[], w: number, pro
     .sort((a, b) => a[0] - b[0]);
   const pal = rowPalette(props.area);
   const minW = Math.min(...pal.map((p) => p.wid));
+  // (in the Docks the row stops at the lip: its body blocks a straight roller there, and a rider left on its top
+  // after a grind rolls on past the row)
+  const xEnd = props.area === 'docks' ? LIP.x0 - 0.05 : 4.5;
   let a = -4.5;
   const runs: [number, number][] = [];
-  for (const [o0, o1] of open) { if (o0 > a) runs.push([a, o0]); a = Math.max(a, o1); }
-  if (a < 4.5) runs.push([a, 4.5]);
+  for (const [o0, o1] of open) { if (o0 > a) runs.push([a, Math.min(o0, xEnd)]); a = Math.max(a, o1); }
+  if (a < xEnd) runs.push([a, xEnd]);
   let variant = 0;
   for (const [r0, r1] of runs) {
     const L = r1 - r0;

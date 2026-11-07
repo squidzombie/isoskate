@@ -108,7 +108,7 @@ export class Generator implements WorldGen {
       gateDueT: clockFromT + (this.rollout ? 1.6 : GEN.spawnGrace + 1.6), lastRowT: -Infinity, prevRowT: -Infinity, lastGateOpen: [],
       lastFwA: 0, fwDueA: nextFullWidthDue(0, phaseAt(clockFromT), rng),
       breatherDueT: Math.max(45, this.startT) + rng.range(br.every[0], br.every[1]) / 2,
-      lastTier: 0, areaSegs: 0, landmarkDone: false, lessonPart: 0, ids: { ob: 0, coin: 0, edge: 0 }, history: [], persistent: [],
+      lastTier: 0, lastFallback: false, areaSegs: 0, landmarkDone: false, lessonPart: 0, ids: { ob: 0, coin: 0, edge: 0 }, history: [], persistent: [],
     };
     this.decorState.nextEndWall = sAt(this.startT) + 20;
     this.decorState.backNext = [sAt(this.startT), sAt(this.startT)];
@@ -192,7 +192,7 @@ export class Generator implements WorldGen {
     let plan: Plan = isRollout ? { tpl: ROLLOUT, tier: 0, reason: 'rollout' }
       : isLesson ? { tpl: LESSON_TPL(c.lessonPart), tier: 1, reason: 'lesson' }
       : inGw ? { tpl: GATEWAYS[gw.id], tier: 0, dur: gw.end - t0, reason: 'gateway' }
-      : planSegment(c, { area, phase, t: t0, left, trench: this.trench, gateRoom: this.gateLatestStart(t0) - t0 }, rng);
+      : planSegment(c, { area, phase, t: t0, left, trench: this.trench, gateRoom: this.gateLatestStart(t0) - t0, ...(c.lastFallback ? { force: 'draw' as const } : {}) }, rng);
     const maxT1 = isRollout ? Infinity : isLesson ? LESSON_PARTS[c.lessonPart]!.to + 1e-6 : inGw ? gw.end : gw.start;
     let built: Built | null = null, rerolls = 0;
     for (let attempt = 0; attempt <= GEN.rerolls; attempt++) {
@@ -236,7 +236,8 @@ export class Generator implements WorldGen {
     this.rerolls += rerolls;
     // A row the fallback could not stand: the deadline moves on by one template, so the next segment draws normally
     // (its line moves) instead of re-planning the same gate behind a chain of fallbacks.
-    if (fallback && !built.row && plan.reason === 'wander') c.gateDueT = Math.max(c.gateDueT, built.t1 + GEN.gate.lead + GEN.gate.fallbackDefer);
+    if (fallback && !built.row && this.gateLatestStart(built.t1) - built.t1 < 0.6) c.gateDueT = Math.max(c.gateDueT, built.t1 + GEN.gate.lead + GEN.gate.fallbackDefer);
+    c.lastFallback = fallback;
     GEN_DEBUG.onCommit?.({ index, t0, tpl: built.plan.tpl.id, reason: built.plan.reason, gateRoom: this.gateLatestStart(t0) - t0, gateDue: c.gateDueT });
     this.commit(built, index, area, inGw ? gw.id : null, decorRng, rerolls, fallback, inGw ? gw.end : gw.start, rng);
   }
@@ -389,7 +390,7 @@ export class Generator implements WorldGen {
     let row: { t: number; lanes: [number, number][] } | undefined;
     if (out.gateT !== undefined) {
       const sr = sAt(out.gateT);
-      const lanes = rowLanes(sr, obstacles);
+      const lanes = rowLanes(sr, [...obstacles, ...persistentNew, ...c.persistent]);
       if (!lanesApart(lanes, c.lastGateOpen)) return fail('gate:lanes');
       row = { t: out.gateT, lanes };
     }
@@ -482,7 +483,7 @@ export class Generator implements WorldGen {
       for (const { tr, centres, keepOut, tail } of tries) {
         const sr = round1cm(sAt(tr));
         const rowObs = gateRow(sr, centres, w, props, rng, keepOut);
-        const lanes = rowLanes(sr, [...obstacles, ...rowObs]);
+        const lanes = rowLanes(sr, [...obstacles, ...rowObs, ...persistentNew, ...c.persistent]);
         if (!lanesApart(lanes, c.lastGateOpen)) continue;
         const guide = [{ t0: tr - 0.45, t1: tr + 0.15, x0: centres[0]! - 0.25, x1: centres[0]! + 0.25 }];
         const nb = noEdges.length, t1o = t1;
