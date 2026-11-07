@@ -296,6 +296,8 @@
 #screens .setting { display: flex; justify-content: space-between; align-items: center; gap: 8px; background: var(--paper); border: 2px solid var(--ink);
   border-radius: 14px; padding: 6px 6px 6px 12px; }
 #screens .setting.slider { flex-direction: column; align-items: stretch; gap: 4px; padding: 8px 12px; }
+#screens .setting.stack { flex-direction: column; align-items: stretch; gap: 6px; padding: 8px 8px 8px 12px; }
+#screens .setting.stack .segs .seg { flex: 1 1 0; }
 #screens .set-label { display: flex; flex-direction: column; font-weight: 900; font-size: 14px; text-align: left; min-width: 0; }
 #screens .setting.slider .set-label { flex-direction: row; justify-content: space-between; }
 #screens .set-label small { font-weight: 700; font-size: 11px; color: var(--plum); }

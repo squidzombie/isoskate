@@ -130,6 +130,7 @@ export function wire(root: HTMLElement): Game {
     input.setSensitivity(st.steerSensitivity);
     input.setPreset(st.keyPreset);
     input.setSimpleTricks?.(st.simpleTricks);
+    input.setControls?.(st.controls ?? 'two', st.swapSides ?? false);   // two-thumb controls (owner playtest, DESIGN §4.1)
     audio.setVolumes({ music: st.music, sfx: st.sfx });
     haptics.enabled = st.haptics !== 'off';
     loop.batterySaver = st.batterySaver;

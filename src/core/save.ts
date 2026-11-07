@@ -37,6 +37,9 @@ export interface SaveV1 {
     music: number; sfx: number; haptics: 'off' | 'key' | 'all'; shake: boolean; reducedMotion: boolean; effects: boolean;
     quality: 'auto' | 'low' | 'med' | 'high'; batterySaver: boolean; steerSensitivity: number; simpleTricks: boolean;
     keyPreset: 'A' | 'B'; analyticsOptOut: boolean;
+    /** added @ctl: touch controls (DESIGN §4.1): 'two' = steer with the left thumb, tricks with the right (default);
+     *  'one' = the one-thumb grammar (classic). `swapSides`: steer right, tricks left. Absent = 'two', false. */
+    controls?: 'two' | 'one'; swapSides?: boolean;
   };
   entitlements: { adFree: boolean; supporter: boolean; purchases: string[] };
   shop: { featuredDay: string | null; featured: ItemId[] };

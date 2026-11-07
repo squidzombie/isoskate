@@ -71,6 +71,7 @@ export function createInput(el: HTMLElement, opts: { screenW: () => number; safe
     setSensitivity(mult: number) { pipe.frames.sensitivity = clamp(mult, SENSITIVITY_MIN, SENSITIVITY_MAX); },
     setPreset(p: 'A' | 'B') { pipe.keys.preset = p; pipe.keys.clear(); },
     setSimpleTricks(on: boolean) { cfg.simpleTricks = on; },
+    setControls(controls, swapSides) { cfg.controls = controls === 'one' ? 'one' : 'two'; cfg.swapSides = !!swapSides; },
     onAnyInput(f: () => void) { anyListeners.add(f); return () => { anyListeners.delete(f); }; },
     inject(samples, atMs) {
       if (!samples.length) return;
@@ -94,8 +95,8 @@ export function createRecognizer(cfg?: Partial<RecognizerConfig>): GestureRecogn
   return createRecognizerImpl(cfg as Partial<RecognizerConfigExt> | undefined);
 }
 
-export { DEFAULT_RECOGNIZER, RECOGNIZER_INTERNALS, arcCompensate, directionOf, screenAngle, sectorOf, sectorOfAngle,
-  type HoldEndExt, type Recognizer, type RecognizerConfigExt } from './recognizer';
+export { DEFAULT_RECOGNIZER, RECOGNIZER_INTERNALS, arcCompensate, directionOf, roleOf, screenAngle, sectorOf, sectorOfAngle,
+  type HoldEndExt, type Recognizer, type RecognizerConfigExt, type TouchRole } from './recognizer';
 export { FrameBuilder, NO_KEYS, steerMetresPerPx, type KeyEdge, type KeyLevels } from './frames';
 export { KEY_AMEND_MS, KeyboardMapper, diagonalOf, type KeyPreset } from './keyboard';
 export { InputPipeline } from './pipeline';

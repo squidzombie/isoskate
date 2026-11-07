@@ -88,6 +88,13 @@ describe('sanitize', () => {
     expect(s.crates.rng).toEqual(d.crates.rng);               // an all-zero RNG state is replaced
     expect(s.crates.pending).toBeNull();
   });
+  it('touch controls (added for the two-thumb layout): two thumbs and no swap by default; old saves get them; junk falls back', () => {
+    expect(d.settings).toMatchObject({ controls: 'two', swapSides: false });
+    const old = sanitize({ v: 1, wallet: {}, settings: { music: 0.5 } }, d);          // a save from before the setting
+    expect(old.settings).toMatchObject({ music: 0.5, controls: 'two', swapSides: false });
+    expect(sanitize({ v: 1, wallet: {}, settings: { controls: 'one', swapSides: true } }, d).settings).toMatchObject({ controls: 'one', swapSides: true });
+    expect(sanitize({ v: 1, wallet: {}, settings: { controls: 'three', swapSides: 'yes' } }, d).settings).toMatchObject({ controls: 'two', swapSides: false });
+  });
   it('a well-formed save survives unchanged', () => {
     const good: SaveV1 = { ...makeDefaults(5, 3), owned: ['sk_juno', 'bd_plain_maple', 'hm_classic', 'sk_rook'], trickBook: ['ollie'], postcards: ['downtown'] };
     good.equipped.skater = 'sk_rook';

@@ -31,6 +31,14 @@
 // a `tap` (the 349 / 351 ms boundary stays); the frame builder turns it into InputFrame `longTap` and the sim reads it
 // as a TAP wherever the hold started nothing (tricks/interpret.ts). Core `longTap` / `holdEnd.release` since G1 (GP
 // request 1); 600 ms, the design value, since tests/e2e/touch.spec.ts's pipeline-priming touch holds ≥ 700 ms.
+// Two-thumb controls (owner playtest, DESIGN §4.1–4.2): with `controls: 'two'` (the default) each touch gets a role
+// at touch-down from where it went down, kept for its whole life (it may slide across the midline):
+//   - steering zone (x < splitFrac·screenW; the right half with swapSides): steer only. It can own steering (the first
+//     steering-zone touch to cross SLOP, counted from touch-down, as before) and never emits tap, swipe, hold, long
+//     tap or press, however it moves or rests;
+//   - trick zone: tap / swipe / hold / press exactly as before, but it never steers and never owns steering, so its
+//     swipes carry dxPx 0 and steer false (normal thresholds, no owner sectors; arc compensation kept).
+// `controls: 'one'` (and every mouse or pen pointer, whatever the setting) keeps the one-thumb grammar: role 'both'.
 import type { Dir8 } from '../core/ids';
 import type { Gesture, GestureRecognizer, PointerSample, RecognizerConfig } from '../core/input';
 
@@ -53,6 +61,12 @@ export interface RecognizerConfigExt extends RecognizerConfig {
   screenW: number;
   /** Screen height in CSS px: touch-starts below `screenH − deadZoneBottomPx` are ignored. 0 = no dead zone. */
   screenH: number;
+  /** Touch controls (Settings, DESIGN §4.1): 'two' = steering zone + trick zone (default), 'one' = one-thumb grammar. */
+  controls: 'two' | 'one';
+  /** Two thumbs: steer on the right, tricks on the left (left-handed players). */
+  swapSides: boolean;
+  /** Two thumbs: the zone split as a fraction of screenW (0.5 = the vertical midline; x exactly on it is the right). */
+  splitFrac: number;
 }
 
 export const DEFAULT_RECOGNIZER: Readonly<RecognizerConfigExt> = {
@@ -71,7 +85,20 @@ export const DEFAULT_RECOGNIZER: Readonly<RecognizerConfigExt> = {
   ownerDiagonalHalfDeg: 10,
   sloppyTapMs: 250, sloppyTapMaxPx: 20, sloppyTapMaxDxPx: 15,
   longTapMaxMs: 600,
+  controls: 'two', swapSides: false, splitFrac: 0.5,
 };
+
+/** What a touch may do for its whole life: 'steer' (steering zone), 'trick' (trick zone) or 'both' (one-thumb grammar:
+ *  `controls: 'one'`, or a mouse / pen pointer, which is one pointer and cannot be two thumbs). */
+export type TouchRole = 'both' | 'steer' | 'trick';
+
+/** The role of a touch going down at `x` (CSS px). */
+export function roleOf(x: number, pointerType: PointerSample['pointerType'],
+  cfg: Pick<RecognizerConfigExt, 'controls' | 'swapSides' | 'splitFrac' | 'screenW' | 'k'>): TouchRole {
+  if (cfg.controls === 'one' || pointerType === 'mouse' || pointerType === 'pen') return 'both';
+  const w = cfg.screenW > 0 ? cfg.screenW : 390 * cfg.k;
+  return (x < cfg.splitFrac * w) !== cfg.swapSides ? 'steer' : 'trick';
+}
 
 /** holdEnd of a still touch lifted tapMaxMs–longTapMaxMs after touch-down (core Gesture plus `release`; GP request). */
 export interface HoldEndExt { k: 'holdEnd'; tMs: number; release?: true }
@@ -136,6 +163,7 @@ interface Sample { t: number; x: number; y: number; fx: number; fy: number }   /
 
 interface Touch {
   id: number; downMs: number; x0: number; y0: number;
+  role: TouchRole;
   t: number; x: number; y: number; fx: number; fy: number;
   state: 'pending' | 'hold' | 'drag';
   press: boolean;
@@ -186,7 +214,7 @@ export function createRecognizerImpl(partial?: Partial<RecognizerConfigExt>): Re
   /** Time-based transitions up to `now`: PENDING still for holdMs → HOLD (holdStart stamped at down + holdMs). */
   function advance(now: number, out: Gesture[]): void {
     for (const tc of touches.values()) {
-      if (tc.state === 'pending' && now - tc.downMs >= config.holdMs) {
+      if (tc.state === 'pending' && tc.role !== 'steer' && now - tc.downMs >= config.holdMs) {
         tc.state = 'hold';
         out.push({ k: 'holdStart', tMs: tc.downMs + config.holdMs });
       }
@@ -258,7 +286,7 @@ export function createRecognizerImpl(partial?: Partial<RecognizerConfigExt>): Re
       if (tc.press) { tc.press = false; out.push({ k: 'press', tMs: t, down: false }); }
       tc.state = 'drag';
       tc.dragMs = t;
-      if (owner === null) { owner = tc.id; tc.steerX = tc.x0; }
+      if (owner === null && tc.role !== 'trick') { owner = tc.id; tc.steerX = tc.x0; }
     }
     if (tc.state === 'drag' && owner === tc.id && tc.x !== tc.steerX) {
       out.push({ k: 'steer', tMs: t, dxPx: tc.x - tc.steerX });
@@ -298,7 +326,7 @@ export function createRecognizerImpl(partial?: Partial<RecognizerConfigExt>): Re
       }
     }
 
-    if (tc.state !== 'drag') return;
+    if (tc.state !== 'drag' || tc.role === 'steer') return;           // a steering-zone touch never swipes
     const [wx, wy, ws] = windowDisp(tc, t);
     if (Math.hypot(wx, wy) < config.swipeMinPx * k) return;
     if (tc.fires > 0) {
@@ -331,13 +359,14 @@ export function createRecognizerImpl(partial?: Partial<RecognizerConfigExt>): Re
         if (old) end(old, s.tMs, out);                       // a lost up: treat it as a cancel
         ignored.delete(s.id);
         if (config.screenH > 0 && s.y > config.screenH - config.deadZoneBottomPx) { ignored.add(s.id); return out; }
+        const role = roleOf(s.x, s.pointerType, config);
         touches.set(s.id, {
-          id: s.id, downMs: s.tMs, x0: s.x, y0: s.y, t: s.tMs, x: s.x, y: s.y, fx: s.x, fy: s.y,
-          state: 'pending', press: true, maxD: 0, maxDx: 0, dragMs: Infinity, trail: [{ t: s.tMs, x: s.x, y: s.y, fx: s.x, fy: s.y }], steerX: s.x,
+          id: s.id, downMs: s.tMs, x0: s.x, y0: s.y, role, t: s.tMs, x: s.x, y: s.y, fx: s.x, fy: s.y,
+          state: 'pending', press: role !== 'steer', maxD: 0, maxDx: 0, dragMs: Infinity, trail: [{ t: s.tMs, x: s.x, y: s.y, fx: s.x, fy: s.y }], steerX: s.x,
           fires: 0, lastFireMs: -Infinity, fireFx: s.x, fireFy: s.y, fireUx: 0, fireUy: 0, peak: 0, dipped: false, trough: Infinity, rose: false,
           moving: false, restStart: s.tMs, lastRestLen: 0, motionStart: s.tMs,
         });
-        out.push({ k: 'press', tMs: s.tMs, down: true });
+        if (role !== 'steer') out.push({ k: 'press', tMs: s.tMs, down: true });
         return out;
       }
       if (ignored.has(s.id)) { if (s.phase !== 'move') ignored.delete(s.id); return out; }
@@ -346,8 +375,9 @@ export function createRecognizerImpl(partial?: Partial<RecognizerConfigExt>): Re
       if (s.phase === 'cancel') { end(tc, s.tMs, out); return out; }
       if (s.phase === 'move' || s.x !== tc.x || s.y !== tc.y) move(tc, s, out);
       if (s.phase === 'move') return out;
-      // up: tap, lift-off swipe, then the end of hold / press / ownership.
+      // up: tap, lift-off swipe, then the end of hold / press / ownership. A steering-zone touch only lets go.
       const t = Math.max(tc.t, s.tMs);
+      if (tc.role === 'steer') { end(tc, t, out, true); return out; }
       if (tc.state !== 'drag' && t - tc.downMs <= config.tapMaxMs) out.push({ k: 'tap', tMs: t });
       if (tc.state === 'drag' && (tc.fires === 0 || (t - tc.lastFireMs >= config.liftSuppressMs && rearmed(tc)))) {
         const [wx, wy, ws] = windowDisp(tc, t);

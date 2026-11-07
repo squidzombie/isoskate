@@ -172,6 +172,7 @@ export function createUiImpl(root: HTMLElement): UiExt {
           discovered.clear();
           lofi.set({ neon: false });
           const d = ext()?.data;
+          hud.setControls(d?.settings.controls ?? 'two', d?.settings.swapSides ?? false);   // two thumbs (DESIGN §4.1)
           hud.setFirstRuns(!!d && d.onboarding.runsStarted <= 3);
           // Instant retry: what the last run earned, in the band, gone by 3.0 s (DESIGN §17.3).
           const last = ext()?.lastRun();

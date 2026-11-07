@@ -116,6 +116,27 @@
 #hud .rest-mark[data-gesture='swipeD'] .ghost-thumb.on { animation: gh-swipe-d 1.1s ease-in infinite; }
 #hud .rest-mark[data-gesture='swipeUR'] .ghost-thumb.on { animation: gh-swipe-ur 1.1s ease-in infinite; }
 #hud .rest-mark[data-gesture='hold'] .ghost-thumb.on { animation: gh-hold 1.4s ease-in-out infinite; }
+/* Two thumbs (DESIGN §4.1): a STEER ring and a TRICKS ring on their sides (Swap sides mirrors them), the steering one
+   with a short ↔ arrow; the ghost of the side the hint is about acts, the other rests faintly. */
+#hud .rest-mark.two.steer, #hud .rest-mark.two.trick.swap { left: 24%; }
+#hud .rest-mark.two.trick, #hud .rest-mark.two.steer.swap { left: 76%; }
+#hud .rest-mark .steer-arrow { position: absolute; left: 50%; bottom: 6px; width: 30px; height: 3px; margin-left: -15px; border-radius: 2px;
+  background: rgba(255, 244, 227, 0.85); box-shadow: 0 1px 0 rgba(43, 33, 64, 0.6); }
+#hud .rest-mark .steer-arrow::before, #hud .rest-mark .steer-arrow::after { content: ''; position: absolute; top: -4px; border: 5.5px solid transparent; }
+#hud .rest-mark .steer-arrow::before { left: -8px; border-right: 7px solid rgba(255, 244, 227, 0.85); border-left: 0; }
+#hud .rest-mark .steer-arrow::after { right: -8px; border-left: 7px solid rgba(255, 244, 227, 0.85); border-right: 0; }
+#hud .ghost-thumb.on.idle { opacity: 0.42; }
+/* Zone cue: two soft pads and a faint midline in the bottom band (below the skater, never in the look-ahead zone),
+   for the first seconds of the first runs; pointer-events: none like every HUD piece but the pause button. */
+#hud .zone-cue { position: fixed; left: 0; right: 0; bottom: calc(3% + var(--safe-bottom, 0px)); height: 19%; pointer-events: none; opacity: 0;
+  transition: opacity 700ms ease-out; }
+#hud .zone-cue.on { opacity: 1; transition-duration: 300ms; }
+#hud .zone-pad { position: absolute; top: 0; bottom: 0; width: 44%; border-radius: 28px; box-sizing: border-box;
+  background: rgba(255, 244, 227, 0.11); border: 2px solid rgba(255, 244, 227, 0.3); }
+#hud .zone-pad.steer, #hud .zone-cue.swap .zone-pad.trick { left: 3%; right: auto; }
+#hud .zone-pad.trick, #hud .zone-cue.swap .zone-pad.steer { right: 3%; left: auto; }
+#hud .zone-mid { position: absolute; left: 50%; top: 6%; bottom: 6%; margin-left: -1px; border-left: 2px dashed rgba(255, 244, 227, 0.4); }
+[data-screen='pause'] #hud .zone-cue { visibility: hidden; }
 
 @keyframes hud-bump-a { 0% { transform: scale(1.15); } 100% { transform: scale(1); } }
 @keyframes hud-bump-b { 0% { transform: scale(1.15); } 100% { transform: scale(1); } }

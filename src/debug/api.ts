@@ -120,6 +120,7 @@ export function installDebugApiImpl(host: DebugHost, tools: DebugTools = {}): De
     c.k = kForWidth(screenW()); c.screenW = screenW(); c.screenH = window.innerHeight;
     c.deadZoneBottomPx = live?.rec.config.deadZoneBottomPx ?? 12;
     c.simpleTricks = live?.rec.config.simpleTricks ?? false;
+    if (live) { c.controls = live.rec.config.controls; c.swapSides = live.rec.config.swapSides; c.splitFrac = live.rec.config.splitFrac; }
     synth.frames.sensitivity = live?.frames.sensitivity ?? 1;
   };
 

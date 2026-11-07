@@ -27,6 +27,7 @@ function newInstallId(): string {
 export const DEFAULT_SETTINGS: Readonly<SaveV1['settings']> = Object.freeze({
   music: 0.8, sfx: 0.9, haptics: 'key', shake: true, reducedMotion: false, effects: true, quality: 'auto',
   batterySaver: false, steerSensitivity: 1, simpleTricks: false, keyPreset: 'A', analyticsOptOut: false,
+  controls: 'two', swapSides: false,               // two-thumb controls by default (owner playtest, DESIGN §4.1)
 });
 
 /** A fresh profile. `seed` fixes the crate RNG stream (tests); by default each install draws its own. */

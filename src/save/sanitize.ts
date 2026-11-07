@@ -130,6 +130,8 @@ export function sanitize(input: unknown, defaults: SaveV1, known: KnownIds = KNO
       simpleTricks: bool(se.simpleTricks, d.settings.simpleTricks),
       keyPreset: oneOf(se.keyPreset, ['A', 'B'] as const, d.settings.keyPreset),
       analyticsOptOut: bool(se.analyticsOptOut, d.settings.analyticsOptOut),
+      controls: oneOf(se.controls, ['two', 'one'] as const, d.settings.controls ?? 'two'),
+      swapSides: bool(se.swapSides, d.settings.swapSides ?? false),
     },
     entitlements: { adFree: bool(en.adFree, false), supporter: bool(en.supporter, false), purchases: ids<string>(en.purchases, (x) => x.length < 80) },
     shop: { featuredDay: day(sh.featuredDay), featured: ids<ItemId>(sh.featured, item) },

@@ -7,7 +7,7 @@
 //     right  coins and the pause button (48 px visible, 56 px hit area; the only touch target).
 //   Near the skater: at most one popup (ui/popups.ts). Below the band, briefly: the bank float ("+5,028", "SET
 //   BANKED!"), the speed-tier stamp (CRUISE / FLOW / FULL SEND) and the area card ("SUBURBS · +500 NEW GROUND").
-//   Thumb zone: only the first-runs hint (ui/hints.ts).
+//   Thumb zone: only the first-runs hint (ui/hints.ts: the chip, the rest rings and the two-thumb zone cue).
 // Rules: text is written only when it changes, in one batch at most 15 times a second (wall clock); per-frame work is
 // transform/opacity/class toggles only; no layout reads during a run (fonts are measured on a canvas). Every band
 // piece carries data-hud="score|dist|combo|trick|coins|pause" (shots --hud, smoke.spec and ui.spec measure them).
@@ -41,6 +41,8 @@ export interface HudExt extends HudApi {
   /** The instant-retry reward toast in the band ("+34 coins · +410 XP · Level 6!"), gone by 3.0 s. */
   rewardToast(text: string): void;
   setFirstRuns(on: boolean): void;
+  /** Touch controls (Settings): the hints show two thumbs (left steers, right tricks; mirrored by swapSides) or one. */
+  setControls(controls: 'two' | 'one', swapSides: boolean): void;
   /** Re-measure after a resize or a font load (allowed layout read, never per frame). */
   relayout(vw: number, safeL: number, safeR: number): void;
   readonly hints: Hints;
@@ -233,6 +235,7 @@ export function createHud(root: HTMLElement, o: HudOptions): HudExt {
     preview(p) { preview = p; force = true; trickDirty = !p; },
     rewardToast(text) { rewardText = text; force = true; },
     setFirstRuns(on) { hints.setFirstRuns(on); },
+    setControls(controls, swapSides) { hints.setControls(controls, swapSides); },
     relayout(w, sl, sr) { vw = w; cols = hudColumns(w, sl, sr); applyCols(); force = true; },
     stats: () => ({ batches, textWrites, minBatchGapMs: minGap, lastBatchAt: lastBatch }),
     onGame(e) {
