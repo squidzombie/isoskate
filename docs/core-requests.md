@@ -253,6 +253,8 @@ The first block is the frozen behaviour later packages (GP, WG, WA, the bots) ca
 ### After the WG review (appended; supersedes the gate-row numbers above; no core change)   (status: info for the G1 gate)
 - File / symbol: world/gen/rows.ts, generator.ts (row overlays), schedule.ts, gen.config.ts › GEN.gate / GEN.a3; tests/bots/*.
 - Change: none to core. What the gate should know:
+  - **After a fallback** the next segment draws a template first (no re-plan cascade) and a missed row deadline moves
+    on by one template (`GEN.gate.fallbackDefer`).
   - **Anti-straight rows by lanes** (rows.ts): a row's *lanes* are the board-centre x ranges a straight roller passes
     it through (openings and any side gap beside a template obstacle, scanned from the solids); every row's lanes are
     disjoint from the previous row's. Rows ≤ `GEN.gate.gap` apart (8 / 6.3 / 6.3 / 6.3 s); a long template may still
@@ -264,9 +266,13 @@ The first block is the frozen behaviour later packages (GP, WG, WA, the bots) ca
     on, and only where a rider leaving any template edge (±0.8 m) reaches an opening (T_SHIFT + 0.5 s). S_GATE is the
     fallback (≈ 42 % of run time, as before the review: the row cadence is the binding constraint).
   - **Straight-bot guarantee** (gate.straight): t = 0 → all lanes dead by 17.2 s; startT 150 / 165 → ≤ 10 s. Beyond the
-    acceptance, measured: plateau starts every 10 s from 150–460 s → 2.2 % of lanes live > 10 s, worst 12.8 s (all
-    next to a gateway: 4 s of T0 between two rows); switching to straight mid-run → 4.5 % > 10 s, worst ~17 s (same
+    acceptance, measured: plateau starts every 10 s from 150–460 s → 2.2 % of lanes live > 10 s, worst 13.1 s (all
+    next to a gateway: 4 s of T0 between two rows); switching to straight mid-run → 7.6 % > 10 s, worst 16.3 s (same
     cause). A1 per-column periods (4 s at the plateau) are measured, not enforced; A2 likewise (wander wall when due).
+  - **Docks**: rows stop at the lip (its body blocks a straight roller; row lanes count it); base curb / lip edges end
+    `GEN.gate.edgeBan` = 3.0 s before a row (a rider coming off the lip reaches the opening).
+  - **Bots**: the thumb bot applies a targetX change the sim made itself once (its in-flight moves shift with it; the
+    old loop diverged into ±4.3 m flicks on some streets) and steers at most at the planned lateral rate.
   - **A3**: never before its minimum (8 s; 12 s in the opening) except the last slot before a gateway (≤ 2.5 s early,
     `a3PreGwEarly`); the maximum may slip ≤ 2 s when a long template lands on it.
   - **Rejection metrics** (gate.static, artifacts/bots.json): validator re-rolls per segment (the < 5 % gate),
