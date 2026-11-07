@@ -107,6 +107,10 @@ test('2-minute god-mode run with gestures: voices ≤ 32, audio main-thread cost
   expect(r.log.states.every((s) => s === 'running')).toBe(true);
   expect(r.events).toContain('ollie');
   expect(r.perf.frames).toBeGreaterThan(SEC * 5);
-  expect(r.perf.msPerFrame).toBeLessThanOrEqual(0.3);
+  // The budget is per 60 Hz phone frame. Per rendered frame it holds while SwiftShader renders at a phone-like rate;
+  // on a starved machine (G1: 7–12 fps with other agents' runs) each frame carries 5–8 frames' worth of musical time,
+  // so that number measures the machine, not the audio code: it is asserted only at ≥ 25 fps.
+  expect(per60).toBeLessThanOrEqual(0.3);
+  if (r.perf.frames / SEC >= 25) expect(r.perf.msPerFrame).toBeLessThanOrEqual(0.3);
   expect(errors).toEqual([]);
 });
