@@ -60,6 +60,26 @@ export const SHAKE = {
   perfectPunch: { zoom: 0.02, dur: 0.15 },
 } as const;
 
+/** Occlusion rules of the run camera (DESIGN §8 "Occlusion rules", decision row 73):
+ *  - cutX: the camera-side cut. Decor on the camera side (+x, fx flag `near`) is clipped at the plane through the
+ *    line (x = cutX, y = the skater's ground) and the camera (ortho: the view direction): what lies above it would
+ *    cover the corridor on screen, so it is pressed onto that plane, which the camera sees edge-on (nothing of it
+ *    reaches the corridor side of the corridor's edge line). At the corridor edge itself: every camera ray to a point
+ *    inside the corridor (a hazard's foot at x = 4.5 included) then meets the ground at x ≤ 4.5, so no camera-side
+ *    decor ever stands between the camera and anything in the corridor. cutMargin lowers the plane a little: a facade
+ *    a few metres from the camera (the camera can stand among the camera-side buildings on wide screens) lies nearly
+ *    in the plane, where a few centimetres of interpolation error would show as a wide wedge over the street.
+ *    edgePx / edgeDark: what is left of the camera-side street wall darkens to edgeDark over its last edgePx CSS px
+ *    next to the cut (a cutaway section line; a light Neon hazard at the corridor edge keeps a dark backdrop).
+ *  - over*: overhead spans (lantern strings, wires; fx flag `over`) and lantern bulbs fade to overAlpha (screen door)
+ *    wherever they project onto the corridor (|x| < overX0, fully faded; overX1 clear) from overBehind m behind the
+ *    skater to the HUD line (+ overAheadPad m), the look-ahead zone (DESIGN §18.4 effects limits: ≤ 25% there).
+ *  - maglevX: the Sora Line guideway is drawn hugging the far (−x) facade line at this x, never over the corridor;
+ *    the train streak runs on it at trainAlpha (0.45 at @cam; the G1 tune's 22 % kept at the G1b merge: DESIGN §18.4
+ *    ≤ 25 % wherever it can reach the look-ahead zone on screen). */
+export const OCCLUSION = { cutX: 4.5, cutMargin: 0.6, edgePx: 10, edgeDark: 0.32, overAlpha: 0.25, overX0: 4.7, overX1: 5.7, overBehind: -2.5, overAheadPad: 6,
+  maglevX: -5.0, maglevGap: 0.22, trainAlpha: 0.22 } as const;
+
 /** The sun's shadow box (DESIGN §18.2): the receivers x ±halfX, s from the player − (halfS − centreAhead) to
  *  + (halfS + centreAhead), up to `height` m, fitted in light space. */
 export const SHADOW_BOX = { halfX: 10, halfS: 20, centreAhead: 14, height: 3 } as const;

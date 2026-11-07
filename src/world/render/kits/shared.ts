@@ -2,6 +2,7 @@
 // area (DESIGN §18.6). Hazards follow DESIGN §18.4: ink bodies with one saturated accent (Neon: the inverted #7A6FB0
 // body with an emissive rim), chevrons on every full-width hazard, noFog and matte flags on hazard bodies, contact
 // shadows under every obstacle. Long kinds are drawn per chunk (clipped); compact kinds once, in their anchor chunk.
+import { CAMERA } from '../../../core/tuning';
 import type { AreaId } from '../../../core/ids';
 import type { Chunk, GroundSlab, Obstacle, Pit } from '../../../core/world';
 import { ACCENTS, COLORS, LOOK, PAD_TOP, mixHex, shade } from '../palette';
@@ -126,8 +127,10 @@ const curb: KitFn = (c, ob) => {
     const roadSide = Math.abs(sl.x0) < Math.abs(sl.x1) ? sl.x0 : sl.x1, dir = Math.sign(sl.x0 + sl.x1) || 1;
     const area = c.areaAt(sl.s0);
     // A mid-tone stone band, clearly darker than the cream lip at its road edge, so the lip reads as its own stripe
-    // (the band never merges with it into one wide light surface, DESIGN §18.4).
-    const col = area === 'neon' ? 0x7d759c : area === 'suburbs' ? 0xbdb2a6 : 0xbfae9e;
+    // (the band never merges with it into one wide light surface, DESIGN §18.4). Darker since @cam: the perspective
+    // camera sees the lip against the band with the shadowed road on its other side, where the ink underline merges
+    // with the road, so the cream alone must carry ≥ 1.8:1 against the band.
+    const col = area === 'neon' ? 0x7d759c : area === 'suburbs' ? 0x9c9186 : 0x9a8b7e;
     const x0 = Math.min(roadSide, roadSide + dir * 0.26), x1 = Math.max(roadSide, roadSide + dir * 0.26);
     K.lit(0).col(col).box(x0, sl.y0 - 0.05, sl.s0, x1, sl.y0 + 0.008, sl.s1, FACE.top);
   }
@@ -198,7 +201,7 @@ const trashCan: KitFn = (c, ob) => {
   if (!b) return;
   const x = (b.x0 + b.x1) / 2, s = (b.s0 + b.s1) / 2, r = (b.x1 - b.x0) / 2 - 0.01, g = b.y0, top = b.y1;
   contact(c, b.x0, b.x1, b.s0, b.s1, g + 0.01, 0.62, 0.25);
-  K.capY = g + 1.6;
+  K.capY = g + CAMERA.xrayCapY;
   body(c); K.cyl(x, s, g, top - 0.12, r, 10, false);
   if (c.area === 'docks') {
     K.lit(0, 0, HZ).col(c.hz.accent2);

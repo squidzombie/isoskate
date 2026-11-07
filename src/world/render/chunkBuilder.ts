@@ -6,13 +6,13 @@
 import type { AreaId } from '../../core/ids';
 import { hash32 } from '../../core/rng';
 import type { AreaBlend, Chunk, GroundSlab } from '../../core/world';
-import { CAMERA, CORRIDOR_HALF, HEIGHT } from '../../core/tuning';
-import { DECOR_ZONE, ambientOf, drawDecor, type AmbientRec } from './kits/decor';
+import { HEIGHT } from '../../core/tuning';
+import { ambientOf, drawDecor, type AmbientRec } from './kits/decor';
 import { DEFAULT_BUILD, setArea, type BuildOptions, type DecalRec, type KitCtx, type LanternRec } from './kits/common';
 import { drawObstacle } from './kits/index';
 import { streetBase } from './kits/shared';
 import { HAZARD, LOOK, blendWeight, mixHex } from './palette';
-import { FX, Kit, type KitTargets } from './writer';
+import { Kit, type KitTargets } from './writer';
 
 export { DEFAULT_BUILD, type BuildOptions } from './kits/common';
 
@@ -62,12 +62,9 @@ export function* buildChunkSteps(ch: Chunk, w: KitTargets, areas: AreaSource, op
   streetBase(c, ch, (s) => (sw && areas.areaAt(s).blend ? LOOK[s < sw.s ? sw.from : sw.to].road : roadAt(areas, s)), sw?.s);
   yield;
   for (const ob of ch.obstacles) { out.far = Math.max(out.far, drawObstacle(c, ob, ch.index, first)); yield; }
-  const keep = nearKeep(opts.yawDeg);
   for (const d of ch.decor) {
     setArea(c, areas.areaAt(d.s).area);
-    const mark = keep && d.x > 0 && DECOR_ZONE(d.kind) !== 'overhead' && DECOR_ZONE(d.kind) !== 'ground' ? counts(w) : null;
     drawDecor(c, d);
-    if (mark) settleNear(w, mark, keep!);
     const a = ambientOf(d);
     if (a) out.ambient.push(a);
     out.far = Math.max(out.far, d.s + (d.params?.d ?? d.params?.len ?? 4));
@@ -76,35 +73,9 @@ export function* buildChunkSteps(ch: Chunk, w: KitTargets, areas: AreaSource, op
   return out;
 }
 
-// ── landscape: only the camera-side decor that would cover the corridor hides ──────────────────────────────────
-/** Camera-side (+x) decor hides in landscape (fx `near`, uHideNear) only where it would cover the corridor on screen:
- *  a vertex at (x, y) hides the ground at x − y·sin ψ·cot θ (ψ the landscape yaw, θ the pitch); the decor keeps
- *  drawing when none of its vertices reaches past NEAR.limit (low planters, bins, posts and benches on the verge). */
-export const NEAR = { limit: CORRIDOR_HALF - 0.4 } as const;
-function nearKeep(yawDeg: number): { k: number } | null {
-  if (yawDeg <= 0) return null;
-  const yaw = (yawDeg * Math.PI) / 180, th = (CAMERA.pitchDeg * Math.PI) / 180;
-  return { k: (Math.sin(yaw) * Math.cos(th)) / Math.sin(th) };
-}
-type Counts = Record<keyof KitTargets, number>;
-const TGT: readonly (keyof KitTargets)[] = ['o', 'x', 'e', 'g', 'b'];
-function counts(w: KitTargets): Counts { return { o: w.o.count, x: w.x.count, e: w.e.count, g: w.g.count, b: w.b.count }; }
-/** Clears the `near` bit on what one decor record just drew when none of it would cover the corridor. */
-function settleNear(w: KitTargets, from: Counts, keep: { k: number }): void {
-  let covers = false;
-  for (const t of TGT) {
-    const g = w[t].geo, pos = g?.pos;
-    if (!pos) continue;
-    for (let i = from[t]; i < w[t].count && !covers; i++) if (pos[i * 3]! - Math.max(0, pos[i * 3 + 1]!) * keep.k < NEAR.limit) covers = true;
-    if (covers) return;
-  }
-  for (const t of TGT) {
-    const g = w[t].geo, fx = g?.fx;
-    if (!fx) continue;
-    const ch = t === 'g' ? 3 : 2;           // glow cards keep their flag bits in fx.w
-    for (let i = from[t]; i < w[t].count; i++) { const f = fx[i * 4 + ch]!; if (Math.round(f) & FX.near) fx[i * 4 + ch] = f - FX.near; }
-  }
-}
+// Camera-side (+x) decor carries the fx flag `near`: the materials clip it at the camera-side cut plane every frame
+// (camera.ts RIG_UNIFORMS.uCut, DESIGN §8 occlusion), so low verge props draw whole and tall ones never cover the
+// corridor on screen, whatever the projection, yaw and camera distance.
 
 /** The highest flat ground slab (solid-free obstacles: sidewalks, plazas, aprons, below 0.5 m) at (s, x). */
 function groundSlab(ch: Chunk, s: number, x: number): GroundSlab | null {

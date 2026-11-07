@@ -14,6 +14,7 @@
 //                  checks; exits 1 on a failure                                          → artifacts/shots/hud/
 //     --audio      20 s renderAudio per area as 16-bit WAV with the peak in dBFS; a null render (the M0 audio stub)
 //                  prints a note and exits 0; a peak ≥ 1.0 or silence exits 1 (above −1 dBFS warns) → artifacts/audio/
+//     --cam ID     every page runs the debug camera variant ID (?cam=, world/render/camVariants.ts; default A)
 // Several modes may be combined. Uses the preview server on $PORT (default 5173) if one is up; otherwise builds
 // (unless --no-build) and starts `vite preview`. Chromium comes from /opt/pw-browsers (never `playwright install`).
 import { execSync, spawn } from 'node:child_process';
@@ -25,7 +26,8 @@ process.env.PLAYWRIGHT_BROWSERS_PATH ??= '/opt/pw-browsers';
 const { chromium } = await import('@playwright/test');
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const OUT = join(ROOT, 'artifacts', 'shots');
+const CAM_ARG = process.argv.indexOf('--cam');
+const OUT = join(ROOT, 'artifacts', CAM_ARG > 0 && process.argv[CAM_ARG + 1] ? `shots-cam-${process.argv[CAM_ARG + 1]}` : 'shots');
 const AUDIO_OUT = join(ROOT, 'artifacts', 'audio');
 const PORT = Number(process.env.PORT ?? 5173);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -40,6 +42,7 @@ const argv = process.argv.slice(2);
 const flag = (name) => argv.includes(`--${name}`);
 const opt = (name, def) => { const i = argv.indexOf(`--${name}`); return i >= 0 && argv[i + 1] ? argv[i + 1] : def; };
 const seed = Number(opt('seed', '1'));
+const cam = opt('cam', '');
 const ticksList = opt('ticks', '60,330,600').split(',').map(Number).filter((n) => n >= 0);
 const MODES = ['cosmetics', 'contrast', 'hud', 'audio'].filter(flag);
 const VIEWPORTS = [
@@ -81,7 +84,7 @@ async function openPage(vp, query = '') {
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(String(e)));
   // (a page load under software GL with other pages rendering can pass 30 s on a shared machine: the tool waits longer)
-  await page.goto(`${BASE}/?debug=1&seed=${seed}${query}`, { timeout: 120000 });
+  await page.goto(`${BASE}/?debug=1&seed=${seed}${cam ? `&cam=${encodeURIComponent(cam)}` : ''}${query}`, { timeout: 120000 });
   await page.waitForFunction(() => !!window.__skate, null, { timeout: 60000 });
   await page.evaluate(() => document.fonts.ready);
   await sleep(250);
@@ -312,29 +315,41 @@ async function contrastMode() {
     for (const cs of cases) {
       // Every preset / blend frame set must measure at least one hazard and one grind edge (G1): when the default
       // start shows none, the same palette is retried from slightly earlier / later starts (previewArea's run time
-      // ± 1.2 s; blends: the same gateway, ≤ 0.3 of blend weight away), else the case fails with "no hazard".
+      // ± 0.6 … 2.4 s; blends: the same gateway, ≤ 0.3 of blend weight away), else the case fails with "no hazard".
       const { items: r, worst, offset } = await page.evaluate(({ area, blend, samples, gate }) => {
         const ARRIVAL = { downtown: 161, suburbs: 44, docks: 83, neon: 122 };
         const t0 = blend === undefined ? (area === 'downtown' ? 10 : ARRIVAL[area] + 10) : ARRIVAL[area] - 6 + 8 * blend;
         let items = [], worst = null, offset = 0;
-        for (const off of [0, -1.2, 1.2, -2.4, 2.4]) {
-          if (off === 0) window.__skate.previewArea(area, blend);
+        const union = []; let uWorst = null, uRel = Infinity;
+        // (@cam: the finer offsets come last, so a case that already measured both classes keeps its frames; the very
+        // last retry measures the default start over the whole readable range, up to the HUD line: the perspective
+        // camera on a wide screen can show no grindable within look-ahead + 8 m in a whole gateway window. If no
+        // single attempt shows both classes, the case is judged on every frame of every attempt, all in the same
+        // palette window.)
+        for (const off of [0, -1.2, 1.2, -2.4, 2.4, -0.6, 0.6, -1.8, 1.8, 'hud']) {
+          window.__contrastHudRange = off === 'hud';
+          if (off === 0 || off === 'hud') window.__skate.previewArea(area, blend);
           else { window.__skate.start({ startT: Math.max(0, t0 + off), god: true }); window.__skate.manual(true); window.__skate.step(1); }
           items = []; worst = null; offset = off;
           let worstRel = Infinity;
           for (let i = 0; i < samples; i++) {
             window.__skate.step(i === 0 ? 20 : 36);
             for (const it of window.__skate.ext.contrastReport().items) {
-              items.push(it);
+              items.push(it); union.push(it);
               const rel = it.ratio / gate[it.cls];
               if (rel < worstRel) { worstRel = rel; worst = { item: it, tick: window.__skate.snapshot().tick, png: window.__skate.ext.capture().dataUrl }; }
+              if (rel < uRel) { uRel = rel; uWorst = worst; }
             }
           }
           if (items.some((i) => i.cls === 'hazard') && items.some((i) => i.cls === 'edge')) break;
         }
+        window.__contrastHudRange = false;
+        if (!(items.some((i) => i.cls === 'hazard') && items.some((i) => i.cls === 'edge'))) return { items: union, worst: uWorst, offset: 'all' };
         return { items, worst, offset };
       }, { ...cs, gate: GATE });
-      if (offset !== 0) console.log(`    (${cs.label}: measured from a start ${offset > 0 ? '+' : ''}${offset} s off the default)`);
+      if (offset === 'all') console.log(`    (${cs.label}: no single start showed both classes: judged on every attempted frame)`);
+      else if (offset === 'hud') console.log(`    (${cs.label}: measured over the readable range, up to the HUD line)`);
+      else if (offset !== 0) console.log(`    (${cs.label}: measured from a start ${offset > 0 ? '+' : ''}${offset} s off the default)`);
       if (worst) {
         const w = worst.item;
         writeDataUrl(join(dir, `${cs.label.replace(/[^a-z0-9]+/gi, '-')}-${vp.name}-worst.png`), worst.png);

@@ -189,7 +189,8 @@ test.describe('landscape phone', () => {
     await page.getByRole('button', { name: /resume/i }).click();
     await expect(pause).not.toHaveClass(/\bon\b/);
     await expect.poll(() => page.evaluate(() => window.__skate!.snapshot().tick)).toBeGreaterThan(frozen);
-    expect((await page.evaluate(() => window.__skate!.camera())).yawDeg).toBe(0);
+    // Portrait again: the portrait yaw (DESIGN §8: 9° since @cam), not the 30° landscape layout.
+    expect((await page.evaluate(() => window.__skate!.camera())).yawDeg).toBe(9);
     expect(errors).toEqual([]);
   });
 });

@@ -261,7 +261,7 @@ describe('textures', () => {
       }
     }
   });
-  it('landscape: camera-side decor hides only where it would cover the corridor (low verge props keep drawing)', () => {
+  it('camera-side decor carries the `near` flag (the materials cut it at the camera-side plane, camera.ts uCut); the far side does not', () => {
     const nearBits = (kind: DecorKind, area: AreaId, x: number, yawDeg: number) => {
       const ch = emptyChunk(2, area);
       ch.decor = [{ ...decorOf(kind, area, 2 * CHUNK_LEN + 4, 1, 1), x }];
@@ -273,9 +273,12 @@ describe('textures', () => {
       for (const t of ['o', 'b', 'e'] as const) { const g = w[t].end(); for (let i = 0; i < g.count; i++) if (g.pos[i * 3]! > 4.5 && (Math.round(g.fx[i * 4 + 2]!) & FX.near)) near++; }
       return near;
     };
-    expect(nearBits('street_lamp', 'downtown', 4.9, 30)).toBeGreaterThan(0);      // 5 m pole: crosses the corridor
-    expect(nearBits('bin_pair', 'suburbs', 5.4, 30)).toBe(0);                     // a low pair of bins stays
-    expect(nearBits('street_lamp', 'downtown', 4.9, 0)).toBeGreaterThan(0);       // portrait: flags kept, never applied
+    // Every projection and yaw: the cut is per vertex / fragment in the shaders, so the build flags every camera-side
+    // vertex (low verge props are simply below the plane and draw whole).
+    expect(nearBits('street_lamp', 'downtown', 4.9, 30)).toBeGreaterThan(0);
+    expect(nearBits('bin_pair', 'suburbs', 5.4, 30)).toBeGreaterThan(0);
+    expect(nearBits('street_lamp', 'downtown', 4.9, 9)).toBeGreaterThan(0);
+    expect(nearBits('street_lamp', 'downtown', -4.9, 9)).toBe(0);
   });
   it('the sign atlas packs every entry inside 1024² (brands of every area, the reviewed words, holo panels)', () => {
     for (const area of AREAS) expect(SIGN_RECTS.get(`b:${area}:0`)).toBeDefined();

@@ -1,6 +1,7 @@
 // world/render/kits/downtown.ts: Downtown Plaza kinds (DESIGN §10.3, §18.6 kit: granite ledges, planters, palms in
 // planters, café umbrellas, bike racks, bollards, news kiosks, a low fountain, parked cars). The same builders skin
 // the kinds when they appear in other areas (the obstacle's area picks colours through KitCtx.hz / area).
+import { CAMERA } from '../../../core/tuning';
 import type { Obstacle } from '../../../core/world';
 import { COLORS, shade } from '../palette';
 import { PAT } from '../textures/ground';
@@ -47,14 +48,14 @@ export const planter: KitFn = (c, ob) => {
   }
 };
 
-/** Planter with a tree: the planter, a tall trunk (crash, x-ray above 1.6 m) and a compact crown. Downtown: a palm. */
+/** Planter with a tree: the planter, a tall trunk (crash, x-ray above CAMERA.xrayCapY (1.2 m)) and a compact crown. Downtown: a palm. */
 export const planterTree: KitFn = (c, ob) => {
   const K = c.K;
   const rimBox = ob.solids.find((so) => !so.tall)?.box, trunk = ob.solids.find((so) => so.tall)?.box;
   if (rimBox) planter(c, { ...ob, solids: [{ box: rimBox, top: 'landable', tall: false }] });
   if (!trunk) return;
   const x = (trunk.x0 + trunk.x1) / 2, s = (trunk.s0 + trunk.s1) / 2, r = (trunk.x1 - trunk.x0) / 2;
-  K.capY = trunk.y0 + 1.6;
+  K.capY = trunk.y0 + CAMERA.xrayCapY;
   // The trunk is the crash solid: the hazard body (ink, or the inverted Neon body with its emissive rim).
   body(c, c.hz.inverted ? c.hz.top : c.hz.body);       // Neon: the lighter inverted value (Neon targets 3:1)
   K.frustum(x, s, trunk.y0, trunk.y1, r, r * 0.75, 7, false);
@@ -107,13 +108,13 @@ export const bollards: KitFn = (c, ob) => {
 };
 
 /** News kiosk 1.6 × 1.6 × 2.4 (tall): a green-ink booth with an awning toward the camera, magazine racks on the
- *  camera face, a roof cornice; x-ray above 1.6 m. */
+ *  camera face, a roof cornice; x-ray above CAMERA.xrayCapY (1.2 m). */
 export const kiosk: KitFn = (c, ob) => {
   const K = c.K, b = boxOf(ob);
   if (!b) return;
   const shell = c.hz.inverted ? c.hz.body : 0x1f2e2c;
   contact(c, b.x0, b.x1, b.s0, b.s1, b.y0 + 0.01, 0.65, 0.3);
-  K.capY = b.y0 + 1.6;
+  K.capY = b.y0 + CAMERA.xrayCapY;
   body(c, shell); K.box(b.x0 + 0.05, b.y0, b.s0 + 0.05, b.x1 - 0.05, b.y1 - 0.25, b.s1 - 0.05);
   body(c, c.hz.top); K.chamfer(b.x0 - 0.05, b.y1 - 0.25, b.s0 - 0.05, b.x1 + 0.05, b.y1, b.s1 + 0.05, 0.05);
   // Magazine rack: rows of small covers on the camera face (accents).
@@ -136,7 +137,7 @@ export const parkedCar: KitFn = (c, ob) => {
   const b = boxOf(ob);
   if (!b) return;
   contact(c, b.x0, b.x1, b.s0, b.s1, b.y0 + 0.01, 0.7, 0.3);
-  c.K.capY = b.y0 + 1.6;
+  c.K.capY = b.y0 + CAMERA.xrayCapY;
   drawCar(c.K, { x0: b.x0, x1: b.x1, s0: b.s0, s1: b.s1, y: b.y0, h: b.y1 - b.y0, hazard: true,
     body: c.hz.inverted ? c.hz.body : CAR_BODIES[(ob.variant + ob.id) % CAR_BODIES.length]!, accent: c.hz.accent,
     van: ob.kind === 'parked_van' || b.y1 - b.y0 > 1.7, inverted: c.hz.inverted, rim: c.hz.rim, glow: c.hz.glow });
@@ -168,14 +169,14 @@ export const bikeRack: KitFn = (c, ob) => {
   }
 };
 
-/** Café set 1.2 × 1.2 × 1.2 (tall), umbrella canopy at 2.2 (x-ray above 1.6): round table, two chairs, a striped
+/** Café set 1.2 × 1.2 × 1.2 (tall), umbrella canopy at 2.2 (x-ray above CAMERA.xrayCapY): round table, two chairs, a striped
  *  umbrella. */
 export const cafeSet: KitFn = (c, ob) => {
   const K = c.K, b = boxOf(ob);
   if (!b) return;
   const x = (b.x0 + b.x1) / 2, s = (b.s0 + b.s1) / 2, g = b.y0;
   contact(c, b.x0, b.x1, b.s0, b.s1, g + 0.01, 0.6, 0.3);
-  K.capY = g + 1.6;
+  K.capY = g + CAMERA.xrayCapY;
   body(c); K.cyl(x, s, g, g + 0.72, 0.04, 6, false);
   body(c, c.hz.top); K.cyl(x, s, g + 0.72, g + 0.76, 0.42, 10, true);
   for (const dx of [-0.42, 0.42]) {

@@ -3,6 +3,7 @@
 // Query flags (debug builds only): ?overlay=1 starts with the perf HUD and overlays on, ?tuning=1 opens the panel.
 import { isInjectable } from '../input';
 import { installDebugApiImpl, type DebugHost, type DebugTools } from './api';
+import { installCamLab } from './camLab';
 import { installOverlay } from './overlay';
 import { installPerfHud } from './perfhud';
 import { installTuningPanel, registerTunables } from './tuningPanel';
@@ -19,6 +20,7 @@ export function installDebugApi(deps: object): void {
     tools.tuning = installTuningPanel(root);
   }
   tools.overlay = installOverlay(host);
+  installCamLab(host);
   if (isInjectable(host.input)) registerTunables('input: recognizer (live)', host.input.pipeline.rec.config);
   registerTunables('loop', host.loop);
   window.addEventListener('keydown', (e) => {

@@ -17,15 +17,15 @@ import { CAMERA, CHUNK_LEN, CHUNK_WINDOW, V_MAX, speedAt } from '../../core/tuni
 import type { GfxContext, PaletteSample, RenderFrame, Viewport, WorldView } from '../../core/view';
 import type { Chunk, Coin, Decor, Obstacle, WorldGen } from '../../core/world';
 import { LIGHT_SCALE, getHemi, getSun, originOf, setGfxQuality, setPaletteSource, sharedUniforms, type SharedUniforms } from '../../gfx';
-import { RIG_STATE, solveFraming, yawForAspect } from './camera';
+import { EDGE_WIDEN, RIG_STATE, edgeMetresPerPx, shadowBoxFor, solveFraming, yawForAspect, type Framing, type ShadowBox } from './camera';
 import { buildChunk, buildChunkSteps, chunkHash, type AreaSource, type ChunkBuildOut } from './chunkBuilder';
 import { DEFAULT_BUILD, type BuildOptions, type DecalRec, type LanternRec } from './kits/common';
-import type { AmbientRec } from './kits/decor';
-import { COIN, CoinLayer, DecalLayer, LanternLayer } from './layers';
+import { maglevX, type AmbientRec } from './kits/decor';
+import { COIN, COIN_DEPTH_K, CoinLayer, DecalLayer, LanternLayer } from './layers';
 import { createWorldMaterials, type WorldMaterials } from './materials';
 import { CONTACT, COLORS, SURFACE_COLOR, sampleLook, samplePalette } from './palette';
 import { AutoQuality } from './quality';
-import { CONTACT_SHADOW, CRASH_LOOK, QUALITY, RENDER, SHADOW_BOX, STREAM } from './render.config';
+import { CONTACT_SHADOW, CRASH_LOOK, OCCLUSION, QUALITY, RENDER, SHADOW_BOX, STREAM } from './render.config';
 import { Sky } from './sky';
 import { drawDecalAtlas, DECAL_ATLAS_SIZE } from './textures/decals';
 import { drawGroundAtlas, GROUND_ATLAS_SIZE } from './textures/ground';
@@ -37,7 +37,7 @@ import { scheduleWarmup } from './warmup';
 export const VIEW = {
   coinCapacity: COIN.capacity, coinDiameter: COIN.diameter,
   inkPadPx: 1.6,             // the ink underline shows ≥ this many CSS px beside the cream stripe (reads on light tops)
-  trainColor: 0xffb7d0, trainOpacity: 0.22,   // the maglev light streak over the corridor (≤ 25 % in the look-ahead zone)
+  trainColor: 0xffb7d0,   // the maglev light streak (paper-magenta; its alpha is OCCLUSION.trainAlpha)
 } as const;
 
 type Target = keyof KitTargets;
@@ -51,11 +51,25 @@ interface LiveChunk {
   key: number; hash: number; chunk: Chunk; tris: number;
 }
 
-/** Edge stripe width so a grind edge stays ≥ CAMERA.minEdgePx wide at this viewport's widest run framing. */
+/** The coin size floor (DESIGN §8: ≥ CAMERA.minCoinPx on screen) for framing f. Coins face the pitch but not the yaw,
+ *  so ψ > 0 narrows them by cos ψ on screen. Perspective: the scale floor per metre of view depth (each coin scales by
+ *  max(1, k · its depth) in the vertex shader, layers.ts COIN_DEPTH_K); ortho: the scale floor itself (k ≥ 1 inflates). */
+export function coinFloorOf(f: Framing, vp: Viewport): number {
+  const yawK = 1 / Math.cos((f.yawDeg * Math.PI) / 180), span = f.proj === 'persp' ? f.tanH : f.H;
+  return ((CAMERA.minCoinPx * span) / Math.max(1, vp.hCss) / COIN.diameter) * yawK;
+}
+
+/** Edge stripe width so a grind edge stays ≥ CAMERA.minEdgePx wide at this viewport's widest run framing, measured
+ *  across the stripe on screen at the farthest readable depth (the HUD line; camera.ts edgeMetresPerPx). */
 export function buildOptionsFor(vp: Viewport): BuildOptions {
-  const mPerPx = solveFraming(V_MAX, vp).H / Math.max(1, vp.hCss);
-  const hw = Math.max(DEFAULT_BUILD.edgeHalfW, (CAMERA.minEdgePx * mPerPx) / 2);
-  return { edgeHalfW: hw, inkPad: Math.max(DEFAULT_BUILD.inkPad, VIEW.inkPadPx * mPerPx), yawDeg: yawForAspect(vp.aspect) };
+  const f = solveFraming(V_MAX, vp);
+  // Perspective (production): the physical widths; the lit material widens every stripe at its own depth
+  // (camera.ts edgeWidening), so the build does not depend on the viewport's scale.
+  if (f.proj === 'persp') return { edgeHalfW: EDGE_WIDEN.hw0, inkPad: EDGE_WIDEN.pad0, yawDeg: yawForAspect(vp.aspect) };
+  const mPerPx = edgeMetresPerPx(f, vp);
+  // (G1 grind signature: RENDER.grind.halfW × the minimum stripe, RENDER.grind.inkW × the ink pad)
+  const hw = Math.max(DEFAULT_BUILD.edgeHalfW, (CAMERA.minEdgePx * mPerPx) / 2) * RENDER.grind.halfW;
+  return { edgeHalfW: hw, inkPad: Math.max(DEFAULT_BUILD.inkPad, VIEW.inkPadPx * mPerPx) * RENDER.grind.inkW, yawDeg: yawForAspect(vp.aspect) };
 }
 
 /** Ambient emitters of the live chunks, per context (vfx/ reads them through world/render's index). */
@@ -169,7 +183,7 @@ class WorldViewImpl implements WorldView {
       });
     } catch { /* no DOM (node tests) */ }
     this.mats = createWorldMaterials(ctx, { ground, signs });
-    this.matOf = { o: this.mats.opaque, x: this.mats.xray, e: this.mats.emissive, g: this.mats.glow, b: this.mats.opaque };
+    this.matOf = { o: this.mats.opaque, x: this.mats.xray, e: this.mats.emissive, g: this.mats.glow, b: this.mats.building };
     this.decals = new DecalLayer(ctx, decals);
     this.lanterns = new LanternLayer(ctx);
     this.coins = new CoinLayer(ctx);
@@ -191,10 +205,10 @@ class WorldViewImpl implements WorldView {
     this.blob.renderOrder = 2; this.glow.renderOrder = 2;
     this.glow.visible = false;
     ctx.scene.add(this.blob, this.glow);
-    // Maglev train: a long light streak (additive) along the guideway. (G1, owner playtest: at 0.9 opacity in cyan-white
-    // the 40 m streak over the corridor read as a blown-out light bar across the look-ahead zone beside the hazards;
-    // DESIGN §18.4: ≤ 25 % alpha there, and cyan is reserved.)
-    this.train = new Mesh(new BoxGeometry(0.5, 0.45, 1), new MeshBasicMaterial({ color: VIEW.trainColor, transparent: true, opacity: VIEW.trainOpacity,
+    // Maglev train: a long light streak (additive) along the guideway, which hugs the far facade line (@cam). (G1,
+    // owner playtest: at 0.9 opacity in cyan-white the 40 m streak over the corridor read as a blown-out light bar
+    // across the look-ahead zone beside the hazards; DESIGN §18.4: ≤ 25 % alpha there, and cyan is reserved.)
+    this.train = new Mesh(new BoxGeometry(0.3, 0.35, 1), new MeshBasicMaterial({ color: VIEW.trainColor, transparent: true, opacity: OCCLUSION.trainAlpha,
       blending: AdditiveBlending, depthWrite: false }));
     this.train.name = 'maglevTrain'; this.trainMat().visible = false; this.train.frustumCulled = false;
     ctx.scene.add(this.train);
@@ -383,7 +397,7 @@ class WorldViewImpl implements WorldView {
     for (const p of Object.values(this.pools)) { geosCreated += p.created; geosIdle += p.idle; }
     return { chunks: [...this.chunks.keys()].sort((a, b) => a - b), cached: [...this.cache.keys()].sort((a, b) => a - b), geosCreated, geosIdle,
       verts, chunkTris: tris, maxChunkTris, coinSlotsUsed: this.coins.used, decalsUsed: this.decals.used, lanternsUsed: this.lanterns.used,
-      originS: this.originS, edgeHalfW: this.opts.edgeHalfW, mainCalls: this.mainCalls, shadowCalls: this.shadowCalls,
+      originS: this.originS, edgeHalfW: this.opts.edgeHalfW, coinScale: this.coinScale, shadowBox: this.shadowBox?.box ?? SHADOW_BOX, mainCalls: this.mainCalls, shadowCalls: this.shadowCalls,
       chunksBuilt: this.built, cacheHits: this.cacheHits, buildMsP95: this.buildP95, chunkMsP95: this.chunkP95, pending: this.pending?.index ?? null,
       warmupMs: this.warmupMs, firstFrame: this.lastFresh,
       quality: this.ctx.quality, autoQuality: this.autoOn,
@@ -615,17 +629,28 @@ class WorldViewImpl implements WorldView {
     AMBIENT.set(this.ctx, list);
   }
 
+  private coinScale = 1;
+  /** The shadow box grown to what the run camera shows (camera.ts shadowBoxFor), for the viewport it was computed for. */
+  private shadowBox: { w: number; h: number; safeTop: number; box: ShadowBox } | null = null;
   /** Coins stay ≥ CAMERA.minCoinPx on screen however far the camera zooms out (DESIGN §8). */
   private updateCoinScale(f: RenderFrame): void {
     const vp = f.viewport, cv = this.coinVp;
     // The menu cameras are perspective and close: coins keep their true size there (the floor is for the run).
-    if (RIG_STATE.menu) { if (cv.speedQ !== -2) { cv.speedQ = -2; this.coins.setScale(1); } return; }
+    if (RIG_STATE.menu) { if (cv.speedQ !== -2) { cv.speedQ = -2; this.coins.setScale(1); COIN_DEPTH_K.value = 0; } return; }
     const lead = Math.max(f.speed, speedAt(f.cur.t + CAMERA.zoomTau));
     const speedQ = Math.round(lead * 20);
     if (vp.wCss === cv.w && vp.hCss === cv.h && vp.safeTop === cv.safeTop && vp.aspect === cv.aspect && speedQ === cv.speedQ) return;
     cv.w = vp.wCss; cv.h = vp.hCss; cv.safeTop = vp.safeTop; cv.aspect = vp.aspect; cv.speedQ = speedQ;
-    const H = solveFraming(speedQ / 20, vp).H;
-    this.coins.setScale(Math.max(1, (CAMERA.minCoinPx * H) / Math.max(1, vp.hCss) / COIN.diameter));
+    const fr = solveFraming(speedQ / 20, vp), k = coinFloorOf(fr, vp);
+    if (fr.proj === 'persp') {
+      // Perspective (production): per coin, at its own depth (layers.ts COIN_DEPTH_K).
+      COIN_DEPTH_K.value = k;
+      this.coinScale = Math.max(1, k * fr.D);
+      this.coins.setScale(1);
+      return;
+    }
+    this.coinScale = Math.max(1, k);
+    this.coins.setScale(this.coinScale);
   }
 
   /** Palette → lights, exposure, background, haze, emissive / glow / window-lit uniforms, sky (DESIGN §18.1–18.3). */
@@ -649,7 +674,6 @@ class WorldViewImpl implements WorldView {
     u.uGlow.value = lerp(RENDER.glowMin, RENDER.glowMax, ng);
     u.uWindowLit.value = p.windowLit;
     u.uSkyZenith.value.setHex(p.zenith); u.uSkyMid.value.setHex(p.mid); u.uSkyHorizon.value.setHex(p.horizon);
-    u.uHideNear.value = !menu && yawForAspect(f.viewport.aspect) > 0 ? 1 : 0;
     // Warning flash: ≤ 2 Hz while the 1.6 s warning runs (DESIGN §9).
     if (this.warnT > 0) { this.warnT = Math.max(0, this.warnT - Math.max(0, f.dt)); u.uWarn.value = 0.5 + 0.5 * Math.sin(this.time * Math.PI * 4); }
     else u.uWarn.value = 0;
@@ -700,7 +724,7 @@ class WorldViewImpl implements WorldView {
    *  the first frame, so the GPU geometry count does not step up the first time one shows (bot-survival bound). */
   private trainMat(): MeshBasicMaterial { return this.train.material as MeshBasicMaterial; }
 
-  /** Sora Line pass: a light streak along the guideway every ~20 s while a maglev beam is in view. */
+  /** Sora Line pass: a light streak along the (far-side) guideway every ~20 s while a maglev beam is in view. */
   private updateTrain(f: RenderFrame, origin: number): void {
     let beam: Decor | null = null;
     for (const c of this.chunks.values()) { for (const d of c.chunk.decor) if (d.kind === 'maglev_beam') { beam = d; break; } if (beam) break; }
@@ -712,7 +736,8 @@ class WorldViewImpl implements WorldView {
     const s = f.playerS + 70 - run;
     this.trainMat().visible = run < 160;
     this.train.scale.set(1, 1, len);
-    this.train.position.set(beam.x, Math.max(7, beam.y) + 0.55, -(s - origin));
+    // On the far-side guideway (kits/decor.ts maglevX, OCCLUSION): never across the corridor.
+    this.train.position.set(maglevX(beam.x), Math.max(7, beam.y) + 0.55, -(s - origin));
   }
 
   private updateShadow(f: RenderFrame, origin: number): void {
@@ -737,7 +762,7 @@ class WorldViewImpl implements WorldView {
     // The box fits the receivers (x ±10, s − 6 … s + 34, up to 3 m) in light space, its half sizes rounded up to
     // 0.5 m so a palette blend does not change the texel size every frame; casters further out (off-screen buildings)
     // lie on the light's rays through it.
-    const map = sun.shadow.mapSize.x || 1024, B = SHADOW_BOX;
+    const map = sun.shadow.mapSize.x || 1024, B = this.shadowBoxOf(f.viewport);
     let hr = 0, hu = 0;
     for (const x of [-B.halfX, B.halfX]) for (const ds of [-B.halfS, B.halfS]) for (const y of [0, B.height]) {
       hr = Math.max(hr, Math.abs(x * right.x + y * right.y - ds * right.z)); hu = Math.max(hu, Math.abs(x * up.x + y * up.y - ds * up.z));
@@ -753,6 +778,16 @@ class WorldViewImpl implements WorldView {
     cam.near = 1; cam.far = 200;
     cam.updateProjectionMatrix();
     sun.target.updateMatrixWorld();
+  }
+
+  /** SHADOW_BOX grown to the ground the run camera shows at this viewport (camera.ts shadowBoxFor). */
+  private shadowBoxOf(vp: Viewport): ShadowBox {
+    const c = this.shadowBox;
+    if (c && c.w === vp.wCss && c.h === vp.hCss && c.safeTop === vp.safeTop) return c.box;
+    const box = shadowBoxFor(vp, SHADOW_BOX);
+    this.shadowBox = { w: vp.wCss, h: vp.hCss, safeTop: vp.safeTop, box };
+    RIG_STATE.shadowBox = box;
+    return box;
   }
 
   /** Keeps the build work of the last 120 frames that built (ms) and its p95 (cache restores are not builds). */

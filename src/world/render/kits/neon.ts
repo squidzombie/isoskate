@@ -1,8 +1,9 @@
 // world/render/kits/neon.ts: Neon City (Hoshimachi Ward, invented) kinds (DESIGN §10.3, §18.6): guard rails with a
 // cyan body glow and the standard cream grind edge, vending banks with lit fronts facing the camera, viaduct pillars
-// (x-ray above 1.6 m), cherry planters, food carts with paper lanterns, bike rows, the skywalk deck, A-frame signs,
+// (x-ray above CAMERA.xrayCapY (1.2 m)), cherry planters, food carts with paper lanterns, bike rows, the skywalk deck, A-frame signs,
 // lantern stands, glowing neon curbs and the delivery robot. Hazards use the inverted body (#7A6FB0) with an emissive
 // magenta / lantern-red rim (DESIGN §18.4). Only invented brands and the reviewed sign words appear.
+import { CAMERA } from '../../../core/tuning';
 import { NEON_SIGN_WORDS } from '../../../core/decor';
 import type { Obstacle } from '../../../core/world';
 import { mixHex, shade } from '../palette';
@@ -52,13 +53,13 @@ const guardRail: KitFn = (c, ob) => {
 };
 
 /** Vending bank 0.8 × (1.0 per machine) × 1.8 (tall): machines side by side (along x), lit fronts facing the camera,
- *  the inverted body with a magenta rim, x-ray above 1.6 m. */
+ *  the inverted body with a magenta rim, x-ray above CAMERA.xrayCapY (1.2 m). */
 export const vendingBank: KitFn = (c, ob) => {
   const K = c.K, b = boxOf(ob);
   if (!b) return;
   const n = Math.max(1, Math.round((b.x1 - b.x0) / 1.0)), w = (b.x1 - b.x0) / n;
   contact(c, b.x0, b.x1, b.s0, b.s1, b.y0 + 0.01, 0.35, 0.15);
-  K.capY = b.y0 + 1.6;
+  K.capY = b.y0 + CAMERA.xrayCapY;
   for (let i = 0; i < n; i++) {
     const x0 = b.x0 + i * w + 0.02, x1 = x0 + w - 0.04;
     body(c, i % 2 ? c.hz.body : shade(c.hz.body, -0.08));
@@ -71,13 +72,13 @@ export const vendingBank: KitFn = (c, ob) => {
   K.capY = null;
 };
 
-/** Viaduct pillar 1.2 × 1.2 × 6.0 (tall, x-ray above 1.6): a concrete column with a lit strip and a cap that carries
+/** Viaduct pillar 1.2 × 1.2 × 6.0 (tall, x-ray above CAMERA.xrayCapY): a concrete column with a lit strip and a cap that carries
  *  the maglev beams. */
 const viaductPillar: KitFn = (c, ob) => {
   const K = c.K, b = boxOf(ob);
   if (!b) return;
   contact(c, b.x0, b.x1, b.s0, b.s1, b.y0 + 0.01, 0.35, 0.15);
-  K.capY = b.y0 + 1.6;
+  K.capY = b.y0 + CAMERA.xrayCapY;
   body(c); K.chamfer(b.x0, b.y0, b.s0, b.x1, b.y1 - 0.4, b.s1, 0.06, c.hz.top);
   body(c, c.hz.top); K.box(b.x0 - 0.2, b.y1 - 0.4, b.s0 - 0.2, b.x1 + 0.2, b.y1, b.s1 + 0.2);
   K.to('e').glowing(1.4, -1, FX.noFog).col(c.hz.rim).box((b.x0 + b.x1) / 2 - 0.05, b.y0 + 0.3, b.s0 - 0.01, (b.x0 + b.x1) / 2 + 0.05, b.y1 - 0.6, b.s0, FACE.front);
@@ -94,7 +95,7 @@ const cherryPlanter: KitFn = (c, ob) => {
   if (rimBox) planter(c, { ...ob, solids: [{ box: rimBox, top: 'landable', tall: false }] });
   if (!trunk) return;
   const x = (trunk.x0 + trunk.x1) / 2, s = (trunk.s0 + trunk.s1) / 2, r = (trunk.x1 - trunk.x0) / 2;
-  K.capY = trunk.y0 + 1.6;
+  K.capY = trunk.y0 + CAMERA.xrayCapY;
   // The trunk is the crash solid: the inverted body with its emissive rim (ink outside the Neon look).
   body(c, c.hz.inverted ? c.hz.top : c.hz.body); K.frustum(x, s, trunk.y0, trunk.y1, r, r * 0.7, 7, false);
   rimPost(c, x, s, r * 0.9, trunk.y0 + 0.15, trunk.y0 + 1.5, trunk.y0 + 1.2);
@@ -108,12 +109,12 @@ const cherryPlanter: KitFn = (c, ob) => {
 };
 
 /** Food cart 2.0 × 1.2 × 2.2 (tall): a yatai-style cart, its lit counter and noren facing the camera, a roof, and a
- *  paper lantern on top; x-ray above 1.6 m. */
+ *  paper lantern on top; x-ray above CAMERA.xrayCapY (1.2 m). */
 export const foodCart: KitFn = (c, ob) => {
   const K = c.K, b = boxOf(ob);
   if (!b) return;
   contact(c, b.x0, b.x1, b.s0, b.s1, b.y0 + 0.01, 0.35, 0.15);
-  K.capY = b.y0 + 1.6;
+  K.capY = b.y0 + CAMERA.xrayCapY;
   const g = b.y0, counter = g + 0.95;
   body(c); K.box(b.x0 + 0.05, g + 0.15, b.s0 + 0.05, b.x1 - 0.05, counter, b.s1 - 0.05);
   body(c, 0x161029); for (const x of [b.x0 + 0.25, b.x1 - 0.25]) K.hcyl('x', 0, g + 0.2, (b.s0 + b.s1) / 2, x - 0.04, x + 0.04, 0.2, 8, true);
@@ -210,7 +211,7 @@ const lanternStand: KitFn = (c, ob) => {
   if (!b) return;
   const x = (b.x0 + b.x1) / 2, s = (b.s0 + b.s1) / 2;
   contact(c, b.x0, b.x1, b.s0, b.s1, b.y0 + 0.01, 0.35, 0.15);
-  K.capY = b.y0 + 1.6;
+  K.capY = b.y0 + CAMERA.xrayCapY;
   // In the Neon look the whole stand reads light on the wet road (the lighter inverted value, a thicker post, caps
   // in the emissive rim colour); in an ink look it stays dark.
   const inv = c.hz.inverted, post = inv ? c.hz.top : c.hz.body;

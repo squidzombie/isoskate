@@ -752,3 +752,20 @@ recognizer, so the frozen `InputFrame`, the sim, scoring, the generator, replays
 - Why: owner playtest ("it will continue to turn even when I take my finger off it"): a quick slide threw targetX 2.5–5 m ahead and the skater kept sliding 2.3–3.6 m (0.45–0.8 s) after the thumb stopped or lifted. The fast thumb (fix pass) gives quick slides back part of the reach the cap took (60 px / 120 ms: 0.45 → 0.6–0.8 m; 120 px / 250 ms: 1.0–1.4 → 1.2–1.8 m).
 - What other packages can rely on: absolute-target drivers (every bot: targetX ≤ 0.66 m ahead, measured over the gate runs) never reach the cap, so they are never capped, sped up or braked: bot paths are bit-identical to before @steer and every bot gate is unchanged. A bot or test that steers with one big instant `steerDx` (a "throw") now moves the skater ≤ ~1 m: drag over several ticks at a human pace (0.08–0.1 m per tick) or set a key target. Touch-input layouts (pkg/ctl's two-thumb split) need nothing: all of it reads only `steerDx` (the stop thresholds are in metres: `jitterM` ≈ 0.3 px and `stopM` ≈ 0.7 px at the default scale).
 - Local workaround meanwhile: n/a.
+
+## CAM: Run camera (pkg/cam, owner playtest: "angled", "closer"; DESIGN decision row 73)
+
+### CAMERA: the perspective run camera   (status: applied @cam, merged into DEV at G1b)
+- File / symbol: core/tuning.ts › CAMERA
+- Change: `proj: 'persp'`, `fovDeg: 24` and `latTau: 0.4` added; `pitchDeg: 35 → 34`, `yawMinDeg: 0 → 9`, `xrayCapY: 1.6 → 1.2`. Every other field unchanged.
+- Why: the portrait camera read top-down and 2D on phones (owner); the winning camera of the @cam prototype and three judges is a telephoto perspective camera at pitch 34°, portrait yaw 9° (30° at aspect ≥ 1.25), window FOV 24°, D solved per frame. Perspective hides more ground behind an in-corridor solid, so the x-ray cap comes down to 1.2 m. The sim, the generator and the validator read none of these fields (the generator's 2.5 s assumption and `LOOKAHEAD_*` are unchanged), so the course is unchanged on every device.
+- Local workaround meanwhile: none needed; `world/render/camVariants.ts` builds the production spec `P` from CAMERA and keeps the pre-@cam ortho camera as the debug spec `A`.
+
+### Notes for the gate (no contract change)
+- **Shaders read camera uniforms.** `world/render/camera.ts › RIG_UNIFORMS` (`uEdge`, `uCut`, `uOver`, `uOverDir`) is bound by every world material and the lantern layer; the rig writes it in `update()`. The buildings, emissive and glow materials now `discard` camera-side fragments above the cut plane (TECH §8.6); the opaque material still has no discard.
+- **`gfx/uniforms.ts › uHideNear`** is no longer read (the comment says so); removing the field is safe once nothing outside world/render uses it.
+- **`chunkBuilder.ts`** lost `NEAR` / `nearKeep` / `settleNear` (the cut replaced the whole-record hide); `BuildOptions.yawDeg` stays (hazard pools).
+- **`world/gen/generator.ts`** carries G1's mid-gateway start fix (6323753) verbatim, so `shots --contrast` can run here; the merge sees the identical hunk.
+- **`debug/contrast.ts`**: a grind-edge sample behind a raised deck (slab top ≥ 0.5 m) of another obstacle is hidden, like one behind another obstacle's solid (the perspective camera sees skywalk decks hide the kerb beyond them); hazards and edges are measured up to the HUD-line ground when that is beyond look-ahead + 8 m. `scripts/shots.mjs --contrast` also retries ±0.6 / ±1.8 s starts (after the existing ones).
+- **`tests/e2e/audio.spec.ts`** (AU's): @cam scaled the per-rendered-frame audio bound by 30 / fps; at the G1b merge the G1 tune's form was kept instead (the budget asserted per 60 Hz frame, per rendered frame only at ≥ 25 fps), which covers the slower perspective render too.
+- **`tests/e2e/smoke.spec.ts`**: the landscape → portrait test expects the portrait yaw 9° (was 0°).

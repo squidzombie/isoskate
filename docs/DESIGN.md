@@ -470,57 +470,57 @@ The skater and board rotate together about the vertical axis. Spins start **only
 
 ## 8. Camera
 
-**Projection.** Orthographic. **Pitch θ = 35°** down, which is the true isometric pitch.
+**Projection (decision row 73, @cam).** A telephoto **perspective** camera: the window's vertical field of view is **24°**, **pitch θ = 34°** down, and the framing solver picks the camera distance `D` (about 57–60 m on a 390×844 phone, 37 m on an iPhone SE in Safari). Until @cam it was orthographic (pitch 35°, ψ = 0 in portrait): on a phone that read top-down and flat, with the side facades edge-on. The owner, after a phone playtest, expected "an angled view instead of straight down the street" and asked for something "closer" that feels more active. The perspective camera keeps the skater big while the far street compresses, so hazards grow as they come at you and both street walls show.
 
 **Yaw ψ depends on aspect ratio.**
-- `ψ = 0°` for aspect ≤ 0.75, which covers every phone in portrait, including browser toolbars eating the height (an iPhone SE in Safari is 375×548, aspect 0.68): the street runs **straight up the screen**.
+- `ψ = 9°` for aspect ≤ 0.75, which covers every phone in portrait, including browser toolbars eating the height (an iPhone SE in Safari is 375×548, aspect 0.68): the street runs **diagonally up the screen**, converging, with the left facades showing.
 - It rises linearly to `ψ = 30°` at aspect ≥ 1.25 (tablet landscape, desktop): a classic iso diagonal.
 - Yaw is fixed for the whole run. There is no roll, ever.
 - A **phone in landscape** (coarse pointer, shorter side < 500 px, aspect > 1) does not get the 30° layout; it shows a "Rotate to portrait" pause card.
 
-**Why not a diagonal on phones?**
-- On a 9:19.5 phone the 9 m corridor already fills the screen width.
-- A diagonal street pushes the far corner of the street off-screen within about 1 s of look-ahead.
-- Showing 2.5 s at a diagonal would shrink the skater below 30 px.
+**Why 9° and not more on phones.** With the 9 m corridor filling a portrait screen, a bigger angle pushes the far corner of the corridor off-screen sooner, so the solver must pull the camera back: at 12° the skater drops to about 46 px at 390×844 (44 px at 360×640) and the top of the screen reaches 68 m of street; at 14°, about 43 px. Any yaw also tilts the direction of travel on screen: a point 1 s ahead in the skater's own lane sits about `v·tan ψ` (≈ 1.7 m at 10.5 m/s) right of "straight up the screen". The lane dashes, kerbs and converging facades show the real direction, and 9° keeps the skater ≥ 40 px on every phone. The pitch is 34° (not 35°) so the window's top ray still looks 17° down (the run camera never sees the horizon, §18.3).
 
-So in portrait the iso feel comes from the pitch (tops and fronts with true heights) and from long raking shadows, not from yaw (Art rules in §18.4).
-
-**Framing solver** (`world/render/camera.ts`, unit-tested in TECH §11). Every frame the rig chooses the smallest ortho height `H` that fits a required region:
-- **Required region:** the corridor `|x| ≤ 4.8` from `s_p − 1.5` to `s_p + 2.6·v`, plus 0.8 m of headroom for tall far objects.
+**Framing solver** (`world/render/camera.ts`, unit-tested in TECH §11). Every frame the rig chooses the smallest camera distance `D` (along the view direction from the skater's ground point) at which the fixed window fits a required region:
+- **Required region:** the corridor `|x| ≤ 4.8` from `s_p − 1.5` to `s_p + 2.6·v`, plus 0.8 m of headroom for tall far objects. With ψ > 0 it is fitted for the worst lateral follow offset (15% of |x| ≤ 4.5 m), so the guarantee holds wherever the skater is.
 - **The HUD band is excluded, measured for real:** `hudTop = (safeTop + 56 px) / screenHeight`, from the live `Viewport` (the HUD band is ≤ 56 px plus the top safe-area inset, §13.8). On a Dynamic Island iPhone installed as an app that is 115 px.
-- The skater's ground point sits at **74% from the top**. If playtests show a resting thumb covering it, the fallback is 70% (about 6% smaller skater, §23).
-- `H` eases with τ = 2 s and only grows during a run.
+- The skater's ground point sits at **74% from the top** (an off-axis window). If playtests show a resting thumb covering it, the fallback is 70% (§23).
+- `D` eases with τ = 2 s and only grows during a run.
+- `?debug=1&cam=A` still runs the pre-@cam ortho camera, and `?cam=p<pitch>y<yaw>f<fov>` / `o<pitch>y<yaw>` any other spec, for comparisons (debug builds only).
 
-Results (look-ahead is the full-corridor-width view below the HUD band; skater height is approximate):
+Results (look-ahead is the full-corridor-width view below the HUD band, measured with the skater in the middle; `H` is the frame height at the skater's depth; skater height ≈ 1.48 m of `H`):
 
 | Screen (CSS px, top safe area) | v = 7.0 | v = 10.5 |
 |---|---|---|
-| 393×852, safe 59 (iPhone 15/16, installed) | H 20.8 m, 2.94 s, ≈ 60 px | H 27.2 m, 2.60 s, ≈ 46 px |
-| 390×844, safe 0 (full screen) | 20.8 m, 3.29 s, ≈ 60 px | 24.4 m, 2.60 s, ≈ 51 px |
-| 390×664 (iPhone in Safari, toolbars) | 17.1 m, 2.60 s, ≈ 57 px | 25.1 m, 2.60 s, ≈ 39 px |
-| 375×548 (iPhone SE in Safari) | 17.6 m, 2.60 s, ≈ 46 px | 25.8 m, 2.60 s, ≈ 31 px |
-| 412×780 (Android Chrome) | 18.2 m, 2.83 s, ≈ 63 px | 24.6 m, 2.60 s, ≈ 47 px |
-| 360×640 (9:16) | 17.2 m, 2.60 s | 25.2 m, 2.60 s |
-| 1280×800 (ψ 30°) | 16.7 m, 2.60 s | 23.5 m, 2.60 s |
+| 393×852, safe 59 (iPhone 15/16, installed) | D 57.3 m (H 24.3 m), 2.76 s, ≈ 52 px | D 60.3 m (H 25.6 m), 2.77 s, ≈ 49 px |
+| 390×844, safe 0 (full screen) | 57.1 m (24.3 m), 2.76 s, ≈ 51 px | 60.1 m (25.6 m), 2.77 s, ≈ 49 px |
+| 390×664 (iPhone in Safari, toolbars) | 43.7 m (18.6 m), 2.91 s, ≈ 53 px | 45.4 m (19.3 m), 2.93 s, ≈ 51 px |
+| 375×548 (iPhone SE in Safari) | 36.8 m (15.6 m), 3.13 s, ≈ 52 px | 37.9 m (16.1 m), 2.66 s, ≈ 50 px |
+| 412×780 (Android Chrome) | 49.3 m (20.9 m), 2.83 s, ≈ 55 px | 51.5 m (21.9 m), 2.84 s, ≈ 53 px |
+| 360×640 (9:16) | 45.9 m (19.5 m), 2.87 s, ≈ 49 px | 47.8 m (20.3 m), 2.88 s, ≈ 47 px |
+| 1280×800 (ψ 30°) | 23.8 m (10.1 m), 2.66 s, ≈ 117 px | 32.7 m (13.9 m), 2.64 s, ≈ 85 px |
+
+Against the ortho camera at 10.5 m/s: the skater is 49 px instead of 51 at 390×844 and **50 px instead of 31** at 375×548. A 1 m hazard 2.5 s ahead stands 22.7 px at 390×844 (ortho 28.3) and 21.2 px at 375×548 (ortho 17.4), and grows to 25.5 / 25.2 px 1 s ahead (ortho: no growth, 28.3 / 17.4). The top of the screen shows 41–70 m of street (390×844: 65 m; the chunk window keeps ≥ 92 m built ahead).
 
 **Guarantee.**
-- At least **2.5 s** of the *full corridor width* is visible ahead, below the HUD band, at every supported viewport from 9:21 to 21:9 (including the toolbar and safe-area cases above), at every speed. A unit test asserts this.
+- At least **2.5 s** of the *full corridor width* is visible ahead, below the HUD band, at every supported viewport from 9:21 to 21:9 (including the toolbar and safe-area cases above), at every speed, wherever the skater is laterally. A unit test asserts this.
 - The generator assumes 2.5 s (aspect-independent), so the course is identical on every device.
-- **Minimum sizes on screen:** grind edges are drawn at least 2.5 CSS px wide and coins at least 12 CSS px, however far the camera zooms out (the SE-in-Safari case puts a 0.05 m rail at about 1.1 px otherwise).
+- **Minimum sizes on screen:** grind edges are drawn at least 2.5 CSS px wide and coins at least 12 CSS px, at every depth. Under the perspective camera both are floored **per view depth** in the vertex shaders, so the cream stripe stays about 3 px wide from the skater to the HUD line (it never grows fat up close) and far coins never shrink under 12 px.
+- The skater is ≥ 40 px on every phone at every speed (never < 30 px), and the resting thumb (bottom 22% of the screen) never covers it.
 
 **Follow**
 - **Forward:** rigid. There is no lag, because lag would eat look-ahead.
-- **Lateral:** none in portrait, where the corridor is always fully framed. With yaw, the rig follows 15% of the skater's offset, τ = 0.4 s.
+- **Lateral:** with yaw, the rig follows 15% of the skater's offset, τ = 0.4 s (the solver already fits the worst offset).
 - **Vertical:** follows the *ground height* under the skater (τ = 0.3 s). It ignores jump arcs and eases down drops.
 
 **Height readability**
 - An always-on contact shadow sits under the board: a dark blob (opacity 0.6 on the ground, fading to 0.25 at 2 m height) on light ground, and a **soft additive cyan contact glow** (opacity 0.5) on dark ground (Neon, blue hour), where a dark blob would vanish.
 - Long sunset shadows alone do not read height.
 
-**Occlusion rules**
-- **No opaque structure crosses over the corridor.** The maglev guideway is two thin edge beams (≤ 0.3 m wide) plus the train's light streak; there is no deck over the street.
-- The part of any in-corridor solid above 1.6 m is dithered to 50% (the "x-ray cap"), so nothing hides a hazard behind it.
-- Lantern strings, wires and thin signs are allowed overhead at ≥ 3.2 m, at most 0.3 m thick on screen. Because overhead decor is drawn about `height × cot 35°` further up the screen, a 3.2 m string overlaps the street 4.6 m ahead, which is why it must stay thin.
+**Occlusion rules** (owner playtest: "the neon city has elements that covered the skate area in weird ways"; an angled or perspective camera makes camera-side decor lean over the street, so these are enforced by the renderer, not by placement alone)
+- **No opaque structure crosses over the corridor.** The Sora Line maglev guideway is drawn as two thin beams hugging the far (−x) facade line at 7 m, never along the median, and the train's light streak (≤ 45% alpha) runs on it: neither ever crosses the corridor on screen. Viaduct pillars stay in their templates.
+- **Camera-side cut.** Decor and buildings on the camera side (+x) are clipped at the plane through the corridor edge (x = 4.5 m at the street datum) and the camera: whatever would cover the corridor on screen is cut away, exactly (a fragment cut for buildings, windows, signs and glow cards), so the right-hand street wall ends at the corridor edge like a cutaway diorama and nothing on that side ever stands between the camera and the corridor. What is left of that wall darkens over its last 10 px next to the cut (a section line), so a light hazard at the corridor edge never stands against a lit facade. Low verge props are below the plane and draw whole.
+- **Overhead spans fade over the look-ahead zone.** Lantern strings, overhead wires and lantern bulbs drop to a 25% screen door wherever they project onto the corridor between 2.5 m behind the skater and the HUD line; over the sidewalks and behind the skater they stay full. They hang at ≥ 3.2 m and stay ≤ 0.3 m thick on screen.
+- The part of any in-corridor solid above **1.2 m** is dithered to 50% (the "x-ray cap"; 1.6 m before @cam, lowered because perspective hides more ground behind a solid): planter crowns, kiosks, containers and pillars never hide a hazard behind them.
 - Billboards and blade signs keep their inner edge at |x| ≥ 4.9 m.
 - Haze never applies to hazards or grind edges (`noFog`), and the sky glow stays inside the HUD band (§18.3).
 
@@ -1546,7 +1546,7 @@ The palette lerps over 8 s, centred on each gateway. Palettes are looked up by `
 - **Neon:** emissive intensity 1.5–2.5, which ACES rolls off softly, plus additive **glow cards** behind signs, capped at 40 per chunk. Glow intensity scales with blend toward blue hour. There are no point lights.
 
 ### 18.3 Sky and the run camera
-The run camera looks down at 35° and **never sees the horizon**, so time of day is sold through six other channels:
+The run camera looks down at 34° (the top of its window 17° below the horizontal) and **never sees the horizon**, so time of day is sold through six other channels:
 1. Light colour, intensity and sun elevation.
 2. Long shadows, including those from off-screen buildings.
 3. Warm haze: fog colour applied to the far 30% of the frame, at ≤ 35% strength, **never on hazards or grind edges** (they carry a `noFog` flag).
@@ -1563,7 +1563,7 @@ The **sky dome** (3-stop gradient, sun disc, glow falloff, 5–8 lozenge clouds 
 - **Crash hazards (Downtown, Suburbs, Docks):** dark ink `#2B2140` body with one saturated area accent.
 - **Crash hazards (Neon):** on dark wet asphalt a dark body would vanish, so Neon hazards invert: a **mid-value `#7A6FB0` body** with a 0.03 m **emissive accent rim** (magenta `#FF3FA4` or lantern red `#FF5A3C`, emissive 1.2) on the top and front edges. Cyan is reserved for sparks, rail-body glow and the contact glow.
 - **Full-width hazards:** add safety chevrons `#F2B630` / `#2B2140` in every area, the holo gate included (on its solid base).
-- **Grindable edges: one grind signature, identical in every area and palette** (G1, owner playtest): a polished cream-chrome coping strip `#FFF8EC` (was cream `#FFF1D6`) along every grindable edge (rail tubes, ledge, bench, curb, planter and dock lips, Neon rails), 1.25× the minimum on-screen stripe, drawn over a **0.02 m ink underline** so the pair reads on light sidewalks and dark neon roads alike. It carries a fixed self-lit sheen (stronger on its top face, the same under every palette) and a slow glint band travelling along the street every 8 m (`RENDER.grind`, fx flag `grind`). It brightens during the pick window. Never cyan.
+- **Grindable edges: one grind signature, identical in every area and palette** (G1, owner playtest): a polished cream-chrome coping strip `#FFF8EC` (was cream `#FFF1D6`) along every grindable edge (rail tubes, ledge, bench, curb, planter and dock lips, Neon rails), drawn over a **0.02 m ink underline** so the pair reads on light sidewalks and dark neon roads alike. Under the perspective run camera (@cam) both stripes keep a constant width on screen at every depth: the cream **1.25 × `CAMERA.minEdgePx` ≈ 3 px** (`RENDER.grind.halfW`), the ink ≈ 1.6 px beside it; the ink band runs 0.07 m down the faces so the cream lip always borders ink, and kerb stone bands are darker so the lip alone still reads against them. It carries a fixed self-lit sheen (stronger on its top face, the same under every palette) and a slow glint band travelling along the street every 8 m (`RENDER.grind`, fx flag `grind`), over a palette-tinted emissive 0.2. It brightens during the pick window. Never cyan.
 - **Nothing that is not grindable uses the signature:** no non-grindable prop, decor, trim or light strip is cream or carries the glint, and emissive trim (Neon rims, light bars, vending fronts) is never a thin cream line. "Grind this" = the cream-chrome strip; "ollie this" = a full-width hazard with chevrons; "steer around this" = a tall ink (Neon: lavender) volume.
 - **Coins** glow gold.
 - **Decor** never uses chevrons or the cream edge.
@@ -1577,7 +1577,7 @@ The **sky dome** (3-stop gradient, sun disc, glow falloff, 5–8 lozenge clouds 
 - Only the skater and board get an outline: inverted-hull ink, 0.025 m.
 - The upper two-thirds of the screen is the look-ahead zone. VFX there stay ≤ 25% alpha, and speed lines stay outside the corridor at ≤ 15%.
 
-**Portrait-specific rules.** In portrait the camera looks straight up the street (ψ = 0), so street-facing facades are edge-on. **Every identity element must show a top or a camera-facing (+s-toward-player) face.** Use:
+**Portrait-specific rules.** In portrait the camera looks up the street at a 9° angle in perspective (§8): the left (far-side) facades show, the street converges, and the camera-side (right) street wall is cut away at the corridor edge. Still, most of the screen is the street seen from above, so **every identity element must show a top or a camera-facing (+s-toward-player) face, or stand on the far side.** Use:
 - blade signs and banners that hang perpendicular to the facades
 - awnings and canopies that stick out over the sidewalk
 - lantern strings and overhead wires across the street
@@ -1586,11 +1586,13 @@ The **sky dome** (3-stop gradient, sun disc, glow falloff, 5–8 lozenge clouds 
 - rich ground decals
 - a 1–2 m sidewalk-dressing band just outside the corridor, visible at top speed
 
-On landscape (ψ = 30°) the left-side facades also show.
+On landscape (ψ = 30°) the left-side facades show more and the camera-side cut grows; anything identity-bearing on the camera side must live below about 1.5 m there (low verge props, ground decals).
 
-**Occlusion**
-- In-corridor solids get the x-ray cap above 1.6 m (§8).
-- No opaque structure crosses over the corridor; overhead decor stays thin (§8).
+**Occlusion** (§8 occlusion rules)
+- In-corridor solids get the x-ray cap above 1.2 m (§8).
+- No opaque structure crosses over the corridor; the maglev runs on the far facade line; overhead decor stays thin (§8).
+- Camera-side decor and buildings are cut at the corridor edge (the renderer does it; the generator may keep placing them).
+- Overhead spans (lantern strings, wires) fade to 25% over the look-ahead zone and stay thin; they are full only over the sidewalks and behind the skater.
 - **Nothing bright crosses the look-ahead zone** (G1, owner playtest: lantern strings read as low chains to ollie): lantern-string bulbs hang only beyond |x| ≥ 4.6 (over the sidewalks and facades); over the corridor a string is its thin dark wire. Overhead strings and wires are sparse (Neon one every 48 m, Suburbs wires every 40 m).
 
 ### 18.5 Models
@@ -1965,7 +1967,7 @@ All particles come from one pooled additive `InstancedMesh`, capped at 300.
 ---
 
 ## 23. Open items (non-blocking)
-1. **Portrait yaw.** ψ = 0 in portrait is a deliberate readability choice (§8). If playtests want more "iso" flavour, the fallback is ψ ≤ 4° at a ~12% skater-size cost at the start. Decide after the M5 playtest.
+1. **Portrait yaw.** Resolved @cam (decision row 73): perspective, pitch 34°, ψ = 9° in portrait. Open: whether the lane misread of an angled street (≈ 1.7 m, 1 s ahead at the plateau) makes plateau crashes feel unfair in the M5 playtest; the fallback is ψ = 4–6° with the same perspective (skater +2 px), or a faint heading ribbon 1.5 s ahead of the skater's lane.
 2. **Skater anchor.** 74% from the top. If playtests show a resting right thumb covering the skater, move to 70% (skater about 6% smaller). Decide in M5.
 3. **Gamepad support** is optional (M5 stretch).
 4. **Supporter "Night Owl" set**, Daily Street, landmark records, shared seeds and leaderboards are post-v1 (ROADMAP "Later").
@@ -2076,3 +2078,4 @@ Every MUST-FIX was applied. The rows below record decisions where critiques conf
 |---|---|---|---|
 | 71 | Owner playtest: steer left thumb, tricks right thumb | Playing the G1 build on a phone, the owner felt steering and tricks fighting each other on one thumb ("we need steering on the left thumb and tricks on the right thumb; still swiping the way it works now") | **Two thumbs is the default on touch** (§4.1–4.4): the play area splits at the vertical midline; a touch keeps the role of the zone it went down in. The left thumb only steers (never a tap, swipe, hold or press); the right thumb only taps / swipes / holds with the unchanged gestures and never steers (`swipeDx` 0, normal thresholds). The split lives in the recognizer, so the `InputFrame` contract, the sim, replays and golden hashes are unchanged. **One thumb (classic)** (§4.7) stays in Settings, and a mouse or pen always uses it; **Swap sides** for left-handed players. Hints show the two rings and name the thumb; a zone cue shows the split for the first 3 s. Thumb-bot gate on both layouts (0 crashes, 0 unintended tricks); its control (the two-thumb traces read with the one-thumb grammar) misfires. **Review fixes:** the trick ghost hovers (a right thumb resting on the glass is a HOLD: grabs and manuals, measured by the bot's `rest` habit as a trade-off, §4.4 rule 3); a profile from before the change is re-taught once (§12.5) and the session's first-run cue is labelled; wrong-side taps / drags pulse the right ring; hints follow a Settings change mid-run; Swap sides is dimmed with One thumb; a steering-zone DRAG already down takes over steering when the owner lifts and it moves (§4.2). |
 | 72 | Steering kept going after the thumb stopped | Owner on a phone: "if I slide it to the left or right and kind of flick it, it will continue to turn even when I take my finger off it." Relative steering put targetX wherever the thumb went (a 60–120 px slide in 120–250 ms threw it 2.5–5 m), and the skater, limited to 5.5 m/s, kept sliding 2.3–3.6 m for 0.45–0.8 s after the thumb had stopped or lifted (2.4–3.9 m in the air). | **Direct touch steering** (§4.2, §5.2; measured with recorded thumb traces through the real recognizer, table in §4.2): the target leads the skater by ≤ 0.8 m; a thumb that outruns the skater drives it at up to 7 m/s (80 m/s² on the ground); a release brake stops it within ~0.35 m when that thumb stops or lifts (0.1–0.33 m on the ground, 0.20–0.27 m in the air, no overshoot). **The cost:** a quick slide now dodges as far as the skater can go while the thumb moves, not as far as the thumb drew: 60 px / 120 ms moves 0.6–0.8 m (was 2.5 m), 120 px / 250 ms 1.2–1.8 m (was 4.3 m); a 2 m dodge needs the thumb to keep moving ~0.3 s (0.32 s for a 0.5 px/ms thumb kept moving until the skater is there); a 2 m drag drawn in 300 / 400 / 500 / 600 ms ends at 1.1 / 1.5 / 1.9 / 2.0 m; a 40 px flick is a 0.33 m hop (was 1.7 m). Against a late hazard at plateau speed (the latest start before its face that still dodges a crash box centred on the skater): a slide that moves the skater far enough dodges about as late as before or later (1.6 m box: 120 px / 250 ms 0.22 s, was 0.26; 2 m drawn in 300 ms 0.26 s, was 0.32; 90 px / 180 ms 0.30 s, was 0.26), a sustained drag as before (48 px / 600 ms 0.40 s, was 0.40); a slide too short for the hazard does not dodge it at all (60 px / 120 ms never clears a 1.0 m box, was 0.20 s; under ~0.25 s of thumb motion never clears 2.4 m). **The owner should try quick dodges on the preview.** **Measured and rejected:** the cap alone (0.6 m: 0.43–0.54 m after a stop, 0.54–0.65 m in the air with a 0.12 m float past; 0.9 m: 0.72–0.84 m); a higher air acceleration (30: no float, but 0.46–0.52 m, and it changes keys, bots and the magnet in the air); a brake to the stopping point with no rest lead (0.12–0.33 m, but a flick moved 0.1 m and natural drags lost up to 0.4 m); the cap and brake without the fast thumb (first preview, 15cac29: 60 px / 120 ms moved 0.45 m, 120 px / 250 ms 1.0 m; quick slides of 60–90 px never cleared a 1.6 m box); arming the brake at a 0.6 m lead (it also armed for the thumb bot dragging through a hop, 0.62–0.66 m ahead, and changed its path); a higher fast-thumb speed (7.5–8 m/s: +5–6% distance, stops up to 0.355 m, and the board heads more sideways than forward at the 7 m/s start speed); a restLead of 0.35 / 0.4 m for a little throw (+0.15 / +0.2 m per slide, but stops at 0.26–0.48 / 0.31–0.53 m, past the 0.35 m target: the tunable to try if quick dodges feel short). Keys, bots (bit-identical paths to before @steer: never at the cap), the magnet, ground align, re-anchors and landing nudges never meet the cap, the fast thumb or the brake; `V_LAT_MAX`, the accelerations and `T_SHIFT` are unchanged, so the validator and every generated line are untouched. On a phone that delivers one sample every 40–67 ms (no coalesced events below 25 fps) the stop window widens, so a drag stays smooth (3.9–4.0 m of a 4.0 m drag) and the stop takes 0.43–0.54 m. |
+| 73 | Run camera reads flat on phones (@cam) | Owner, after a phone playtest: "I thought it would be like angled view instead of straight down that street… maybe closer perspective?"; DESIGN §8 had ortho, pitch 35°, ψ = 0 in portrait. A prototype of 8 cameras (ortho pitch/yaw variants, telephoto perspective) and three judges: readability (winner perspective p34 ψ 9 FOV 24), art direction (perspective p34 ψ 10 FOV 22), game design (perspective ψ 0, warning that any yaw tilts the lane read; ≤ 4–6° if angled) | **Perspective, pitch 34°, ψ 9° in portrait (30° at aspect ≥ 1.25), window FOV 24°, D solved per frame**, anchor 74%, 15% lateral follow fitted into the solver. It answers both owner points: the street runs diagonally and both walls show (angled), and hazards grow as they approach while the skater stays ~50 px (closer, 31 → 50 px on the SE). Cost: the 2.5 s hazard is 20% smaller at 390×844 (22.7 vs 28.3 px; +22% at 375×548), a ≈ 1.7 m lane tilt 1 s ahead, coarser shadows (the shadow box grows to the ground shown). Same change: grind stripes and coins floored per view depth (constant ~3 px stripes, ink underline down the faces: the contrast gate passes from every angle), x-ray cap 1.6 → 1.2 m, and the occlusion cure the owner asked for separately (Neon decor "covered the skate area"): camera-side cut at the corridor edge, overhead spans faded over the look-ahead zone, the maglev moved to the far facade line. `?debug=1&cam=A` keeps the old camera for comparisons. |

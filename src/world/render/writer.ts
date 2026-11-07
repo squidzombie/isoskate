@@ -14,7 +14,7 @@ import { Vector3 } from 'three';
 import type { PooledGeo } from './pools';
 
 /** fx.z bits of the lit materials ('o', 'x', 'b'). */
-export const FX = { noFog: 1, shadowOnly: 2, near: 4, matte: 8, grind: 32 } as const;
+export const FX = { noFog: 1, shadowOnly: 2, near: 4, matte: 8, grind: 32, over: 64 } as const;
 
 export const srgbToLinear = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
 
@@ -322,6 +322,27 @@ export class Kit {
     if (u1 >= 1 - 1e-6) this.quad(x1 + halfW, y1 + yBot, s1, x1 - halfW, y1 + yBot, s1, x1 - halfW, y1 + yTop, s1, x1 + halfW, y1 + yTop, s1, undefined, t);
     this.quad(x0 + halfW, y0 + yBot, s0, x1 + halfW, y1 + yBot, s1, x1 + halfW, y1 + yTop, s1, x0 + halfW, y0 + yTop, s0, undefined, t);
     this.quad(x1 - halfW, y1 + yBot, s1, x0 - halfW, y0 + yBot, s0, x0 - halfW, y0 + yTop, s0, x1 - halfW, y1 + yTop, s1, undefined, t);
+  }
+
+  /** A grind-edge stripe: the beam above whose vertices carry their lateral side in the atlas uv (auv = (−2, ±w),
+   *  no paint), so the lit material widens the stripe per view depth (perspective run camera: a constant on-screen
+   *  width, camera.ts edgeWidening / materials.ts VERT_EDGE). `w` 1 = the cream stripe, 2 = the ink underline. */
+  stripe(ax: number, ay: number, as: number, bx: number, by: number, bs: number, halfW: number, yBot: number, yTop: number, w: 1 | 2): void {
+    if (bs - as < 1e-4) return;
+    let u0 = 0, u1 = 1;
+    if (this.axisAligned) {
+      u0 = Math.max(0, (this.clip0 - this.as - as) / (bs - as)); u1 = Math.min(1, (this.clip1 - this.as - as) / (bs - as));
+    }
+    if (u1 <= u0 + 1e-6) return;
+    const L = (u: number, o: 0 | 1 | 2) => (o === 0 ? ax + (bx - ax) * u : o === 1 ? ay + (by - ay) * u : as + (bs - as) * u);
+    const x0 = L(u0, 0), y0 = L(u0, 1), s0 = L(u0, 2), x1 = L(u1, 0), y1 = L(u1, 1), s1 = L(u1, 2);
+    const t = this.t, m = this.m, q = (a: number, b: number, c: number, d: number): QuadUv =>
+      [-2, a * w * m, -2, b * w * m, -2, c * w * m, -2, d * w * m];
+    this.quad(x0 - halfW, y0 + yTop, s0, x0 + halfW, y0 + yTop, s0, x1 + halfW, y1 + yTop, s1, x1 - halfW, y1 + yTop, s1, q(-1, 1, 1, -1), t);
+    if (u0 <= 1e-6) this.quad(x0 - halfW, y0 + yBot, s0, x0 + halfW, y0 + yBot, s0, x0 + halfW, y0 + yTop, s0, x0 - halfW, y0 + yTop, s0, q(-1, 1, 1, -1), t);
+    if (u1 >= 1 - 1e-6) this.quad(x1 + halfW, y1 + yBot, s1, x1 - halfW, y1 + yBot, s1, x1 - halfW, y1 + yTop, s1, x1 + halfW, y1 + yTop, s1, q(1, -1, -1, 1), t);
+    this.quad(x0 + halfW, y0 + yBot, s0, x1 + halfW, y1 + yBot, s1, x1 + halfW, y1 + yTop, s1, x0 + halfW, y0 + yTop, s0, q(1, 1, 1, 1), t);
+    this.quad(x1 - halfW, y1 + yBot, s1, x0 - halfW, y0 + yBot, s0, x0 - halfW, y0 + yTop, s0, x1 - halfW, y1 + yTop, s1, q(-1, -1, -1, -1), t);
   }
 
   /** A thin bar between two arbitrary points (wires, chains, struts): a square tube of half-size h. */
