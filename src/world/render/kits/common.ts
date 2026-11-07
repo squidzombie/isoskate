@@ -8,7 +8,7 @@ import { lerp } from '../../../core/math';
 import { hash32 } from '../../../core/rng';
 import type { GrindEdge, GroundSlab, Obstacle, Pit } from '../../../core/world';
 import { ObTag } from '../../../core/world';
-import { COLORS, HAZARD, NEON_SURFACE, PAD_TOP, SURFACE_COLOR, shade, type HazardLook } from '../palette';
+import { COLORS, HAZARD, LOOK, NEON_SURFACE, PAD_TOP, RECLAIM, SURFACE_COLOR, mixHex, shade, type HazardLook } from '../palette';
 import { PAT, type PatternId } from '../textures/ground';
 import { DECAL, type DecalId } from '../textures/decals';
 import { RENDER } from '../render.config';
@@ -173,9 +173,12 @@ export function slab(c: KitCtx, sl: GroundSlab, lift = 0, colorOverride?: number
   K.reset();
 }
 
-/** A pit that reads as a hole (G0 review): darker floor at lipY − depth, a lit far wall facing the camera, dark side
- *  walls, a light lip along the near and far edges, and amber / ink chevrons along the near lip on the road (the
- *  full-width warning). `water` pits (fountains) get a water surface instead. The street base is cut around pits. */
+/** A pit that reads as a hole you obviously jump (G0 review; RECLAIM owner playtest, DESIGN §18.7 "crack lips"): a flat
+ *  floor (#2F2742, no reflection, glint or ripple: a pit never looks like a puddle) at lipY − depth with the near-lip
+ *  shadow band, a lit far wall facing the camera, dark side walls, jagged crack lips along the near and far edges
+ *  (`crackLip`: the visible lip stays within LIP.amp of the true collision edge) and, on a full-width pit, amber / ink
+ *  chevrons on the road before the near lip. `water` pits (fountains) get a water surface instead. The street base is
+ *  cut around pits. */
 export function pit(c: KitCtx, p: Pit, ob: Obstacle): void {
   const K = c.K;
   if (p.s1 <= c.s0 || p.s0 >= c.s1) return;
@@ -188,8 +191,8 @@ export function pit(c: KitCtx, p: Pit, ob: Obstacle): void {
     return;
   }
   const wall = area === 'docks' ? 0x5a5470 : area === 'neon' ? 0x4b4278 : COLORS.pitWall;
-  K.lit(0, 0, FX.noFog);
-  K.col(COLORS.pitFloor).box(p.x0, floor - 0.05, p.s0, p.x1, floor, p.s1, FACE.top);
+  K.lit(0, 0, FX.noFog | FX.matte);
+  K.col(RECLAIM.pitFloor).box(p.x0, floor - 0.05, p.s0, p.x1, floor, p.s1, FACE.top);
   // Floor shadow under the near lip (the part of the floor the near wall shades).
   K.col(COLORS.pitShadow).box(p.x0, floor, p.s0, p.x1, floor + 0.004, p.s0 + Math.min(0.5, (p.s1 - p.s0) * 0.3), FACE.top);
   // Far wall (camera-facing, catches the light) with a darker band at its foot; side walls.
@@ -197,12 +200,76 @@ export function pit(c: KitCtx, p: Pit, ob: Obstacle): void {
   K.col(shade(wall, -0.35)).box(p.x0, floor, p.s1 - 0.024, p.x1, floor + d * 0.3, p.s1 - 0.02, FACE.front);
   K.col(shade(wall, -0.25)).box(p.x0, floor, p.s0, p.x0 + 0.02, p.lipY, p.s1, FACE.right);
   K.col(shade(wall, -0.25)).box(p.x1 - 0.02, floor, p.s0, p.x1, p.lipY, p.s1, FACE.left);
-  // Lit lips: the near lip's top edge and the far lip (both read as edges of a hole, not paint).
-  K.col(COLORS.pitLip).box(p.x0, p.lipY - 0.04, p.s0 - 0.06, p.x1, p.lipY + 0.006, p.s0, FACE.top | FACE.back);
-  K.col(COLORS.pitLip).box(p.x0, p.lipY - 0.04, p.s1, p.x1, p.lipY + 0.006, p.s1 + 0.06, FACE.top | FACE.front);
-  // Full-width warning chevrons on the road along the near lip.
-  if (isFull(ob) && p.x1 - p.x0 > 2) groundChevrons(c, p.x0, p.x1, p.s0 - 0.38, p.s0 - 0.06, p.lipY);
   K.reset();
+  crackLip(c, p, ob, false, wall);
+  crackLip(c, p, ob, true, wall);
+  // Full-width warning chevrons on the road before the near lip (clear of its notches).
+  K.clip0 = c.s0; K.clip1 = c.s1;
+  if (isFull(ob) && p.x1 - p.x0 > 2) groundChevrons(c, p.x0, p.x1, p.s0 - LIP.band - 0.36, p.s0 - LIP.band, p.lipY);
+  K.reset();
+}
+
+/** Jagged crack lips (owner playtest): the zigzag amplitude about the collision edge, the vertex spacing range, the
+ *  broken-rim width and the camera-facing crumb face depth (m). */
+export const LIP = { amp: 0.1, step0: 0.18, step1: 0.46, rim: 0.04, crumb: 0.12, band: 0.24 } as const;
+/** Road or band surface just outside a lip: colour and ground pattern. */
+function lipSurface(c: KitCtx, s: number, x: number): { color: number; pat: PatternId } {
+  const area = c.lookAt(s), sf = c.surfaceAt(s, x);
+  if (sf) return surfaceLook(sf, area);
+  return { color: LOOK[area].road, pat: area === 'neon' ? PAT.wet : PAT.asphalt };
+}
+/** One crack lip along s = p.s0 (near) or p.s1 (far), across the pit: the road edge zigzags within ±LIP.amp of the
+ *  collision edge. Teeth (road surface over the hole) and notches (hole into the road: the lit far wall at the far
+ *  lip, the floor shadow at the near lip) alternate with random depths; the far lip's teeth show a broken crumb face
+ *  to the camera, and a slightly lighter broken rim follows the zigzag. A few hairline cracks run back from it. */
+function crackLip(c: KitCtx, p: Pit, ob: Obstacle, far: boolean, wall: number): void {
+  const sL = far ? p.s1 : p.s0;
+  if (sL < c.s0 || sL >= c.s1) return;
+  const dir = far ? -1 : 1, y = p.lipY, salt = far ? 5 : 2;
+  const look = lipSurface(c, sL - dir * 0.4, (p.x0 + p.x1) / 2);
+  const notchCol = far ? wall : COLORS.pitShadow, rimCol = shade(look.color, 0.26), crumb = mixHex(look.color, 0xb2a69a, 0.55);
+  // Zigzag vertices: mostly alternating signs (a broken edge, not battlements), random depth and spacing; zero at
+  // the pit's side walls.
+  let xa = p.x0, ja = 0, sg = 1;
+  for (let k = 0; xa < p.x1 - 1e-3; k++) {
+    let xb = xa + LIP.step0 + (LIP.step1 - LIP.step0) * rnd(ob.id, k, salt, p.x0);
+    if (xb > p.x1 - LIP.step0 * 0.5) xb = p.x1;
+    const u = rnd(ob.id, k, salt + 1, p.x0);
+    if (u < 0.72) sg = -sg;
+    const jb = xb >= p.x1 ? 0 : sg * LIP.amp * (0.25 + 0.75 * ((u * 7.31) % 1));
+    lipSeg(c, sL, dir, y, xa, ja, xb, jb, look, notchCol, rimCol, crumb, far);
+    xa = xb; ja = jb;
+  }
+  // Hairline cracks running back from the lip into the surface (existing decal kinds: allowed in the clean core).
+  const n = Math.max(1, Math.round((p.x1 - p.x0) / 3));
+  for (let i = 0; i < n; i++) {
+    const x = p.x0 + (p.x1 - p.x0) * ((i + 0.3 + 0.4 * rnd(ob.id, i, salt + 3)) / n), len = 0.5 + 0.5 * rnd(ob.id, i, salt + 4);
+    c.decal({ id: i % 2 ? DECAL.crack1 : DECAL.crack2, x, y: p.lipY + 0.004, s: sL - dir * (len * 0.5 + 0.05), w: len * 0.6, len, rot: (rnd(ob.id, i, salt + 5) - 0.5) * 0.8, color: 0x2b2140, alpha: 0.45, kind: 0 });
+  }
+}
+/** One zigzag segment (split where it crosses the collision edge). */
+function lipSeg(c: KitCtx, sL: number, dir: number, y: number, xa: number, ja: number, xb: number, jb: number,
+  look: { color: number; pat: PatternId }, notchCol: number, rimCol: number, crumb: number, far: boolean): void {
+  if (ja * jb < 0) {
+    const xm = xa + (xb - xa) * (ja / (ja - jb));
+    lipSeg(c, sL, dir, y, xa, ja, xm, 0, look, notchCol, rimCol, crumb, far);
+    lipSeg(c, sL, dir, y, xm, 0, xb, jb, look, notchCol, rimCol, crumb, far);
+    return;
+  }
+  const K = c.K, sa = sL + dir * ja, sb = sL + dir * jb, tooth = ja + jb > 0;
+  // Top quad between the collision edge and the zigzag (CCW from above whichever side it lies on).
+  const quadTop = (yy: number, a0: number, b0: number, a1: number, b1: number) => {
+    if (a1 >= a0 && b1 >= b0) K.quad(xa, yy, a0, xb, yy, b0, xb, yy, b1, xa, yy, a1);
+    else K.quad(xa, yy, a1, xb, yy, b1, xb, yy, b0, xa, yy, a0);
+  };
+  if (tooth) { K.lit(look.pat, 0, FX.matte).col(look.color); quadTop(y - 0.002, sL, sL, sa, sb); }
+  else if (ja + jb < 0) { K.lit(0, 0, FX.noFog | FX.matte).col(notchCol); quadTop(y + 0.002, sa, sb, sL, sL); }
+  // The far lip's teeth show their broken edge (the crumb face) to the camera.
+  if (far && tooth) { K.lit(0, 0, FX.matte).col(crumb); K.quad(xa, y - LIP.crumb, sa, xb, y - LIP.crumb, sb, xb, y - 0.002, sb, xa, y - 0.002, sa); }
+  // Broken rim on the surface side of the zigzag.
+  K.lit(0, 0, FX.matte).col(rimCol);
+  const ra = sa - dir * LIP.rim, rb = sb - dir * LIP.rim;
+  quadTop(y + 0.004, Math.min(sa, ra), Math.min(sb, rb), Math.max(sa, ra), Math.max(sb, rb));
 }
 
 /** A warning band on the ground across x0..x1 between sA and sB (sA < sB), at ground height y (or the ground under

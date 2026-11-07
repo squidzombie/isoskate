@@ -1,18 +1,23 @@
-// world/render/kits/neon.ts: Neon City (Hoshimachi Ward, invented) kinds (DESIGN §10.3, §18.6): guard rails with a
-// cyan body glow and the standard cream grind edge, vending banks with lit fronts facing the camera, viaduct pillars
-// (x-ray above CAMERA.xrayCapY (1.2 m)), cherry planters, food carts with paper lanterns, bike rows, the skywalk deck, A-frame signs,
-// lantern stands, glowing neon curbs and the delivery robot. Hazards use the inverted body (#7A6FB0) with an emissive
-// magenta / lantern-red rim (DESIGN §18.4). Only invented brands and the reviewed sign words appear.
+// world/render/kits/neon.ts: Neon City kinds (DESIGN §10.3, §18.6; RECLAIM skins, the night-owl lights): guard rails
+// with a cyan body glow, the waxed grind edge and night-leaf vines on the posts, vending banks still glowing steadily
+// with moss-coloured tops and vines up the sides, ivy-clad viaduct pillars (x-ray above CAMERA.xrayCapY (1.2 m)), old
+// cherries in their planters, the yatai with a faded noren and a steady paper lantern, rusty bikes laced with vines,
+// the clean skywalk deck with moss on its sides, faded A-frame menus and lanterns, glowing neon curbs and the clean
+// delivery robot (a parcel pictogram on its screen: no face). Hazards use the inverted body (#7A6FB0) with an emissive
+// magenta / lantern-red rim (DESIGN §18.4); nothing on a hazard flickers. Only invented brands and the reviewed sign
+// words appear. No cats in Neon.
 import { CAMERA } from '../../../core/tuning';
 import { NEON_SIGN_WORDS } from '../../../core/decor';
 import type { Obstacle } from '../../../core/world';
-import { mixHex, shade } from '../palette';
+import { Dress } from '../../../core/skins';
+import { RECLAIM, fadePaint, mixHex, shade } from '../palette';
 import { PAT } from '../textures/ground';
 import { signRect } from '../textures/signs';
 import { FACE, FX } from '../writer';
 import { contact, rnd, type KitCtx } from './common';
+import { DRESSER, mossOn } from './dress';
 import { planter } from './downtown';
-import { accent, body, inChunk, rim, rimPost, type KitDef, type KitFn } from './shared';
+import { body, dress, dressBrush, helperBand, inChunk, leafPatch, mossPatch, rim, rimPost, type KitDef, type KitFn } from './shared';
 
 const HZ = FX.noFog | FX.matte;
 const boxOf = (ob: Obstacle) => ob.solids[0]?.box;
@@ -43,6 +48,10 @@ const guardRail: KitFn = (c, ob) => {
       const s = b.s0 + 0.05 + (len - 0.1) * (i / n);
       if (!inChunk(c, s)) continue;
       body(c, 0x4a4278); K.box(xm - 0.04, b.y0, s - 0.04, xm + 0.04, b.y1 - 0.06, s + 0.04, FACE.sides5 & ~FACE.top);
+      // Night-leaf vines on every other post, inside its box and ≥ 0.3 m under the waxed rail.
+      if (DRESSER.has(Dress.Ivy) && (i + ob.id) % 2 === 0 && b.y1 - b.y0 > 0.45) {
+        dress(c, 'foliage', RECLAIM.nightLeaf, xm - 0.045, b.y0, s - 0.045, xm + 0.045, Math.min(b.y0 + 0.24, b.y1 - 0.31), s + 0.045);
+      }
     }
     K.lit(0, 0, FX.noFog).col(0x6a62a0).box(xm - 0.035, b.y1 - 0.12, b.s0, xm + 0.035, b.y1 - 0.02, b.s1, FACE.front | FACE.back | FACE.left | FACE.right);
     K.to('e').glowing(1.5, -1, FX.noFog).col(0x3ff2ff);
@@ -63,13 +72,18 @@ export const vendingBank: KitFn = (c, ob) => {
   for (let i = 0; i < n; i++) {
     const x0 = b.x0 + i * w + 0.02, x1 = x0 + w - 0.04;
     body(c, i % 2 ? c.hz.body : shade(c.hz.body, -0.08));
-    K.chamfer(x0, b.y0, b.s0 + 0.02, x1, b.y1, b.s1, 0.04, c.hz.top);
+    K.chamfer(x0, b.y0, b.s0 + 0.02, x1, b.y1, b.s1, 0.04, DRESSER.has(Dress.Moss) ? mossOn(c.hz.top) : c.hz.top);
     litSign(c, `vend:${(ob.id + i) % 4}`, x0 + 0.08, x1 - 0.08, b.y0 + 0.55, b.y1 - 0.12, b.s0 + 0.01, litK(c, 1.45));
     K.lit(0, 0, HZ).col(0x2b2140).box(x0 + 0.12, b.y0 + 0.12, b.s0 + 0.005, x1 - 0.12, b.y0 + 0.4, b.s0 + 0.02, FACE.front);
     rim(c, x0, x1, b.y1, b.s0 + 0.02);
   }
   if (c.hz.inverted) glowCard(c, (b.x0 + b.x1) / 2, b.y0 + 1.1, b.s0 - 0.05, b.x1 - b.x0 + 0.6, 1.8, 0xbff9ff, 0.35);
   K.capY = null;
+  // Vines up the sides of the end machines (luminance-matched to the body).
+  if (DRESSER.has(Dress.Ivy)) {
+    leafPatch(c, ob, b.x0 - 0.012, b.x0 + 0.03, b.s0 + 0.1, b.s1 - 0.05, b.y0, b.y0 + 1.1, 4, ob.id * 31 + 1, FACE.left | FACE.front | FACE.top);
+    leafPatch(c, ob, b.x1 - 0.03, b.x1 + 0.012, b.s0 + 0.15, b.s1 - 0.05, b.y0, b.y0 + 0.8, 3, ob.id * 31 + 6, FACE.right | FACE.front | FACE.top);
+  }
 };
 
 /** Viaduct pillar 1.2 × 1.2 × 6.0 (tall, x-ray above CAMERA.xrayCapY): a concrete column with a lit strip and a cap that carries
@@ -84,6 +98,12 @@ const viaductPillar: KitFn = (c, ob) => {
   K.to('e').glowing(1.4, -1, FX.noFog).col(c.hz.rim).box((b.x0 + b.x1) / 2 - 0.05, b.y0 + 0.3, b.s0 - 0.01, (b.x0 + b.x1) / 2 + 0.05, b.y1 - 0.6, b.s0, FACE.front);
   K.to('o');
   rim(c, b.x0, b.x1, b.y0 + 1.2, b.s0);
+  // Ivy (luminance-matched to the body) up the camera face and one side, clear of the lit strip.
+  if (DRESSER.has(Dress.Ivy)) {
+    const xm = (b.x0 + b.x1) / 2;
+    leafPatch(c, ob, b.x0 + 0.04, xm - 0.12, b.s0 - 0.014, b.s0 + 0.01, b.y0, b.y0 + 2.6, 6, ob.id * 37 + 1, FACE.front | FACE.left | FACE.right | FACE.top);
+    leafPatch(c, ob, b.x0 - 0.014, b.x0 + 0.01, b.s0 + 0.1, b.s1 - 0.1, b.y0, b.y0 + 1.8, 4, ob.id * 37 + 5, FACE.left | FACE.front | FACE.top);
+  }
   K.capY = null;
 };
 
@@ -99,6 +119,12 @@ const cherryPlanter: KitFn = (c, ob) => {
   // The trunk is the crash solid: the inverted body with its emissive rim (ink outside the Neon look).
   body(c, c.hz.inverted ? c.hz.top : c.hz.body); K.frustum(x, s, trunk.y0, trunk.y1, r, r * 0.7, 7, false);
   rimPost(c, x, s, r * 0.9, trunk.y0 + 0.15, trunk.y0 + 1.5, trunk.y0 + 1.2);
+  // Old roots on the bed (≥ 0.3 m inside the rim, under its level).
+  if (rimBox) for (let i = 0; i < 2; i++) {
+    const dx = i ? 1 : -1, ex = Math.max(rimBox.x0 + 0.35, Math.min(rimBox.x1 - 0.35, x + dx * (r + 0.18)));
+    dress(c, 'foliage', shade(c.hz.inverted ? c.hz.top : c.hz.body, -0.2), Math.min(x, ex) - 0.03, rimBox.y1 - 0.05, s - 0.04 + i * 0.05,
+      Math.max(x, ex) + 0.03, rimBox.y1 - 0.022, s + 0.03 + i * 0.05, FACE.top | FACE.front);
+  }
   for (let i = 0; i < 6; i++) {
     const a = (i / 6) * Math.PI * 2;
     K.lit(0, 0.5, 0, 0.25).col(i % 2 ? 0xffb7d0 : 0xf59bbe);
@@ -124,22 +150,23 @@ export const foodCart: KitFn = (c, ob) => {
   body(c); for (const x of [b.x0 + 0.05, b.x1 - 0.1]) K.box(x, counter, b.s0 + 0.1, x + 0.05, b.y1 - 0.25, b.s0 + 0.15);
   // Noren curtain: lantern-red panels across the front with a word or brand.
   const word = ob.variant % (NEON_SIGN_WORDS.length + 1);
-  K.lit(0, 0, HZ, c.hz.inverted ? 0.35 : 0).col(c.hz.inverted ? 0xc4473d : mixHex(0xc4473d, c.hz.body, 0.6));
+  K.lit(0, 0, HZ, c.hz.inverted ? 0.35 : 0).col(c.hz.inverted ? fadePaint(0xc4473d) : mixHex(0xc4473d, c.hz.body, 0.6));
   for (let i = 0; i < 4; i++) {
     const x0 = b.x0 + 0.1 + i * ((b.x1 - b.x0 - 0.2) / 4);
     K.box(x0 + 0.01, b.y1 - 0.65, b.s0 + 0.08, x0 + (b.x1 - b.x0 - 0.2) / 4 - 0.01, b.y1 - 0.3, b.s0 + 0.1, FACE.front);
   }
   if (word > 0 && c.hz.inverted) litSign(c, `w:${word - 1}`, b.x0 + 0.2, b.x1 - 0.2, b.y1 - 0.62, b.y1 - 0.34, b.s0 + 0.07, 1.2);
   body(c, c.hz.top); K.box(b.x0 - 0.12, b.y1 - 0.3, b.s0 - 0.12, b.x1 + 0.12, b.y1 - 0.22, b.s1 + 0.12);
-  // Paper lantern on top.
-  K.to('e').glowing(litK(c, 1.7), -1, FX.noFog).col(0xff5a3c).sphere((b.x0 + b.x1) / 2, b.y1 - 0.02, (b.s0 + b.s1) / 2, 0.2, 7, 4, 1.3);
+  // Paper lantern on top, glowing steadily (a life accent).
+  K.to('e').glowing(litK(c, 1.5), -1, FX.noFog).col(0xf06a4c).sphere((b.x0 + b.x1) / 2, b.y1 - 0.02, (b.s0 + b.s1) / 2, 0.2, 7, 4, 1.3);
   K.to('o');
+  DRESSER.lifeDisc((b.x0 + b.x1) / 2, (b.s0 + b.s1) / 2, 0.2);
   if (c.hz.inverted) glowCard(c, (b.x0 + b.x1) / 2, counter, b.s0 - 0.1, b.x1 - b.x0 + 0.8, 1.2, 0xffb07a, 0.4);
   rim(c, b.x0, b.x1, counter + 0.06, b.s0);
   K.capY = null;
 };
 
-/** Bike row 4–8 × 0.6 × 1.15 (tall strip): bikes in a row (along x), dark frames with neon accents. */
+/** Bike row 4–8 × 0.6 × 1.15 (tall strip): rusty bikes in a row, laced with vines. */
 const bikeRow: KitFn = (c, ob) => {
   const K = c.K, b = boxOf(ob);
   if (!b) return;
@@ -147,19 +174,22 @@ const bikeRow: KitFn = (c, ob) => {
   const alongS = b.s1 - b.s0 > b.x1 - b.x0;
   const n = Math.max(2, Math.floor((alongS ? b.s1 - b.s0 : b.x1 - b.x0) / 0.5));
   body(c); K.box(b.x0, b.y0, b.s0, b.x1, b.y0 + 0.05, b.s1);
+  const rust = c.hz.inverted ? 0xd0aac0 : 0x5a3424, frame = c.hz.inverted ? c.hz.top : c.hz.body;
   for (let i = 0; i < n; i++) {
     const u = (i + 0.5) / n;
-    K.lit(0, 0, HZ).col(accent(c.area, i + ob.id));
+    body(c, i % 2 ? rust : shade(rust, -0.15));
     if (alongS) {
       const s = b.s0 + u * (b.s1 - b.s0), xm = (b.x0 + b.x1) / 2;
       K.hcyl('s', xm - 0.25, b.y0 + 0.32, 0, s - 0.02, s + 0.02, 0.3, 8, true);
       K.hcyl('s', xm + 0.25, b.y0 + 0.32, 0, s - 0.02, s + 0.02, 0.3, 8, true);
-      body(c, c.hz.body); K.bar(xm - 0.25, b.y0 + 0.4, s, xm + 0.25, b.y1 - 0.1, s, 0.03);
+      body(c, frame); K.bar(xm - 0.25, b.y0 + 0.4, s, xm + 0.25, b.y1 - 0.1, s, 0.03);
+      if (DRESSER.has(Dress.Ivy) && (i + ob.id) % 5 === 0) dress(c, 'foliage', RECLAIM.neonHazardMoss, xm - 0.4, b.y0, s - 0.05, xm - 0.1, b.y0 + 0.45, s + 0.05, FACE.top | FACE.front | FACE.left | FACE.right);
     } else {
       const x = b.x0 + u * (b.x1 - b.x0), sm = (b.s0 + b.s1) / 2;
       K.hcyl('x', 0, b.y0 + 0.32, sm - 0.25, x - 0.02, x + 0.02, 0.3, 8, true);
       K.hcyl('x', 0, b.y0 + 0.32, sm + 0.25, x - 0.02, x + 0.02, 0.3, 8, true);
-      body(c, c.hz.body); K.bar(x, b.y0 + 0.4, sm - 0.25, x, b.y1 - 0.1, sm + 0.2, 0.03);
+      body(c, frame); K.bar(x, b.y0 + 0.4, sm - 0.25, x, b.y1 - 0.1, sm + 0.2, 0.03);
+      if (DRESSER.has(Dress.Ivy) && (i + ob.id) % 5 === 0) dress(c, 'foliage', RECLAIM.neonHazardMoss, x - 0.05, b.y0, sm - 0.4, x + 0.05, b.y0 + 0.45, sm - 0.1, FACE.top | FACE.front | FACE.left | FACE.right);
     }
   }
   rim(c, b.x0, b.x1, b.y0 + 0.05, b.s0);
@@ -175,6 +205,11 @@ const skywalk: KitFn = (c, ob) => {
     const a = Math.max(sl.s0, c.s0), z = Math.min(sl.s1, c.s1);
     if (z <= a) continue;
     body(c, 0x4a4278); K.box(sl.x0, y - 0.35, a, sl.x1, y - 0.02, z, FACE.front | FACE.back | FACE.left | FACE.right);
+    // Moss on the girder's side faces (luminance-matched); the deck stays clean and nothing hangs below.
+    for (let s = Math.ceil(a / 3.2) * 3.2 + 0.4; s < z - 1.2; s += 3.2) {
+      mossPatch(c, 0x4a4278, sl.x0 - 0.004, y - 0.3, s, sl.x0, y - 0.24, s + 1.1, FACE.left);
+      mossPatch(c, 0x4a4278, sl.x1, y - 0.33, s + 1.4, sl.x1 + 0.004, y - 0.26, s + 2.2, FACE.right);
+    }
     K.to('e').glowing(1.4, -1, FX.noFog).col(0xff3fa4);
     K.box(sl.x0 - 0.01, y - 0.22, a, sl.x0, y - 0.17, z, FACE.left); K.box(sl.x1, y - 0.22, a, sl.x1 + 0.01, y - 0.17, z, FACE.right);
     K.to('o');
@@ -193,19 +228,19 @@ const skywalk: KitFn = (c, ob) => {
   }
 };
 
-/** A-frame sign 0.5 × 0.4 × 0.55 (knock): two boards with a lit word panel. */
+/** A-frame sign 0.5 × 0.4 × 0.55 (knock): a faded menu board (two boards) with a lit word panel in Neon. */
 const aFrame: KitFn = (c, ob) => {
   const K = c.K, b = boxOf(ob);
   if (!b) return;
   const x0 = b.x0, x1 = b.x1, g = b.y0, top = b.y1, sm = (b.s0 + b.s1) / 2;
-  K.lit(0).col(0xff8a5b);
+  K.lit(0).col(fadePaint(0xff8a5b));
   K.quad(x0, g, b.s0, x1, g, b.s0, x1, top, sm - 0.02, x0, top, sm - 0.02);
   K.quad(x1, g, b.s1, x0, g, b.s1, x0, top, sm + 0.02, x1, top, sm + 0.02);
   if (c.area === 'neon') litSign(c, `w:${ob.id % NEON_SIGN_WORDS.length}`, x0 + 0.05, x1 - 0.05, g + 0.12, top - 0.1, b.s0 + 0.12 * ((top - g - 0.1) / (top - g)) - 0.01, 1.1);
-  else K.lit(0).col(0xfff4e3).quad(x0 + 0.06, g + 0.12, b.s0 + 0.03, x1 - 0.06, g + 0.12, b.s0 + 0.03, x1 - 0.06, top - 0.12, sm - 0.06, x0 + 0.06, top - 0.12, sm - 0.06);
+  else K.lit(0).col(0xb0a290).quad(x0 + 0.06, g + 0.12, b.s0 + 0.03, x1 - 0.06, g + 0.12, b.s0 + 0.03, x1 - 0.06, top - 0.12, sm - 0.06, x0 + 0.06, top - 0.12, sm - 0.06);
 };
 
-/** Lantern stand 0.4 × 0.4 × 1.6 (tall): a dark post with a lit paper lantern (red or paper). */
+/** Lantern stand 0.4 × 0.4 × 1.6 (tall): a post with a faded paper lantern (red or paper), faintly and steadily lit. */
 const lanternStand: KitFn = (c, ob) => {
   const K = c.K, b = boxOf(ob);
   if (!b) return;
@@ -218,7 +253,7 @@ const lanternStand: KitFn = (c, ob) => {
   body(c, post); K.box(b.x0 + 0.05, b.y0, b.s0 + 0.05, b.x1 - 0.05, b.y0 + 0.06, b.s1 - 0.05);
   K.cyl(x, s, b.y0 + 0.06, b.y1 - 0.5, inv ? 0.06 : 0.04, 6, false);
   const red = ob.id % 2 === 0;
-  K.to('e').glowing(litK(c, 1.7), -1, FX.noFog).col(red ? 0xff5a3c : 0xffd39a);
+  K.to('e').glowing(litK(c, 1.35), -1, FX.noFog).col(red ? 0xe8705a : 0xe8c49a);
   K.cyl(x, s, b.y1 - 0.5, b.y1 - 0.06, 0.17, 8, false);
   K.to('o');
   if (inv) K.to('e').glowing(1.4, -1, FX.noFog).col(c.hz.rim); else body(c, 0x161029);
@@ -244,7 +279,9 @@ const neonCurb: KitFn = (c, ob) => {
   }
 };
 
-/** Delivery robot 0.7 × 0.6 × 1.15 (tall, stretch mover): a six-wheeled box with a screen face and a flag mast. */
+/** Delivery robot 0.7 × 0.6 × 1.15 (tall, stretch mover): still delivering, clean (no plants, no wear): a six-wheeled
+ *  box whose screen shows a parcel pictogram (never eyes, a face or an emoticon), a flag mast, the helper-machine dome
+ *  and two-tone band. */
 const robot: KitFn = (c, ob) => {
   const K = c.K, b = boxOf(ob);
   if (!b) return;
@@ -253,6 +290,15 @@ const robot: KitFn = (c, ob) => {
   body(c, 0x161029); for (const s of [b.s0 + 0.12, (b.s0 + b.s1) / 2, b.s1 - 0.12]) for (const x of [b.x0, b.x1 - 0.06]) K.hcyl('x', 0, b.y0 + 0.1, s, x, x + 0.06, 0.1, 6, true);
   K.to('e').glowing(1.5, -1, FX.noFog).col(0x3ff2ff).box(b.x0 + 0.1, b.y0 + 0.3, b.s0 - 0.005, b.x1 - 0.1, b.y0 + 0.5, b.s0, FACE.front);
   K.to('o');
+  // Parcel pictogram: a box outline with its tape line, dark on the screen.
+  const px = (b.x0 + b.x1) / 2, py = b.y0 + 0.4, ps = b.s0 - 0.008;
+  K.lit(0, 0, HZ).col(0x1a1430);
+  K.box(px - 0.08, py - 0.065, ps - 0.002, px + 0.08, py - 0.05, ps, FACE.front); K.box(px - 0.08, py + 0.05, ps - 0.002, px + 0.08, py + 0.065, ps, FACE.front);
+  K.box(px - 0.08, py - 0.05, ps - 0.002, px - 0.065, py + 0.05, ps, FACE.front); K.box(px + 0.065, py - 0.05, ps - 0.002, px + 0.08, py + 0.05, ps, FACE.front);
+  K.box(px - 0.008, py - 0.05, ps - 0.002, px + 0.008, py + 0.05, ps, FACE.front);
+  // Helper-machine band (two tones of accent2 on the flanks) and the sensor dome.
+  helperBand(c, b.x0, b.x1, b.y0 + 0.44, b.s0 + 0.08, b.s1 - 0.08);
+  dressBrush(c, 0xb8b4d8); K.sphere(px - 0.1, b.y0 + 0.6, (b.s0 + b.s1) / 2 - 0.05, 0.08, 6, 3, 0.6);
   body(c); K.box(b.x1 - 0.06, b.y0 + 0.6, (b.s0 + b.s1) / 2, b.x1 - 0.04, b.y1, (b.s0 + b.s1) / 2 + 0.02);
   K.lit(0, 0, HZ).col(0xff8a5b).box(b.x1 - 0.06, b.y1 - 0.18, (b.s0 + b.s1) / 2 + 0.02, b.x1 - 0.04, b.y1, (b.s0 + b.s1) / 2 + 0.25);
   rim(c, b.x0, b.x1, b.y0 + 0.6, b.s0);
