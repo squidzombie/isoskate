@@ -936,7 +936,8 @@ export type SfxId = 'pop' | 'whoosh' | 'catch' | 'land' | 'sketchy' | 'perfect' 
   | 'bump' | 'knock' | 'coin' | 'nearMiss' | 'hazardTick' | 'comboBank' | 'comboLost' | 'crash' | 'newBest'
   | 'newArea' | 'grindEntry' | 'grindExit' | 'uiTap' | 'uiBack' | 'uiToggle' | 'uiError' | 'purchase'
   | 'levelUp' | 'crateShake' | 'crateOpen' | 'revealCommon' | 'revealRare' | 'revealEpic' | 'revealLegendary'
-  | 'spin' | 'revert' | 'pickChime' | 'rewind' | 'needle' | 'grindSwitch';   // internal cues, added @G0
+  | 'spin' | 'revert' | 'pickChime' | 'rewind' | 'needle' | 'grindSwitch'
+  | 'birdFlutter' | 'reverseChirp';   // RECLAIM ambience one-shots, added @theme T5 (docs/core-requests.md THEME)   // internal cues, added @G0
 export interface AudioEngine {
   unlock(): Promise<boolean>; readonly unlocked: boolean;
   suspend(): void; resume(): void;

@@ -2,9 +2,9 @@
 // kind, typed exhaustively, so adding a kind to core/events.ts fails the typecheck here until it is given a sound or
 // marked silent. `cues` lists every cue a row may play (the bindings test checks each handler stays inside it).
 import type { AppEvent, GameEvent } from '../core/events';
-import type { AreaId, EdgeMaterial, FlipId } from '../core/ids';
+import type { AreaId, EdgeMaterial, FlipId, GatewayId } from '../core/ids';
 import type { Bus } from '../core/bus';
-import { FEEDBACK, GATEWAY_TO, INTENSITY, LEVEL_UP } from './mix.config';
+import { FEEDBACK, GATEWAY_TO, INTENSITY, LEVEL_UP, THUNK_KINDS } from './mix.config';
 import type { Cue } from './engine';
 import type { CueOpts } from './sfx/oneshots';
 
@@ -16,6 +16,8 @@ export interface AudioSink {
   runStart(): void;
   areaEnter(area: AreaId): void;
   setArea(area: AreaId, gatewaySec: number): void;
+  /** The gateway's ambience moment (RECLAIM theme §8; optional: the test recorders may leave it out). */
+  gatewayAmbience?(gateway: GatewayId): void;
   setIntensity(level: number): void;
   setComboFilter(mult: number): void;
   tapeStop(): void;
@@ -93,13 +95,14 @@ export const GAME_BINDINGS: GameBindings = {
     cues: ['newArea'], doc: 'music follows the area (pivot if no gateway did it); first visit after the start gets a soft swell',
     on: (e, s) => { s.areaEnter(e.area); if (e.firstThisRun && e.tick > 1) s.cue('newArea'); },
   },
-  gatewayEnter: { cues: [], doc: "music: one bar of the next key's V7, then the new song at the next bar line", on: (e, s) => s.setArea(GATEWAY_TO[e.gateway], 4) },
+  gatewayEnter: { cues: [], doc: "music: one bar of the next key's V7, then the new song at the next bar line; the gateway's ambience moment",
+    on: (e, s) => { s.setArea(GATEWAY_TO[e.gateway], 4); s.gatewayAmbience?.(e.gateway); } },
   landmark: silent('the landmark bonus event plays its grace note'),
   bestPassed: { cues: ['newBest'], doc: 'vocal-chop style flourish', on: (_e, s) => s.cue('newBest') },
   speedTier: { cues: [], doc: 'music intensity: FLOW (tier ≥ 2) brings level 2', on: (e, s) => s.setIntensity(e.tier >= INTENSITY.flowTier ? 2 : 1) },
   crash: {
-    cues: ['crash'], doc: 'noise burst + thump + board clatter, then the tape stop; god-mode crashes are logged only, silent',
-    on: (e, s) => { if (e.god) return; s.cue('crash'); s.tapeStop(); },
+    cues: ['crash'], doc: 'noise burst + thump + board clatter (+ a hollow body-panel thunk into a vehicle), then the tape stop; god-mode crashes are logged only, silent',
+    on: (e, s) => { if (e.god) return; s.cue('crash', e.kind && THUNK_KINDS.has(e.kind) ? { variant: 'vehicle' } : {}); s.tapeStop(); },
   },
   rewind: { cues: ['rewind'], doc: 'tape-rewind chirp', on: (_e, s) => s.cue('rewind') },
   runEnd: silent('the crash already sounded; Results brings the music back at level 0 (setScene)'),

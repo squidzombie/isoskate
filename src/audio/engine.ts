@@ -2,7 +2,7 @@
 // director (song form, bar-line intensity, pivots and crossfades, tape stop, needle drop), the lookahead scheduler,
 // the continuous layers and the one-shot player. Nothing here touches the DOM: index.ts gives it an AudioContext
 // (on the first user gesture) or an OfflineAudioContext, and a millisecond clock for the perf counter.
-import type { AreaId, EdgeMaterial, Surface } from '../core/ids';
+import type { AreaId, EdgeMaterial, GatewayId, Surface } from '../core/ids';
 import { hash32 } from '../core/rng';
 import { barAt, barSec, barStart, beatSec, nextSixteenth, quantize, sixteenthSec, type SongClock } from './clock';
 import { buildGraph, type Graph } from './graph';
@@ -402,6 +402,10 @@ export class AudioCore {
     if (!this.g || !this.playing || !this.song || this.scene !== 'run') return;
     if (this.song.area === area || this.pending?.to === area || this.song.pivotTo === area) return;
     this.pending = { to: area, stage: 'pivot', startBar: CARRY_FORM };
+  }
+  /** The gateway's ambience moment (RECLAIM theme §8): Greenway bees, the signal box chime, gulls, Underpass drips. */
+  gatewayAmbience(gateway: GatewayId): void {
+    if (this.g && this.scene === 'run') this.amb?.gateway(gateway, this.g.ctx.currentTime);
   }
   setIntensity(level: number): void { this.levelBase = clampLevel(level); }
   setComboFilter(mult: number): void {

@@ -135,7 +135,7 @@ export interface AreaMusic {
   clanks: boolean;
   /** Level from which the triangle arp plays (Neon brings it in early). */
   arpLevel: 2 | 3;
-  ambience: 'traffic' | 'suburb' | 'harbor' | 'city' | 'none';
+  ambience: 'plaza' | 'suburb' | 'harbor' | 'city' | 'none';
   /** Road surface used by renderOffline's plateau-speed roll bed. */
   demoSurface: Surface;
   /** Music-bus mud dip (dB at MUD_CUT.hz) when it differs from MUD_CUT.db: deeper for the close, low voicings
@@ -153,7 +153,7 @@ export const AREA_MUSIC: Readonly<Record<MusicArea, AreaMusic>> = {
     bars: [[c('Gm9', 43, [58, 62, 65, 69])], [c('C9', 48, [58, 62, 64, 67])], [c('Fmaj9', 41, [57, 60, 64, 67])], [c('Dm9', 38, [53, 57, 60, 64])]],
     patterns: { main: 'A', alt: 'B' }, kick: { f0: 120, decay: 0.35 }, snare: 'classic', ghost: 'rim',
     hats: { hpHz: 7000, closed: 0.04 }, clap: false, epLp: 2800, mallet: 'mallet', chorus: false, clanks: false, arpLevel: 3,
-    ambience: 'traffic', demoSurface: 'asphalt',
+    ambience: 'plaza', demoSurface: 'asphalt',
   },
   suburbs: {
     tonic: 9, mode: 'minor', bpm: 80,
@@ -232,17 +232,36 @@ export const GRIND_MATERIAL: Readonly<Record<EdgeMaterial, 'metal' | 'concrete' 
 export const SFX_LEVEL = {
   pop: 0.55, whoosh: 1.3, catch: 0.6, land: 0.6, sketchy: 0.45, perfect: 0.42, perfectLock: 0.22, stair: 0.7,
   bump: 0.7, knock: 0.55, nearMiss: 1.1, hazardTick: 0.9, crash: 0.34, grindEntry: 0.45, grindExit: 0.8,
-  spin: 1.6, revert: 1.5, pickChime: 0.22, rewind: 0.55, needle: 0.45, newBest: 0.22, newArea: 0.18,
+  spin: 1.6, revert: 1.5, pickChime: 0.22, rewind: 0.55, needle: 0.45, newBest: 0.22, newArea: 0.18, birdFlutter: 0.5, reverseChirp: 1,
   ui: 1.8, purchase: 1.1, crate: 0.5, crateOpen: 0.9, reveal: 0.26, levelUp: 0.3,
 } as const;
 export const LEVEL_UP = { noteMs: 70, holdSec: 1.2, shimmerHz: 6000, shimmerSec: 0.6, duckDb: 3, duckSec: 1.6, epGain: 0.5 } as const;
 export const COMBO_BANK = { noteMs: 50, gain: 0.26 } as const;
 
-// ── Ambience (§19.1 per-area signatures) ──────────────────────────────────────────────────────────────────────────
+// ── Ambience (§19.1 per-area signatures; RECLAIM theme §8: no traffic anywhere, calm beds under the music) ─────────
+/** Gains are the bed's own (before the ambience bus 0.25); `every` ranges are seconds between seeded events. */
 export const AMBIENCE = {
   fade: 2.5, level: 1,
-  traffic: { lpHz: 300, gain: 0.12, pigeonEvery: [9, 22] as const },
-  suburb: { birdEvery: [3, 9] as const, sprinklerEvery: [14, 30] as const, bedGain: 0.04 },
-  harbor: { waterBp: 420, waterGain: 0.1, gullEvery: [9, 24] as const, hornEvery: [28, 60] as const },
-  city: { humGain: 0.05, buzzEvery: [10, 25] as const, maglevEvery: [24, 45] as const },
+  /** Downtown "the quiet plaza": wind, a faint fountain trickle; leaf rustles, wood-pigeon coos, pigeon flutters. */
+  plaza: { windBp: 500, windGain: 0.05, windLfoHz: 0.07, fountainBp: 1800, fountainGain: 0.02, leafEvery: [4, 10] as const,
+    cooEvery: [12, 30] as const, coo: [450, 380] as const, pigeonEvery: [9, 22] as const },
+  /** Suburbs "wildflower lanes": wind in grass, a cricket bed rising toward late gold; birds, a far woodpecker, a chime. */
+  suburb: { birdEvery: [2, 6] as const, grassBp: 800, grassGain: 0.04, cricketHz: 4200, cricketAmHz: 30, cricketGain: 0.015,
+    cricketRiseSec: 90, woodpeckerEvery: [40, 90] as const, woodpeckerHz: 16, woodpeckerBp: 1200, chimeEvery: [20, 45] as const },
+  /** Docks "the seagrass harbor": lapping water and gulls; a buoy bell (FM 3.5), moored-boat knocks, halyard clinks, a chime. */
+  harbor: { waterBp: 420, waterGain: 0.1, gullEvery: [9, 24] as const, bellEvery: [25, 50] as const, bellRatio: 3.5,
+    knockEvery: [15, 35] as const, knockHz: 220, clinkEvery: [6, 14] as const, chimeEvery: [30, 60] as const },
+  /** Neon "the night-owl lights": the live signs' hum, vending buzz, after-rain drips in key, a softer, rarer maglev. */
+  city: { humGain: 0.03, buzzEvery: [10, 25] as const, dripEvery: [1, 4] as const, maglevEvery: [40, 80] as const, maglevGain: 0.14 },
+  /** Gateway moments (≈ 4.5 s over the crossfade): Greenway meadow wind and bees, Level Crossing grass wind and the
+   *  signal box's chime, Harbor Bridge gulls and wind, Underpass drips with a 0.4 s echo. */
+  gateway: { sec: 4.5, echoSec: 0.4, echoFeedback: 0.35 },
 } as const;
+/** Crashes into these kinds add the hollow body-panel thunk (theme §8: cars, vans, the helper machines, containers and
+ *  the box trucks and buses they become). No glass and no alarms. */
+export const THUNK_KINDS: ReadonlySet<string> = new Set(['parked_car', 'parked_van', 'crosswalk_car', 'backout_car', 'forklift', 'container', 'van_across']);
+export const THUNK = { hz: 110, toHz: 82, sec: 0.12, gain: 0.85 } as const;
+/** Bird flutter (perched birds take off): noise bursts with 12 Hz AM over 0.35 s. Reversing chirp (`backout_car` while
+ *  it moves): sine near 1.1 kHz in key, 80 ms, every 0.6 s, gain 0.04. */
+export const FLUTTER = { amHz: 12, sec: 0.35, bp: 1400 } as const;
+export const REVERSE_CHIRP = { hz: 1100, sec: 0.08, every: 0.6, gain: 0.04 } as const;

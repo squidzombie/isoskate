@@ -788,6 +788,23 @@ recognizer, so the frozen `InputFrame`, the sim, scoring, the generator, replays
 - What other packages can rely on: deterministic per argument tuple; never read by world/gen, sim or the validator, so footprints, solids, edges, golden obstacle hashes and every bot gate are untouched. The isolated-filler sapling is a separate flag from the chunk builder and never changes the noun. `kits/dress.ts` `DRESSER.begin` (called by `drawObstacle`) computes the skin per drawn obstacle; kits read `DRESSER.skin`.
 - Local workaround meanwhile: n/a.
 
+### core/audio.ts: SfxId gains 'birdFlutter' and 'reverseChirp' (additive)   (status: applied @theme T5 on pkg/t2; TECH §4 SfxId)
+- File / symbol: core/audio.ts › `SfxId` (two new members at the end of the union).
+- Change: additive only; no existing id, signature or behaviour changes.
+- Why: theme §8 adds two one-shots the engine plays through `cue()`: the bird flutter when `perched_birds` take off (T4 VFX fires it) and the soft reversing chirp of the self-parking `backout_car` while it moves (every 0.6 s; the mover's owner fires it). Both live in audio/sfx/oneshots.ts with levels in audio/mix.config.ts (`FLUTTER`, `REVERSE_CHIRP`).
+- What other packages can rely on: `engine.cue('birdFlutter', { pan })` and `engine.cue('reverseChirp', { pan })` are cheap, in key and under the music; the crash cue takes `variant: 'vehicle'` for the body-panel thunk (audio/bindings.ts sets it from the crash event's `kind`, `THUNK_KINDS`); `Ambience.gateway(id)` plays each gateway's moment (wired from the `gatewayEnter` binding) and `Ambience.sprinkler(t)` is there for a sprinkler decor in earshot (not wired yet: nothing reports one).
+- Local workaround meanwhile: n/a.
+
+### T2 render-side overgrowth: the optional decor params it already reads (for T3 to declare in DECOR_KINDS)   (no contract change)
+- Each falls back to a hash of (s, x) when absent, so today's WG decor is reclaimed with no generator or hash change:
+  `building`/`house`/`warehouse`/`end_wall`: `fade` 0..1, `roofGreen` 0..1, `roofTree` 0/1, `ivy` 0..1; `end_wall` (Neon) `live` 0/1 (1 in 4: one lit 営業中 or 喫茶);
+  `shadow_caster`: `shape` 4 (a row of leafy crowns) and 5 (a plain water tower), `roofTree` 0/1 on boxes; `crane`: `tree`, `nest` 0/1;
+  `blade_sign`/`holo_billboard`: `live` 0/1 (70% live; 出口 and 薬局 are never lit); `street_lamp`: `lit` (DT 0, SB 0.2, IN 0.4, NE 0.6), `vine` 0/1;
+  `hedge_round`: `bloom` 0/1 (buddleia); `fence_run`: `roses` 0/1 (Suburbs); `low_wall`: `moss` 0/1; `chain_link`: `ivy` 0..1; `mailbox_post`: `nest` 0/1;
+  `lantern_string`: `litRatio` (0.6); `tree`: species 3 plane, 4 fig, 5 birch (WG's Downtown species 1 is drawn a third each palm, plane and fig).
+- Road marks (owner note 8): `road_arrow` is painted only before a `crosswalk` in the same chunk, one per crossing, pointing +s from a lane centre (two-way Suburbs: the right-hand lane); its `x` and turn `kind`s are ignored (kind 3 stays SLOW). T3 may emit arrows only before crossings. `manhole` ignores `r` (0.6–0.75 m covers); `drain` and `steam_vent` sit in the gutter at the kerb (0.4 × 0.6 m).
+- Decal atlas cells 28–39 (`DECAL.weedA` … `bayPerp`) are ready for `weed_edge`, `moss_patch`, `root_lift`, flower drifts, lily pads, lichen, rust drips, joint grass, ripples and the perpendicular bay.
+
 ### What T1 / T2 / T3 / T6 build on (no further core change in T0)
 - **T1 (kits, vehicle builder):** `DRESSER.skin` (body, paint, dress, livery, nosedIn), `DRESSER.box(K, role, x0, y0, s0, x1, y1, s1, faces?)` for every dressing box (roles `life`, `cat`, `animal`, `foliage`, `wear`, `sapling`), `DRESSER.life` / `lifeDisc` for accents drawn another way, `DRESSER.has(flag)`, `DRESSER.sapling`; colours from `palette.ts` `RECLAIM` and `dress.ts` `mossOn` / `rustOn` / `foliageFor`; `isIsolatedFiller(ob, chunkObstacles)` for the chunk-builder flag, passed as `drawObstacle(c, ob, chunkIndex, first, isolated)`. `tests/unit/render/dress.test.ts` already draws every kit in every skin and checks the life budget, refusals and clean machines.
 - **T2 (render-side overgrowth):** `RECLAIM` tokens, `fadePaint`, `withLum`, `contrastRatio`, the zone helpers `inCleanCore` / `flatWeedOk` / `vegOk`, `edgeBandDecalOk`, `clearOfEdges`, `GREEN_SHARE`.

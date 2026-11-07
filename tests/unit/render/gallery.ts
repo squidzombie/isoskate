@@ -174,7 +174,22 @@ function streetScene(): void {
   place(chunks, areaFn, obs, decor, coins);
 }
 
-if (scene === 'props') propsScene(); else if (scene === 'decor') decorScene(); else streetScene();
+/** Road marks at real scale (owner note 8): lane paint, a crosswalk with the road arrows that lead to it, manholes,
+ *  kerb drains and the Neon after-rain vents, as WG emits them (the arrow and drain params are the generator's). */
+function marksScene(): void {
+  const D = (kind: DecorKind, s: number, x: number, params: Record<string, number> = {}): Decor =>
+    ({ kind, s, x, y: 0, rotY: 0, scale: 1, variant: 0, castShadow: false, params });
+  const decor: Decor[] = [D('lane_dash', S0 - 8, 0, { len: 64, dash: 3, gap: 3, color: area === 'suburbs' ? 1 : 0 })];
+  if (area === 'downtown') decor.push(D('parking_bay', S0 - 8, -2.5, { len: 64, bays: 12 }));
+  decor.push(D('crosswalk', S0 + 21, 0, { len: 3, w: 6, scramble: area === 'neon' ? 1 : 0 }));
+  decor.push(D('road_arrow', S0 + 6, -1.1, { kind: area === 'docks' ? 3 : 0 }), D('road_arrow', S0 + 13, 0.3, { kind: 1 }), D('road_arrow', S0 + 17, 1.7, { kind: 3 }));
+  for (const [i, r] of [0.4, 0.9, 1.4].entries()) decor.push(D('manhole', S0 + 3 + i * 6, i % 2 ? 2.2 : -2.6, { r }));
+  decor.push(D('drain', S0 + 9, 3.0), D('drain', S0 + 16, -3.0), D('steam_vent', S0 + 11, -1.4, { rate: 2 }));
+  decor.push(D('oil_stain', S0 + 26, 1.5, { r: 0.6 }), D('crack', S0 + 28, -1.8, { len: 1.6 }), D('puddle', S0 + 24, -2.2, { w: 0.9, len: 1.4 }));
+  place(chunks, areaFn, [], decor);
+}
+
+if (scene === 'props') propsScene(); else if (scene === 'decor') decorScene(); else if (scene === 'marks') marksScene(); else streetScene();
 const gen = fakeGen(chunks, (s) => blendAt(s));
 world.attach(gen);
 

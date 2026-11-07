@@ -223,8 +223,8 @@ int anim = int(vFx.w + 0.5);
 if (anim == 1) {
   base = max(dlHue(base, sin(uTime * 1.2566 + vLocal.x * 0.2) * 0.6), vec3(0.0));
   float scan = 0.78 + 0.22 * step(0.5, fract(gl_FragCoord.y * 0.25));
-  float fl = step(0.985, fract(sin(floor(uTime * 20.0) * 12.9898 + vLocal.z) * 43758.5453));
-  inten *= scan * (1.0 - 0.75 * fl);
+  // (RECLAIM theme §4: the holo hue drift stays, the rare 50 ms flicker is gone; nothing flickers anywhere.)
+  inten *= scan;
 } else if (anim == 2 || anim == 3) {
   float ph = anim == 2 ? 0.0 : 0.5;
   inten *= 0.15 + 0.85 * step(0.5, fract(uTime + ph));

@@ -39,6 +39,7 @@ for (const a of AREAS) {
   for (let p = 0; p < PROP_PAGES[a]; p++) jobs.push({ group: 'shade', name: `props-${a}-${p}-shade`, q: `scene=props&area=${a}&page=${p}&shade=1&labels=0`, vps: ['390x844'] });
   for (let p = 0; p < DECOR_PAGES; p++) jobs.push({ group: 'decor', name: `decor-${a}-${p}`, q: `scene=decor&area=${a}&page=${p}&speed=10.5`, vps: ['390x844', '1280x800'] });
   for (const p of [0, 1]) jobs.push({ group: 'decor', name: `decor-${a}-${p}-title`, q: `scene=decor&area=${a}&page=${p}&cam=title`, vps: ['390x844', '1280x800'] });
+  jobs.push({ group: 'marks', name: `marks-${a}`, q: `scene=marks&area=${a}&labels=0`, vps: ['390x844', '1280x800'] });
   jobs.push({ group: 'title', name: `title-${a}`, q: `scene=street&area=${a}&cam=title` });
   jobs.push({ group: 'title', name: `locker-${a}`, q: `scene=street&area=${a}&cam=locker`, vps: ['390x844'] });
 }
