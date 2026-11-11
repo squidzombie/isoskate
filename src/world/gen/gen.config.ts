@@ -44,6 +44,9 @@ export const GEN = {
     openingBusy: 150, firstVeh: 0.9,
     either: { 2: 0.25, 3: 0.35 } as Partial<Record<Tier, number>>, eitherX0: 0.5, eitherV: 8,
     stagger: [1.2, 2.4] as readonly [number, number], jitter: 0.2, openPrefer: true as boolean,
+    /** A second vehicle in a row, off every route, stands at least this far (m, along s) from the others when it can:
+     *  two cars passing in opposite lanes, not abreast (rows.ts stagger; the s0 floor stays the fallback). */
+    apart: 2.2,
     /** The weight of an opening centre (rows.ts rowCloses) by the most natural fill of each road part it leaves, per
      *  block mood. `clear`: kerb kit only (bins out, a café set in a bay); `one`: one vehicle in its lane or at the
      *  kerb, the kit beside it; `pair`: two side by side in opposite lanes; `mid`: a car across the centre line (alone

@@ -554,13 +554,16 @@ describe('RECLAIM decor (theme §4, §6; T3)', () => {
 // and the far-sidewalk weight, a pair only where one vehicle cannot close a road part, a car stopped mid-street counting
 // for the same-side rule and within 0.5 m of the centre on neither side, no Docks van in a no-vehicle row, no vehicle
 // staggered earlier on the route to a second opening, curb and lip edges ending ≥ 1.0 s before a full-width hazard;
-// was [3896676665, 3670890132, 1962982555] / trench [1874618390, 480476392, 1207027692]).
-const GOLDEN_OBSTACLES = [3324426131, 1830454800, 1449185268];
-const GOLDEN_OBSTACLES_TRENCH = [3450213839, 3249536433, 3943960394];
+// was [3896676665, 3670890132, 1962982555] / trench [1874618390, 480476392, 1207027692]; then a second vehicle off
+// every route standing ≥ GEN.rows.apart along s from the first, two cars passing instead of abreast: was
+// [3324426131, 1830454800, 1449185268] / trench [3450213839, 3249536433, 3943960394]).
+const GOLDEN_OBSTACLES = [2242148823, 3858907496, 1253667141];
+const GOLDEN_OBSTACLES_TRENCH = [2927400757, 1669822620, 2869287646];
 // Decor chain: re-baselined in T3 (RECLAIM decor kinds and emission; was [1783084398, 3361667576, 1795712479] at the split),
 // with the T8 obstacles (decor follows the street; plus the vehicles' bays and loading entrances; was
 // [3513787741, 2851077237, 3473871542] before T8), and with T8 "where they stopped" (the street it follows, a stopped
 // car's crossing, no zebra under a vehicle or a row's kerb kit, bays only under Downtown kerb cars, the Docks' loading
 // entrance clearing its fence and lamps, the Suburbs' residential lanes without a centre line; was
-// [2282354388, 2673347121, 4179237450]).
-const GOLDEN_DECOR = [3837789099, 4040777951, 1416243026];
+// [2282354388, 2673347121, 4179237450]), and as the street it follows moved with the two-cars-passing stagger (was
+// [3837789099, 4040777951, 1416243026]).
+const GOLDEN_DECOR = [3837789099, 4040777951, 3698898893];

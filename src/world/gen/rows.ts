@@ -576,6 +576,15 @@ function stagger(st: RowState, x0: number, x1: number, len: number, placed: read
   const other = !crossed && st.cols.some(([a, b]) => x1 > a && x0 < b);
   const [s0, s1] = GEN.rows.stagger;
   const opts = crossed ? (placed.length ? [0, -s0] : [0]) : other ? [0] : [-round1cm(st.rng.range(s0, Math.max(s0, s1))), -s0, 0];
+  // (a second vehicle off every route stands ≥ GEN.rows.apart from the others when it can: two cars 1.2 m apart in s
+  // read as abreast, a jam, at phone scale; ≥ 2.2 m reads as two cars that stopped as they passed. It still covers the
+  // row band, so the row's lanes do not change; falls back to the ≥ s0 offsets below)
+  if (!crossed && !other && placed.length) {
+    const apart = GEN.rows.apart, deep = -(len - ROW_BAND - 0.1);
+    const wide = [...opts, ...placed.flatMap((p) => [round1cm(p - apart), round1cm(p + apart)])]
+      .filter((d) => d <= 0 && d >= deep && placed.every((p) => Math.abs(p - d) >= apart - 1e-6));
+    for (const ds of wide) if (st.ctx.free(x0, x1, st.sr + ds, st.sr + ds + len)) return ds;
+  }
   for (const ds of opts) {
     if (placed.some((p) => Math.abs(p - ds) < s0 - 1e-6)) continue;
     if (st.ctx.free(x0, x1, st.sr + ds, st.sr + ds + len)) return ds;
