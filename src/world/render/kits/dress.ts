@@ -33,10 +33,8 @@ export const DRESS = {
   maxNearEdgeL: relLum(RECLAIM.animalMax),
 } as const;
 
-/** The Dress bit of flower heads in a pickup bed (core/skins.ts `Dress.Bloom`, 1 pickup in 3 outside Neon): read
- *  through the table so the kits draw it whenever the skin chooser sets it. A stand-in until plan G0 lands in core:
- *  then import `Dress.Bloom` directly and drop the cast and the fallback (vehicles.test pins it to core meanwhile). */
-export const BLOOM: number = (Dress as { readonly Bloom?: number }).Bloom ?? 4096;
+/** The Dress bit of flower heads in a pickup bed (core/skins.ts `Dress.Bloom`, 1 pickup in 3 outside Neon). */
+export const BLOOM: number = Dress.Bloom;
 /** Rule 3: kinds whose top face may carry flowers (landable / grindable planter beds); scenery is decor, not a kit. */
 export const BLOOM_TOP_KINDS: ReadonlySet<PropKind> = new Set<PropKind>(['planter', 'planter_tree', 'cherry_planter']);
 /** Rule 8: the only hazards with a time-varying light (their existing telegraphs, DESIGN §10.3): the crosswalk signal,

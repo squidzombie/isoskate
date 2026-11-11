@@ -19,9 +19,20 @@ export const VEHICLE_BODIES: ReadonlySet<SkinBody> = new Set<SkinBody>(
   ['sedan', 'estate', 'pickup', 'suv', 'taxi', 'kei_van', 'panel_van', 'camper', 'box_truck', 'shuttle_bus', 'sweeper']);
 export const isVehicle = (b: SkinBody): b is VehicleBody => VEHICLE_BODIES.has(b);
 
-/** Hazard car paint tops (world/render/palette.ts RECLAIM.carPaint). Neon vehicles are inverted bodies: no paint. */
-export type CarPaint = 'teal' | 'oxblood' | 'olive' | 'slate';
-export const CAR_PAINTS: readonly CarPaint[] = ['teal', 'oxblood', 'olive', 'slate'];
+/** Hazard car paint tops (world/render/palette.ts RECLAIM.carPaint). Neon vehicles are inverted bodies: no paint.
+ *  Oxblood stays valid and slate stays for movers; the hazard roll uses CAR_PAINTS. */
+export type CarPaint = 'teal' | 'oxblood' | 'olive' | 'slate' | 'cobalt' | 'coral' | 'plum' | 'ochre';
+/** The hazard roll (theme T8 "where they stopped"): six cheerful sun-faded paints, CAR_PAINTS[paintSlot]. */
+export const CAR_PAINTS: readonly CarPaint[] = ['teal', 'olive', 'cobalt', 'coral', 'plum', 'ochre'];
+/** Paint slots of the hazard roll, one per CAR_PAINTS entry. The generator tells two vehicles' paints apart by slot,
+ *  so its choices do not move if the paint list does. */
+export const PAINT_SLOTS = 6;
+export const paintSlot = (id: number, variant: number): number => Math.floor(roll(id, variant, 2) * PAINT_SLOTS) % PAINT_SLOTS;
+
+/** Theme T8 ("where they stopped"): does a vehicle parallel to s at x show its front to the camera? Each car faces
+ *  its own traffic: traffic keeps right, so a car in the −x half came toward the camera and shows its front; one in
+ *  the +x half drove away and shows its rear. Hoshimachi Ward keeps left (the mirror). */
+export const noseToCam = (a: AreaId, x: number): boolean => (a === 'neon' ? x > 0 : x < 0);
 
 /** Dressing flags (bit set). What the skin carries; the kits draw it under the dressing rules (`kits/dress.ts`). */
 export const Dress = {
@@ -49,10 +60,12 @@ export const Dress = {
   Livery: 1024,
   /** Climbing roses on the fence faces (SB pickets: the one bloom accent on a crash object). */
   Roses: 2048,
+  /** Theme T8: flower heads in a pickup's open bed, below the bed rim (1 pickup in 3, never in Neon). */
+  Bloom: 4096,
 } as const;
 /** Dressing that a `Clean` skin (a helper machine) may never carry. */
 export const WEAR_MASK = Dress.Moss | Dress.Rust | Dress.Ivy | Dress.Flowers | Dress.Crown | Dress.Cat | Dress.Bird
-  | Dress.Nest | Dress.Sapling | Dress.Roses;
+  | Dress.Nest | Dress.Sapling | Dress.Roses | Dress.Bloom;
 
 export interface PropSkin {
   body: SkinBody;
@@ -66,7 +79,8 @@ export interface PropSkin {
   dress: number;
   /** Livery / poster brand index into DECOR_BRANDS[area] (−1: none). */
   livery: number;
-  /** Vehicles: nosed in toward the camera (30%); otherwise the rear shows (70%). */
+  /** Vehicles: the front faces the camera (30% of the roll; the generator picks the variant so that every vehicle
+   *  parallel to s faces its own traffic, `noseToCam`); otherwise the rear shows. */
   nosedIn: boolean;
 }
 export const newSkin = (): PropSkin => ({ body: 'kit', paint: null, noun: '', plural: false, dress: 0, livery: -1, nosedIn: false });
@@ -127,7 +141,7 @@ function set(o: PropSkin, body: SkinBody, noun: string, dress: number, paint: Ca
  *  (ob.kind, ob.area, ob.id, ob.variant, ob.hgt). */
 export function propSkin(kind: PropKind, area: AreaId, id: number, variant: number, h: number, out: PropSkin = newSkin()): PropSkin {
   const u = roll(id, variant, 1);
-  const paint = CAR_PAINTS[Math.floor(roll(id, variant, 2) * CAR_PAINTS.length) % CAR_PAINTS.length]!;
+  const paint = CAR_PAINTS[paintSlot(id, variant)]!;
   const nosed = roll(id, variant, 3) < 0.3;
   const sapling = area !== 'neon' && roll(id, variant, 6) < 0.25 ? Dress.Sapling : 0;
   const wear = M | R | I;
@@ -138,7 +152,9 @@ export function propSkin(kind: PropKind, area: AreaId, id: number, variant: numb
         ? (u < 0.3 ? 'sedan' : u < 0.55 ? 'estate' : u < 0.75 ? 'pickup' : 'suv')
         : (u < 0.4 ? 'sedan' : u < 0.75 ? 'estate' : 'pickup');
       const cat = (body === 'sedan' || body === 'estate') && roll(id, variant, 4) < 1 / 8 ? Dress.Cat : 0;
-      return set(out, body, body === 'pickup' ? 'pickup' : 'car', wear | cat, paint, -1, nosed);
+      // (theme T8: flowers in 1 pickup bed in 3; Neon has no pickups)
+      const bloom = body === 'pickup' && roll(id, variant, 7) < 1 / 3 ? Dress.Bloom : 0;
+      return set(out, body, body === 'pickup' ? 'pickup' : 'car', wear | cat | bloom, paint, -1, nosed);
     }
     case 'parked_van': {
       if (area === 'neon') return set(out, 'kei_van', 'van', I, null, -1, nosed);

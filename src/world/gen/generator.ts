@@ -21,12 +21,13 @@ import { emitDecor } from './decor';
 import { GEN, GEN_FLAGS, type PhaseId, type Tier } from './gen.config';
 import { LESSON_PARTS, ROLLOUT, ROLLOUT_DECOR_SEED } from './lesson';
 import type { PropCtx } from './props/common';
-import { buildFiller, buildVanAcross, carDriveways, fillerKinds } from './props/shared';
+import { buildFiller, faceTraffic, fillerKinds } from './props/shared';
 import { LAYOUTS, LIP, bandRange, buildLipBody, buildLipEdges, buildStreet, type StreetLayout } from './props/street';
 import type { SafeLine } from './safe';
 import { a3Range, gatewayWindow, nextFullWidthDue, phaseAt, planSegment, type Plan } from './schedule';
 import { GATEWAYS, TEMPLATES, type Template, type TemplateCtx, type TemplateOut } from './templates';
-import { deepFree, gateOpenings, gateRow, kitRun, lanesApart, openingLanes, rowLanes, VEHICLE_KINDS } from './rows';
+import { deepFree, gateOpenings, gateRow, lanesApart, nudgeOpening, openingLanes, rowCloses, avoidOf, moodAt, rowLanes, vehChance, VEHICLE_KINDS, type RowBuild,
+  type RowCtx, type RowFill, type RowSig } from './rows';
 import { spacingAfter } from './validator/sweep';
 import { initialState, validate, type ValResult } from './validator/validate';
 
@@ -44,13 +45,20 @@ export const GEN_DEBUG: { onReject: ((info: { index: number; t0: number; tpl: st
 /** Seconds of obstacles kept behind a segment end for the next validation window. */
 const HISTORY_KEEP_SEC = 3.2;
 
+/** An anti-straight row as the generator records it (rows.ts). */
+export interface RowRec { t: number; lanes: [number, number][]; sig: RowSig; fill: RowFill;
+  /** Where it stood: an S_GATE, at a template's line, as a tail after it, or with a forced move inside it. */
+  how: 'gate' | 'line' | 'tail' | 'move' }
+/** How many row signatures the cursor keeps (rows.ts reads the last 8: the Suburbs' mid-street rule). */
+const ROW_HIST = 8;
+
 interface Built {
   plan: Plan; out: TemplateOut; t1: number; s1: number; layout: StreetLayout; datumEnd: number;
   obstacles: Obstacle[]; coins: CoinWriter; res: Extract<ValResult, { ok: true }>;
   t0Stretch: boolean; fullWidthA: number | null; lastTall: Float64Array; wander: GenCursor['wander']; mirror: boolean;
   driveways: [number, number, number][];
-  /** The anti-straight row this segment stands (rows.ts): its run time and lanes. */
-  row?: { t: number; lanes: [number, number][] };
+  /** The anti-straight row this segment stands (rows.ts): its run time, lanes, signature and fill. */
+  row?: RowRec;
 }
 
 const LESSON_TPL = (i: number): Template => ({
@@ -66,6 +74,8 @@ export class Generator implements WorldGen {
   private readonly rollout: boolean;
   private readonly lesson: boolean;
   private readonly trench: boolean;
+  /** Where the run's street starts (after the Roll-out): its first metres show a car where one fits (rows.ts). */
+  private readonly sOpen: number;
   private readonly segs: Segment[] = [];
   private readonly chunks = new Map<number, Chunk>();
   private released = -1;
@@ -76,7 +86,8 @@ export class Generator implements WorldGen {
   private readonly rejections: Record<string, number> = {};
   private coinsTotal = 0;
   private coinsTrick = 0;
-  private readonly decorState = { nextEndWall: 0, backNext: [0, 0] as [number, number], visit: { end: -1, start: 0, vista: false, wildlife: false } };
+  private readonly decorState = { nextEndWall: 0, backNext: [0, 0] as [number, number], visit: { end: -1, start: 0, vista: false, wildlife: false },
+    crossings: [] as number[] };
   /** Validator stats of the committed segments (static asserts read them). */
   readonly valStats = { decisionMin: Infinity, windowMin: Infinity, deadEndMax: 0, actions: 0, fillers: 0, walls: 0 };
   readonly internals: GenInternals = { obstacleById: new Map(), edgeById: new Map() };
@@ -85,8 +96,8 @@ export class Generator implements WorldGen {
   valCalls = 0;
   valFails = 0;
   readonly valFailWhy: Record<string, number> = {};
-  /** Anti-straight rows stood so far (run time, lanes): tests and analysis read them. */
-  readonly rows: { t: number; lanes: [number, number][] }[] = [];
+  /** Anti-straight rows stood so far (run time, lanes, signature, fill): tests and analysis read them. */
+  readonly rows: RowRec[] = [];
 
   constructor(cfg: WorldGenConfig) {
     this.seed = cfg.seed >>> 0;
@@ -96,6 +107,7 @@ export class Generator implements WorldGen {
     this.rollout = this.startT === 0;
     this.lesson = this.mode === 'lesson' && this.rollout;
     this.trench = GEN_FLAGS.trench;
+    this.sOpen = sAt(this.rollout ? ROLLOUT_SEC : this.startT);
     const rng = new Sfc32(streamSeed(this.seed, -1, 'layout'));
     const clockFromT = this.lesson ? LESSON_SEC + 4 : this.rollout ? ROLLOUT_SEC : this.startT;
     const br = GEN.breather.warm!;
@@ -106,6 +118,7 @@ export class Generator implements WorldGen {
       clockFromT, aClock: 0, lastTall: new Float64Array(COLS), wander: { lo: 0, hi: 0, lastA: 0 },
       // The first row comes right after the Roll-out / the spawn grace (DESIGN §10.7 straight-bot guarantees).
       gateDueT: clockFromT + (this.rollout ? 1.6 : GEN.spawnGrace + 1.6), lastRowT: -Infinity, prevRowT: -Infinity, lastGateOpen: [],
+      rowHist: [], lastVeh: null, vanVisit: -1,
       lastFwA: 0, fwDueA: nextFullWidthDue(0, phaseAt(clockFromT), rng),
       breatherDueT: Math.max(45, this.startT) + rng.range(br.every[0], br.every[1]) / 2,
       lastTier: 0, lastFallback: false, areaSegs: 0, landmarkDone: false, lessonPart: 0, ids: { ob: 0, coin: 0, edge: 0 }, history: [], persistent: [],
@@ -276,8 +289,17 @@ export class Generator implements WorldGen {
     const driveways: [number, number, number][] = [];
     const datumAt: { s: number; datum: number }[] = [];
     const earliest = Math.max(c.firstActionT, c.last ? c.last.t + spacingAfter(c.last.t, c.last.dx) : -Infinity);
+    // Theme T8 (rows.ts): a row's context: deep boxes clear of the template, the block's vehicle chance (none on a
+    // plaza), the last rows, the Docks' one van per visit.
+    const visitKey = gatewayWindow(t0, this.startArea).start;
+    const rowCtx = (sRow: number, x0: number, cSafe: number, o: { either?: boolean; vehicles?: boolean } = {}): RowCtx => ({
+      free: deepFree([...obstacles, ...c.persistent]), x0, cSafe, v: speedAt(tAt(sRow)), layout, hist: c.rowHist,
+      pVeh: o.vehicles === false || layout.id === 'plaza' ? 0 : vehChance(this.seed, sRow, area, this.sOpen),
+      mood: sRow < this.sOpen + GEN.rows.openingBusy ? 'busy' : moodAt(this.seed, sRow, area),
+      either: !!o.either, van: area === 'docks' && c.vanVisit !== visitKey,
+    });
     const ctx: TemplateCtx = {
-      id: tpl.id, t0, v: speedAt(t0), tier: plan.tier, phase, area, gateway, layout, datum: c.datum, rng, coinRng, m,
+      id: tpl.id, t0, v: speedAt(t0), tier: plan.tier, phase, area, gateway, layout, datum: c.datum, rng, coinRng, m, rowCtx,
       X: (x: number) => round1cm(m * x), maxT1, ...(plan.dur !== undefined ? { dur: plan.dur } : {}),
       safeX: c.safeX, wanderFrom: (c.wander.lo + c.wander.hi) / 2, earliest, attempt: bare ? GEN.easyFrom : attempt,
       colLeft: (x: number) => { const k = Math.max(0, Math.min(COLS - 1, Math.floor((x + 4.5) / GEN.a1.colW))); return c.lastTall[k]! + a1Period(phase) - c.aClock; },
@@ -301,6 +323,11 @@ export class Generator implements WorldGen {
     const t0Stretch = !!out.t0Stretch || (t0Stretch0 && !fixed);
     let s1 = sAt(t1);
     const datumEnd = datumAt.length ? datumAt[datumAt.length - 1]!.datum : c.datum;
+    // Theme T8: a driveway never cuts the sidewalk under something standing on it (its footprint stays on one level).
+    const onWalk = (o: Obstacle, d: readonly [number, number, number]) => o.kind !== 'curb' && o.solids.some((so) => {
+      const b = so.box, x0 = d[2] < 0 ? -3.8 : 2.6, x1 = d[2] < 0 ? -2.6 : 3.8;
+      return b.x1 > x0 && b.x0 < x1 && b.s1 > d[0] - 0.3 && b.s0 < d[1] + 0.3;
+    });
     // Suburbs: driveway curb cuts every 1.5–2 s (alternating sides) where the template left the curb free.
     if (layout.id === 'suburbs') {
       // (no cut in the second before a full-width hazard: a board rolling off the curb there could not pop in time)
@@ -309,11 +336,15 @@ export class Generator implements WorldGen {
         const sd = rng.chance(0.5) ? -1 : 1, s = sAt(t);
         if (fwT.some((h) => t > h - GEN.driveway.hazardClear && t < h + 0.3)) continue;
         if (driveways.some((d) => d[2] === sd && d[1] > s - 2 && d[0] < s + GEN.driveway.w + 2)) continue;
-        driveways.push([round1cm(s), round1cm(s + GEN.driveway.w), sd]);
+        const dw: [number, number, number] = [round1cm(s), round1cm(s + GEN.driveway.w), sd];
+        if (obstacles.some((o) => onWalk(o, dw))) continue;
+        driveways.push(dw);
       }
     }
     const v0 = speedAt(t0);
     const noEdges: [number, number, number][] = [];
+    // (the last segment's obstacles that reach into this one, e.g. a row's car: no curb edge runs beside them)
+    const reaching = c.history.filter((o) => o.kind !== 'curb' && o.kind !== 'dock_lip' && o.s + o.len > s0);
     const base = (obs: readonly Obstacle[]): Obstacle[] => {
       const out2: Obstacle[] = [];
       const steps = [{ s: s0, datum: c.datum }, ...datumAt];
@@ -321,7 +352,7 @@ export class Generator implements WorldGen {
         const a = Math.max(s0, steps[k]!.s), b = k + 1 < steps.length ? steps[k + 1]!.s : s1;
         if (b - a < 0.02) continue;
         out2.push(...buildStreet(layout, a, b, this.makeProps(index, area, layout, steps[k]!.datum),
-          { cuts, driveways, obstacles: [...obs, ...c.persistent], v: v0, noCurbEdges: out.noCurbEdges, noEdges }));
+          { cuts, driveways, obstacles: [...obs, ...c.persistent, ...reaching], v: v0, noCurbEdges: out.noCurbEdges, noEdges }));
       }
       if (layout.lip && out.lip !== false) {
         const r = out.lip ? { from: out.lip.s0, to: out.lip.s1, landmark: out.lip.landmark, tags: ObTag.TrickLine | ObTag.Grindable, noEdges } : { noEdges };
@@ -397,12 +428,12 @@ export class Generator implements WorldGen {
     // the deadline: where the template's own line already passes (an opening at the line, no extra move), else as a
     // tail after its content (the segment grows to stand it), else with a forced move inside it. A template that
     // cannot stand a row it must stand is re-planned as an S_GATE.
-    let row: { t: number; lanes: [number, number][] } | undefined;
+    let row: RowRec | undefined;
     if (out.gateT !== undefined) {
       const sr = sAt(out.gateT);
       const lanes = rowLanes(sr, [...obstacles, ...persistentNew, ...c.persistent]);
       if (!lanesApart(lanes, c.lastGateOpen)) return fail('gate:lanes');
-      row = { t: out.gateT, lanes };
+      row = { t: out.gateT, lanes, sig: out.rowSig ?? { scene: 'clear', veh: 0, side: 0 }, fill: out.rowFill ?? 'kit', how: 'gate' };
     }
     const rowDue = this.gateLatestStart(t0) + GEN.gate.lead;
     const wantRow = clocks && !row && !plan.slip && t1 > rowDue - (GEN.gate.lead + GEN.gate.hostAhead);
@@ -443,22 +474,32 @@ export class Generator implements WorldGen {
       });
       const line = r0.line;
       const tHi = Math.min(rowDue, t1 - 0.45);
-      const tries: { tr: number; centres: number[]; keepOut: [number, number][]; tail?: boolean }[] = [];
-      // At the line: it holds its x around the slot, is on the ground, and its lanes miss the last row's.
-      for (let tr = tHi; tr >= t0 + GEN.noActionHead + 0.3 && tries.length < GEN.gate.overlayTries; tr -= 0.2) {
+      // (theme T8: an opening whose row closes where everything belongs is preferred, rows.ts rowCloses)
+      const av = avoidOf(c.rowHist, area, rowCtx(round1cm(sAt(tHi)), 0, 0).mood);
+      const closes = (keepOut: readonly [number, number][]) => (cs: readonly number[]) => rowCloses(cs, w, area, layout, keepOut, av);
+      type Try = { tr: number; centres: number[]; keepOut: [number, number][]; x0: number; either: boolean; how: RowRec['how']; tail?: boolean };
+      const tries: Try[] = [];
+      // At the line: it holds its x around the slot, is on the ground, and its lanes miss the last row's. Of a few
+      // such slots, those whose row closes where everything belongs come first.
+      const atLine: Try[] = [];
+      for (let tr = tHi; tr >= t0 + GEN.noActionHead + 0.3 && atLine.length < GEN.gate.overlayTries + 2; tr -= 0.2) {
         const x = round1cm(line.xAt(tr));
         if (Math.abs(x) > GEN.gate.maxC || !lanesApart([openingLanes(x, w)], c.lastGateOpen)) continue;
         if ([-0.45, -0.25, 0.15].some((d) => Math.abs(line.xAt(tr + d) - x) > GEN.gate.steady)) continue;
         if (line.ollies.some((o) => o > tr - 0.75 && o < tr + 0.2)) continue;
         const keepOut = slotAt(tr);
         if (!keepOut || !clearOf(x, keepOut)) continue;
-        const centres = [x];
+        const c0 = nudgeOpening(x, w, area, layout, keepOut, (cc) => clearOf(cc, keepOut) && lanesApart([openingLanes(cc, w)], c.lastGateOpen), av);
+        const centres = [c0];
         if (!reach(tr, centres)) continue;
         const x2 = round1cm(x - Math.sign(x || (rng.chance(0.5) ? 1 : -1)) * rng.range(GEN.gate.secondOff[0], GEN.gate.secondOff[1]));
         if (rng.chance(GEN.gate.second[gt] ?? 0) && Math.abs(x2) <= GEN.gate.maxC && clearOf(x2, keepOut)
-          && lanesApart([openingLanes(x2, w)], c.lastGateOpen) && lanesApart([openingLanes(x2, w)], [openingLanes(x, w)], 1.0)) centres.push(x2);
-        tries.push({ tr, centres, keepOut });
+          && lanesApart([openingLanes(x2, w)], c.lastGateOpen) && lanesApart([openingLanes(x2, w)], [openingLanes(c0, w)], 1.0)) centres.push(x2);
+        atLine.push({ tr, centres, keepOut, x0: x, either: false, how: 'line' });
       }
+      const ok = atLine.map((tt) => closes(tt.keepOut)(tt.centres));
+      tries.push(...atLine.map((tt, i) => ({ tt, k: -ok[i]!, i })).sort((p, q) => p.k - q.k || p.i - q.i)
+        .slice(0, GEN.gate.overlayTries).map((e) => e.tt));
       // Else a tail row after the template's content: openings 2.8–4 m from the line's exit x, the move after the
       // template's last action, the row clear of its edges' exit zones.
       if (!tries.length) {
@@ -467,15 +508,16 @@ export class Generator implements WorldGen {
         for (const o of obstacles) if (o.kind !== 'curb' && o.kind !== 'dock_lip') for (const e of o.edges) tEdge = Math.max(tEdge, tAt(e.b.s));
         const lastAct = r0.actions[r0.actions.length - 1];
         const moveFrom = Math.max(t0 + GEN.noActionHead, earliest, lastAct ? lastAct.t + spacingAfter(lastAct.t, lastAct.dx) : -Infinity);
-        const centres = gateOpenings(rng, x0, c.lastGateOpen, gt, []);
-        if (centres) {
+        const op = gateOpenings(rng, x0, c.lastGateOpen, gt, [], { closes: closes([]), v: speedAt(t1) });
+        if (op) {
+          const centres = op.centres;
           const tr = Math.max(t1 - 0.3, moveFrom + T_SHIFT(Math.abs(centres[0]! - x0)) + 0.35 + GEN.gate.moveSlack, tEdge + GEN.gate.edgeClear);
           const keepOut = slotAt(tr);
           // (the longer segment must leave the next one room for the A3 hazard before its maximum)
           const t1x = tAt(sAt(tr) + 1.2) + 0.5;
           const a3ok = fullWidthA !== null || aOf(t1x) <= c.lastFwA + a3Range(phase)[1] - GEN.gate.tailA3Room;
           if (keepOut && a3ok && tr <= rowDue + 1e-6 && t1x <= maxT1 - GEN.gate.tailRoom && centres.every((x) => clearOf(x, keepOut)) && reach(tr, centres)) {
-            tries.push({ tr, centres, keepOut, tail: true });
+            tries.push({ tr, centres, keepOut, x0, either: op.either, how: 'tail', tail: true });
           }
         }
       }
@@ -485,36 +527,40 @@ export class Generator implements WorldGen {
         for (let tr = tHi; tr >= tLoMove; tr -= 0.25) {
           const keepOut = slotAt(tr);
           if (!keepOut) continue;
-          const centres = gateOpenings(rng, line.xAt(tr - 1.3), c.lastGateOpen, gt, keepOut);
-          if (centres && reach(tr, centres)) tries.push({ tr, centres, keepOut });
+          const x0 = line.xAt(tr - 1.3);
+          const op = gateOpenings(rng, x0, c.lastGateOpen, gt, keepOut, { closes: closes(keepOut), v: speedAt(tr) });
+          if (op && reach(tr, op.centres)) tries.push({ tr, centres: op.centres, keepOut, x0, either: op.either, how: 'move' });
           break;
         }
       }
-      // Phase B (THEME §3.4): each slot first with vehicles at the corridor edges, then (when that fails) the kit-only row.
-      const free = deepFree([...obstacles, ...persistentNew, ...c.persistent]);
-      const slots = tries.flatMap((tt) => [{ ...tt, veh: true }, { ...tt, veh: false }]);
-      let vehFailed = -1;
-      for (const { tr, centres, keepOut, tail, veh } of slots) {
-        if (!veh && vehFailed !== tr) continue;        // the kit-only row only after its vehicle row failed
+      // Theme T8 (rows.ts): each slot's row as its block and the last rows have it; when that fails, the same openings
+      // without vehicles (or, when it had none, today's kit row): ≤ 2 validations a slot.
+      for (const tt of tries) {
+        const { tr, centres, keepOut, tail } = tt;
         const sr = round1cm(sAt(tr));
-        const rowObs = gateRow(sr, centres, w, props, rng, keepOut, veh ? free : null);
-        if (veh && !rowObs.some((o) => VEHICLE_KINDS.has(o.kind))) { vehFailed = tr; continue; }   // none fitted: same row
-        const lanes = rowLanes(sr, [...obstacles, ...rowObs, ...persistentNew, ...c.persistent]);
-        if (!lanesApart(lanes, c.lastGateOpen)) { if (veh) vehFailed = tr; continue; }
-        const guide = [{ t0: tr - 0.45, t1: tr + 0.15, x0: centres[0]! - 0.25, x1: centres[0]! + 0.25 }];
-        const nb = noEdges.length, t1o = t1, nd = driveways.length;
-        noEdges.push(rowBan(tr));
-        driveways.push(...carDriveways(rowObs));
-        if (tail) { t1 = Math.max(t1, tAt(sr + 1.2) + 0.5); s1 = sAt(t1); }
-        const r2 = run([...obstacles, ...rowObs], guide);
-        if (!r2.ok) {
-          noEdges.length = nb; t1 = t1o; s1 = sAt(t1); driveways.length = nd;
-          GEN_DEBUG.onReject?.({ index, t0, tpl: tpl.id, tier: plan.tier, attempt, why: `  detail overlay@${tr.toFixed(2)}${tail ? 'T' : ''} ${r2.why} ${r2.detail ?? ''}` });
-          if (veh) vehFailed = tr;
-          continue;
+        const rc = rowCtx(sr, tt.x0, centres[0]!, { either: tt.either });
+        let rb: RowBuild | null = gateRow(sr, centres, w, props, rng, keepOut, rc);
+        for (let k = 0; rb && !row; k++) {
+          const cur: RowBuild = rb;
+          rb = k > 0 ? null : cur.sig.veh > 0 ? gateRow(sr, centres, w, props, rng, keepOut, { ...rc, pVeh: 0, either: false })
+            : cur.fill !== 'kit' ? gateRow(sr, centres, w, props, rng, keepOut, null) : null;
+          const lanes = rowLanes(sr, [...obstacles, ...cur.obs, ...persistentNew, ...c.persistent]);
+          if (!lanesApart(lanes, c.lastGateOpen)) continue;
+          const guide = [{ t0: tr - 0.45, t1: tr + 0.15, x0: centres[0]! - 0.25, x1: centres[0]! + 0.25 }];
+          const nb = noEdges.length, t1o = t1, dw0 = driveways.slice();
+          noEdges.push(rowBan(tr));
+          // (no driveway under the row's sidewalk pieces)
+          if (driveways.length) { const keep = driveways.filter((d) => !cur.obs.some((o) => onWalk(o, d))); driveways.length = 0; driveways.push(...keep); }
+          if (tail) { t1 = Math.max(t1, tAt(sr + 1.2) + 0.5); s1 = sAt(t1); }
+          const r2 = run([...obstacles, ...cur.obs], guide);
+          if (!r2.ok) {
+            noEdges.length = nb; t1 = t1o; s1 = sAt(t1); driveways.length = 0; driveways.push(...dw0);
+            GEN_DEBUG.onReject?.({ index, t0, tpl: tpl.id, tier: plan.tier, attempt, why: `  detail overlay@${tr.toFixed(2)}${tail ? 'T' : ''} ${cur.fill}/${cur.sig.veh} ${r2.why} ${r2.detail ?? ''}` });
+            continue;
+          }
+          obstacles.push(...cur.obs); res = r2; row = { t: tAt(sr), lanes, sig: cur.sig, fill: cur.fill, how: tt.how };
         }
-        obstacles.push(...rowObs); res = r2; row = { t: tAt(sr), lanes };
-        break;
+        if (row) break;
       }
       if (!row && rowLate()) return fail('gate');
     }
@@ -528,13 +574,11 @@ export class Generator implements WorldGen {
       let w = trackWander(res.line, t0, t1, c.wander, aOf);
       if (aEnd - w.lastA > P2 + 1e-6) {
         const tw = this.wallTime(obstacles, t0, Math.min(t1 - 0.5, tOfA(c.wander.lastA + P2)));
-        // (Phase B, THEME §3.4: a van_across and one filler first; the filler wall is the fallback.)
-        for (const van of tw !== null ? [true, false] : []) {
-          const wall = this.wanderWall(tw!, res.line.xAt(tw!), props, rng, van);
-          if (!wall) continue;
-          const trial = [...obstacles, ...wall];
+        // (theme T8: the Phase B van wall is cut, it almost never stood; the filler wall stays)
+        if (tw !== null) {
+          const trial = [...obstacles, ...this.wanderWall(tw, res.line.xAt(tw), props)];
           const r2 = run(trial);
-          if (r2.ok) { obstacles.length = 0; obstacles.push(...trial); res = r2; walls++; w = trackWander(res.line, t0, t1, c.wander, aOf); break; }
+          if (r2.ok) { obstacles.length = 0; obstacles.push(...trial); res = r2; walls++; w = trackWander(res.line, t0, t1, c.wander, aOf); }
         }
       }
       wander = w;
@@ -570,24 +614,13 @@ export class Generator implements WorldGen {
     return null;
   }
 
-  /** A 6 m wall of area fillers centred on the line x (A2 overdue, DESIGN §10.6.7): the line must move ≥ 3 m. Phase B
-   *  (THEME §3.4, `van`): a van_across nosed in at the nearer corridor edge (the left one in the Docks), and fillers
-   *  from its tail to the wall's far end (one 0.6 m filler in the usual case); null when the van would not reach. */
-  private wanderWall(t: number, x: number, p: PropCtx, rng: Sfc32, van = false): Obstacle[] | null {
+  /** A 6 m wall of area fillers centred on the line x (A2 overdue, DESIGN §10.6.7): the line must move ≥ 3 m. */
+  private wanderWall(t: number, x: number, p: PropCtx): Obstacle[] {
     const xc = x;
     const f = fillerKinds(p.area)[0]!;
     const out: Obstacle[] = [];
-    const a = Math.max(-4.5, xc - 3.0), b = Math.min(4.5, xc + 3.0);
-    if (van) {
-      // (in the Docks only from the dock side, and not when the wall would then close the apron)
-      if (p.area === 'docks' && xc > 0.5) return null;
-      const sd: -1 | 1 = p.area === 'docks' || xc < 0 ? -1 : 1;
-      out.push(buildVanAcross(round1cm(sAt(t)), sd, p, 0, ObTag.Filler));
-      // Kit pieces from 0.1 m past the van's tail (±0.1) to the wall's far end (usually one); the line keeps its ≥ 3 m
-      // move on the open side.
-      if (sd < 0) kitRun(out, 0, b, round1cm(sAt(t)), p, rng, 0, true); else kitRun(out, a, 0, round1cm(sAt(t)), p, rng, 0, false, true);
-      return out;
-    }
+    // (in the Docks the wall stops at the lip, as a row does: a filler never stands on it)
+    const a = Math.max(-4.5, xc - 3.0), b = Math.min(p.area === 'docks' ? LIP.x0 - 0.05 : 4.5, xc + 3.0);
     const pitch = f.wid + 0.1, n = Math.max(1, Math.ceil((b - a - f.wid) / pitch) + 1);
     const step = n > 1 ? (b - a - f.wid) / (n - 1) : 0;
     for (let k = 0; k < n; k++) out.push(buildFiller(round1cm(sAt(t)), round1cm(a + f.wid / 2 + k * step), false, p, k % 3));
@@ -608,9 +641,14 @@ export class Generator implements WorldGen {
       const y0 = groundY(b.obstacles, sAt(a.t), a.x, c.datum);
       if (ob || b.coins.coins.length < 12) b.coins.arc(a.t - DT, a.x, y0);
     }
+    // Theme T8: every vehicle faces its own traffic, never the same look twice running (skins only, props/shared.ts).
+    c.lastVeh = faceTraffic(b.obstacles, c.lastVeh);
     const decor: Decor[] = [];
+    // (the last segment's vehicles and row pieces that reach into this one too: no zebra under them)
+    const near = [...b.obstacles, ...c.history.filter((o) => o.s + o.len > s0)];
     const denv = { area, gateway, s0, s1, datum: Math.max(c.datum, b.datumEnd), driveways: b.driveways,
-      vehicles: b.obstacles.filter((o) => o.kind === 'van_across' || o.kind === 'parked_car'),
+      vehicles: near.filter((o) => VEHICLE_KINDS.has(o.kind)), roadKit: near.filter((o) => (o.tags & ObTag.Filler) && !VEHICLE_KINDS.has(o.kind)),
+      crossings: this.decorState.crossings,
       nextEndWall: this.decorState.nextEndWall, backNext: this.decorState.backNext, areaEndS: sAt(areaEndT), visit: this.decorState.visit };
     emitDecor(decor, denv, decorRng);
     this.decorState.nextEndWall = denv.nextEndWall;
@@ -658,8 +696,10 @@ export class Generator implements WorldGen {
       const byWindow = Number.isFinite(c.lastRowT) ? c.lastRowT + GEN.gate.window[ph] : Infinity;
       c.gateDueT = Math.min(b.row.t + GEN.gate.gap[ph], byWindow);
       c.prevRowT = c.lastRowT; c.lastRowT = b.row.t; c.lastGateOpen = b.row.lanes;
-      this.rows.push({ t: b.row.t, lanes: b.row.lanes });
+      c.rowHist = [b.row.sig, ...c.rowHist].slice(0, ROW_HIST);
+      this.rows.push(b.row);
     }
+    if (b.obstacles.some((o) => o.kind === 'van_across')) c.vanVisit = gatewayWindow(t0, this.startArea).start;
     if (b.plan.reason === 'breather' || gateway) {
       const br = GEN.breather[phaseAt(t1)] ?? GEN.breather.warm!;
       c.breatherDueT = t1 + (br.every[0] + br.every[1]) / 2;

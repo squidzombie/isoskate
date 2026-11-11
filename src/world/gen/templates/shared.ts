@@ -14,8 +14,8 @@ import { rMinAt } from '../validator/sweep';
 import { ObTag } from '../../../core/world';
 import { GEN } from '../gen.config';
 import { buildBarrier, buildBench, buildCone, buildFlatbar, buildHandrail, buildIncline, buildPad, buildSideSet,
-  buildTerrace, buildTrench, carDriveways, stairDrop, STAIR } from '../props/shared';
-import { deepFree, gateOpenings, gateRow, lanesApart, openingLanes } from '../rows';
+  buildTerrace, buildTrench, stairDrop, STAIR } from '../props/shared';
+import { gateOpenings, gateRow, lanesApart, nudgeOpening, openingLanes, rowCloses, avoidOf } from '../rows';
 import { LIP } from '../props/street';
 import type { Template, TemplateCtx, TemplateOut } from './types';
 import { actFrom, contentFrom, edgeCoins, endAfter, put, roadHalf, side, sOf } from './util';
@@ -150,8 +150,11 @@ export const S_GATE: Template = {
     // stand early (the first row of a run stands inside the spawn grace); otherwise the line moves to an opening.
     const atLine = !c.a3 && Math.abs(c.safeX) <= GEN.gate.maxC && lanesApart([openingLanes(c.safeX, w)], c.lastGateOpen)
       && (c.lastGateOpen.length === 0 || c.rng.chance(0.35));
-    const centres = atLine ? [round1cm(c.safeX)] : gateOpenings(c.rng, c.safeX, c.lastGateOpen, c.tier);
-    if (!centres) return null;
+    const rc0 = c.rowCtx(sAt(c.t0 + 1.5), 0, 0), av = avoidOf(rc0.hist, c.area, rc0.pVeh > 0 ? rc0.mood : 'quiet');
+    const opened = atLine ? { centres: [nudgeOpening(round1cm(c.safeX), w, c.area, c.layout, [], (x) => lanesApart([openingLanes(x, w)], c.lastGateOpen), av)], either: false }
+      : gateOpenings(c.rng, c.safeX, c.lastGateOpen, c.tier, [], { closes: (cs) => rowCloses(cs, w, c.area, c.layout, [], av), v: c.v });
+    if (!opened) return null;
+    const centres = opened.centres;
     const pick = centres[0]!;
     // With the A3 hazard: a full-width barrier first (ollie), the move to the opening after the landing and R_MIN (not
     // before a long move: the hazard then comes in the next segment).
@@ -195,12 +198,11 @@ export const S_GATE: Template = {
       const pad = put(c, buildPad(round1cm(sAt(pB) - len), padX, len, c.props));
       c.coins.string(pad.s + 0.4, pad.s + pad.len - 0.4, pad.x, c.datum + 0.15 + GEN.coins.padUp, c.v);
     }
-    // (Phase B, THEME §3.4: vehicles at the corridor edges; the easy re-rolls stand the kit-only row)
-    const rowObs = gateRow(sRow, centres, w, c.props, c.rng, [], c.attempt < GEN.easyFrom ? deepFree(c.obstacles) : null);
-    for (const ob of rowObs) put(c, ob);
-    c.driveways.push(...carDriveways(rowObs));
+    // (theme T8, rows.ts: everything where it belongs; the easy re-rolls keep vehicles out)
+    const row = gateRow(sRow, centres, w, c.props, c.rng, [], c.rowCtx(sRow, c.safeX, pick, { either: opened.either, vehicles: c.attempt < GEN.easyFrom }));
+    for (const ob of row.obs) put(c, ob);
     const tr = tAt(sRow);
-    return { t1: tAt(sRow + 1.2) + 0.5, gateX: centres, gateT: tr, ...(withA3 ? { fullWidth: true } : {}),
+    return { t1: tAt(sRow + 1.2) + 0.5, gateX: centres, gateT: tr, rowSig: row.sig, rowFill: row.fill, ...(withA3 ? { fullWidth: true } : {}),
       guides: [{ t0: tr - 0.45, t1: tr + 0.15, x0: pick - 0.25, x1: pick + 0.25 }] };
   },
 };

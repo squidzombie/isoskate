@@ -7,9 +7,11 @@
 //   IN_GAUNTLET T4  4.0 s  the loading-dock high line with a gap, drums on the low line  (gap to gap; thread the drums)
 import { clamp, round1cm } from '../../../core/math';
 import { sAt, tAt } from '../../../core/tuning';
+import type { Obstacle } from '../../../core/world';
 import { ObTag } from '../../../core/world';
 import { GEN } from '../gen.config';
 import { buildBollard, buildContainer, buildDeck, buildDrums, buildIbeam, buildPallet } from '../props/docks';
+import { skinVariant } from '../props/shared';
 import { LIP } from '../props/street';
 import type { Template, TemplateCtx, TemplateOut } from './types';
 import { contentFrom, edgeCoins, endAfter, put, sOf, secondBeat } from './util';
@@ -65,8 +67,10 @@ export const IN_CHANNEL: Template = {
     const row = (s: number, cx: number) => {
       // Left wall: containers from −4.5 to cx − 1.5; right wall from cx + 1.5 to the lip.
       const l1 = cx - 1.5, r0 = cx + 1.5;
-      for (let x1 = l1; x1 > -4.5 + 0.3; x1 -= 2.4) put(c, buildContainer(s, round1cm(Math.max(-4.5 + 1.2, x1 - 1.2)), c.props, c.rng.int(0, 5)));
-      for (let x0 = r0; x0 < LIP.x0 - 0.3; x0 += 2.4) put(c, buildContainer(s, round1cm(Math.min(LIP.x0 - 1.2, x0 + 1.2)), c.props, c.rng.int(0, 5)));
+      // (theme T8: shipping containers only: trucks side by side, touching, would read as a jam)
+      const box = (ob: Obstacle) => { const v = skinVariant(ob, (k) => k.body === 'container'); if (v >= 0) ob.variant = v; return ob; };
+      for (let x1 = l1; x1 > -4.5 + 0.3; x1 -= 2.4) put(c, box(buildContainer(s, round1cm(Math.max(-4.5 + 1.2, x1 - 1.2)), c.props, c.rng.int(0, 5))));
+      for (let x0 = r0; x0 < LIP.x0 - 0.3; x0 += 2.4) put(c, box(buildContainer(s, round1cm(Math.min(LIP.x0 - 1.2, x0 + 1.2)), c.props, c.rng.int(0, 5))));
     };
     const s1 = sOf(tA), s2 = s1 + 6.1 + Math.max(9, c.v * 1.05);
     row(s1, cx1); row(s2, cx2);

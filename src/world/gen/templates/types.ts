@@ -10,6 +10,7 @@ import type { CoinWriter } from '../coins';
 import type { PhaseId, Tier } from '../gen.config';
 import type { PropCtx } from '../props/common';
 import type { StreetLayout } from '../props/street';
+import type { RowCtx, RowFill, RowSig } from '../rows';
 
 export type TemplateId =
   | 'ROLLOUT' | 'LESSON' | 'GW_greenway' | 'GW_levelCrossing' | 'GW_harborBridge' | 'GW_underpass'
@@ -66,6 +67,9 @@ export interface TemplateCtx {
   readonly datumAt: { s: number; datum: number }[];
   /** Lesson Line: the hint an obstacle teaches. */
   hint(ob: Obstacle, h: HintId): Obstacle;
+  /** Theme T8 (rows.ts): the context of an anti-straight row this template stands at sRow (the line's approach x0,
+   *  the opening it takes; an either-side fork; `vehicles: false` keeps vehicles out, e.g. on the easy re-rolls). */
+  rowCtx(sRow: number, x0: number, cSafe: number, o?: { either?: boolean; vehicles?: boolean }): RowCtx;
 }
 
 export interface TemplateOut {
@@ -83,8 +87,8 @@ export interface TemplateOut {
   t0Stretch?: boolean;
   /** Hints for the validator's line (DP guides): where the line should pass, e.g. a gate opening's centre. */
   guides?: { t0: number; t1: number; x0: number; x1: number }[];
-  /** S_GATE: its row's opening centres and the run time the board reaches it. */
-  gateX?: number[]; gateT?: number;
+  /** S_GATE: its row's opening centres and the run time the board reaches it; the row's signature and fill (rows.ts). */
+  gateX?: number[]; gateT?: number; rowSig?: RowSig; rowFill?: RowFill;
   /** Docks lip edges: false = none this segment; a range (and landmark) = this run instead of the default ones. */
   lip?: false | { s0: number; s1: number; landmark?: string };
 }

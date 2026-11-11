@@ -542,13 +542,25 @@ describe('RECLAIM decor (theme §4, §6; T3)', () => {
   });
 });
 
-// Obstacle chain: identical from the T3 split through T7a (the RECLAIM re-skin moves no gameplay); re-baselined once in
+// Obstacle chain: identical from the T3 split through T7a (the RECLAIM re-skin moves no gameplay); re-baselined in
 // T8 (Phase B, cars as the main blocker: the van_across kind, vehicles at the edges of the anti-straight rows and the
 // van wander wall, the four parked-row templates and their weights, the fewest-pieces row fill, the Suburbs bin row
-// piece, the pre-gateway line guide). Was [4059795562, 1058502699, 2849456109] / trench [123044223, 3914246493, 2655523978].
-const GOLDEN_OBSTACLES = [3896676665, 3670890132, 1962982555];
-const GOLDEN_OBSTACLES_TRENCH = [1874618390, 480476392, 1207027692];
+// piece, the pre-gateway line guide; was [4059795562, 1058502699, 2849456109] / trench [123044223, 3914246493, 2655523978]),
+// and once more for T8 reworked as "where they stopped" (DESIGN §24 row 76: rows built by band with vehicles where they
+// stopped, the block mood and row history, the opening preference and the either-side fork, the traffic-facing pass, the
+// Docks-only van, no van wall, the parked rows at the kerb, the base edges seeing the last segment's obstacles, driveways
+// clear of row pieces, the shipping-container channel walls, DT_RUSH's double-parked car 0.05 m clear; after review:
+// openings drawn by how naturally their road closes for the block's mood and the last rows, with the one-row look-ahead
+// and the far-sidewalk weight, a pair only where one vehicle cannot close a road part, a car stopped mid-street counting
+// for the same-side rule and within 0.5 m of the centre on neither side, no Docks van in a no-vehicle row, no vehicle
+// staggered earlier on the route to a second opening, curb and lip edges ending ≥ 1.0 s before a full-width hazard;
+// was [3896676665, 3670890132, 1962982555] / trench [1874618390, 480476392, 1207027692]).
+const GOLDEN_OBSTACLES = [3324426131, 1830454800, 1449185268];
+const GOLDEN_OBSTACLES_TRENCH = [3450213839, 3249536433, 3943960394];
 // Decor chain: re-baselined in T3 (RECLAIM decor kinds and emission; was [1783084398, 3361667576, 1795712479] at the split),
-// and with the T8 obstacles (decor follows the street; plus the vehicles' bays and loading entrances). Was
-// [3513787741, 2851077237, 3473871542] before T8.
-const GOLDEN_DECOR = [2282354388, 2673347121, 4179237450];
+// with the T8 obstacles (decor follows the street; plus the vehicles' bays and loading entrances; was
+// [3513787741, 2851077237, 3473871542] before T8), and with T8 "where they stopped" (the street it follows, a stopped
+// car's crossing, no zebra under a vehicle or a row's kerb kit, bays only under Downtown kerb cars, the Docks' loading
+// entrance clearing its fence and lamps, the Suburbs' residential lanes without a centre line; was
+// [2282354388, 2673347121, 4179237450]).
+const GOLDEN_DECOR = [3837789099, 4040777951, 1416243026];

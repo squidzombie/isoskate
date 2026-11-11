@@ -12,7 +12,9 @@ import { hash32, type Sfc32 } from '../../core/rng';
 import { speedAt, tAt } from '../../core/tuning';
 import type { Decor, Obstacle } from '../../core/world';
 import { DECOR_BRANDS, DECOR_KINDS, DECOR_LIMITS, NEON_SIGN_WORDS, type DecorKind } from '../../core/decor';
+import { isVehicle, noseToCam, propSkin } from '../../core/skins';
 import { GEN } from './gen.config';
+import { LAYOUTS } from './props/street';
 
 export { DECOR_KINDS, DECOR_LIMITS, isDecorKind, type DecorKind } from '../../core/decor';
 
@@ -29,8 +31,13 @@ export interface DecorEnv {
   backNext: [number, number];
   /** End of the area visit (s): backdrop blocks never reach into the next gateway. */
   areaEndS: number;
-  /** Phase B (THEME §3.4): the segment's vans across and parked cars, for their bays and loading entrances. */
+  /** Theme T8: the segment's vehicles (rows.ts VEHICLE_KINDS), for their bays, crossings and loading entrances. */
   vehicles?: readonly Obstacle[];
+  /** Theme T8: the other row pieces (Filler) of the segment and those reaching into it: no zebra under the ones in the
+   *  road (a bin out at the kerb, a café set in a bay, a yatai). */
+  roadKit?: readonly Obstacle[];
+  /** The crosswalks emitted so far (s, carried and trimmed in place): a stopped car's crossing needs none within 25 m. */
+  crossings?: number[];
   /** The current area visit (carried, updated in place): its start and whether its vista and its one animal are out
    *  (RECLAIM theme §4, §6: one vista per visit, at most one animal). */
   visit?: { end: number; start: number; vista: boolean; wildlife: boolean };
@@ -54,7 +61,7 @@ const hv = (s: number, salt: number) => (hash32(Math.round(s * 100), salt) >>> 0
 
 /** Emit the decor of one segment [s0, s1). Returns the next end-wall s. */
 export function emitDecor(out: Decor[], env: DecorEnv, rng: Sfc32): number {
-  const o = new Out(out, env);
+  const o = new Out(out, env), first = out.length;
   const { s0, s1, datum } = env;
   const y0 = datum, side0 = datum + 0.15;
   const v = speedAt(tAt(s0));
@@ -194,6 +201,8 @@ export function emitDecor(out: Decor[], env: DecorEnv, rng: Sfc32): number {
   vehicleDecor(o, env);
   const next = endWalls(o, rng, env, v);
   nature(o, a, rng, visit, v);   // (last: the RECLAIM draws come after every pre-theme one)
+  clearEntrances(out, first);
+  if (env.crossings) { const keepFrom = s1 - 40; env.crossings.splice(0, env.crossings.length, ...env.crossings.filter((c) => c >= keepFrom)); }
   return next;
 }
 
@@ -235,14 +244,20 @@ function nature(o: Out, a: AreaId, rng: Sfc32, visit: NonNullable<DecorEnv['visi
 function groundDecals(o: Out, a: AreaId, rng: Sfc32, v: number): void {
   const { s0, s1, datum } = o.env;
   const len = s1 - s0;
-  if (a !== 'docks') o.add('lane_dash', s0, 0, datum, { len, dash: 3, gap: 3, color: a === 'suburbs' ? 1 : 0 });
+  // (theme T8: the Suburbs' residential lanes carry no centre line, so a car stopped toward the middle of one reads as
+  // a car in a quiet street, never one across a line; DESIGN §10.7 rows note)
+  if (a !== 'docks' && a !== 'suburbs') o.add('lane_dash', s0, 0, datum, { len, dash: 3, gap: 3, color: 0 });
   if (a === 'downtown' && rng.chance(0.5)) o.add('parking_bay', s0, (rng.chance(0.5) ? -1 : 1) * 2.5, datum, { len, bays: Math.max(1, Math.floor(len / 5)) });
   // A road arrow only before a crossing, one per crossing (owner note 8): the renderer paints it 6 m before the zebra,
   // centred in the lane the skater rides and pointing +s. Same s as the crossing, so both land in the same chunk.
   if (a !== 'docks' && rng.chance(0.18)) {
     const s = s0 + rng.range(0, len);
-    o.add('crosswalk', s, 0, datum, { len: 3, w: 6, scramble: a === 'neon' ? 1 : 0 });
-    o.add('road_arrow', s, 0, datum, { kind: 0 });
+    // (theme T8: never under a stopped vehicle; the draws stay, so every later decal keeps its place)
+    if (!onRoadVehicle(o.env, s, s + 3)) {
+      o.add('crosswalk', s, 0, datum, { len: 3, w: 6, scramble: a === 'neon' ? 1 : 0 });
+      o.add('road_arrow', s, 0, datum, { kind: 0 });
+      if (s >= s0 && s < s1) o.env.crossings?.push(round1cm(s));
+    }
   }
   // (The pre-theme random arrows are gone; their draws stay, so the decals after them keep their places.)
   if (a !== 'docks' && rng.chance(0.3)) { rng.range(0, len); rng.range(-2, 2); rng.int(0, 3); }
@@ -258,23 +273,78 @@ function groundDecals(o: Out, a: AreaId, rng: Sfc32, v: number): void {
   }
 }
 
-/** Phase B (THEME §3.4): under every van_across a faded perpendicular bay, and on the side band it faces its loading
- *  entrance (an end wall with a closed roller door facing the street; not in Neon, see below); a faded bay under each
- *  car in a curb lane.
- *  Placed from the obstacles alone (no draw from the segment's decor stream). */
+/** Is any road vehicle over [s0, s1] of the road (|x| < the kerb)? */
+/** Does a vehicle or a row's kerb kit (theme T8: whatever a row stands in the road) stand on the road over [s0, s1]? */
+function onRoadVehicle(env: DecorEnv, s0: number, s1: number): boolean {
+  const kerb = LAYOUTS[env.area].curbX ?? 4.5;
+  return [...(env.vehicles ?? []), ...(env.roadKit ?? [])].some((ob) => ob.s < s1 && ob.s + ob.len > s0 && Math.abs(ob.x) - ob.wid / 2 < kerb);
+}
+
+/** Theme T8 ("where they stopped"), placed from the obstacles alone (no draw from the segment's decor stream):
+ *  - a Docks van_across: a faded perpendicular bay under it and its loading entrance (an end wall with a closed roller
+ *    door) on the dock side it faces; the dock fence opens there and nothing tall stands in the entrance (emitDecor);
+ *  - a Downtown car or van at the kerb: a faded bay under it;
+ *  - a lone car stopped in its lane (Downtown, Neon): the crossing it waits at, 0.8–1.2 m past its front (unless one
+ *    lies within 25 m, and never under another vehicle): a reason to have stopped there, not an eerie halt. */
 function vehicleDecor(o: Out, env: DecorEnv): void {
-  for (const ob of env.vehicles ?? []) {
+  const vs = env.vehicles ?? [];
+  const kerb = LAYOUTS[env.area].curbX;
+  for (const ob of vs) {
     const sd = Math.sign(ob.x) || -1;
     if (ob.kind === 'van_across') {
       o.add('parking_bay', ob.s - 0.4, ob.x, env.datum, { perp: 1, w: 4.6, len: ob.len + 0.8 });
-      // (Neon: the kei van noses into the frontage's own ground-floor shutters; no extra block beside the corridor,
-      // so Neon stays net-negative near it, THEME §6 / owner note 6)
       if (env.area !== 'neon') o.add('end_wall', ob.s - 0.5, sd * 4.7, env.datum, { style: 4, w: 2.2 + hv(ob.s, 93) * 1.6, h: 3.6 + hv(ob.s, 94) * 1.6,
-        len: ob.len + 1.0, brand: Math.floor(hv(ob.s, 95) * 8) }, { variant: Math.floor(hv(ob.s, 96) * 4) });
-    } else if (Math.abs(Math.abs(ob.x) - 2.15) < 0.01) {
-      o.add('parking_bay', ob.s - 0.4, sd * 2.5, env.datum, { len: ob.len + 0.8, bays: 1 });
+        len: ob.len + 1.0 }, { variant: Math.floor(hv(ob.s, 96) * 4) });
+      continue;
     }
+    if (kerb === null || !isVehicle(propSkin(ob.kind, ob.area, ob.id, ob.variant, ob.hgt).body)) continue;
+    const outer = Math.abs(ob.x) + ob.wid / 2;
+    if (env.area === 'downtown' && outer > kerb - 0.12 && outer < kerb + 0.1) {
+      o.add('parking_bay', ob.s - 0.4, sd * 2.5, env.datum, { len: ob.len + 0.8, bays: 1 });
+      continue;
+    }
+    if ((env.area !== 'downtown' && env.area !== 'neon') || outer >= kerb - 0.12) continue;
+    // (lone: no other vehicle within 6 m of it along s)
+    if (vs.some((u) => u !== ob && u.s < ob.s + ob.len + 6 && u.s + u.len > ob.s - 6)) continue;
+    const d = 0.8 + hv(ob.s + ob.x, 104) * 0.4, len = 3;
+    const sz = noseToCam(env.area, ob.x) ? ob.s - d - len : ob.s + ob.len + d;
+    const near = env.crossings ?? [];
+    if (near.some((c) => Math.abs(c - sz) < 25) || onRoadVehicle(env, sz - 0.3, sz + len + 0.3)) continue;
+    if (sz < env.s0 || sz >= env.s1) continue;
+    o.add('crosswalk', sz, 0, env.datum, { len, w: 6, scramble: env.area === 'neon' ? 1 : 0 });
+    near.push(round1cm(sz));
   }
+}
+
+/** The Docks' loading entrance: the dock fence opens there and the lamps, poles, piles and crowns that stood in its
+ *  box (+ 1 m) give way (filtered after emission, so no draw moves). */
+function clearEntrances(out: Decor[], from: number): void {
+  const ents = out.slice(from).filter((d) => d.kind === 'end_wall' && d.params?.style === 4);
+  if (!ents.length) return;
+  const TALL: ReadonlySet<DecorKind> = new Set<DecorKind>(['street_lamp', 'utility_pole', 'perched_birds', 'tree', 'awning', 'blade_sign',
+    'banner', 'pallet_pile', 'drum_pile', 'traffic_light', 'cafe_umbrella', 'bike_parked', 'potted_plant', 'hydrant', 'parking_meter',
+    'sapling', 'shrub_wild', 'wild_grass', 'cart_planter']);
+  const inside = (d: Decor) => ents.some((e) => Math.sign(d.x) === Math.sign(e.x) && Math.abs(d.x) <= Math.abs(e.x) + (e.params?.w ?? 3) + 1
+    && d.s >= e.s - 1 && d.s <= e.s + (e.params?.len ?? 2.8) + 1);
+  const keep: Decor[] = [];
+  for (const d of out.slice(from)) {
+    if (d.kind === 'chain_link' && ents.some((e) => Math.sign(d.x) === Math.sign(e.x))) {
+      // (the fence runs on either side of the entrance)
+      let s = d.s;
+      const end = d.s + (d.params?.len ?? 0);
+      for (const e of [...ents].sort((p, q) => p.s - q.s)) {
+        const a = e.s - 1, b = e.s + (e.params?.len ?? 2.8) + 1;
+        if (a > s + 0.5) keep.push({ ...d, s: round1cm(s), params: { ...d.params, len: round1cm(Math.min(a, end) - s) } });
+        s = Math.max(s, b);
+      }
+      if (end - s > 0.5) keep.push({ ...d, s: round1cm(s), params: { ...d.params, len: round1cm(end - s) } });
+      continue;
+    }
+    if (TALL.has(d.kind as DecorKind) && Math.abs(d.x) >= 4.5 && inside(d)) continue;
+    keep.push(d);
+  }
+  out.length = from;
+  out.push(...keep);
 }
 
 function endWalls(o: Out, rng: Sfc32, env: DecorEnv, v: number): number {

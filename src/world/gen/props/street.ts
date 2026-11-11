@@ -91,18 +91,23 @@ export function subtract(a: number, b2: number, cuts: readonly (readonly [number
 
 /** Edge pieces along x = ex (height ey) over [a, b2) that satisfy rule (d) by construction (DESIGN §10.6): no solid
  *  in the grind sweep (the hitbox along the edge), and every piece ENDS with a clear exit zone (0.6 s·v, ±1.5 m: no
- *  crash face, no pit) before the segment end. Blockers beside the edge (outside the sweep) do not cut it. */
+ *  crash face, no pit) before the segment end. Blockers beside the edge (outside the sweep) do not cut it. A tall
+ *  blocker in line with the edge, and a full-width hazard (a trench or barrier nobody steers around), lie ≥ 1.0 s past
+ *  its end: the grind's exit throws the board into the air, and the rider must land, read and pop before them. */
 export function cutEdgePieces(a: number, b2: number, ex: number, ey: number, s1: number, zone: number,
   obstacles: readonly Obstacle[], extraBlocked: readonly (readonly [number, number])[] = []): [number, number][] {
   const sweep: [number, number][] = [...extraBlocked.map(([u, w]) => [u, w] as [number, number])];
   const ends: [number, number][] = [[s1 - zone, s1 + 1]];
   for (const ob of obstacles) {
     if (ob.kind === 'curb' || ob.kind === 'dock_lip') continue;
+    // (theme T8 review: a full-width hazard gets the tall blocker's lead; one exit zone left a grinder who rode the
+    // kerb to its end landing 0.36 s before a trench, too late to pop: the trick gate's seed 42)
+    const full = (ob.tags & ObTag.FullWidth) !== 0;
     for (const so of ob.solids) {
       const bx = so.box;
       if (so.top === 'knock' || (so.top === 'landable' && bx.y1 - ey <= STEP_UP)) continue;
       if (bx.y0 >= ey + 1.5) continue;
-      if (bx.x1 > ex - 0.35 && bx.x0 < ex + 0.35) sweep.push([bx.s0 - Math.max(zone, so.tall ? zone / 0.6 : 0) - 0.1, bx.s1 + 0.5]);
+      if (bx.x1 > ex - 0.35 && bx.x0 < ex + 0.35) sweep.push([bx.s0 - Math.max(zone, so.tall || full ? zone / 0.6 : 0) - 0.1, bx.s1 + 0.5]);
       else if (bx.x1 > ex - EXIT_ZONE_HALF_W && bx.x0 < ex + EXIT_ZONE_HALF_W) {
         // A tall blocker in line with the edge (±0.5 m) must be ≥ 1.0 s past its end (rail ends never point into one).
         const lead = so.tall && bx.x1 > ex - 0.5 && bx.x0 < ex + 0.5 ? zone / 0.6 + 0.1 : zone;
@@ -111,8 +116,9 @@ export function cutEdgePieces(a: number, b2: number, ex: number, ey: number, s1:
     }
     for (const pt of ob.pits) {
       if (pt.x1 <= ex - EXIT_ZONE_HALF_W || pt.x0 >= ex + EXIT_ZONE_HALF_W) continue;
-      if (pt.x1 > ex - 0.2 && pt.x0 < ex + 0.2) sweep.push([pt.s0 - zone, pt.s1 + 0.5]);
-      else ends.push([pt.s0 - zone, pt.s1]);
+      const lead = full ? zone / 0.6 + 0.1 : zone;
+      if (pt.x1 > ex - 0.2 && pt.x0 < ex + 0.2) sweep.push([pt.s0 - lead, pt.s1 + 0.5]);
+      else ends.push([pt.s0 - lead, pt.s1]);
     }
   }
   const out: [number, number][] = [];

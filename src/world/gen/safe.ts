@@ -78,8 +78,12 @@ export class SafeLine {
     for (let t = t0; t < t1 - 1e-9; t += KEY_EVERY) ts.add(t);
     for (const t of this.ollies) ts.add(t);
     const out: SafeKey[] = [];
+    let last = -Infinity;
     for (const t of [...ts].sort((a, b) => a - b)) {
       if (t > t1 + 1e-9) continue;
+      // (one key per instant: a vertex or grid time a float hair from an ollie's would key that ollie twice)
+      if (t - last < 1e-9) { if (this.ollies.some((o) => Math.abs(o - t) < 1e-9)) out[out.length - 1]!.action = 'ollie'; continue; }
+      last = t;
       const k: SafeKey = { t, s: round1cm(sAt(t)), x: round1cm(this.xAt(t)) };
       if (this.ollies.some((o) => Math.abs(o - t) < 1e-9)) k.action = 'ollie';
       out.push(k);

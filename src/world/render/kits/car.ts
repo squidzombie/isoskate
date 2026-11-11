@@ -16,7 +16,7 @@
 // the dressing rules hold. Everything above the x-ray cap (glass included) goes to the screen door.
 // Kits draw straight into pooled buffers: no allocation per vehicle.
 import type { AreaId } from '../../../core/ids';
-import { Dress, isVehicle, type VehicleBody } from '../../../core/skins';
+import { Dress, isVehicle, noseToCam, type VehicleBody } from '../../../core/skins';
 import { CAMERA } from '../../../core/tuning';
 import type { Obstacle } from '../../../core/world';
 import { HAZARD, RECLAIM, mixHex, shade } from '../palette';
@@ -35,10 +35,9 @@ const NEON_VEHICLE_GLOW = 1.35;
 /** Wheels stand on the highest ground under their four tyres, at most this far above the box bottom (m). */
 export const WHEEL_LIFT_MAX = 0.3;
 
-/** Front toward the camera (the oncoming lane): traffic keeps right, Hoshimachi keeps left. The same rule as the
- *  generator's facing (core/skins.ts `noseToCam`), for the decor cars, which the generator does not skin. A stand-in
- *  until plan G0 lands in core: then re-export core's `noseToCam` here (vehicles.test pins the two together meanwhile). */
-export const noseTowardCamera = (area: AreaId, x: number): boolean => (area === 'neon' ? x > 0 : x < 0);
+/** Front toward the camera (the oncoming lane): core's `noseToCam` (traffic keeps right, Hoshimachi keeps left),
+ *  re-exported for the decor cars, which the generator does not skin. */
+export const noseTowardCamera: (area: AreaId, x: number) => boolean = noseToCam;
 
 export interface VehicleSpec {
   body: VehicleBody;

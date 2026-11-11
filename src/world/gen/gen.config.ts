@@ -26,9 +26,56 @@ export const GEN = {
     SB_WALL: 3, SB_HILL: 0, SB_DRIVEWAYS: 3.5, SB_BINDAY: 2.5, SB_PICKET: 2.5, SB_SCOOPS: 2,
     IN_BEAM: 3, IN_LIP: 3, IN_PALLETS: 2.5, IN_CHANNEL: 2.5, IN_DOCK_UP: 2, IN_GAUNTLET: 2,
     NE_RAIL: 3, NE_PILLARS: 2.5, NE_VENDING: 2.5, NE_SAKURA: 2.5, NE_SKYWALK: 1.6, NE_GAUNTLET: 2,
-    // Phase B parked rows (THEME §3.4, theme T8): weighted toward the per-area car-share targets.
-    DT_PARKED_ROW: 3.5, SB_DRIVEWAY_ROW: 11, IN_LOADING_ROW: 14, NE_TAXI_RANK: 3,
+    // Phase B parked rows (THEME §3.4, theme T8): occasional set pieces since "where they stopped" (no car quota).
+    DT_PARKED_ROW: 2, SB_DRIVEWAY_ROW: 1.5, IN_LOADING_ROW: 3, NE_TAXI_RANK: 2,
   } as Record<string, number>,
+  /** Theme T8 "where they stopped" (rows.ts): what fills an anti-straight row. A block of the street (`block` m) has a
+   *  mood hashed from the seed (quiet / normal / busy at `moods`), which sets the chance `pVeh` (× the area's `areaVeh`)
+   *  that a road part tries its vehicle recipes first. The run's first `openingBusy` m after the Roll-out are at least
+   *  `firstVeh` (the first rows show the street as it was left). An either-side fork (two openings on the sidewalks,
+   *  two stopped cars between them) at `either[tier]` when the line is near the centre (|x0| ≤ eitherX0) and fast
+   *  (v ≥ eitherV). A vehicle outside the approach's columns stands `stagger` m earlier (never abreast); kit pieces
+   *  stand 0–`jitter` m later. `openPrefer`: an opening centre is drawn by how naturally its row closes (`fit`, below;
+   *  the A2 order unchanged). Kill switches: either → 0, stagger[1] → 1.2, openPrefer → false (uniform centres). */
+  rows: {
+    block: 120, moods: [['quiet', 0.3], ['normal', 0.5], ['busy', 0.2]] as readonly (readonly ['quiet' | 'normal' | 'busy', number])[],
+    pVeh: { quiet: 0.3, normal: 0.6, busy: 0.9 } as Readonly<Record<'quiet' | 'normal' | 'busy', number>>,
+    areaVeh: { downtown: 1, suburbs: 0.8, neon: 0.7, docks: 0.5 } as Readonly<Record<AreaId, number>>,
+    openingBusy: 150, firstVeh: 0.9,
+    either: { 2: 0.25, 3: 0.35 } as Partial<Record<Tier, number>>, eitherX0: 0.5, eitherV: 8,
+    stagger: [1.2, 2.4] as readonly [number, number], jitter: 0.2, openPrefer: true as boolean,
+    /** The weight of an opening centre (rows.ts rowCloses) by the most natural fill of each road part it leaves, per
+     *  block mood. `clear`: kerb kit only (bins out, a café set in a bay); `one`: one vehicle in its lane or at the
+     *  kerb, the kit beside it; `pair`: two side by side in opposite lanes; `mid`: a car across the centre line (alone
+     *  or double-parked). A centre whose road needs the mixed kit (street furniture in the middle of the road, the
+     *  worst look) weighs `fitMixed`. A quiet block keeps its road clear where the move allows, a busy one stops a car
+     *  in it; a pair or a car mid-street only where the move leaves nothing else. A fill that repeats the last two
+     *  rows' scene × `fitAgain`; one whose vehicles stand on the side the last two rows' did, or a 2-vehicle row after
+     *  one, × `fitHist`; a car mid-street within `midEvery` rows of the last × `fitMidAgain`; two road parts with
+     *  vehicles (a squeeze) × `fitHist`, twice when one stood in the last 3 rows. */
+    fit: {
+      quiet: { clear: 80, one: 8, pair: 3, mid: 1.25 },
+      normal: { clear: 12, one: 24, pair: 4, mid: 1.25 },
+      busy: { clear: 2, one: 24, pair: 12, mid: 1.5 },
+    } as Readonly<Record<'quiet' | 'normal' | 'busy', Readonly<Record<'clear' | 'one' | 'pair' | 'mid', number>>>>,
+    fitMixed: 0.5, fitAgain: 0.08, fitHist: 0.25, fitMidAgain: 0.85,
+    /** A single opening centred beyond farOpen[0] (rider on the far sidewalk ≥ 2 s from it: rule h mostly rejects the
+     *  row) weighs × farOpen[1]. */
+    farOpen: [3.05, 0.5] as readonly [number, number],
+    /** A single opening whose next row's forced move (2.8–3.7 m) only reaches openings a car across the centre line
+     *  closes weighs × midNext (rows.ts midNext: the one-row look-ahead that keeps mid-street cars rare). */
+    midNext: 0.3,
+    /** A road part tries the kerb before the lane at this chance; a vehicle at the kerb weighs kerbW8 in its class. */
+    kerbFirst: 0.65, kerbW8: 2.5,
+    /** A car stopped mid-street (across the centre line, alone or double-parked; rows.ts) in at most 1 row in
+     *  midEvery, or when nothing else closes the road (before street furniture in the middle of the road). */
+    midEvery: 8,
+    /** A vehicle centred within this of the street's centre stands in the middle, on neither side (the same-side rule,
+     *  the row signature). */
+    sideNeutral: 0.5,
+    /** Docks: the van_across at the loading entrance (≤ 1 per visit): chance per eligible row. */
+    van: 0.5,
+  },
   /** Area breathers drawn instead of S_OPEN when a breather is due (SB_HILL in the Suburbs). */
   breatherTemplate: { suburbs: 'SB_HILL' } as Partial<Record<AreaId, string>>,
   /** A1 column rule (DESIGN §10.7; measured, the rows of rows.ts carry the straight-bot guarantee): 0.5 m columns, and

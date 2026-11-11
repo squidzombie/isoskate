@@ -49,7 +49,7 @@ describe('propSkin', () => {
     for (const n of ['van', 'bin', 'truck', 'vending machine', 'barrier', 'log', 'holo gate', 'car', 'pickup', 'gap', 'ditch']) expect(nouns.has(n), n).toBe(true);
   });
 
-  it('parks cars: sedan / estate / pickup (+ SUV at h ≥ 1.5), four paints, 30% nosed in, a cat on 1 in 8 sedans and estates', () => {
+  it('parks cars: sedan / estate / pickup (+ SUV at h ≥ 1.5), six paints, 30% nosed in, a cat on 1 in 8 sedans and estates', () => {
     const low = many('parked_car', 'downtown', 1.4), high = many('parked_car', 'suburbs', 1.5);
     expect(low.every((s) => ['sedan', 'estate', 'pickup'].includes(s.body))).toBe(true);
     expect(share(high, (s) => s.body === 'suv')).toBeGreaterThan(0.18);
@@ -60,7 +60,7 @@ describe('propSkin', () => {
       if (s.dress & Dress.Cat) expect(['sedan', 'estate']).toContain(s.body);
       expect(s.dress & Dress.Clean).toBe(0);
     }
-    for (const p of CAR_PAINTS) expect(share(low, (s) => s.paint === p)).toBeGreaterThan(0.2);
+    for (const p of CAR_PAINTS) expect(share(low, (s) => s.paint === p)).toBeGreaterThan(0.8 / CAR_PAINTS.length);
     expect(share(low, (s) => s.nosedIn)).toBeCloseTo(0.3, 1);
     const sedans = low.filter((s) => s.body === 'sedan' || s.body === 'estate');
     expect(share(sedans, (s) => (s.dress & Dress.Cat) !== 0)).toBeCloseTo(1 / 8, 1);

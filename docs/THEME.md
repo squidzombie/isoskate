@@ -6,7 +6,7 @@ Status: final, for owner sign-off. Internal theme name **RECLAIM** (it matches t
 
 ## 1. Concept
 
-**One paragraph (internal; never shown to players).** Years ago everyone left the city, calmly, and nobody was hurt. The city went quiet and nature moved back in slowly. Fig trees grow out of hotel roof terraces, wildflowers fill the front lawns, swifts nest under the cranes, and moss softens every stone. Cars still sit in their bays and driveways, doors closed, sun-faded, with moss at the roof edges and sometimes a cat asleep on top. A few helper machines kept working: a street sweeper on its rounds, a forklift shuffling pallets, a delivery robot, a car still doing its evening re-park. The city runs on sunlight now, so some lights switch on by themselves at dusk. The light is the same golden hour sliding into a neon night, and the lo-fi beat still plays. You are the only person on screen, and the whole city is your skatepark. In a world of rust and moss, the ledges and rails you grind are the only polished things in sight, polished by your own board.
+**One paragraph (internal; never shown to players).** One ordinary afternoon the world quietly ended: everyone was simply gone, calmly, and nobody was hurt. You are the last one skating. Years on, the city is quiet and nature has moved back in slowly. Fig trees grow out of hotel roof terraces, wildflowers fill the front lawns, swifts nest under the cranes, and moss softens every stone. Cars still stand where they stopped that afternoon (at the kerb, in their bays, waiting in their lanes at a crossing), doors closed, sun-faded, with moss at the roof edges, sometimes a cat asleep on top or flowers in a pickup bed. A few helper machines kept working: a street sweeper on its rounds, a forklift shuffling pallets, a delivery robot, a car still doing its evening re-park. The city runs on sunlight now, so some lights switch on by themselves at dusk. The light is the same golden hour sliding into a neon night, and the lo-fi beat still plays. You are the only person on screen, and the whole city is your skatepark. In a world of rust and moss, the ledges and rails you grind are the only polished things in sight, polished by your own board.
 
 Players are never told why people left. Saying it in game raises the question. The calm, peaceful cause stays an internal brief.
 
@@ -21,12 +21,12 @@ Players are never told why people left. Saying it in game raises the question. T
 - Moss, ivy, wildflowers, saplings, trees through roofs and awnings, meadow verges, roof gardens.
 - Pigeons and sparrows on wires and roofs, grey-backed gulls, a grey heron, swifts swooping, a V of geese, butterflies, one far-off deer or fox, cats on car roofs (not in Neon).
 - Sun-faded paint, gentle orange-brown rust, faded posters, dead neon tubes beside the lit ones.
-- Vehicles parked calmly in bays, driveways, curbs and loading entrances. Doors and boots closed. Intact, quietly weathered.
+- Vehicles where they stopped (theme T8, owner: "the world has ended and you're the last one on earth skating", "natural looking but obviously thoughtful"): at the kerb and in bays, waiting in their lanes at a crossing, two passing side by side in opposite lanes, mid-street where the road leaves nothing else (most often on the Suburbs' unmarked residential lanes), a van at a loading entrance in the Docks. Each faces its own traffic. Doors and boots closed. Intact, quietly weathered, cheerfully sun-faded. Never a quota: cars appear where a car would be, often enough that the street reads as one everyone left mid-day, never so evenly that it reads as a pattern.
 - Helper machines (sweeper, forklift, robot, self-parking car) clean and working.
 
 **Do not**
 - No zombies, people or NPCs, bodies, blood, gore, fire, smoke plumes, weapons, military or police gear, quarantine walls, sandbags, barbed wire, warning graffiti or X-marked doors.
-- No crashed, crumpled, overturned or burnt cars, no pile-ups, no jams, no lanes of stopped cars, no car parked mid-lane, no shattered glass, no open doors or boots, no luggage or mattresses on roof racks, no car alarms.
+- No crashed, crumpled, overturned or burnt cars, no pile-ups or bumper-to-bumper queues, no cars touching or overlapping (two side by side stand staggered, a hand's width apart), no car or kerb kit on a crosswalk, no car on a trick line, no shattered glass, no open doors or boots, no luggage or mattresses on roof racks, no car alarms.
 - No fungus or spore growths, mushroom clusters or fleshy growths.
 - No fireflies, ever, in any emitter, cosmetic or trail.
 - No leaning, toppled or broken towers: every tower stands upright. No collapsed buildings and no war damage.
@@ -184,14 +184,15 @@ Neon hazards keep the inverted mid-value body and the emissive accent rim (§18.
   | `shuttle_bus` | container | |
   | `sweeper` | crosswalk_car | |
 
-- **Fit:** every body is stretched to fill its box (L, W ±0.1 m) and never leaves "air" inside the hitbox. Long axis along s, axis-aligned, no yaw. 70% show the rear to the camera, 30% are nosed in.
+- **Fit:** every body is stretched to fill its box (L, W ±0.1 m) and never leaves "air" inside the hitbox. Long axis along s, axis-aligned, no yaw (except `van_across`, turned a quarter, §3.4).
+- **Facing** (theme T8): every vehicle faces its own traffic. Traffic keeps right, so a car in the −x half came toward the camera and shows its front; one in the +x half shows its rear. Hoshimachi Ward keeps left (mirrored). `core/skins.ts` `noseToCam(area, x)` says which; the generator picks the variant (`PropSkin.nosedIn` still means "front toward the camera"; propSkin's own 30 % roll is unchanged). No vehicle repeats the body and paint of the one before it. The end facing the camera shows the facing: matte warm-grey headlamps (`RECLAIM.headlamp` `#6E665D`, never cream) either side of an ink grille at the front, matte `#6A2A2A` taillights at the rear, and the cabin sits rearward (long bonnet, short boot; `CABIN` in `render/kits/car.ts`), so the roof alone reads the way it points. Neon's emissive rim breaks for the lamps at the front and runs steady red (`RECLAIM.neonTail` `#FF4458`) across the rear: an extension of Neon's existing rim, nothing animates. A vehicle whose tyres meet a kerb stands on the highest ground under them, lifted ≤ 0.3 m (`WHEEL_LIFT_MAX`), roof at the box top and the x-ray cap at box base + 1.2 m: a safety net behind the generator's flat-footprint rule.
 - **Plan-view signature (the portrait camera mostly sees the roof):**
   - The roof and bonnet carry the paint top colour (below). Windscreen and rear glass are dark `#262438` (L 0.020, 3.6:1 against asphalt, about 2:1 against the paint tops), framing the lighter roof front and back.
   - One sky-reflection streak `#6A6890` per pane, ≤ 10% of the pane.
   - Four tyre nubs show at the box corners: the body sides are inset 0.05 m between the wheel arches.
   - Mirrors inside the 0.05 m overhang.
   - One accent stripe (0.10 m) along bonnet and roof in `HAZARD[area].accent` (DT `#D9765A`, SB `#8FB8DE`); Docks uses `accent2` `#B5552F` so no amber runs along s; Neon uses its emissive rim instead.
-- **Shared low-poly parts:** 8-sided wheel and hub; low tyre (bottom flattened 0.04 m, body lowered 0.03 m); bumpers; light clusters; mirrors; wheel arches; empty roof rack (estate); bed (pickup). **No chrome:** bumpers ink `#2B2140`, hubs `#3A3448`, no bright window or door trim. Static vehicles are unlit: taillights matte deep red `#6A2A2A`, no emissive. Mover telegraphs keep their existing lights.
+- **Shared low-poly parts:** 8-sided wheel and hub; low tyre (bottom flattened 0.04 m, body lowered 0.03 m); bumpers; light clusters; mirrors; wheel arches; empty roof rack (estate); bed (pickup). **No chrome:** bumpers ink `#2B2140`, hubs `#3A3448`, no bright window or door trim. Static vehicles are unlit: taillights matte deep red `#6A2A2A`, headlamps matte warm grey `#6E665D`, no emissive (Neon's accent rim aside, see Facing). Mover telegraphs keep their existing lights.
 - **Paint (hazards; body ink, the top face is the paint):**
 
   | Paint | Top hex | L | Roof moss (luminance-matched) |
@@ -201,23 +202,35 @@ Neon hazards keep the inverted mid-value body and the emissive accent rim (§18.
   | olive | `#55603A` | 0.106 | `#485F37` |
   | slate | `#575B76` | 0.108 | `#485F37` |
 
+  Theme T8 adds four cheerful sun-faded paints for hazards (tuned on rendered pixels in the golden light, inside the 0.075–0.11 gate):
+
+  | Paint | Top | L | Roof moss |
+  |---|---|---|---|
+  | cobalt | `#3A598E` | 0.100 | `#496038` |
+  | coral | `#813B30` | 0.080 | `#415632` |
+  | plum | `#734564` | 0.088 | `#445A34` |
+  | ochre | `#6A511E` | 0.090 | `#455C35` |
+
+  The hazard roll is teal, olive, cobalt, coral, plum and ochre (`CAR_PAINTS[paintSlot(id, variant)]`); slate stays for movers and oxblood stays valid.
   Body and side faces stay the ink family (`HAZARD.body` `#170F24`, `CAR_BODIES`), with ink rust `#3A1E14` on sills and arches. Top L stays in 0.075–0.11; the pixel gate measures the result. Movers use slate and keep the helper-machine motif.
 - **Wear:**
   - Roof moss ≤ 20% of the roof and bonnet, as edge patches on the rear half of the roof and the bonnet corners only, never on glass. The roof rectangle always survives.
   - Weeds under the car inside the footprint; ink ivy up one wheel arch (side face).
   - Rust drip decal only on side panels, orange-brown `#B5552F` family, never below the door line.
   - No wear on movers.
+- **Flowers** (theme T8, `Dress.Bloom`): 5–7 flower heads in the open bed of 1 pickup in 3, below the bed rim, ≤ 4 % of the top silhouette, inside the life budget; never in Neon.
 - **Cats** (loaf ≤ 0.22 m, tail flick only; never in Neon, never on movers): 1 in 8 sedans and estates. In-corridor hazard cars get the grey tabby (`#6E6A70` with `#8A8690` stripes); decor cars get the ginger (`#C8743A`). On a crash into a car with a cat, the cat only twitches an ear. It is never knocked off.
 - **Variant choice** (deterministic, shared): `core/skins.ts: propSkin(kind, area, id, variant, h)` returns the body, paint and dressing flags. Kits and `ui/format.ts` both call it, so the crash noun always matches what was drawn. The isolated-filler flag (§2 rule 2) is passed separately by the chunk builder and never changes the noun.
 - **Budgets:** sedan, estate, pickup, taxi ≤ 700 triangles; vans ≤ 800; truck and bus ≤ 1,000 (§18.5 cap 1,500).
 
-### 3.4 Phase B (T8, same release): cars as the main blocker
+### 3.4 Phase B (T8, same release): where they stopped
 
-A content change in the generator. Rules, validator and the footprints of existing kinds do not change. It runs after the Phase A gates (T7a), so Phase A's identical-obstacle-hash check stays clean. The owner build and store shots wait for it.
-1. **New Tall kind `van_across`**: a delivery van nosed into a side loading entrance, its tail out into the street. 1.8 L (s) × 4.4 W (x) × 1.4 H, A, `crash` top, all areas. Skins: DT/SB `panel_van` (livery from `DECOR_BRANDS[area]`), IN `panel_van` in Brindle Freight livery, NE `kei_van` (inverted body plus rim). The generator always emits, at the same s, a faded perpendicular-bay decal (`parking_bay` with new param `perp` 1) under it and a loading entrance (`end_wall` style `loading`: a roller door) on the side band it faces. The A2 wander wall becomes `van_across` plus one 0.6 m filler (6 m total, same ≥ 3 m wander), with the filler-row version kept as the fallback.
-2. **Parked rows.** Allow `parked_car` in Neon (taxi skin, no cats) and add one parked-row template per area: `DT_PARKED_ROW` (bays along one curb), `SB_DRIVEWAY_ROW`, `IN_LOADING_ROW` (box trucks at docks), `NE_TAXI_RANK`. Cars sit in painted bays along one side only, parallel to s, ≥ 0.6 m apart, all facing the same way. Never two rows facing each other, never a row in the centre lanes.
-3. **Targets.** Car share by count of tall blockers: DT/SB ≥ 35%, IN ≥ 20% (trucks), NE ≥ 15% (taxis and kei vans). Every DT run shows a car within its first 150 m after the Roll-out.
-4. **Gates.** Full bot suite, new golden obstacle hashes (Phase B only), DESIGN §10.3/§10.4 rows, crash copy for the new nouns.
+A content change in the generator. Rules, validator and the footprints of existing kinds do not change. It runs after the Phase A gates (T7a), so Phase A's identical-obstacle-hash check stays clean. The owner build and store shots wait for it. The first Phase B build put a car at the edge of every anti-straight row to reach car-share targets; the owner found it forced ("Don't add cars just to add cars. Especially if they always are just on the sides"; DESIGN §24 row 76). The targets are gone; what stays:
+1. **Everything where it belongs** (DESIGN §10.7 rows note). A row is a small street scene with one readable decision. In the road, vehicles stand where they stopped: in their lanes, at the kerb, waiting at a crossing (a lone car in its lane gets its zebra just ahead of it), two passing side by side in opposite lanes where a row closes the whole road, mid-street or double-parked where nothing else closes it (the Suburbs' lanes carry no centre line, so a car toward the middle of one is simply stopped in a quiet street); against the kerb, what a street parks there (a dumpster, a bike corral or a café set in a bay; bins out on bin day; lanterns, and yatai anywhere in Neon). Street furniture stays on the sidewalks; a plaza takes none of the vehicles. In the Docks, box trucks and containers on the dock band, pallet stacks or drums on the apron. Vehicles are staggered (≥ 1.2 m, never level with each other), never touch or overlap, face their own traffic (§3.3) and keep all four wheels on one ground level; no vehicle and no kerb kit stands on a crosswalk.
+2. **Rhythm, not a quota.** Each block of street has a mood (quiet, normal, busy): a row's openings are drawn by how naturally its road closes for that mood (a quiet block keeps its road clear where the move allows, a busy one stops a car in it), and the last rows keep the scene from repeating (no scene three times running, squeezes rare, no third same-side row). The geometry sets limits: every forced move is ≥ 2.8 m, so about every other row in a run of them opens on a sidewalk and closes the whole road; the mood shows in how many rows carry a vehicle (quiet ~25–65 %, busy ~73–83 %, by area; DESIGN §10.7 rows note has the numbers). An either-side fork on T2–T3: two openings on the sidewalks and two cars stopped in opposite lanes between them.
+3. **New Tall kind `van_across`**: a delivery van nosed into a side loading entrance, its tail out into the street. 1.8 L (s) × 4.4 W (x) × 1.4 H, A, `crash` top. Since "where they stopped" only in the Docks (dock side, once a visit), in Brindle Freight livery; the generator always emits, at the same s, a faded perpendicular-bay decal (`parking_bay` with param `perp` 1) under it and its loading entrance (`end_wall` style 4: a closed roller door) beside it, the dock fence open there. The van wander wall is cut; the filler wall stays.
+4. **Parked rows** (occasional set pieces): `DT_PARKED_ROW` (at the kerb over painted bays), `SB_DRIVEWAY_ROW` (at the kerb in front of the houses), `IN_LOADING_ROW` (box trucks at the docks), `NE_TAXI_RANK` (Neon `parked_car` is a taxi, no cats). Cars stand along one side only, in the road, parallel to s, an empty bay apart, all facing the same way (their traffic). Never two rows facing each other, never a row in the centre lanes. Every Downtown run shows a car within its first 150 m after the Roll-out.
+5. **Gates.** Full bot suite, new golden obstacle and decor hashes (Phase B only), DESIGN §10.3/§10.4 rows, crash copy for the nouns.
 
 ---
 
@@ -550,7 +563,7 @@ No military or survivalist gear.
 | Cars read as slabs or blobs | Dark glass framing the roof, ≤ 20% roof moss, tyre nubs, accent stripe; gate 6. |
 | Hazard contrast drops (moss, paint tops, unlit taillights) | Luminance-matched moss tokens; paint top L ≤ 0.11; the gate on every frame; if needed, darken paint tops one step. |
 | Perf on mid phones | Merged solid foliage, ivy as texture, budgets per chunk, `low` tier drops, a critters layer only with headroom. |
-| Cars still feel rare | T8 in the same release, with share targets and a car early in every DT run. |
+| Cars still feel rare, or forced | T8 in the same release, reworked as "where they stopped" (§3.4): cars where a car would be, a rhythm per block of street instead of share targets, and a car early in every DT run. |
 | Read as a copy of a specific game or a real disaster zone | §1 do-not list; invented brands only; no iconic scenes; Neon plainly futuristic; banned-word test; Japanese-speaking review; never explain why people left. |
 | Golden-hash churn hides a generator change | The split hash: obstacles stay identical until T8. |
 

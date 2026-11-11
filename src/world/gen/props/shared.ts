@@ -4,7 +4,7 @@
 // Area skins: `variant` = the area index (AREA_ORDER), so WA's kits pick the skin; geometry rules are shared.
 import type { AreaId, PropKind } from '../../../core/ids';
 import { AREA_ORDER } from '../../../core/ids';
-import { newSkin, propSkin, type PropSkin } from '../../../core/skins';
+import { isVehicle, newSkin, noseToCam, paintSlot, propSkin, type PropSkin } from '../../../core/skins';
 import { round1cm } from '../../../core/math';
 import { HAZARD_WARN_SEC, HEIGHT, STEP_UP } from '../../../core/tuning';
 import type { GroundSlab, Obstacle } from '../../../core/world';
@@ -68,51 +68,82 @@ export function buildFiller(s: number, x: number, wide: boolean, p: PropCtx, var
   return buildTall(f.kind, s, x, f.len, f.wid, f.hgt, p, { variant, tags: ObTag.Filler, params });
 }
 
-// ── Phase B (theme T8, THEME §3.4): cars as the main blocker ──────────────────────────────────────────────────────
-/** van_across: a delivery van nosed into a side loading entrance, its tail out into the street (DESIGN §10.3). */
+// ── Phase B (theme T8, THEME §3.4; "where they stopped") ─────────────────────────────────────────────────────────
+/** van_across: a delivery van nosed into a side loading entrance, its tail out into the street (DESIGN §10.3). Since
+ *  "where they stopped" only in the Docks, on the dock side (rows.ts), at most one per visit. */
 export const VAN_ACROSS = { len: 1.8, wid: 4.4, hgt: 1.4 } as const;
 /** A van_across on side `sd`, its nose flush with the corridor edge (the loading entrance is just beyond it). The kit
  *  reads the side from the sign of x. */
 export function buildVanAcross(s: number, sd: -1 | 1, p: PropCtx, variant = 0, tags = 0): Obstacle {
   return buildTall('van_across', s, round1cm(sd * (4.5 - VAN_ACROSS.wid / 2)), VAN_ACROSS.len, VAN_ACROSS.wid, VAN_ACROSS.hgt, p, { variant, tags });
 }
-/** Where a parked car stands beside the road, parallel to s (DESIGN §10.2), in the order a row tries them: Downtown
- *  and Neon (a taxi, THEME §3.4) in the curb lane beside the curb, else half up on the sidewalk at the corridor edge
- *  (the plaza's edge where there is no curb); the Suburbs on a driveway apron over the sidewalk and lawn (the curb is
- *  cut behind it). Centre |x| and size (the area's parked_car); empty where the street has neither (the Docks). */
-export interface CurbSlot { x: number; len: number; wid: number; hgt: number; driveway: boolean }
+/** Where a parked car stands at the kerb, parallel to s (DESIGN §10.2): in the road, its outer side 0.03–0.05 m inside
+ *  the kerb, so all four wheels stand on the road (never half up a kerb or on a lawn). Downtown and Neon (a taxi,
+ *  THEME §3.4) beside the 3.0 m kerb, over a painted bay; the Suburbs beside the 2.6 m kerb in front of the houses.
+ *  Centre |x| and size (the area's parked_car); empty where the street has no kerb (the Docks). */
+export interface CurbSlot { x: number; len: number; wid: number; hgt: number }
 export function curbSlots(a: AreaId): readonly CurbSlot[] {
   switch (a) {
-    case 'downtown': case 'neon': return [{ x: 2.15, len: 4.4, wid: 1.8, hgt: 1.4, driveway: false }, { x: 3.6, len: 4.4, wid: 1.8, hgt: 1.4, driveway: false }];
-    case 'suburbs': return [{ x: 3.5, len: 4.6, wid: 1.9, hgt: 1.5, driveway: true }];
+    case 'downtown': case 'neon': return [{ x: 2.05, len: 4.4, wid: 1.8, hgt: 1.4 }];
+    case 'suburbs': return [{ x: 1.62, len: 4.6, wid: 1.9, hgt: 1.5 }];
     default: return [];
   }
 }
-/** A parked car in slot `slot` of curbSlots on side `sd` (null where the area has none). Rear to the camera. */
+/** A parked car in slot `slot` of curbSlots on side `sd` (null where the area has none). Its facing is set by the
+ *  generator's traffic pass (faceTraffic: every vehicle faces its own traffic). */
 export function buildCurbCar(s: number, sd: -1 | 1, p: PropCtx, variant = 0, tags = 0, slot = 0): Obstacle | null {
   const c = curbSlots(p.area)[slot];
   if (!c) return null;
-  const ob = buildTall('parked_car', s, round1cm(sd * c.x), c.len, c.wid, c.hgt, p, { variant, tags });
-  ob.variant = skinVariant(ob, (k) => !k.nosedIn);
-  return ob;
+  return buildTall('parked_car', s, round1cm(sd * c.x), c.len, c.wid, c.hgt, p, { variant, tags });
 }
 /** Bumper-to-bumper gap of a parked row whose next car stays out of the one before's 35° shadow (validator rule g:
  *  h·cot 35° + 0.5 m, h ≤ the 1.6 m x-ray cap): an empty bay between cars. */
 export const rowGap = (h: number): number => Math.min(h, 1.6) / Math.tan((35 * Math.PI) / 180) + 0.5 + 0.1;
-/** The driveway curb cuts [s0, s1, side] under the Suburbs' driveway cars among `obs` (a row's or a template's). */
-export function carDriveways(obs: readonly Obstacle[]): [number, number, number][] {
-  const out: [number, number, number][] = [];
-  for (const o of obs) if (o.kind === 'parked_car' && o.area === 'suburbs' && Math.abs(Math.abs(o.x) - 3.5) < 0.01) out.push([round1cm(o.s - 0.4), round1cm(o.s + o.len + 0.4), Math.sign(o.x)]);
-  return out;
-}
-/** The first variant ≥ the obstacle's own (up to 16 on) whose skin (core/skins propSkin) passes `ok`: a row of
- *  parked cars that all face the same way, the Docks' trucks. The variant only picks the skin (WA kits use it modulo
- *  their own counts), so this never changes a footprint. */
-export function skinVariant(ob: Obstacle, ok: (s: PropSkin) => boolean): number {
-  for (let v = ob.variant; v < ob.variant + 16; v++) if (ok(propSkin(ob.kind, ob.area, ob.id, v, ob.hgt, SKIN))) return v;
-  return ob.variant;
+/** The first variant ≥ the obstacle's own (up to 64 on) whose skin (core/skins propSkin) passes `ok`, or −1 when
+ *  none does (the caller drops the piece rather than draw a skin it did not ask for: a shipping container in a row of
+ *  box trucks). The variant only picks the skin (WA kits use it modulo their own counts), so this never changes a
+ *  footprint. */
+export function skinVariant(ob: Obstacle, ok: (s: PropSkin) => boolean, tries = 64): number {
+  for (let v = ob.variant; v < ob.variant + tries; v++) if (ok(propSkin(ob.kind, ob.area, ob.id, v, ob.hgt, SKIN))) return v;
+  return -1;
 }
 const SKIN = newSkin();
+
+/** Kinds drawn as vehicles parallel to s (core/skins: parked cars and vans; the container's truck and bus skins). */
+const PARALLEL: ReadonlySet<PropKind> = new Set<PropKind>(['parked_car', 'parked_van', 'container']);
+/** A vehicle's look, as far as "the same car twice running" goes: its body and its paint slot (Neon's inverted
+ *  bodies carry no paint, so only the body counts there). */
+export interface VehicleLook { body: string; paint: number }
+const lookOf = (k: PropSkin, ob: Obstacle, v: number): VehicleLook => ({ body: k.body, paint: k.paint === null ? -1 : paintSlot(ob.id, v) });
+
+/** Theme T8 ("where they stopped"): the traffic pass over a segment's committed obstacles. Every vehicle parallel to s
+ *  faces its own traffic (`noseToCam`: the front toward the camera in the −x half, the rear in the +x half; mirrored
+ *  in Neon), keeps the body its template or row chose (a box truck stays a box truck, a container stays a container),
+ *  and, where it can, never repeats the body and paint of the vehicle before it (in s, across segments: `last`). Only
+ *  the variant (the skin) changes, never a footprint, so nothing needs validating again. Returns the last look. */
+export function faceTraffic(obs: readonly Obstacle[], last: VehicleLook | null): VehicleLook | null {
+  const vs = obs.filter((o) => PARALLEL.has(o.kind) && !o.mover).sort((a, b) => a.s - b.s || a.id - b.id);
+  for (const o of vs) {
+    const k0 = propSkin(o.kind, o.area, o.id, o.variant, o.hgt, SKIN);
+    if (!isVehicle(k0.body)) continue;
+    const body = k0.body, want = noseToCam(o.area, o.x);
+    const twin = (k: PropSkin, v: number) => !!last && k.body === last.body && k.paint !== null && paintSlot(o.id, v) === last.paint;
+    // (the same body facing its traffic, a new look first; then a repeat; then any vehicle body facing its traffic)
+    const passes: ((k: PropSkin, v: number) => boolean)[] = [
+      (k, v) => k.body === body && k.nosedIn === want && !twin(k, v),
+      (k) => k.body === body && k.nosedIn === want,
+      (k) => isVehicle(k.body) && k.nosedIn === want,
+    ];
+    let pick = -1;
+    for (const ok of passes) {
+      for (let v = o.variant; v < o.variant + 256 && pick < 0; v++) if (ok(propSkin(o.kind, o.area, o.id, v, o.hgt, SKIN), v)) pick = v;
+      if (pick >= 0) break;
+    }
+    if (pick >= 0) o.variant = pick;
+    last = lookOf(propSkin(o.kind, o.area, o.id, o.variant, o.hgt, SKIN), o, o.variant);
+  }
+  return last;
+}
 
 /** A tall column blocker (trash can 0.6 × 0.6, news box 0.5 × 0.5) standing on the street or the sidewalk. */
 export function buildBlocker(kind: 'trash_can' | 'news_box', s: number, x: number, p: PropCtx, variant = 0): Obstacle {

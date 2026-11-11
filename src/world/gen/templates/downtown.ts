@@ -125,8 +125,9 @@ export const DT_RUSH: Template = {
       }
     }
     // The double-parked car: centre, alongside the gap side's gap (the hardest element: dropped on the easy re-rolls).
-    if (c.attempt < GEN.easyFrom) put(c, buildParkedCar(round1cm(sGap + 1.0), round1cm(-gapSide * 0.35), c.props, c.rng.int(0, 5)));
-    if (c.tier >= 4 && c.attempt < GEN.easyFrom) put(c, buildParkedCar(round1cm(sGap + v * 1.4 + 1.0), round1cm(gapSide * 0.35), c.props, c.rng.int(0, 5)));
+    // (theme T8: 0.05 m clear of the parked car beside it: stopped beside it, never touching)
+    if (c.attempt < GEN.easyFrom) put(c, buildParkedCar(round1cm(sGap + 1.0), round1cm(-gapSide * 0.30), c.props, c.rng.int(0, 5)));
+    if (c.tier >= 4 && c.attempt < GEN.easyFrom) put(c, buildParkedCar(round1cm(sGap + v * 1.4 + 1.0), round1cm(gapSide * 0.30), c.props, c.rng.int(0, 5)));
     if (c.layout.curbX !== null) {
       const ls = side(c), sEnd = sLast + v * 0.8;
       const ledge = put(c, buildLedge(round1cm(sStart + v * 0.4), round1cm(ls * 3.75), round1cm(sEnd - sStart - v * 0.4), c.props));

@@ -18,7 +18,7 @@ This file is the starting point for whoever continues the work. It says where th
 | RECLAIM re-theme spec (obstacle and decor mapping, palette, Phase B, plan T0-T8, acceptance checks) | `docs/THEME.md` |
 | Brand spec "Earthlight" (name, Bungee logo with Earth-O, colour tokens) | `docs/BRAND.md` |
 | Store text draft | `docs/STORE.md` |
-| Unfinished Phase B work (cars as main blocker) | `docs/handoff/t8-phase-b-wip.patch` (see §5.1) |
+| Phase B (where they stopped): status | §5.1 (the original hand-off patch: `docs/handoff/t8-phase-b-wip.patch`) |
 | Orchestrator decisions and the owner's feedback history | `docs/handoff/orchestrator-notes.txt` |
 | The multi-agent workflow scripts used so far, with the token-saving rules | `docs/handoff/workflows/` (`g1b.js`, `m4.js`, `m5.js`, `token-discipline.txt`) |
 
@@ -51,12 +51,8 @@ Playwright in this kind of container: Chromium is preinstalled; use `PLAYWRIGHT_
 
 ## 5. What is NOT done, in order
 
-### 5.1 Finish Phase B: cars as the main blocker (THEME §3.4, §12 row T8)
-The owner asked for it in their own words: "instead of the weird random shapes that are kind of the blocking parts, it could just be cars". An agent started it and was cut off. Its work is saved, uncommitted and unverified, in `docs/handoff/t8-phase-b-wip.patch` (23 files changed plus 2 new: `src/world/gen/templates/parked.ts`, `tests/unit/gen/phaseb.test.ts`; it typechecks). Continue with:
-```bash
-git apply docs/handoff/t8-phase-b-wip.patch
-```
-Then finish per THEME §3.4: the new `van_across` kind, parked-row templates, per-area car-share targets, a car early in every Downtown run, crash nouns. It changes the generator, so: keep every fairness rule, re-baseline the golden OBSTACLE hash once with the reason, and prove it with the full `npm run test:bots` and the production-bundle generation bench (p95 <= 3 ms). Measure the car share of tall blockers per area before and after, and look at screenshots of all four areas.
+### 5.1 Phase B: where they stopped (THEME §3.4, §12 row T8; DESIGN §24 rows 75–76)
+The owner first asked for cars instead of "the weird random shapes"; the first Phase B build (the hand-off patch, applied in 62f28e5) put a car at the edge of every anti-straight row and the owner found it forced ("Don't add cars just to add cars. Especially if they always are just on the sides ... natural looking but obviously thoughtful so it stays interesting as an obstacle"). The generator track of the rework is in: `world/gen/rows.ts` builds each row as a street scene with everything where it belongs (DESIGN §10.7 rows note), every vehicle faces its own traffic (`props/shared.ts` `faceTraffic`, `core/skins.ts` `noseToCam`), the van at a loading entrance is Docks-only, the van wander wall is cut, the parked rows stand in the road at the kerb, and `tests/unit/gen/placement.test.ts` replaces `phaseb.test.ts`. After review, a row's openings are drawn by how naturally their road closes (`rows.ts` `rowCloses`, `GEN.rows.fit`: the block mood, the last rows, a one-row look-ahead), the Suburbs' lanes are unmarked, and the measured limits of the geometry (two cars side by side or one mid-street wherever a row closes the whole road) are written down in DESIGN §10.7 and tested per area. Still open: the vehicle render track (front and rear ends readable at 22 px/m, the four new paints in `RECLAIM.carPaint` and then `CAR_PAINTS` switched to the six-paint roll through `paintSlot`, `Dress.Bloom` flowers in pickup beds, the review's x-ray cap on `van_across`), the full `npm run test:bots`, and a 390×844 contact sheet per area.
 
 ### 5.2 One combined review and fix pass (planned as the end of gate G1)
 Three independent lenses on the whole build: player feel on a phone (two-thumb controls, camera, flow), art direction and UI against DESIGN §17/§18, THEME and BRAND, and the gate checklist (TECH §11.6, THEME §12 checks 1-8, no weakened tests). Then fix the real issues and tag `m1`. The prompts are in `docs/handoff/workflows/g1b.js` (Review and Fix phases).

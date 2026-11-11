@@ -158,10 +158,10 @@ export const DECOR_KINDS = {
     doc: 'Cross-street end wall every 8–12 s (DESIGN §18.4): beyond a side street, the next block shows a corner '
       + 'shopfront or shutters facing the camera. Inner edge at |x| ≥ 4.6 (beside the corridor, never across it).',
     params: {
-      w: 'lateral span, m (4–14, default 9)', h: 'height, m (4–20, default 8)',
+      w: 'lateral span, m (4–14, default 9; style 4: 2–4, default 3)', h: 'height, m (4–20, default 8; style 4: 3.5–5.5, default 4.2)',
       style: 'face: 0 corner shopfront, 1 pastel ribbed shutters (Neon), 2 warehouse doors (Docks), 3 house front (Suburbs), '
-        + '4 loading entrance (a closed roller door a van_across is nosed into; Phase B, theme T8)',
-      brand: 'shopfront sign brand index into DECOR_BRANDS[area] (−1 none)',
+        + '4 loading entrance (a closed roller door a van_across is nosed into; Phase B, theme T8: the Docks only)',
+      brand: 'shopfront sign brand index into DECOR_BRANDS[area] (−1 none; not used by style 4)',
       word: 'Neon only: NEON_SIGN_WORDS index for the sign (−1 = Latin brand)',
       shutters: 'number of shutter bays for style 1 (1–6, default 3)',
       live: 'Neon: 0/1 one lit 営業中 or 喫茶 sign (default: 1 in 4)',
