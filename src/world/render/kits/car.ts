@@ -36,7 +36,8 @@ const NEON_VEHICLE_GLOW = 1.35;
 export const WHEEL_LIFT_MAX = 0.3;
 
 /** Front toward the camera (the oncoming lane): traffic keeps right, Hoshimachi keeps left. The same rule as the
- *  generator's facing (core/skins.ts `noseToCam`), for the decor cars, which the generator does not skin. */
+ *  generator's facing (core/skins.ts `noseToCam`), for the decor cars, which the generator does not skin. A stand-in
+ *  until plan G0 lands in core: then re-export core's `noseToCam` here (vehicles.test pins the two together meanwhile). */
 export const noseTowardCamera = (area: AreaId, x: number): boolean => (area === 'neon' ? x > 0 : x < 0);
 
 export interface VehicleSpec {
@@ -483,7 +484,9 @@ export const paintOf = (p: keyof typeof RECLAIM.carPaint | null) => RECLAIM.carP
 
 /** The ground a vehicle's wheels stand on (review #8): the highest ground under its four tyre contacts, so a kerb or a
  *  sidewalk under one side lifts it instead of a tyre sinking in (at most WHEEL_LIFT_MAX; the roof stays at the box
- *  top, the body gives up the lift). `across`: the long axis runs along x (van_across). */
+ *  top, the body gives up the lift, and the x-ray cap stays at the box base + CAMERA.xrayCapY, where the occlusion
+ *  rule measures it, so more of a lifted body is screen-doored, never less). A safety net behind the generator's
+ *  flat-footprint rule. `across`: the long axis runs along x (van_across). */
 export function wheelBase(c: KitCtx, x0: number, x1: number, s0: number, s1: number, y0: number, across: boolean): number {
   let g = y0;
   for (let i = 0; i < 4; i++) {
@@ -504,7 +507,7 @@ export function vehicleKit(c: KitCtx, ob: Obstacle): void {
   if (!b) return;
   const y = wheelBase(c, b.x0, b.x1, b.s0, b.s1, b.y0, false);
   contact(c, b.x0, b.x1, b.s0, b.s1, y + 0.01, 0.7, 0.3);
-  c.K.capY = y + CAMERA.xrayCapY;
+  c.K.capY = b.y0 + CAMERA.xrayCapY;                              // from the box base (DESIGN §8): the lift moves the body, not the cap
   drawVehicle(c.K, hazardSpec(c, ob, b.x0, b.x1, b.s0, b.s1, y, b.y1 - y));
   c.K.capY = null;
 }
@@ -545,7 +548,7 @@ export function vanAcrossKit(c: KitCtx, ob: Obstacle): void {
   const keep = [d.fx0, d.fx1, d.fs0, d.fs1] as const;
   d.ob = local; d.fx0 = -hw; d.fx1 = hw; d.fs0 = -hl; d.fs1 = hl;
   K.frame(cx, 0, cs, sd < 0 ? Math.PI / 2 : -Math.PI / 2);
-  K.capY = y + CAMERA.xrayCapY;
+  K.capY = b.y0 + CAMERA.xrayCapY;                                // from the box base, like vehicleKit
   drawVehicle(K, { ...hazardSpec(c, ob, -hw, hw, -hl, hl, y, b.y1 - y), nosedIn: false });
   K.capY = null;
   K.frame(0, 0, 0);

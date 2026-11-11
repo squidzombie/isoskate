@@ -6,6 +6,7 @@
 // included, van_across too), and the wheels stand on the highest ground under them. Node only (no WebGL).
 import { describe, expect, it } from 'vitest';
 import type { AreaId, PropKind } from '../../../src/core/ids';
+import * as SKINS from '../../../src/core/skins';
 import { CAR_PAINTS, Dress, propSkin, type VehicleBody } from '../../../src/core/skins';
 import { CAMERA } from '../../../src/core/tuning';
 import type { Obstacle } from '../../../src/core/world';
@@ -230,6 +231,22 @@ describe('vehicle kits in the street', () => {
       expect(kerb.lo - flat.lo, `${area} ${kind}`).toBeLessThanOrEqual(WHEEL_LIFT_MAX + 1e-3);
     }
   });
+  it('a lifted vehicle keeps the x-ray cap at its box base + CAMERA.xrayCapY (the lift moves the body, not the cap)', () => {
+    // DESIGN §8: the part of any in-corridor solid above 1.2 m (from its box base, as every kit and the occlusion rule
+    // measure it) goes to the screen door. A kerb under one side lifts the body; the opaque part must not rise with it.
+    for (const area of AREAS) for (const [kind, x, len, wid, hgt] of [['parked_car', 3.2, 4.4, 1.8, 1.4], ['parked_car', -3.2, 4.4, 1.8, 1.4],
+      ['parked_van', -3.3, 4.6, 1.9, 1.9], ['parked_van', 3.3, 4.6, 1.9, 1.9], ['van_across', 2.3, 1.8, 4.4, 1.4], ['van_across', -2.3, 1.8, 4.4, 1.4]] as const) {
+      const { g, lo, box } = kitDraw(kind, area, 6, x, len, wid, hgt, sidewalk), cap = box.y0 + CAMERA.xrayCapY, tag = `${area} ${kind} x ${x}`;
+      expect(lo, `${tag}: lifted`).toBeGreaterThan(box.y0 + 0.1);
+      let top = -Infinity, xr = 0;
+      for (let i = 0; i < g.o.count; i++) top = Math.max(top, g.o.pos[i * 3 + 1]!);
+      for (let i = 0; i < g.x.count; i++) if (g.x.pos[i * 3 + 1]! > cap + 0.05) xr++;
+      expect(top, `${tag}: nothing opaque above the box-base cap`).toBeLessThanOrEqual(cap + 1e-3);
+      expect(top, `${tag}: the paint plate sits just under the cap`).toBeGreaterThan(cap - 0.03);
+      // (at least the roof top and both flanks; Neon's rim lives on the emissive target, so its count is the lowest)
+      expect(xr, `${tag}: the band above the cap is screen-doored`).toBeGreaterThanOrEqual(18);
+    }
+  });
   it('van_across: its band above the x-ray cap is screen-doored, with the paint plate under the cap', () => {
     for (const area of AREAS) {
       const { g } = kitDraw('van_across', area, 6, -2.3, 1.8, 4.4, 1.4, () => 0);
@@ -245,6 +262,15 @@ describe('facing, paints and the warm-up', () => {
   it('the oncoming lane shows its nose: traffic keeps right, Hoshimachi keeps left', () => {
     expect(noseTowardCamera('downtown', -1.2)).toBe(true); expect(noseTowardCamera('suburbs', 1.2)).toBe(false);
     expect(noseTowardCamera('neon', 1.2)).toBe(true); expect(noseTowardCamera('neon', -1.2)).toBe(false);
+  });
+  it('render and core agree on which way traffic drives and on the Bloom bit (core noseToCam / Dress.Bloom, plan G0)', () => {
+    // Render was built before G0 landed, so it keeps its own copies (car.ts noseTowardCamera, dress.ts BLOOM). Once
+    // core exports them this pins the copies to core; until then the Bloom stand-in must be a free Dress bit.
+    const core = SKINS as unknown as { readonly noseToCam?: (a: AreaId, x: number) => boolean };
+    if (core.noseToCam) for (const area of AREAS) for (let i = -20; i <= 20; i++) expect(noseTowardCamera(area, i * 0.25), `${area} ${i * 0.25}`).toBe(core.noseToCam(area, i * 0.25));
+    const bits = Dress as unknown as Readonly<Record<string, number>>;
+    if (bits.Bloom !== undefined) expect(BLOOM).toBe(bits.Bloom);
+    else for (const [k, v] of Object.entries(bits)) expect(v & BLOOM, `BLOOM stand-in collides with Dress.${k}`).toBe(0);
   });
   it('every paint the skin chooser rolls has a top and a roof moss; the cheerful four join the table', () => {
     for (const p of CAR_PAINTS) { expect(RECLAIM.carPaint[p], p).toBeTypeOf('number'); expect(RECLAIM.carRoofMoss[p], p).toBeTypeOf('number'); }
