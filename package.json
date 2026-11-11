@@ -1,0 +1,37 @@
+{
+  "name": "dusklane",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Isoskate: a mobile-first endless street-skating web game.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:single": "vite build --mode single",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "lint": "node scripts/lint.mjs",
+    "test": "vitest run",
+    "test:bots": "node scripts/test-bots.mjs",
+    "test:e2e": "playwright test",
+    "e2e": "playwright test",
+    "shots": "node scripts/shots.mjs"
+  },
+  "dependencies": {
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "@fontsource/bungee": "5.3.0",
+    "@fontsource/nunito": "5.3.0",
+    "@playwright/test": "1.63.0",
+    "@types/node": "22.20.5",
+    "@types/three": "0.186.0",
+    "typescript": "5.9.3",
+    "vite": "7.3.7",
+    "vite-plugin-singlefile": "2.3.4",
+    "vitest": "4.1.12"
+  }
+}

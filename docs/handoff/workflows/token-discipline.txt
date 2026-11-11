@@ -1,0 +1,6 @@
+TOKEN DISCIPLINE (keeps the work and the review just as thorough, at a fraction of the cost; everything you read stays in your context for every later step, so read narrowly):
+- Never read DESIGN.md, TECH.md or core-requests.md whole. List headings with grep -n '^#' and read only the sections your task names or that grep shows are relevant (sed -n 'a,bp'). Same for large source files and hand-off files: grep first, then read the range you need.
+- Screenshots: measure with scripts first (contrast numbers, sizes, overlap checks, counts). When you need to look, compose a contact sheet (python3 with PIL: related frames side by side, longest side <= 1600 px) and read the sheet, not the single PNGs; batch your looking near the end of a work phase rather than while iterating; never re-read an image you already saw; open one full-size PNG only to inspect a specific defect.
+- Command output: always cap it (| tail -n 40, or grep -E 'passed|failed|✘|Error|FAIL'); on a failure read only that test's block. Never cat whole logs, build output or minified files.
+- Slow suites (the full npm run test:bots, the full e2e run) at most twice: a baseline only if you need one, and once at the end; iterate with targeted subsets. A real-time e2e failure under load: rerun that test once alone; if it passes, note it and move on.
+- Final report within its word limit, no pasted logs.

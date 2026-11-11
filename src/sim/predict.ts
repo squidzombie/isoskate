@@ -1,0 +1,87 @@
+// sim/predict.ts: the airLeft prediction (TECH §6.5). Each air tick, integrate the current arc forward with DT
+// (≤ 90 steps) against groundAt, and find the soonest predicted grind capture along it (TECH §6.6 capture bands).
+// Used for the late-flip cutoff, upgrade refusal, the jump buffer, the pick window, the magnet candidate, dropH and
+// the HUD's predicted-landing tint. Lateral position is held at the current x (the magnet and steering may still
+// move it; the prediction is refreshed every tick).
+import type { GrindEdge } from '../core/world';
+import { CAPTURE, DT, G, HITBOX, MAGNET, sAt } from '../core/tuning';
+import type { Ctx } from './state';
+import { popSkip } from './grind';
+
+export const PREDICT_MAX_STEPS = 90;
+/** Capture starts when the front half of the board reaches the edge start: centre s ≥ a.s − HITBOX.l/2 (u clamps to 0).
+ *  Without it, a board coming down onto the first 0.35 m of a rail would touch its top from above (badLanding)
+ *  before its centre reached the edge. The validator's capture check (world/gen validator/path.ts) mirrors it. */
+export const CAPTURE_LEAD = HITBOX.l / 2;
+
+export const edgeU = (e: GrindEdge, s: number): number => (e.b.s - e.a.s > 1e-9 ? Math.min(1, Math.max(0, (s - e.a.s) / (e.b.s - e.a.s))) : 0);
+export const edgeX = (e: GrindEdge, s: number): number => e.a.x + (e.b.x - e.a.x) * edgeU(e, s);
+export const edgeY = (e: GrindEdge, s: number): number => e.a.y + (e.b.y - e.a.y) * edgeU(e, s);
+
+/** Lateral reach for capture prediction: curb-class edges 0.6 m (no magnet); others the magnet range (or 0.9 when
+ *  the magnet is cancelled). */
+export function captureReach(e: GrindEdge, magnet: boolean, transfer: boolean): number {
+  if (e.pickOnly) return CAPTURE.latPickOnly;
+  if (!magnet) return CAPTURE.lat;
+  return transfer ? MAGNET.transferRange : MAGNET.range;
+}
+
+/** Run time of the tick j steps ahead, computed exactly as sim/kinematics.ts advanceTime does (startT + tick·DT), so a
+ *  predicted s matches the sim's own s to the bit (a capture at the band's edge is predicted on the tick it happens). */
+const tAhead = (k: Ctx, j: number): number => k.st.startT + (k.st.cur.tick + j) * DT;
+
+/** First tick offset j (0 = now) at which the arc is inside the edge's capture band, or −1. */
+function captureStep(k: Ctx, e: GrindEdge, y0: number, vy0: number, jMax: number, sNow: number): number {
+  for (let j = 0; j <= jMax; j++) {
+    const tau = j * DT;
+    const s = j === 0 ? sNow : sAt(tAhead(k, j));
+    if (s < e.a.s - CAPTURE_LEAD) continue;
+    if (s > e.b.s) return -1;
+    const vy = vy0 - G * tau;
+    if (vy > CAPTURE.vyMax) continue;
+    const y = y0 + vy0 * tau - 0.5 * G * tau * tau;
+    const ey = edgeY(e, s);
+    if (y <= ey + CAPTURE.above && y >= ey - CAPTURE.below) return j;
+    if (y < ey - CAPTURE.below) return -1;
+  }
+  return -1;
+}
+
+export function predict(k: Ctx): void {
+  const st = k.st, c = st.cur, pr = st.pred;
+  pr.captureEdge = -1; pr.tCapture = Infinity; pr.magnetEdge = -1;
+  if (c.mode !== 'air') { pr.tLand = 0; pr.landY = c.groundY; c.airLeft = 0; c.dropH = 0; return; }
+  // Touchdown: first step whose board bottom is at or below the ground it was above.
+  let yPrev = c.p.y, tLand = PREDICT_MAX_STEPS * DT, landY = c.groundY, jLand = PREDICT_MAX_STEPS;
+  for (let j = 1; j <= PREDICT_MAX_STEPS; j++) {
+    const tau = j * DT;
+    const y = c.p.y + c.vel.y * tau - 0.5 * G * tau * tau;
+    const g = k.ground(sAt(tAhead(k, j)), c.p.x, yPrev + 1e-6, 1);
+    if (y <= g.y + 1e-9) { tLand = tau; landY = g.y; jLand = j; break; }
+    yPrev = y;
+  }
+  pr.tLand = tLand; pr.landY = landY;
+  // Capture candidates along the arc.
+  const magnet = !c.magnetCancelled;
+  let bestDx = Infinity, tAir = tLand;
+  for (const ob of k.obs) {
+    for (const e of ob.edges) {
+      if (e.b.s < c.p.s || e.a.s > c.p.s + c.vel.s * tLand + 0.5) continue;
+      if (popSkip(k, e, false)) continue;                 // GP request: no re-capture after a pop-out (grind.ts)
+      const mag = magnet && !popSkip(k, e, true);
+      const sRef = Math.max(c.p.s, e.a.s);
+      const dx = Math.abs(edgeX(e, sRef) - c.p.x);
+      if (dx > captureReach(e, mag, c.transferArmed)) continue;
+      const j = captureStep(k, e, c.p.y, c.vel.y, jLand, c.p.s);
+      if (j < 0) continue;
+      const tc = j * DT;
+      if (tc < pr.tCapture) { pr.tCapture = tc; pr.captureEdge = e.id; }
+      if (!e.pickOnly) {
+        if (mag && dx < bestDx) { bestDx = dx; pr.magnetEdge = e.id; pr.magnetX = edgeX(e, sAt(tAhead(k, j))); }
+        if ((mag || dx <= CAPTURE.lat) && tc < tAir) tAir = tc;
+      }
+    }
+  }
+  c.airLeft = tAir;
+  c.dropH = st.air.takeoffY - landY;
+}

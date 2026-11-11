@@ -1,0 +1,26 @@
+ docs/DESIGN.md                     |   8 ++
+ docs/ROADMAP.md                    |   2 +-
+ docs/TECH.md                       |   3 +
+ docs/core-requests.md              |  11 +++
+ src/core/decor.ts                  |  14 ++-
+ src/core/ids.ts                    |   1 +
+ src/core/skins.ts                  |   7 ++
+ src/ui/format.ts                   |   2 +-
+ src/world/gen/decor.ts             |  24 ++++-
+ src/world/gen/gen.config.ts        |   4 +-
+ src/world/gen/generator.ts         |  55 ++++++++---
+ src/world/gen/props/shared.ts      |  47 ++++++++++
+ src/world/gen/rows.ts              | 185 ++++++++++++++++++++++++++++++-------
+ src/world/gen/templates/index.ts   |  12 ++-
+ src/world/gen/templates/parked.ts  |  94 +++++++++++++++++++
+ src/world/gen/templates/shared.ts  |   9 +-
+ src/world/gen/templates/types.ts   |   1 +
+ src/world/render/kits/buildings.ts |  20 ++++
+ src/world/render/kits/car.ts       |  46 +++++++--
+ src/world/render/kits/decor.ts     |   6 ++
+ src/world/render/kits/shared.ts    |   2 +
+ tests/unit/gen/gen.test.ts         |  19 ++--
+ tests/unit/gen/phaseb.test.ts      |  78 ++++++++++++++++
+ tests/unit/render/fixtures.ts      |   3 +-
+ tests/unit/render/kits.test.ts     |   4 +-
+ 25 files changed, 576 insertions(+), 81 deletions(-)
