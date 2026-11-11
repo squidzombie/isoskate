@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // WA gallery (W2a): serves tests/unit/render/gallery.html with Vite on $PORT (WA uses 5187) and saves PNGs to
-// artifacts/gallery/: every PropKind per area (pages), every DECOR_KINDS entry per area, a dense street vignette per
+// artifacts/gallery/: every PropKind per area (pages), every vehicle body per area in both facings (group `vehicles`,
+// with close-ups), every DECOR_KINDS entry per area, a dense street vignette per
 // area and per gateway blend, the Title / Locker diorama, at 390×844, 390×664 and 1280×800. Each frame is measured with
 // the real contrast gate (debug/contrast.ts) and the world stats; everything lands in artifacts/gallery/report.json.
 //   PORT=5187 node tests/unit/render/gallery.mjs [--only street,props] [--vp 390x844] [--area neon] [--no-gate]
@@ -29,6 +30,7 @@ const VPS = [{ name: '390x844', w: 390, h: 844, m: true }, { name: '390x664', w:
   .filter((v) => !vpOnly.length || vpOnly.includes(v.name));
 const PROP_PAGES = { downtown: 3, suburbs: 4, docks: 4, neon: 3 };
 const DECOR_PAGES = 4;
+const VEHICLE_PAGES = { downtown: 3, suburbs: 2, docks: 2, neon: 2 };
 
 const jobs = [];
 for (const a of AREAS) {
@@ -40,6 +42,12 @@ for (const a of AREAS) {
   for (let p = 0; p < DECOR_PAGES; p++) jobs.push({ group: 'decor', name: `decor-${a}-${p}`, q: `scene=decor&area=${a}&page=${p}&speed=10.5`, vps: ['390x844', '1280x800'] });
   for (const p of [0, 1]) jobs.push({ group: 'decor', name: `decor-${a}-${p}-title`, q: `scene=decor&area=${a}&page=${p}&cam=title`, vps: ['390x844', '1280x800'] });
   jobs.push({ group: 'marks', name: `marks-${a}`, q: `scene=marks&area=${a}&labels=0`, vps: ['390x844', '1280x800'] });
+  // Every vehicle body in both facings, rows packed closer than any street would park them (so not held to the gate),
+  // and a close-up of the nearest two rows.
+  for (let p = 0; p < VEHICLE_PAGES[a]; p++) {
+    jobs.push({ group: 'vehicles', name: `vehicles-${a}-${p}`, q: `scene=vehicles&area=${a}&page=${p}`, vps: ['390x844'], gate: false });
+    jobs.push({ group: 'vehicles', name: `vehicles-${a}-${p}-near`, q: `scene=vehicles&area=${a}&page=${p}&zoom=2.4&fs=9.5&fx=0&fy=0.6`, vps: ['390x844'], gate: false });
+  }
   jobs.push({ group: 'title', name: `title-${a}`, q: `scene=street&area=${a}&cam=title` });
   jobs.push({ group: 'title', name: `locker-${a}`, q: `scene=street&area=${a}&cam=locker`, vps: ['390x844'] });
 }
@@ -85,7 +93,7 @@ try {
       const fmt = (v) => (v === null || Number.isNaN(v) ? '  -  ' : v.toFixed(2));
       console.log(`${file.padEnd(40)} hazard ${fmt(r.hazard)} edge ${fmt(r.edge)} calls ${s.calls} (main ${s.mainCalls}) tris ${s.tris} chunk≤${s.maxChunkTris} build95 ${s.buildMsP95.toFixed(1)}${r.worst ? `  worst ${r.worst.kind} ${r.worst.ratio.toFixed(2)}` : ''}`);
       // Run-camera views are held to the DESIGN §18.4 gate (the menu cameras are not).
-      if (!/cam=(title|locker)/.test(j.q) && !argv.includes('--no-gate')) {
+      if (!/cam=(title|locker)/.test(j.q) && j.gate !== false && !argv.includes('--no-gate')) {
         for (const [cls, v] of [['hazard', r.hazard], ['edge', r.edge]]) {
           if (v !== null && !Number.isNaN(v) && v < GATE[cls]) { gateFails.push(`${file}: ${cls} ${v.toFixed(2)} < ${GATE[cls]}${r.worst ? ` (${r.worst.kind})` : ''}`); }
         }

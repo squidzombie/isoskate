@@ -14,7 +14,7 @@ import { DECAL, type DecalId } from '../textures/decals';
 import { signRect } from '../textures/signs';
 import { RENDER } from '../render.config';
 import { FACE, FX } from '../writer';
-import { CAR_BODIES, drawVehicle } from './car';
+import { CAR_BODIES, drawVehicle, noseTowardCamera } from './car';
 import { rnd, surfaceLook, type KitCtx } from './common';
 import { FLORA, awningAt, bladeSignAt, board, bridgeTruss, building, cityGlow, containerStack, crane, crownAt, endWall, fern, house, hz, num, opt,
   shadowCaster, tower, tunnel, wallDrape, warehouse, water } from './buildings';
@@ -452,7 +452,9 @@ const parkedCarSide: DecorFn = (c, d) => {
   const cars = RECLAIM.decorCarPaint, nf = nearOf(d);
   const paint = neon ? RECLAIM.neonCarBody[3]! : cars[Math.floor(num(d, 'color', rnd(d.s, d.x)) * cars.length) % cars.length] ?? CAR_BODIES[0]!;
   const K = c.K.reset().to('b').lit(0, 0, nf);
-  drawVehicle(K, { body, x0, x1, s0: d.s, s1: d.s + L, y: d.y, h: H, paint: mixHex(paint, fadePaint(paint), num(d, 'age', 0.5)), side: shade(paint, -0.32), stripe: -1, hazard: false });
+  // Parked along the far kerb facing its traffic, like the street's own cars (the oncoming side shows its nose).
+  drawVehicle(K, { body, x0, x1, s0: d.s, s1: d.s + L, y: d.y, h: H, paint: mixHex(paint, fadePaint(paint), num(d, 'age', 0.5)), side: shade(paint, -0.32), stripe: -1,
+    hazard: false, nosedIn: noseTowardCamera(area, d.x) });
   K.to('b').lit(0, 0, nf);
   if (neon) K.col(RECLAIM.deadTube).box((x0 + x1) / 2 - 0.3, d.y + H, d.s + L * 0.45, (x0 + x1) / 2 + 0.3, d.y + H + 0.2, d.s + L * 0.55);
   else if (num(d, 'cat', 0) > 0) catLoaf(K, (x0 + x1) / 2, d.y + H, d.s + L * 0.5, RECLAIM.ginger, nf);

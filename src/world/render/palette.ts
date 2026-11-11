@@ -131,10 +131,17 @@ export const RECLAIM = {
   glass: 0x262438, skyStreak: 0x6a6890,                     // dark glass L 0.020 (3.6:1 on asphalt); streak ≤ 10% of a pane
   bumper: 0x2b2140, hub: 0x3a3448,
   taillight: 0x6a2a2a,                                      // static vehicles: matte, unlit
-  /** Hazard car paint tops (the top face is the paint; bodies stay the ink family): L 0.076–0.108. */
-  carPaint: { teal: 0x2e6062, oxblood: 0x7a3a48, olive: 0x55603a, slate: 0x575b76 },
+  /** Matte headlamps: a mid warm grey (L 0.14; never cream, rule 5: lit by the golden sun it must not read as the grind
+   *  signature), so the end facing the camera reads "front". */
+  headlamp: 0x6e665d,
+  /** Neon: the steady red rim across a vehicle's rear (its front rim breaks for the lamps). */
+  neonTail: 0xff4458,
+  /** Hazard car paint tops (the top face is the paint; bodies stay the ink family): L 0.076–0.108. Sun-faded but
+   *  cheerful: cobalt (L 0.100), coral (0.080), plum (0.088) and ochre (0.090) join the hazard roll, the warm ones lower
+   *  because the golden light lifts them (measured: equal rendered luminance); slate stays for the movers. */
+  carPaint: { teal: 0x2e6062, oxblood: 0x7a3a48, olive: 0x55603a, slate: 0x575b76, cobalt: 0x3a598e, coral: 0x813b30, plum: 0x734564, ochre: 0x6a511e },
   /** Roof moss per paint, luminance-matched (±10%) to the paint top. */
-  carRoofMoss: { teal: 0x485f37, oxblood: 0x3f5431, olive: 0x485f37, slate: 0x485f37 },
+  carRoofMoss: { teal: 0x485f37, oxblood: 0x3f5431, olive: 0x485f37, slate: 0x485f37, cobalt: 0x496038, coral: 0x415632, plum: 0x445a34, ochre: 0x455c35 },
   /** Neon inverted vehicle bodies (all L ≈ 0.18–0.19, with the emissive rim as today); taxi = steel blue. */
   neonCarBody: [0x7a6fb0, 0x538078, 0x9f687a, 0x5a78a0],
   /** Decor (`parked_car_side`) paints: sun-faded mid values, never ink. */

@@ -33,6 +33,9 @@ export const DRESS = {
   maxNearEdgeL: relLum(RECLAIM.animalMax),
 } as const;
 
+/** The Dress bit of flower heads in a pickup bed (core/skins.ts `Dress.Bloom`, 1 pickup in 3 outside Neon): read
+ *  through the table so the kits draw it whenever the skin chooser sets it. */
+export const BLOOM: number = (Dress as { readonly Bloom?: number }).Bloom ?? 4096;
 /** Rule 3: kinds whose top face may carry flowers (landable / grindable planter beds); scenery is decor, not a kit. */
 export const BLOOM_TOP_KINDS: ReadonlySet<PropKind> = new Set<PropKind>(['planter', 'planter_tree', 'cherry_planter']);
 /** Rule 8: the only hazards with a time-varying light (their existing telegraphs, DESIGN §10.3): the crosswalk signal,
@@ -49,6 +52,8 @@ const MOSS_ON: ReadonlyMap<number, number> = new Map<number, number>([
   [0x5c4b84, RECLAIM.hazardMoss], [0x4a3b6b, RECLAIM.hazardMossDark],
   [RECLAIM.carPaint.teal, RECLAIM.carRoofMoss.teal], [RECLAIM.carPaint.oxblood, RECLAIM.carRoofMoss.oxblood],
   [RECLAIM.carPaint.olive, RECLAIM.carRoofMoss.olive], [RECLAIM.carPaint.slate, RECLAIM.carRoofMoss.slate],
+  [RECLAIM.carPaint.cobalt, RECLAIM.carRoofMoss.cobalt], [RECLAIM.carPaint.coral, RECLAIM.carRoofMoss.coral],
+  [RECLAIM.carPaint.plum, RECLAIM.carRoofMoss.plum], [RECLAIM.carPaint.ochre, RECLAIM.carRoofMoss.ochre],
   [0x7a6fb0, RECLAIM.neonHazardMoss], [0x9489c8, RECLAIM.neonHazardMossTop],
 ]);
 const mossCache = new Map<number, number>();

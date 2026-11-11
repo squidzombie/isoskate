@@ -5,11 +5,17 @@
 //   ?scene=decor&area=docks&page=0    every DECOR_KINDS entry listed for the area (both sides)
 //   ?scene=street&area=suburbs        a dense street vignette (what a WG segment will look like)
 //   ?scene=street&area=docks&to=neon&u=0.5   the same vignette across a gateway blend
+//   ?scene=vehicles&area=suburbs&page=0  every vehicle body the area shows, each in both facings: the oncoming lane
+//                                     (x < 0, nose toward the camera) beside the near lane (x > 0, rear toward it)
+//     &paints=1   cycle every RECLAIM.carPaint key over the cars;  &bloom=1  flowers in every pickup bed (previews of
+//                 skin bits core may not roll yet: test-only, through DRESSER)
+//   &zoom=3&fs=6&fx=-1.3&fy=0.7   a close-up: the run frame cropped around the world point (S0 + fs, fx, fy)
 //   &cam=run|title|locker  &speed=7   camera mode and framing speed;  &t=…  run time for the speed schedule
 // window.__gallery: { ready, label, stats, contrast() } — contrast() runs the real gate (debug/contrast.ts).
-import { Vector3 } from 'three';
+import { Vector3, type PerspectiveCamera } from 'three';
 import { DECOR_KINDS, type DecorKind } from '../../../src/core/decor';
 import type { AreaId, PropKind } from '../../../src/core/ids';
+import { Dress, propSkin, type VehicleBody } from '../../../src/core/skins';
 import type { ScoreState, SkaterState } from '../../../src/core/sim';
 import { CHUNK_LEN } from '../../../src/core/tuning';
 import type { CameraMode, RenderFrame, Viewport } from '../../../src/core/view';
@@ -21,6 +27,9 @@ import { readWorldPoints } from '../../../src/gfx/silhouette';
 import { SkaterViewImpl, basePose } from '../../../src/skater';
 import { createVfx } from '../../../src/vfx';
 import { createCameraRig, createWorldView } from '../../../src/world/render';
+import { noseTowardCamera } from '../../../src/world/render/kits/car';
+import { BLOOM, DRESSER } from '../../../src/world/render/kits/dress';
+import { RECLAIM } from '../../../src/world/render/palette';
 import { AREAS, ALL_PROP_KINDS, decorOf, fakeGen, obstacleOf, place, resetIds } from './fixtures';
 
 const q = new URLSearchParams(location.search);
@@ -189,7 +198,72 @@ function marksScene(): void {
   place(chunks, areaFn, [], decor);
 }
 
-if (scene === 'props') propsScene(); else if (scene === 'decor') decorScene(); else if (scene === 'marks') marksScene(); else streetScene();
+/** The vehicle builder's bodies for an area, a page of four rows at a time: [kind, body, height]. */
+const VEHICLE_ROWS: Readonly<Record<AreaId, readonly (readonly (readonly [PropKind, VehicleBody, number])[])[]>> = {
+  downtown: [
+    [['parked_car', 'sedan', 1.4], ['parked_car', 'estate', 1.4], ['parked_car', 'pickup', 1.4], ['parked_car', 'suv', 1.5]],
+    [['parked_van', 'panel_van', 1.9], ['parked_van', 'camper', 1.9], ['container', 'box_truck', 2.6], ['container', 'shuttle_bus', 2.6]],
+    [['crosswalk_car', 'sweeper', 1.4], ['backout_car', 'sedan', 1.4], ['van_across', 'panel_van', 1.4]],
+  ],
+  suburbs: [
+    [['parked_car', 'sedan', 1.4], ['parked_car', 'estate', 1.4], ['parked_car', 'pickup', 1.5], ['parked_car', 'suv', 1.5]],
+    [['parked_van', 'panel_van', 1.9], ['parked_van', 'camper', 1.9], ['backout_car', 'sedan', 1.4], ['van_across', 'panel_van', 1.4]],
+  ],
+  docks: [
+    [['container', 'box_truck', 2.6], ['container', 'shuttle_bus', 2.6], ['parked_van', 'panel_van', 1.9], ['van_across', 'panel_van', 1.4]],
+    [['parked_car', 'pickup', 1.4], ['parked_car', 'estate', 1.4], ['parked_van', 'camper', 1.9], ['parked_car', 'sedan', 1.4]],
+  ],
+  neon: [
+    [['parked_car', 'taxi', 1.4], ['parked_van', 'kei_van', 1.9], ['container', 'box_truck', 2.6], ['container', 'shuttle_bus', 2.6]],
+    [['parked_car', 'taxi', 1.4], ['van_across', 'kei_van', 1.4]],
+  ],
+};
+const PAINT_KEYS = Object.keys(RECLAIM.carPaint) as (keyof typeof RECLAIM.carPaint)[];
+let paintPick = 0;
+if (q.get('paints') === '1' || q.get('bloom') === '1') {
+  // Test-only previews of skin bits core may not roll yet (every paint key; Dress bit BLOOM in pickup beds).
+  const begin = DRESSER.begin.bind(DRESSER);
+  DRESSER.begin = (ob, s0, s1, iso) => {
+    const sk = begin(ob, s0, s1, iso);
+    if (q.get('paints') === '1' && sk.paint !== null && !(sk.dress & Dress.Clean)) {
+      (sk as { paint: string }).paint = PAINT_KEYS[(ob.id + paintPick) % PAINT_KEYS.length]!;
+    }
+    if (q.get('bloom') === '1' && sk.body === 'pickup' && ob.area !== 'neon') sk.dress |= BLOOM;
+    return sk;
+  };
+}
+
+function vehiclesScene(): void {
+  const rows = VEHICLE_ROWS[area][Math.min(page, VEHICLE_ROWS[area].length - 1)]!;
+  const obs: Obstacle[] = [];
+  let id = 7000, s = S0 + 4;
+  for (const [kind, body, h] of rows) {
+    const across = kind === 'van_across';
+    for (const x of across ? [-2.3, 2.3] : [-1.35, 1.35]) {
+      // The skin through propSkin: the first (id, variant) whose body and facing (its lane's: the oncoming lane shows
+      // its nose) are the wanted ones.
+      const nose = !across && noseTowardCamera(area, x);
+      let hit: [number, number] | null = null;
+      for (const facing of [true, false]) for (let i = id; i < id + 20000 && !hit; i++) for (let v = 0; v < 4 && !hit; v++) {
+        const sk = propSkin(kind, area, i, v, h);
+        if (sk.body === body && (across || !facing || sk.nosedIn === nose)) hit = [i, v];       // movers never nose in
+      }
+      if (!hit) throw new Error(`no ${kind} ${body} skin in ${area}`);
+      id = hit[0] + 1;
+      const o = obstacleOf(kind, area, s, x, hit[1])[0]!;
+      o.id = hit[0]; o.variant = hit[1]; o.hgt = h;
+      for (const so of o.solids) so.box.y1 = so.box.y0 + h;
+      obs.push(o);
+      tags.push({ s: s - 0.5, x, y: 0, text: `${body}${across ? '' : nose ? ' ▼nose' : ' ▲rear'}` });
+    }
+    s += (rows.some((r) => r[0] === 'container') ? 8.5 : 7);
+  }
+  paintPick = Number(q.get('paintShift') ?? 0);
+  place(chunks, areaFn, obs, []);
+}
+
+if (scene === 'props') propsScene(); else if (scene === 'decor') decorScene(); else if (scene === 'marks') marksScene();
+else if (scene === 'vehicles') vehiclesScene(); else streetScene();
 const gen = fakeGen(chunks, (s) => blendAt(s));
 world.attach(gen);
 
@@ -204,19 +278,30 @@ const frame = (): RenderFrame => {
   const a = blendAt(S0);
   return { alpha: 1, dt: 1 / 60, timeScale: 1, prev: cur, cur, pose, score, events: [], playerS: S0, speed, area: a.area, blend: a.blend, viewport: vp };
 };
+const zoom = Number(q.get('zoom') ?? 1);
 function renderOnce(): void {
   const f = frame();
   for (let i = 0; i < 10; i++) world.update(f);
   skater.update(f);
   vfx.update(f);
   rig.update(f);
+  if (zoom > 1 && cam === 'run') {
+    // A close-up of the run frame: the same camera, its view window cropped around the focus point.
+    const c = rig.camera as PerspectiveCamera, view = c.view;
+    const p = rig.project({ s: S0 + Number(q.get('fs') ?? 6), x: Number(q.get('fx') ?? 0), y: Number(q.get('fy') ?? 0.7) });
+    if (view) {
+      const w = view.width / zoom, h = view.height / zoom;
+      const ox = view.offsetX + (p.x / vp.wCss) * view.width - w / 2, oy = view.offsetY + (p.y / vp.hCss) * view.height - h / 2;
+      c.setViewOffset(view.fullWidth, view.fullHeight, ox, oy, w, h);
+    }
+  }
   gfx.renderer.render(gfx.scene, rig.camera);
 }
 renderOnce(); renderOnce();
 
 // Labels at the props (CSS px, projected with the rig).
 const tagsEl = document.getElementById('tags')!;
-if (labels && cam === 'run') for (const t of tags) {
+if (labels && cam === 'run' && zoom <= 1) for (const t of tags) {
   const p = rig.project({ s: t.s, x: t.x, y: t.y });
   const el = document.createElement('div');
   el.textContent = t.text; el.style.left = `${p.x}px`; el.style.top = `${p.y}px`;

@@ -2,18 +2,25 @@
 // boot"). The kits write straight into pooled buffers instead of keeping per-kind geometry, so what is worth doing at
 // boot is running every kit and decor renderer once, per area skin, while nothing else happens: the JIT then compiles
 // them before a run streams its first dense chunk, and the first Neon chunk of a run is not the first Neon chunk ever
-// built. One synthetic chunk per area (every PropKind, low and tall, plus every decor kind of the area), built into
-// scratch buffers in an idle callback and thrown away. Never called in a frame.
+// built. One synthetic chunk per area (every PropKind, low and tall, plus every decor kind of the area, plus every vehicle
+// body the area's skins give in both facings, with and without a cat or flowers), built into scratch buffers in an idle
+// callback and thrown away. Never called in a frame.
 import { DECOR_KINDS, type DecorKind } from '../../core/decor';
 import { AREA_ORDER, type AreaId, type PropKind } from '../../core/ids';
+import { Dress, isVehicle, newSkin, propSkin } from '../../core/skins';
 import { CHUNK_LEN } from '../../core/tuning';
 import type { Chunk, Decor, Obstacle } from '../../core/world';
 import { buildChunk, type AreaSource } from './chunkBuilder';
+import { BLOOM } from './kits/dress';
 import { KITS } from './kits/index';
 import { GeoPool } from './pools';
 import { GeoWriter, type KitTargets } from './writer';
 
 const T = ['o', 'x', 'e', 'g', 'b'] as const;
+/** The vehicle kinds and their boxes (len along s, wid across, hgt; van_across lies across the street). */
+export const WARMUP_VEHICLES: readonly (readonly [PropKind, number, number, number])[] = [
+  ['parked_car', 4.4, 1.8, 1.5], ['parked_van', 4.6, 1.9, 1.9], ['container', 6.1, 2.4, 2.6], ['van_across', 1.8, 4.4, 1.4],
+  ['crosswalk_car', 4.2, 1.8, 1.4], ['backout_car', 4.4, 1.8, 1.4]];
 
 /** A synthetic chunk exercising every kit and every decor renderer of `area` (geometry is not meant to look right). */
 export function warmupChunk(area: AreaId, index = -40): Chunk {
@@ -34,6 +41,24 @@ export function warmupChunk(area: AreaId, index = -40): Chunk {
         tags: kind === 'barrier_low' || kind === 'holo_gate' || kind === 'trench' ? 1 : 0 });
     }
   });
+  // Every vehicle body × facing (× cat, flowers) the skin chooser gives this area: the variants found through propSkin.
+  const skin = newSkin();
+  let k = 0;
+  for (const [kind, len, wid, hgt] of WARMUP_VEHICLES) {
+    const seen = new Set<string>();
+    for (let n = 0; n < 192; n++) {
+      const oid = id--, variant = n & 3;
+      propSkin(kind, area, oid, variant, hgt, skin);
+      const key = `${skin.body}|${skin.nosedIn}|${skin.dress & (Dress.Cat | BLOOM)}`;
+      if (!isVehicle(skin.body) || seen.has(key)) continue;
+      seen.add(key);
+      const s = s0 + 0.5 + (k % 4) * 6.5, x = -2.6 + ((k >> 2) % 3) * 2.6;
+      const box = { s0: s, s1: s + len, x0: x - wid / 2, x1: x + wid / 2, y0: 0, y1: hgt };
+      obstacles.push({ id: oid, kind, area, segment: -1, s, x, len, wid, hgt, rotY: 0, mirror: false, variant,
+        solids: [{ box, top: 'crash', tall: true }], slabs: [], pits: [], edges: [], tags: 0 });
+      k++;
+    }
+  }
   (Object.keys(DECOR_KINDS) as DecorKind[]).forEach((kind, i) => {
     if (!(DECOR_KINDS[kind].areas as readonly string[]).includes(area)) return;
     const side = i % 2 ? 1 : -1;

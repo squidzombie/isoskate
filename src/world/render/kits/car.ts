@@ -1,33 +1,48 @@
 // world/render/kits/car.ts: the RECLAIM vehicle builder (DESIGN §18.5, THEME §3.3). One parametric low-poly vehicle per
 // body (sedan, estate, pickup, SUV, taxi, kei van, panel van, camper, box truck, shuttle bus, street sweeper), stretched
 // to fill its box (long axis along s, axis-aligned, no yaw), the rear toward the camera unless nosed in.
-// The plan view carries the read (the portrait camera mostly sees roofs): the paint top colour on the roof, bonnet and
-// boot, framed front and back by dark glass with one sky streak per pane; four tyre nubs at the box corners (the body
-// is inset between the arches); mirrors inside the 0.05 m overhang; one accent stripe along bonnet and roof. No chrome
-// anywhere: ink bumpers, dark hubs, no bright trim; static vehicles are unlit (matte taillights). Helper machines
-// (movers) are clean and carry the sensor dome and the two-tone band. Wear (roof moss at the edges, ink rust on the
-// sills, ivy up one arch, weeds under the car, the cat) goes through DRESSER, so the dressing rules hold.
+// Facing reads at the run scale (22 px/m) from two things the camera sees. The roof: the cabin sits rearward of the
+// middle (a long bonnet, a short boot, a raked windscreen larger than the rear glass), so the paint roof alone says which
+// way a car points. The end facing the camera: at the front matte warm-grey headlamps either side of an ink grille, at
+// the rear matte deep-red taillights wrapping 0.05 m onto the top (Neon: the rim breaks for the lamps in front and runs
+// steady red across the rear).
+// A car, not a slab: bonnet and boot lids sit a step below the belt, the cabin is 0.11 m narrower per side than the body
+// (the paint shoulders frame the glass), and darker arches hug the tyre nubs at the box corners. The plan view still
+// carries the read (the portrait camera mostly sees roofs): the paint top on roof, bonnet, boot and shoulders, framed
+// front and back by dark glass with one sky streak per pane; mirrors inside the 0.05 m overhang; one accent stripe along
+// bonnet and roof. No chrome anywhere: ink bumpers, dark hubs, no bright trim; static vehicles are unlit (matte lamps).
+// Helper machines (movers) are clean and carry the sensor dome and the two-tone band. Wear (roof moss at the edges, ink
+// rust on the sills, ivy up one arch, weeds under the car, the cat, flowers in a pickup bed) goes through DRESSER, so
+// the dressing rules hold. Everything above the x-ray cap (glass included) goes to the screen door.
 // Kits draw straight into pooled buffers: no allocation per vehicle.
-import { CAMERA } from '../../../core/tuning';
+import type { AreaId } from '../../../core/ids';
 import { Dress, isVehicle, type VehicleBody } from '../../../core/skins';
+import { CAMERA } from '../../../core/tuning';
 import type { Obstacle } from '../../../core/world';
 import { HAZARD, RECLAIM, mixHex, shade } from '../palette';
 import { signRect } from '../textures/signs';
 import { FACE, FX, type Kit } from '../writer';
 import { contact, type KitCtx } from './common';
-import { DRESSER, foliageFor, mossOn, rustOn, type DressRole } from './dress';
+import { BLOOM, DRESSER, foliageFor, mossOn, rustOn, type DressRole } from './dress';
 
 /** Ink side colours of hazard vehicles (the body family; the top face is the paint). */
 export const CAR_BODIES = [0x1c1430, 0x141a2e, 0x1d1420, 0x122220, 0x221830, 0x17142a] as const;
 type Target = Kit['t'];
-const TYRE = 0x171221, LENS = 0x3c3a52, CURTAIN = 0x5e5248, HELPER_DOME = 0x8a8fb0;
+/** Dusty tyres a shade lighter than the ink bodies (the nubs at the corners read as wheels); the grille a shade darker. */
+const TYRE = 0x262030, LENS = 0x3c3a52, CURTAIN = 0x5e5248, HELPER_DOME = 0x8a8fb0, GRILLE = 0x100b18;
 /** Neon vehicles' body glow, × the Neon hazard glow (Phase B, the contrast gate). */
 const NEON_VEHICLE_GLOW = 1.35;
+/** Wheels stand on the highest ground under their four tyres, at most this far above the box bottom (m). */
+export const WHEEL_LIFT_MAX = 0.3;
+
+/** Front toward the camera (the oncoming lane): traffic keeps right, Hoshimachi keeps left. The same rule as the
+ *  generator's facing (core/skins.ts `noseToCam`), for the decor cars, which the generator does not skin. */
+export const noseTowardCamera = (area: AreaId, x: number): boolean => (area === 'neon' ? x > 0 : x < 0);
 
 export interface VehicleSpec {
   body: VehicleBody;
   x0: number; x1: number; s0: number; s1: number; y: number; h: number;
-  /** Paint top (roof, bonnet, boot lid). */
+  /** Paint top (roof, bonnet, boot lid, shoulders). */
   paint: number;
   /** Side colour (the ink family on hazards; Neon: the inverted body). */
   side: number;
@@ -35,7 +50,7 @@ export interface VehicleSpec {
   stripe: number;
   /** In-corridor hazard (noFog, matte; dressing through DRESSER). */
   hazard: boolean;
-  /** Neon inverted look: glowing body, emissive rim on the roof's camera edge and the belt. */
+  /** Neon inverted look: glowing body, emissive rim on the roof's camera edge and across both ends. */
   inverted?: boolean; rim?: number; glow?: number;
   /** Front toward the camera (−s); otherwise the rear shows. */
   nosedIn?: boolean;
@@ -65,10 +80,24 @@ function ch(xa: number, ya: number, ua: number, xb: number, yb: number, ub: numb
   if (sa > sb) { const t = sa; sa = sb; sb = t; }
   K.chamfer(xa, ya, sa, xb, yb, sb, c, top);
 }
-/** Quad a-b-c-d, CCW seen from its front in the unflipped frame. */
+function quad(ax: number, ay: number, au: number, bxx: number, by: number, bu: number, cx: number, cy: number, cu: number,
+  dx: number, dy: number, du: number, t: Target): void {
+  if (!FLIP) K.quad(ax, ay, S(au), bxx, by, S(bu), cx, cy, S(cu), dx, dy, S(du), undefined, t);
+  else K.quad(dx, dy, S(du), cx, cy, S(cu), bxx, by, S(bu), ax, ay, S(au), undefined, t);
+}
+/** Quad a-b-c-d, CCW seen from its front in the unflipped frame. A pane (a, b its foot, c, d its head, each pair level)
+ *  that crosses the x-ray cap is split there: the part above goes to the screen door like every in-corridor solid. */
 function qd(ax: number, ay: number, au: number, bxx: number, by: number, bu: number, cx: number, cy: number, cu: number, dx: number, dy: number, du: number): void {
-  if (!FLIP) K.quad(ax, ay, S(au), bxx, by, S(bu), cx, cy, S(cu), dx, dy, S(du));
-  else K.quad(dx, dy, S(du), cx, cy, S(cu), bxx, by, S(bu), ax, ay, S(au));
+  const cap = K.capY, t = K.t;
+  if (cap === null || t !== 'o' || Math.max(cy, dy) <= cap + 1e-4) { quad(ax, ay, au, bxx, by, bu, cx, cy, cu, dx, dy, du, t); return; }
+  if (Math.min(ay, by) >= cap - 1e-4 || Math.abs(ay - by) > 1e-4 || Math.abs(cy - dy) > 1e-4) {
+    quad(ax, ay, au, bxx, by, bu, cx, cy, cu, dx, dy, du, Math.min(ay, by) >= cap - 1e-4 ? 'x' : t);
+    return;
+  }
+  const tb = (cap - by) / (cy - by), ta = (cap - ay) / (dy - ay);
+  const ex = bxx + (cx - bxx) * tb, eu = bu + (cu - bu) * tb, fx = ax + (dx - ax) * ta, fu = au + (du - au) * ta;
+  quad(ax, ay, au, bxx, by, bu, ex, cap, eu, fx, cap, fu, 'o');
+  quad(fx, cap, fu, ex, cap, eu, cx, cy, cu, dx, dy, du, 'x');
 }
 /** A dressing box through DRESSER (never on decor vehicles). */
 function dbx(role: DressRole, xa: number, ya: number, ua: number, xb: number, yb: number, ub: number, faces: number = FACE.sides5): void {
@@ -79,7 +108,14 @@ function dbx(role: DressRole, xa: number, ya: number, ua: number, xb: number, yb
 }
 const paintBrush = (hex: number) => K.lit(0, 0, FLAGS, GLOW).col(hex);
 const flat = (hex: number) => K.lit(0, 0, FLAGS).col(hex);
+const mirrorLR = (f: number) => (f & ~(FACE.left | FACE.right)) | (f & FACE.left ? FACE.right : 0) | (f & FACE.right ? FACE.left : 0);
+/** Two boxes mirrored about the centre line: [xa, xa + w] and [xb − w, xb] (left / right faces swap). */
+function pair(xa: number, xb: number, w: number, ya: number, ua: number, yb: number, ub: number, faces: number = FACE.sides5): void {
+  bx(xa, ya, ua, xa + w, yb, ub, faces);
+  bx(xb - w, ya, ua, xb, yb, ub, mirrorLR(faces));
+}
 
+// ── parts ──────────────────────────────────────────────────────────────────────────────────────────────────────
 /** A sloped glass pane from the belt (ua) to the top (ub), xa..xb at the belt and inset `ri` at the top: rear glass
  *  when ua < ub, windscreen when ua > ub. One sky streak, 8% of the pane, lifted off the glass. */
 function pane(xa: number, xb: number, belt: number, ua: number, top: number, ub: number, ri: number): void {
@@ -98,7 +134,7 @@ function sideGlass(xa: number, xb: number, belt: number, ua: number, ub: number,
   qd(xb, belt, ua, xb, belt, ub, xb - ri, top, ud, xb - ri, top, uc);
   qd(xa, belt, ub, xa, belt, ua, xa + ri, top, uc, xa + ri, top, ud);
 }
-/** One axle: low tyres (bottom flattened, the tread reaching the box sides: the tyre nubs) and dark hubs. */
+/** One axle: low dusty tyres (bottom flattened, the tread reaching the box sides: the tyre nubs) and dark hubs. */
 function axle(x0: number, x1: number, y: number, R: number, u: number): void {
   const s = S(u), w = 0.24, yc = y + R - 0.03;
   flat(TYRE);
@@ -108,28 +144,39 @@ function axle(x0: number, x1: number, y: number, R: number, u: number): void {
   K.hcyl('x', 0, yc, s, x0 - 0.004, x0 + 0.01, R * 0.5, 6, true);
   K.hcyl('x', 0, yc, s, x1 - 0.01, x1 + 0.004, R * 0.5, 6, true);
 }
-/** Dark lips over the tyres on both flanks. */
+/** Wheel arches on both flanks: a darker lip hugging each tyre's top, 0.03 m proud of the body side, so the tyre nubs at
+ *  the box corners read as wheels under a body (the outer tread still shows from above). */
 function arches(xa: number, xb: number, y: number, R: number, ua: number, ub: number, side: number): void {
-  flat(shade(side, -0.25));
-  pair(xa - 0.01, xb + 0.01, 0.03, y, ua - R - 0.06, y + 0.07, ua + R + 0.06, FACE.sides5);
-  pair(xa - 0.01, xb + 0.01, 0.03, y, ub - R - 0.06, y + 0.07, ub + R + 0.06, FACE.sides5);
+  flat(shade(side, -0.4));
+  const yc = y + R - 0.03, y0 = yc + R * 0.45, y1 = yc + R + 0.035;
+  pair(xa - 0.03, xb + 0.03, 0.05, y0, ua - R - 0.05, y1, ua + R + 0.05);
+  pair(xa - 0.03, xb + 0.03, 0.05, y0, ub - R - 0.05, y1, ub + R + 0.05);
 }
-/** Ink bumpers at both ends; at the rear matte taillights (a mover's steady reverse lights inside them), at the front
- *  dull lenses. `ly0..ly1`: the light band. */
-function endsAndLights(xa: number, xb: number, deck: number, ly0: number, ly1: number, L: number, v: VehicleSpec): void {
+/** The two ends (the camera sees the one facing it). Ink bumpers at both. At the rear matte deep-red taillights at the
+ *  corners (a mover's steady reverse lights inside them), 5 mm proud of the end and the flank and wrapping 0.05 m onto
+ *  the top when `rWrap`; at the front matte warm-grey headlamps (Neon: dark lenses, its rim runs between them) either
+ *  side of an ink grille, wrapping onto the bonnet when `fWrap`. r0..r1 / f0..f1: the lamp bands. Neon's rear lamps
+ *  are its steady red rim (neonRim). Returns the lamp width. */
+function endsAndLights(v: VehicleSpec, xa: number, xb: number, deck: number, L: number,
+  r0: number, r1: number, rWrap: boolean, f0: number, f1: number, fWrap: boolean): number {
   flat(RECLAIM.bumper);
   bx(xa - 0.02, deck - 0.08, 0, xb + 0.02, deck + 0.1, 0.07, FACE.top | FACE.front | FACE.left | FACE.right);
   bx(xa - 0.02, deck - 0.08, L - 0.07, xb + 0.02, deck + 0.1, L, FACE.top | FACE.back | FACE.left | FACE.right);
-  const lw = Math.min(0.24, (xb - xa) * 0.16);
-  flat(RECLAIM.taillight);
-  pair(xa + 0.04, xb - 0.04, lw, ly0, 0.012, ly1, 0.03, FACE.front);
+  const lw = Math.min(0.3, (xb - xa) * 0.18);
+  if (!v.inverted) {
+    flat(RECLAIM.taillight);
+    pair(xa - 0.005, xb + 0.005, lw, r0, 0.025, r1 + (rWrap ? 0.004 : 0), rWrap ? 0.085 : 0.045, FACE.front | FACE.left | (rWrap ? FACE.top : 0));
+  }
   if (v.reverseLights) {
     K.to('e').glowing(1.2, -1, FX.noFog).col(0xf0c890);
-    pair(xa + 0.06, xb - 0.06, lw * 0.4, ly0 + 0.02, 0.006, ly1 - 0.02, 0.012, FACE.front);
+    pair(xa + 0.06, xb - 0.06, lw * 0.4, r0 + 0.03, 0.019, Math.min(r1 - 0.01, r0 + 0.12), 0.024, FACE.front);
     K.to(T0);
   }
-  flat(LENS);
-  pair(xa + 0.05, xb - 0.05, lw, ly0 + 0.02, L - 0.03, ly1, L - 0.012, FACE.back);
+  flat(v.inverted ? LENS : RECLAIM.headlamp);
+  pair(xa - 0.005, xb + 0.005, lw, f0, L - (fWrap ? 0.085 : 0.045), f1 + (fWrap ? 0.004 : 0), L - 0.025, FACE.back | FACE.left | (fWrap ? FACE.top : 0));
+  flat(GRILLE);
+  bx(xa + lw + 0.05, f0 + 0.01, L - 0.04, xb - lw - 0.05, f1 - (fWrap ? 0.04 : 0.01), L - 0.022, FACE.back);
+  return lw;
 }
 /** Mirrors at the windscreen base, inside the footprint (the body is inset 0.07 m). */
 function mirrors(x0: number, x1: number, belt: number, u: number): void {
@@ -143,13 +190,15 @@ function stripe(v: VehicleSpec, xm: number, y: number, ua: number, ub: number): 
   if (DRESS_ON) dbx('life', xm - 0.05, y - 0.004, ua, xm + 0.05, y + 0.002, ub, FACE.top);
   else bx(xm - 0.05, y - 0.004, ua, xm + 0.05, y + 0.002, ub, FACE.top);
 }
-/** An opaque paint plate just under the x-ray cap: through the 50% screen door of the roof above it the roof still
- *  reads as paint instead of the ground showing through. */
-function capPlate(v: VehicleSpec, xa: number, xb: number, ua: number, ub: number): void {
+/** Opaque plates just under the x-ray cap: through the 50% screen door above them the roof still reads as paint
+ *  (xa..xb × ua..ub) and the glass band around it as glass (ga..gb × gu0..gu1, the cabin's section at the cap; none when
+ *  empty), instead of the ground showing through. */
+function capPlate(v: VehicleSpec, xa: number, xb: number, ua: number, ub: number, ga = 0, gb = 0, gu0 = 0, gu1 = 0): void {
   const cap = K.capY;
   if (cap === null || cap >= v.y + v.h - 0.02 || ub <= ua) return;
   paintBrush(v.paint);
   bx(xa, cap - 0.014, ua, xb, cap - 0.004, ub, FACE.top);
+  if (gb > ga && gu1 > gu0) { flat(RECLAIM.glass); bx(ga, cap - 0.024, gu0, gb, cap - 0.018, gu1, FACE.top); }
 }
 /** Roof moss (≤ 20% of roof and bonnet: edge patches on the rear half of the roof and the bonnet corners, never on
  *  glass), ink rust on the sills, ivy up one arch and weeds under the car. Hazard vehicles only, through DRESSER.
@@ -204,6 +253,20 @@ function cat(v: VehicleSpec, xm: number, roofY: number, ra: number, rb: number):
   dbx('cat', x + 0.025, roofY + 0.17, u - 0.27, x + 0.06, roofY + 0.21, u - 0.23);
   dbx('cat', x + 0.11, roofY, u - 0.12, x + 0.16, roofY + 0.04, u + 0.16, FACE.top | FACE.right | FACE.front);
 }
+/** Flower heads in a pickup bed: [across the bed, along it (× the bed length), colour]. On the two ink shrubs. */
+const BLOOM_AT = [[0.18, 0.4, 0], [0.42, 0.6, 1], [0.28, 0.52, 2], [0.62, 0.66, 0], [0.84, 0.78, 1], [0.7, 0.9, 2]] as const;
+/** Flowers in a pickup bed (the skin's Bloom bit; never in Neon): six heads in the wildflower tokens (never gold or
+ *  white, no poppy inside the corridor) on the bed's ink shrubs, all below the rim, as life accents (≈ 1.3% of the top
+ *  view, inside the 10% budget). xa..xb × 0..ub: the bed; top0 / top1: the two shrub tops. */
+function bloom(v: VehicleSpec, xa: number, xb: number, top0: number, top1: number, ub: number): void {
+  if (!DRESS_ON || v.inverted || !DRESSER.has(BLOOM)) return;
+  const F = RECLAIM.flowers, r = 0.065;
+  for (const [fx, fu, k] of BLOOM_AT) {
+    const x = xa + 0.12 + fx * (xb - xa - 0.24), u = fu * ub, top = (fx < 0.5 ? top0 : top1) + 0.03;
+    K.lit(0, 0.3, FLAGS).col(k === 0 ? F.pink : k === 1 ? F.lilac : F.cornflower);
+    dbx('life', x - r, top - 0.07, u - r, x + r, top, u + r);
+  }
+}
 /** Helper-machine motif: a two-tone band along both flanks (life accents, side faces only) and a small rounded sensor
  *  dome on the roof at domeU (it never rises above the box). */
 function helperMotif(v: VehicleSpec, xa: number, xb: number, y: number, domeU: number, roofY: number): void {
@@ -218,69 +281,96 @@ function helperMotif(v: VehicleSpec, xa: number, xb: number, y: number, domeU: n
   flat(HELPER_DOME);
   K.sphere((xa + xb) / 2, roofY - 0.012, S(domeU), 0.1, 6, 3, Math.max(0.1, Math.min(0.6, (v.y + v.h - roofY + 0.008) / 0.1)));
 }
-/** Faded livery from the sign atlas on both flanks (u-range ua..ub, read the right way round from either side). */
+/** Faded livery from the sign atlas on both flanks (u-range ua..ub, read the right way round from either side); the
+ *  part above the x-ray cap goes to the screen door with the flank under it. */
 function liveryOn(key: string, xa: number, xb: number, ya: number, yb: number, ua: number, ub: number, dim: number): void {
-  const r = signRect(key), uv = [r.u0, r.v0, r.u1, r.v0, r.u1, r.v1, r.u0, r.v1] as const;
-  const sa = Math.min(S(ua), S(ub)), sb = Math.max(S(ua), S(ub));
+  const r = signRect(key), cap = K.capY;
   K.lit(0, 0, FLAGS).col(dim);
-  K.quad(xa - 0.006, ya, sb, xa - 0.006, ya, sa, xa - 0.006, yb, sa, xa - 0.006, yb, sb, uv);
-  K.quad(xb + 0.006, ya, sa, xb + 0.006, ya, sb, xb + 0.006, yb, sb, xb + 0.006, yb, sa, uv);
+  if (cap !== null && K.t === 'o' && cap > ya + 1e-4 && cap < yb - 1e-4) {
+    const vc = r.v0 + (r.v1 - r.v0) * ((cap - ya) / (yb - ya));
+    liveryBand(xa, xb, ya, cap, ua, ub, r.u0, r.u1, r.v0, vc, 'o');
+    liveryBand(xa, xb, cap, yb, ua, ub, r.u0, r.u1, vc, r.v1, 'x');
+  } else liveryBand(xa, xb, ya, yb, ua, ub, r.u0, r.u1, r.v0, r.v1, cap !== null && K.t === 'o' && ya >= cap - 1e-4 ? 'x' : K.t);
 }
-const mirrorLR = (f: number) => (f & ~(FACE.left | FACE.right)) | (f & FACE.left ? FACE.right : 0) | (f & FACE.right ? FACE.left : 0);
-/** Two boxes mirrored about the centre line: [xa, xa + w] and [xb − w, xb] (left / right faces swap). */
-function pair(xa: number, xb: number, w: number, ya: number, ua: number, yb: number, ub: number, faces: number = FACE.sides5): void {
-  bx(xa, ya, ua, xa + w, yb, ub, faces);
-  bx(xb - w, ya, ua, xb, yb, ub, mirrorLR(faces));
+function liveryBand(xa: number, xb: number, ya: number, yb: number, ua: number, ub: number, u0: number, u1: number, v0: number, v1: number, t: Target): void {
+  const uv = [u0, v0, u1, v0, u1, v1, u0, v1] as const;
+  const sa = Math.min(S(ua), S(ub)), sb = Math.max(S(ua), S(ub));
+  K.quad(xa - 0.006, ya, sb, xa - 0.006, ya, sa, xa - 0.006, yb, sa, xa - 0.006, yb, sb, uv, t);
+  K.quad(xb + 0.006, ya, sa, xb + 0.006, ya, sb, xb + 0.006, yb, sb, xb + 0.006, yb, sa, uv, t);
 }
-/** Neon rim (emissive) along the roof's rear edge and the rear belt. */
-function neonRim(v: VehicleSpec, xa: number, xb: number, roofY: number, ra: number, belt: number): void {
+/** Neon (inverted bodies; steady emissives): the hazard rim along the roof's camera-facing edge (ra..rb: the roof) and
+ *  across the front at fy, broken where the dark lamps sit (lamp width lw); across the rear at ry one steady red rim,
+ *  its taillights. */
+function neonRim(v: VehicleSpec, xa: number, xb: number, roofY: number, ra: number, rb: number, ry: number, fy: number, L: number, lw: number): void {
   if (!v.inverted || !v.rim) return;
   K.to('e').glowing(1.6, -1, FX.noFog).col(v.rim);
-  bx(xa, roofY - 0.012, ra - 0.03, xb, roofY + 0.004, ra, FACE.top | FACE.front);
-  bx(v.x0 + 0.08, belt - 0.02, 0.02, v.x1 - 0.08, belt + 0.004, 0.07, FACE.top | FACE.front);
+  if (FLIP) bx(xa, roofY - 0.012, rb, xb, roofY + 0.004, rb + 0.03, FACE.top | FACE.back);
+  else bx(xa, roofY - 0.012, ra - 0.03, xb, roofY + 0.004, ra, FACE.top | FACE.front);
+  const xA = v.x0 + 0.07, xB = v.x1 - 0.07;
+  bx(xA + lw + 0.03, fy - 0.02, L - 0.07, xB - lw - 0.03, fy + 0.004, L - 0.02, FACE.top | FACE.back);
+  K.col(RECLAIM.neonTail);
+  bx(xA - 0.005, ry - 0.02, 0.02, xB + 0.005, ry + 0.004, 0.07, FACE.top | FACE.front | FACE.left | FACE.right);
   K.to(T0);
 }
 const DIM_LIVERY = 0x433c4e, DIM_LIVERY_LIT = 0x9a8e9a;
 
 // ── bodies ─────────────────────────────────────────────────────────────────────────────────────────────────────
-/** A car (sedan, estate, pickup, SUV, taxi): an ink lower body with the paint on its shoulders, boot and bonnet, and a
- *  glasshouse whose paint roof is framed front and back by dark glass. */
+type CarBody = 'sedan' | 'estate' | 'pickup' | 'suv' | 'taxi';
+/** Glasshouse stations per car body, as fractions of L from the rear: the rear glass from its foot g0 up to the roof
+ *  at r0, the roof r0..r1, the windscreen from the roof at r1 down to its foot g1. The cabin sits rearward (a bonnet
+ *  longer than the boot, a raked windscreen longer than the rear glass), so the roof alone shows the facing. */
+export const CABIN: Readonly<Record<CarBody, readonly [g0: number, r0: number, r1: number, g1: number]>> = {
+  sedan: [0.17, 0.29, 0.56, 0.74], taxi: [0.17, 0.3, 0.57, 0.74], estate: [0.035, 0.09, 0.58, 0.75],
+  suv: [0.03, 0.08, 0.63, 0.78], pickup: [0.43, 0.46, 0.64, 0.78],
+};
+/** The cabin's inset per side from the body flank (the paint shoulders either side of the glass), m. */
+export const CABIN_INSET = 0.11;
+
+/** A car (sedan, estate, pickup, SUV, taxi): an ink lower body whose paint lids (bonnet, boot) sit a step below the
+ *  belt, a waist rising to the belt between the glass feet, and a narrower glasshouse whose paint roof is framed front
+ *  and back by dark glass. */
 function car(v: VehicleSpec, L: number): void {
-  const { x0, x1, y, h } = v, b = v.body;
+  const { x0, x1, y, h } = v, b = v.body as CarBody;
   const xa = x0 + 0.07, xb = x1 - 0.07, xm = (x0 + x1) / 2;
   const R = Math.min(0.33, h * 0.23), deck = y + R * 0.72;
-  const suv = b === 'suv', taxi = b === 'taxi', pickup = b === 'pickup', estate = b === 'estate';
-  const belt = y + h * (suv ? 0.6 : 0.56), roofY = y + h - (taxi ? 0.17 : 0) - 0.006, ri = suv ? 0.1 : 0.15;
-  // Glasshouse stations (u): rear glass from g0 (belt) to r0 (roof); windscreen from r1 (roof) to g1 (belt).
-  const g0 = L * (pickup ? 0.42 : estate || suv ? 0.03 : 0.21), r0 = L * (pickup ? 0.45 : estate || suv ? 0.1 : 0.34);
-  const r1 = L * (pickup ? 0.66 : suv ? 0.68 : 0.62), g1 = L * (pickup ? 0.79 : suv ? 0.8 : 0.78);
+  const suv = b === 'suv', taxi = b === 'taxi', pickup = b === 'pickup';
+  const belt = y + h * (suv ? 0.6 : 0.56), lid = belt - (suv ? 0.05 : 0.07);
+  const roofY = y + h - (taxi ? 0.17 : 0) - 0.006, ri = suv ? 0.08 : 0.12;
+  const st = CABIN[b] ?? CABIN.sedan, g0 = L * st[0], r0 = L * st[1], r1 = L * st[2], g1 = L * st[3];
+  // Estates and SUVs end in a tailgate (the rear top is the belt); the pickup's bed walls rise to the belt too.
+  const tailgate = st[0] < 0.1, rTop = tailgate || pickup ? belt : lid;
   const ua = L * 0.19, ub = L * 0.8;
   axle(x0, x1, y, R, ua); axle(x0, x1, y, R, ub);
   paintBrush(v.side);
   if (pickup) {
-    // Cab and bonnet ahead of the open bed; the bed walls carry the paint rim, the floor is ink.
-    ch(xa, deck, g0 - 0.02, xb, belt, L - 0.03, 0.05, v.paint);
+    // Cab and bonnet ahead of the open bed; the bed walls and tailgate carry the paint rim, the floor is ink.
+    ch(xa, deck, g0 - 0.03, xb, lid, L - 0.03, 0.06, v.paint);
     paintBrush(v.side);
-    bx(xa, deck, 0.05, xb, deck + 0.18, g0 - 0.02, FACE.front | FACE.left | FACE.right);
-    pair(xa, xb, 0.07, deck + 0.18, 0.05, belt, g0 - 0.02, FACE.front | FACE.left | FACE.right);
-    bx(xa + 0.07, deck + 0.18, 0.05, xb - 0.07, belt, 0.12, FACE.front | FACE.top);
+    bx(xa, deck, 0.03, xb, deck + 0.18, g0 - 0.03, FACE.front | FACE.left | FACE.right);
+    pair(xa, xb, 0.07, deck + 0.18, 0.03, belt, g0 - 0.03, FACE.front | FACE.left | FACE.right);
+    bx(xa + 0.07, deck + 0.18, 0.03, xb - 0.07, belt, 0.1, FACE.front | FACE.back);
     paintBrush(v.paint);
-    pair(xa, xb, 0.07, belt - 0.004, 0.05, belt, g0 - 0.02, FACE.top);
+    pair(xa, xb, 0.07, belt - 0.004, 0.03, belt, g0 - 0.03, FACE.top);
+    bx(xa + 0.07, belt - 0.004, 0.03, xb - 0.07, belt, 0.1, FACE.top);
     paintBrush(shade(v.side, 0.06));
-    bx(xa + 0.07, deck + 0.17, 0.12, xb - 0.07, deck + 0.18, g0 - 0.02, FACE.top);
-    // Ink shrubs in the bed, below the rim.
+    bx(xa + 0.07, deck + 0.17, 0.1, xb - 0.07, deck + 0.18, g0 - 0.03, FACE.top);
+    // Ink shrubs in the bed, below the rim; on some, flowers.
     if (DRESS_ON && DRESSER.has(Dress.Ivy)) {
       const area = v.inverted ? 'neon' : 'downtown';
       K.lit(0, 0.5, FLAGS, GLOW).col(foliageFor(area, true));
-      dbx('foliage', xa + 0.12, deck + 0.18, g0 * 0.35, xm + 0.1, belt - 0.06, g0 * 0.7);
+      dbx('foliage', xa + 0.12, deck + 0.18, g0 * 0.3, xm + 0.1, belt - 0.07, g0 * 0.7);
       K.col(foliageFor(area, true, true));
-      dbx('foliage', xm - 0.05, deck + 0.18, g0 * 0.55, xb - 0.14, belt - 0.1, g0 - 0.1);
+      dbx('foliage', xm - 0.05, deck + 0.18, g0 * 0.5, xb - 0.14, belt - 0.1, g0 - 0.1);
+      bloom(v, xa, xb, belt - 0.07, belt - 0.1, g0);
     }
-  } else ch(xa, deck, 0.03, xb, belt, L - 0.03, 0.06, v.paint);
-  arches(xa, xb, deck + R * 0.6, R, ua, ub, v.side);
-  endsAndLights(xa, xb, deck, belt - 0.2, belt - 0.08, L, v);
-  // Glasshouse.
-  const ga = xa + 0.06, gb = xb - 0.06;
+  } else ch(xa, deck, 0.03, xb, lid, L - 0.03, 0.06, v.paint);
+  // The waist: the doors rise to the belt between the glass feet, a step above bonnet and boot.
+  paintBrush(v.side);
+  ch(xa, lid - 0.03, tailgate ? 0.03 : g0 - 0.03, xb, belt, g1 + 0.03, 0.035, v.paint);
+  arches(xa, xb, y, R, ua, ub, v.side);
+  const lw = endsAndLights(v, xa, xb, deck, L, Math.max(deck + 0.13, rTop - 0.17), rTop, true, Math.max(deck + 0.13, lid - 0.16), lid - 0.025, false);
+  // Glasshouse, 0.11 m in from the flanks.
+  const ga = xa + CABIN_INSET, gb = xb - CABIN_INSET;
   pane(ga, gb, belt, g0, roofY, r0, ri);
   pane(ga, gb, belt, g1, roofY, r1, ri);
   sideGlass(ga, gb, belt, g0, g1, roofY, r0, r1, ri);
@@ -289,11 +379,16 @@ function car(v: VehicleSpec, L: number): void {
   const pu = (r0 + r1) / 2;
   qd(gb + 0.002, belt, pu - 0.05, gb + 0.002, belt, pu + 0.05, gb - ri + 0.002, roofY, pu + 0.05, gb - ri + 0.002, roofY, pu - 0.05);
   qd(ga - 0.002, belt, pu + 0.05, ga - 0.002, belt, pu - 0.05, ga + ri - 0.002, roofY, pu - 0.05, ga + ri - 0.002, roofY, pu + 0.05);
-  // Roof: the paint top (a box, so the x-ray cap takes it like every tall solid), with the plate under the cap.
+  // Roof: the paint top (a box, so the x-ray cap takes it like every tall solid), with the plates under the cap.
   paintBrush(v.paint);
-  bx(ga + ri - 0.01, roofY - 0.05, r0 - 0.02, gb - ri + 0.01, roofY, r1 + 0.02);
-  capPlate(v, ga + ri * 0.75, gb - ri * 0.75, r0 - 0.02, r1 + 0.02);
-  if (estate || suv) {
+  const ra0 = ga + ri - 0.01, rb0 = gb - ri + 0.01;
+  bx(ra0, roofY - 0.05, r0 - 0.02, rb0, roofY, r1 + 0.02);
+  const cap = K.capY;
+  if (cap !== null && cap > belt && cap < roofY) {
+    const k = (roofY - cap) / (roofY - belt), gi = ri * (1 - k);
+    capPlate(v, ra0, rb0, r0 - 0.02, r1 + 0.02, ga + gi, gb - gi, r0 - (r0 - g0) * k, r1 + (g1 - r1) * k);
+  } else capPlate(v, ra0, rb0, r0 - 0.02, r1 + 0.02);
+  if (b === 'estate' || suv) {
     // Empty roof rails (ink): nothing on them.
     flat(RECLAIM.bumper);
     bx(ga + ri + 0.04, roofY, r0 + 0.08, ga + ri + 0.08, Math.min(y + h, roofY + 0.005), r1 - 0.08, FACE.top);
@@ -306,18 +401,20 @@ function car(v: VehicleSpec, L: number): void {
     bx(xm - 0.22, roofY, su - 0.1, xm + 0.22, Math.min(y + h, roofY + 0.15), su + 0.1);
   }
   mirrors(x0, x1, belt, g1 - 0.06);
-  stripe(v, xm, belt, g1 + 0.06, L - 0.12);
+  stripe(v, xm, lid, g1 + 0.06, L - 0.12);
   stripe(v, xm, roofY, r0 + 0.02, r1);
-  if (!pickup) stripe(v, xm, belt, 0.12, g0 - 0.04);
-  wear(v, ga + ri, gb - ri, deck, roofY, r0, r1, belt, g1 + 0.04, L - 0.06, ub, xa, xb);
+  if (!pickup && !tailgate) stripe(v, xm, lid, 0.12, g0 - 0.06);
+  wear(v, ga + ri, gb - ri, deck, roofY, r0, r1, lid, g1 + 0.04, L - 0.06, ub, xa, xb);
   cat(v, xm, roofY, r0, r1);
-  helperMotif(v, xa, xb, belt - 0.12, (r0 + r1) / 2, roofY);
-  neonRim(v, ga + ri, gb - ri, roofY, r0, belt);
+  helperMotif(v, xa, xb, lid - 0.12, (r0 + r1) / 2, roofY);
+  neonRim(v, ga + ri, gb - ri, roofY, r0, r1, rTop, lid, L, lw);
 }
 
 /** Box bodies (panel van, camper, kei van, box truck, shuttle bus, street sweeper): an ink lower body with the paint
  *  bonnet, an upper box (ink panels, paint roof) from the rear to u1, and ahead of it either a sloped windscreen with
- *  cab side windows (vans, the bus: a window band) or a glazed cab with its own roof (truck, sweeper). */
+ *  cab side windows (vans, the bus: a window band) or a glazed cab with its own roof (truck, sweeper). Vans carry tall
+ *  taillights up the rear corners and headlamps wrapping onto the short bonnet; the cab-overs low lamps either side of
+ *  the grille; the bus its lamps under the windscreen. */
 function boxy(v: VehicleSpec, L: number): void {
   const { x0, x1, y, h } = v, b = v.body, xa = x0 + 0.07, xb = x1 - 0.07, xm = (x0 + x1) / 2;
   const truck = b === 'box_truck', bus = b === 'shuttle_bus', sw = b === 'sweeper', kei = b === 'kei_van', cab = truck || sw;
@@ -329,8 +426,10 @@ function boxy(v: VehicleSpec, L: number): void {
   if (truck) axle(x0, x1, y, R, ua + 2.05 * R);
   paintBrush(v.side); ch(xa, deck, 0.03, xb, belt, L - 0.03, 0.05, v.paint);
   paintBrush(v.side); ch(xa + 0.02, belt - 0.01, 0.03, xb - 0.02, top1, u1, 0.06, v.paint);
-  arches(xa, xb, deck + R * 0.6, R, ua, ub, v.side);
-  endsAndLights(xa, xb, deck, belt - 0.22, belt - 0.08, L, v);
+  arches(xa, xb, y, R, ua, ub, v.side);
+  const lw = cab ? endsAndLights(v, xa, xb, deck, L, deck + 0.11, deck + 0.21, false, deck + 0.14, deck + 0.3, false)
+    : bus ? endsAndLights(v, xa, xb, deck, L, belt - 0.3, belt + 0.06, false, belt - 0.22, belt - 0.07, false)
+      : endsAndLights(v, xa, xb, deck, L, belt - 0.32, belt + 0.28, false, belt - 0.16, belt, true);
   if (cab) {
     pane(xa + 0.08, xb - 0.08, belt, L - 0.06, cabTop - 0.03, L - 0.34, 0.04);
     flat(RECLAIM.glass); bx(xa + 0.05, belt + 0.06, c0, xb - 0.05, cabTop - 0.06, L - 0.3, FACE.left | FACE.right | FACE.front);
@@ -339,9 +438,9 @@ function boxy(v: VehicleSpec, L: number): void {
     pane(xa + 0.04, xb - 0.04, belt, bus ? L - 0.02 : L * (kei ? 0.95 : 0.86), roofY - 0.04, u1, bus ? 0.02 : 0.06);
     flat(RECLAIM.glass); bx(xa + 0.012, belt + 0.12, bus ? 0.5 : u1 - Math.min(0.7, u1 * 0.22), xb - 0.012, roofY - 0.18, u1 - 0.08, FACE.left | FACE.right);
   }
-  // The rear: a roller door (truck) or doors with two small dark windows; a hopper door on the sweeper.
+  // The rear: a roller door (truck, above its lamps) or doors with two small dark windows; a hopper door on the sweeper.
   flat(truck ? shade(v.side, 0.1) : RECLAIM.glass);
-  if (truck) for (let yy = deck + 0.2; yy < roofY - 0.7; yy += 0.3) bx(xa + 0.1, yy, 0.012, xb - 0.1, yy + 0.04, 0.03, FACE.front);
+  if (truck) for (let yy = deck + 0.28; yy < roofY - 0.7; yy += 0.3) bx(xa + 0.1, yy, 0.012, xb - 0.1, yy + 0.04, 0.03, FACE.front);
   else if (!sw) pair(xa + 0.14, xb - 0.14, (xb - xa) / 2 - 0.2, roofY - 0.48, 0.022, roofY - 0.16, 0.03, FACE.front);
   if (b === 'camper') {
     // Curtains drawn in the side windows (nothing in them) and a pop-top seam.
@@ -363,7 +462,7 @@ function boxy(v: VehicleSpec, L: number): void {
   wear(v, xa + 0.02, xb - 0.02, deck, top1, 0.1, u1 - 0.1, belt, L * 0.88, truck || bus || sw ? 0 : L - 0.05, ub, xa, xb);
   if (sw) capPlate(v, xa + 0.06, xb - 0.06, c0, L - 0.3); else capPlate(v, xa + 0.05, xb - 0.05, 0.08, u1 - 0.04);
   helperMotif(v, xa, xb, belt - 0.1, cab ? (c0 + L) / 2 - 0.15 : u1 * 0.5, cab ? cabTop : roofY);
-  neonRim(v, xa + 0.08, xb - 0.08, top1, 0.06, belt);
+  neonRim(v, xa + 0.08, xb - 0.08, top1, 0.06, u1 - 0.06, cab ? deck + 0.24 : belt, cab ? deck + 0.34 : bus ? belt - 0.04 : belt, L, lw);
 }
 
 /** Draws a vehicle body stretched to fill its box (DESIGN §18.5). Opaque parts go to the Kit's current target. */
@@ -382,6 +481,20 @@ export function drawVehicle(k: Kit, v: VehicleSpec): void {
 /** Paint top of a hazard vehicle: the skin's paint (movers slate). */
 export const paintOf = (p: keyof typeof RECLAIM.carPaint | null) => RECLAIM.carPaint[p ?? 'slate'];
 
+/** The ground a vehicle's wheels stand on (review #8): the highest ground under its four tyre contacts, so a kerb or a
+ *  sidewalk under one side lifts it instead of a tyre sinking in (at most WHEEL_LIFT_MAX; the roof stays at the box
+ *  top, the body gives up the lift). `across`: the long axis runs along x (van_across). */
+export function wheelBase(c: KitCtx, x0: number, x1: number, s0: number, s1: number, y0: number, across: boolean): number {
+  let g = y0;
+  for (let i = 0; i < 4; i++) {
+    const f = i & 1 ? 0.82 : 0.18, far = (i & 2) !== 0;
+    const x = across ? x0 + f * (x1 - x0) : far ? x1 - 0.12 : x0 + 0.12;
+    const s = across ? (far ? s1 - 0.12 : s0 + 0.12) : s0 + f * (s1 - s0);
+    g = Math.max(g, c.groundAt(s, x));
+  }
+  return Math.min(g, y0 + WHEEL_LIFT_MAX);
+}
+
 /** The kit of every vehicle kind (parked_car, parked_van, crosswalk_car, backout_car, and the container's truck and
  *  bus): the body, paint, dressing and livery come from the obstacle's skin (DRESSER.skin, core/skins.ts propSkin).
  *  Neon (and any obstacle in the Neon look) takes the inverted body with its rim; Docks stripes use accent2, so no
@@ -389,9 +502,10 @@ export const paintOf = (p: keyof typeof RECLAIM.carPaint | null) => RECLAIM.carP
 export function vehicleKit(c: KitCtx, ob: Obstacle): void {
   const b = ob.solids[0]?.box;
   if (!b) return;
-  contact(c, b.x0, b.x1, b.s0, b.s1, b.y0 + 0.01, 0.7, 0.3);
-  c.K.capY = b.y0 + CAMERA.xrayCapY;
-  drawVehicle(c.K, hazardSpec(c, ob, b.x0, b.x1, b.s0, b.s1, b.y0, b.y1 - b.y0));
+  const y = wheelBase(c, b.x0, b.x1, b.s0, b.s1, b.y0, false);
+  contact(c, b.x0, b.x1, b.s0, b.s1, y + 0.01, 0.7, 0.3);
+  c.K.capY = y + CAMERA.xrayCapY;
+  drawVehicle(c.K, hazardSpec(c, ob, b.x0, b.x1, b.s0, b.s1, y, b.y1 - y));
   c.K.capY = null;
 }
 
@@ -416,11 +530,13 @@ function hazardSpec(c: KitCtx, ob: Obstacle, x0: number, x1: number, s0: number,
 /** van_across (Phase B, THEME §3.4): a delivery van nosed into the side loading entrance at the corridor edge it
  *  faces (the sign of x), its tail out into the street. The vehicle builder draws it in a prop frame turned a
  *  quarter about the box centre (its long axis along x, the nose toward the edge); the dresser sees the obstacle in
- *  that frame too, so the dressing rules clamp to the same footprint. */
+ *  that frame too, so the dressing rules clamp to the same footprint. Like every in-corridor vehicle it stands on the
+ *  highest ground under its wheels and its band above the x-ray cap is screen-doored, with the paint plate under it. */
 export function vanAcrossKit(c: KitCtx, ob: Obstacle): void {
   const b = ob.solids[0]?.box;
   if (!b) return;
-  contact(c, b.x0, b.x1, b.s0, b.s1, b.y0 + 0.01, 0.7, 0.3);
+  const y = wheelBase(c, b.x0, b.x1, b.s0, b.s1, b.y0, true);
+  contact(c, b.x0, b.x1, b.s0, b.s1, y + 0.01, 0.7, 0.3);
   const sd = Math.sign(ob.x) || -1, cx = (b.x0 + b.x1) / 2, cs = (b.s0 + b.s1) / 2;
   const hw = (b.s1 - b.s0) / 2, hl = (b.x1 - b.x0) / 2;           // local half width (track s) and half length (x)
   // Local +s → the nose: yaw +90° maps local +s to −x, −90° to +x (Kit.frame).
@@ -429,7 +545,9 @@ export function vanAcrossKit(c: KitCtx, ob: Obstacle): void {
   const keep = [d.fx0, d.fx1, d.fs0, d.fs1] as const;
   d.ob = local; d.fx0 = -hw; d.fx1 = hw; d.fs0 = -hl; d.fs1 = hl;
   K.frame(cx, 0, cs, sd < 0 ? Math.PI / 2 : -Math.PI / 2);
-  drawVehicle(K, { ...hazardSpec(c, ob, -hw, hw, -hl, hl, b.y0, b.y1 - b.y0), nosedIn: false });
+  K.capY = y + CAMERA.xrayCapY;
+  drawVehicle(K, { ...hazardSpec(c, ob, -hw, hw, -hl, hl, y, b.y1 - y), nosedIn: false });
+  K.capY = null;
   K.frame(0, 0, 0);
   d.ob = real; [d.fx0, d.fx1, d.fs0, d.fs1] = keep;
 }
@@ -437,13 +555,13 @@ export function vanAcrossKit(c: KitCtx, ob: Obstacle): void {
 // ── decor vehicles (kits/decor.ts parked_car_side) ─────────────────────────────────────────────────────────────
 export interface CarSpec {
   x0: number; x1: number; s0: number; s1: number; y: number; h: number;
-  body: number; accent: number; van?: boolean; hazard?: boolean; inverted?: boolean; rim?: number; glow?: number;
+  body: number; accent: number; van?: boolean; hazard?: boolean; inverted?: boolean; rim?: number; glow?: number; nosedIn?: boolean;
 }
 /** Decor cars parked beyond the verges: the vehicle builder with the given mid-value paint and a darker side, no
  *  stripe (a cream accent would read as the grind signature), unlit, no dressing. */
 export function drawCar(k: Kit, c: CarSpec): void {
   drawVehicle(k, {
     body: c.van ? 'panel_van' : 'sedan', x0: c.x0, x1: c.x1, s0: c.s0, s1: c.s1, y: c.y, h: c.h,
-    paint: c.body, side: shade(c.body, -0.32), stripe: -1, hazard: !!c.hazard, inverted: c.inverted, rim: c.rim, glow: c.glow,
+    paint: c.body, side: shade(c.body, -0.32), stripe: -1, hazard: !!c.hazard, inverted: c.inverted, rim: c.rim, glow: c.glow, nosedIn: c.nosedIn,
   });
 }
