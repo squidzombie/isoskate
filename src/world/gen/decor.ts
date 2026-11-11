@@ -10,7 +10,7 @@ import type { AreaId, GatewayId } from '../../core/ids';
 import { round1cm } from '../../core/math';
 import { hash32, type Sfc32 } from '../../core/rng';
 import { speedAt, tAt } from '../../core/tuning';
-import type { Decor } from '../../core/world';
+import type { Decor, Obstacle } from '../../core/world';
 import { DECOR_BRANDS, DECOR_KINDS, DECOR_LIMITS, NEON_SIGN_WORDS, type DecorKind } from '../../core/decor';
 import { GEN } from './gen.config';
 
@@ -29,6 +29,8 @@ export interface DecorEnv {
   backNext: [number, number];
   /** End of the area visit (s): backdrop blocks never reach into the next gateway. */
   areaEndS: number;
+  /** Phase B (THEME §3.4): the segment's vans across and parked cars, for their bays and loading entrances. */
+  vehicles?: readonly Obstacle[];
   /** The current area visit (carried, updated in place): its start and whether its vista and its one animal are out
    *  (RECLAIM theme §4, §6: one vista per visit, at most one animal). */
   visit?: { end: number; start: number; vista: boolean; wildlife: boolean };
@@ -189,6 +191,7 @@ export function emitDecor(out: Decor[], env: DecorEnv, rng: Sfc32): number {
       break;
   }
   groundDecals(o, a, rng, v);
+  vehicleDecor(o, env);
   const next = endWalls(o, rng, env, v);
   nature(o, a, rng, visit, v);   // (last: the RECLAIM draws come after every pre-theme one)
   return next;
@@ -252,6 +255,25 @@ function groundDecals(o: Out, a: AreaId, rng: Sfc32, v: number): void {
     const kind = rng.pick(pool);
     o.add(kind, s, kind === 'drain' ? Math.sign(x || 1) * 3.0 : x, datum, { len: rng.range(0.6, 2.4), w: rng.range(0.5, 1.4), r: rng.range(0.4, 1.4),
       tint: a === 'neon' ? rng.int(1, 2) : 0, rate: 2 });
+  }
+}
+
+/** Phase B (THEME §3.4): under every van_across a faded perpendicular bay, and on the side band it faces its loading
+ *  entrance (an end wall with a closed roller door facing the street; not in Neon, see below); a faded bay under each
+ *  car in a curb lane.
+ *  Placed from the obstacles alone (no draw from the segment's decor stream). */
+function vehicleDecor(o: Out, env: DecorEnv): void {
+  for (const ob of env.vehicles ?? []) {
+    const sd = Math.sign(ob.x) || -1;
+    if (ob.kind === 'van_across') {
+      o.add('parking_bay', ob.s - 0.4, ob.x, env.datum, { perp: 1, w: 4.6, len: ob.len + 0.8 });
+      // (Neon: the kei van noses into the frontage's own ground-floor shutters; no extra block beside the corridor,
+      // so Neon stays net-negative near it, THEME §6 / owner note 6)
+      if (env.area !== 'neon') o.add('end_wall', ob.s - 0.5, sd * 4.7, env.datum, { style: 4, w: 2.2 + hv(ob.s, 93) * 1.6, h: 3.6 + hv(ob.s, 94) * 1.6,
+        len: ob.len + 1.0, brand: Math.floor(hv(ob.s, 95) * 8) }, { variant: Math.floor(hv(ob.s, 96) * 4) });
+    } else if (Math.abs(Math.abs(ob.x) - 2.15) < 0.01) {
+      o.add('parking_bay', ob.s - 0.4, sd * 2.5, env.datum, { len: ob.len + 0.8, bays: 1 });
+    }
   }
 }
 

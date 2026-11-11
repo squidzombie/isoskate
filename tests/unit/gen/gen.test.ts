@@ -422,7 +422,7 @@ describe('the Lesson Line (DESIGN §12.3) and the v1 template set (§10.4)', () 
     expect(w.groundAt(sAt(40) + 0.5, 0, 0.5).y).toBe(0);
   });
 
-  it('the v1 templates (9 shared, 6 per area, 4 gateways) are instantiated and validated on 50 seeds; the landmarks appear', () => {
+  it('the templates (9 shared, 6 v1 + 1 Phase B parked row per area, 4 gateways) are instantiated and validated on 50 seeds; the landmarks appear', () => {
     const seen = new Map<string, number>(), landmarks = new Set<string>();
     for (let seed = 1; seed <= 50; seed++) {
       const g = createWorldGen({ seed, mode: 'normal' });
@@ -432,7 +432,7 @@ describe('the Lesson Line (DESIGN §12.3) and the v1 template set (§10.4)', () 
     }
     const ids = [...SHARED, ...Object.values(AREA_TEMPLATES).flat(), ...Object.values(GATEWAYS)].map((t) => t.id);
     expect(SHARED.length).toBe(9);
-    for (const a of Object.values(AREA_TEMPLATES)) expect(a.length).toBe(6);
+    for (const a of Object.values(AREA_TEMPLATES)) expect(a.length).toBe(7);   // 6 v1 + the Phase B parked row (theme T8)
     expect(ids.filter((id) => !seen.has(id))).toEqual([]);
     for (const l of ['Amberlane Seven', 'Corner Scoops wall', 'Pier 9 lip', 'Sora Line Skywalk']) expect(landmarks.has(l), l).toBe(true);
   }, 300_000);
@@ -542,8 +542,13 @@ describe('RECLAIM decor (theme §4, §6; T3)', () => {
   });
 });
 
-// Obstacle chain: identical from the T3 split through T7a (the RECLAIM re-skin moves no gameplay); T8 re-baselines it once.
-const GOLDEN_OBSTACLES = [4059795562, 1058502699, 2849456109];
-const GOLDEN_OBSTACLES_TRENCH = [123044223, 3914246493, 2655523978];
-// Decor chain: re-baselined in T3 (RECLAIM decor kinds and emission; was [1783084398, 3361667576, 1795712479] at the split).
-const GOLDEN_DECOR = [3513787741, 2851077237, 3473871542];
+// Obstacle chain: identical from the T3 split through T7a (the RECLAIM re-skin moves no gameplay); re-baselined once in
+// T8 (Phase B, cars as the main blocker: the van_across kind, vehicles at the edges of the anti-straight rows and the
+// van wander wall, the four parked-row templates and their weights, the fewest-pieces row fill, the Suburbs bin row
+// piece, the pre-gateway line guide). Was [4059795562, 1058502699, 2849456109] / trench [123044223, 3914246493, 2655523978].
+const GOLDEN_OBSTACLES = [3896676665, 3670890132, 1962982555];
+const GOLDEN_OBSTACLES_TRENCH = [1874618390, 480476392, 1207027692];
+// Decor chain: re-baselined in T3 (RECLAIM decor kinds and emission; was [1783084398, 3361667576, 1795712479] at the split),
+// and with the T8 obstacles (decor follows the street; plus the vehicles' bays and loading entrances). Was
+// [3513787741, 2851077237, 3473871542] before T8.
+const GOLDEN_DECOR = [2282354388, 2673347121, 4179237450];

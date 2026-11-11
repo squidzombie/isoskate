@@ -146,6 +146,13 @@ export function propSkin(kind: PropKind, area: AreaId, id: number, variant: numb
         ? set(out, 'panel_van', 'van', wear | Dress.Livery, paint, brand(area, roll(id, variant, 5)), nosed)
         : set(out, 'camper', 'van', wear, paint, -1, nosed);
     }
+    case 'van_across': {
+      // Phase B (theme T8): a delivery van nosed into a side loading entrance, its tail out into the street. Neon: a kei
+      // van (inverted body and rim); the Docks: Brindle Freight livery; Downtown / Suburbs: an area brand.
+      if (area === 'neon') return set(out, 'kei_van', 'van', I);
+      const liv = area === 'docks' ? BRINDLE : brand(area, roll(id, variant, 5));
+      return set(out, 'panel_van', 'van', wear | Dress.Livery, paint, liv);
+    }
     case 'container': {
       if (u < 0.6) return set(out, 'container', 'container', R | I);
       const liv = area === 'docks' ? Dress.Livery : 0;                                     // brands are the Docks' own

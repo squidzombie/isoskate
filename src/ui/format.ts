@@ -31,7 +31,7 @@ export const areaName = (a: AreaId) => AREA_NAMES[a];
 
 /** Kinds whose drawn object varies by roll (core/skins propSkin): the generic noun when the obstacle is unknown. */
 const GENERIC: Partial<Record<PropKind, readonly [noun: string, plural: boolean]>> = {
-  parked_car: ['car', false], parked_van: ['van', false], container: ['container', false], wheelie_bins: ['bins', true],
+  parked_car: ['car', false], parked_van: ['van', false], van_across: ['van', false], container: ['container', false], wheelie_bins: ['bins', true],
   bike_rack: ['bike rack', false] };
 const SKIN = newSkin();
 /** The obstacle fields that pick its skin (the kits draw the same skin from the same fields). */

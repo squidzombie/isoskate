@@ -4,6 +4,7 @@
 // Area skins: `variant` = the area index (AREA_ORDER), so WA's kits pick the skin; geometry rules are shared.
 import type { AreaId, PropKind } from '../../../core/ids';
 import { AREA_ORDER } from '../../../core/ids';
+import { newSkin, propSkin, type PropSkin } from '../../../core/skins';
 import { round1cm } from '../../../core/math';
 import { HAZARD_WARN_SEC, HEIGHT, STEP_UP } from '../../../core/tuning';
 import type { GroundSlab, Obstacle } from '../../../core/world';
@@ -66,6 +67,52 @@ export function buildFiller(s: number, x: number, wide: boolean, p: PropCtx, var
   const params: Record<string, number> | undefined = f.kind === 'vending_bank' ? { machines: 1 } : f.kind === 'drum_cluster' ? { drums: 2 } : undefined;
   return buildTall(f.kind, s, x, f.len, f.wid, f.hgt, p, { variant, tags: ObTag.Filler, params });
 }
+
+// ── Phase B (theme T8, THEME §3.4): cars as the main blocker ──────────────────────────────────────────────────────
+/** van_across: a delivery van nosed into a side loading entrance, its tail out into the street (DESIGN §10.3). */
+export const VAN_ACROSS = { len: 1.8, wid: 4.4, hgt: 1.4 } as const;
+/** A van_across on side `sd`, its nose flush with the corridor edge (the loading entrance is just beyond it). The kit
+ *  reads the side from the sign of x. */
+export function buildVanAcross(s: number, sd: -1 | 1, p: PropCtx, variant = 0, tags = 0): Obstacle {
+  return buildTall('van_across', s, round1cm(sd * (4.5 - VAN_ACROSS.wid / 2)), VAN_ACROSS.len, VAN_ACROSS.wid, VAN_ACROSS.hgt, p, { variant, tags });
+}
+/** Where a parked car stands beside the road, parallel to s (DESIGN §10.2), in the order a row tries them: Downtown
+ *  and Neon (a taxi, THEME §3.4) in the curb lane beside the curb, else half up on the sidewalk at the corridor edge
+ *  (the plaza's edge where there is no curb); the Suburbs on a driveway apron over the sidewalk and lawn (the curb is
+ *  cut behind it). Centre |x| and size (the area's parked_car); empty where the street has neither (the Docks). */
+export interface CurbSlot { x: number; len: number; wid: number; hgt: number; driveway: boolean }
+export function curbSlots(a: AreaId): readonly CurbSlot[] {
+  switch (a) {
+    case 'downtown': case 'neon': return [{ x: 2.15, len: 4.4, wid: 1.8, hgt: 1.4, driveway: false }, { x: 3.6, len: 4.4, wid: 1.8, hgt: 1.4, driveway: false }];
+    case 'suburbs': return [{ x: 3.5, len: 4.6, wid: 1.9, hgt: 1.5, driveway: true }];
+    default: return [];
+  }
+}
+/** A parked car in slot `slot` of curbSlots on side `sd` (null where the area has none). Rear to the camera. */
+export function buildCurbCar(s: number, sd: -1 | 1, p: PropCtx, variant = 0, tags = 0, slot = 0): Obstacle | null {
+  const c = curbSlots(p.area)[slot];
+  if (!c) return null;
+  const ob = buildTall('parked_car', s, round1cm(sd * c.x), c.len, c.wid, c.hgt, p, { variant, tags });
+  ob.variant = skinVariant(ob, (k) => !k.nosedIn);
+  return ob;
+}
+/** Bumper-to-bumper gap of a parked row whose next car stays out of the one before's 35° shadow (validator rule g:
+ *  h·cot 35° + 0.5 m, h ≤ the 1.6 m x-ray cap): an empty bay between cars. */
+export const rowGap = (h: number): number => Math.min(h, 1.6) / Math.tan((35 * Math.PI) / 180) + 0.5 + 0.1;
+/** The driveway curb cuts [s0, s1, side] under the Suburbs' driveway cars among `obs` (a row's or a template's). */
+export function carDriveways(obs: readonly Obstacle[]): [number, number, number][] {
+  const out: [number, number, number][] = [];
+  for (const o of obs) if (o.kind === 'parked_car' && o.area === 'suburbs' && Math.abs(Math.abs(o.x) - 3.5) < 0.01) out.push([round1cm(o.s - 0.4), round1cm(o.s + o.len + 0.4), Math.sign(o.x)]);
+  return out;
+}
+/** The first variant ≥ the obstacle's own (up to 16 on) whose skin (core/skins propSkin) passes `ok`: a row of
+ *  parked cars that all face the same way, the Docks' trucks. The variant only picks the skin (WA kits use it modulo
+ *  their own counts), so this never changes a footprint. */
+export function skinVariant(ob: Obstacle, ok: (s: PropSkin) => boolean): number {
+  for (let v = ob.variant; v < ob.variant + 16; v++) if (ok(propSkin(ob.kind, ob.area, ob.id, v, ob.hgt, SKIN))) return v;
+  return ob.variant;
+}
+const SKIN = newSkin();
 
 /** A tall column blocker (trash can 0.6 × 0.6, news box 0.5 × 0.5) standing on the street or the sidewalk. */
 export function buildBlocker(kind: 'trash_can' | 'news_box', s: number, x: number, p: PropCtx, variant = 0): Obstacle {

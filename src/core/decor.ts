@@ -159,11 +159,13 @@ export const DECOR_KINDS = {
       + 'shopfront or shutters facing the camera. Inner edge at |x| ≥ 4.6 (beside the corridor, never across it).',
     params: {
       w: 'lateral span, m (4–14, default 9)', h: 'height, m (4–20, default 8)',
-      style: 'face: 0 corner shopfront, 1 pastel ribbed shutters (Neon), 2 warehouse doors (Docks), 3 house front (Suburbs)',
+      style: 'face: 0 corner shopfront, 1 pastel ribbed shutters (Neon), 2 warehouse doors (Docks), 3 house front (Suburbs), '
+        + '4 loading entrance (a closed roller door a van_across is nosed into; Phase B, theme T8)',
       brand: 'shopfront sign brand index into DECOR_BRANDS[area] (−1 none)',
       word: 'Neon only: NEON_SIGN_WORDS index for the sign (−1 = Latin brand)',
       shutters: 'number of shutter bays for style 1 (1–6, default 3)',
-      live: 'Neon: 0/1 one lit 営業中 or 喫茶 sign (default: 1 in 4)', ...RECLAIMED,
+      live: 'Neon: 0/1 one lit 営業中 or 喫茶 sign (default: 1 in 4)',
+      len: 'style 4: the loading entrance\'s length along s, m (default 2.8); its door faces the street', ...RECLAIMED,
     },
   },
   chain_link: {
@@ -408,9 +410,11 @@ export const DECOR_KINDS = {
     params: { len: 'length along s, m', dash: 'dash length, m (0 = solid, default 3)', gap: 'gap length, m (default 3)', color: '0 paint white, 1 yellow' },
   },
   parking_bay: {
-    zone: 'ground', areas: ['downtown'], castShadow: false,
-    doc: 'Parking bay lines in the ±2.0…±3.0 bands (DESIGN §10.2).',
-    params: { len: 'length along s, m', bays: 'bays along s (default len/5)' },
+    zone: 'ground', areas: ANY, castShadow: false,
+    doc: 'Parking bay lines in the ±2.0…±3.0 bands (DESIGN §10.2). Phase B (theme T8): faded bays under the parked rows in '
+      + 'every area, and one perpendicular bay (perp 1) under each van_across, open toward the road.',
+    params: { len: 'length along s, m', bays: 'bays along s (default len/5)',
+      perp: '0/1 one perpendicular bay (x = its centre; w across, len along s) under a van_across (default 0)', w: 'perp: width across, m (default 4.6)' },
   },
   road_arrow: {
     zone: 'ground', areas: ['downtown', 'suburbs', 'neon'], castShadow: false,

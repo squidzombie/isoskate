@@ -652,6 +652,12 @@ const laneDash: DecorFn = (c, d) => {
 };
 const parkingBay: DecorFn = (c, d) => {
   const len = num(d, 'len', 10), bays = Math.max(1, num(d, 'bays', Math.round(len / 5)));
+  // Phase B (THEME §3.4): one perpendicular bay under a van_across, its back line at the corridor edge, open toward the road.
+  if (num(d, 'perp', 0) === 1) {
+    const sd = Math.sign(d.x) || 1;
+    dec(c, DECAL.bayPerp, d, len, num(d, 'w', 4.6), 0xede3d3, 0.6 * PAINT_FADE, sd < 0 ? Math.PI / 2 : -Math.PI / 2, 0, d.x, d.s + len / 2);
+    return;
+  }
   roadMarks(c).bay = Math.sign(d.x);
   for (let k = 0; k <= bays; k++) dec(c, DECAL.parkT, d, 1.0, 1.0, 0xede3d3, 0.75 * PAINT_FADE, 0, 0, d.x, d.s + (len * k) / bays);
 };

@@ -17,6 +17,7 @@ export type PropKind =
   // shared
   | 'curb' | 'flatbar' | 'bench' | 'manual_pad' | 'trash_can' | 'cone' | 'barrier_low' | 'trench'
   | 'stairs' | 'handrail' | 'hubba' | 'incline' | 'terrace' | 'filler'
+  | 'van_across'                                     // every area: a van nosed into a side loading entrance (@theme T8)
   // downtown
   | 'granite_ledge' | 'planter' | 'planter_tree' | 'fountain' | 'bollard_row' | 'kiosk' | 'parked_car'
   | 'bike_rack' | 'cafe_set' | 'news_box' | 'crosswalk_car'

@@ -21,6 +21,8 @@ import { DRESSER, foliageFor, mossOn, rustOn, type DressRole } from './dress';
 export const CAR_BODIES = [0x1c1430, 0x141a2e, 0x1d1420, 0x122220, 0x221830, 0x17142a] as const;
 type Target = Kit['t'];
 const TYRE = 0x171221, LENS = 0x3c3a52, CURTAIN = 0x5e5248, HELPER_DOME = 0x8a8fb0;
+/** Neon vehicles' body glow, × the Neon hazard glow (Phase B, the contrast gate). */
+const NEON_VEHICLE_GLOW = 1.35;
 
 export interface VehicleSpec {
   body: VehicleBody;
@@ -387,21 +389,49 @@ export const paintOf = (p: keyof typeof RECLAIM.carPaint | null) => RECLAIM.carP
 export function vehicleKit(c: KitCtx, ob: Obstacle): void {
   const b = ob.solids[0]?.box;
   if (!b) return;
-  const skin = DRESSER.skin, body: VehicleBody = isVehicle(skin.body) ? skin.body : ob.kind === 'parked_van' ? 'panel_van' : 'sedan';
-  const clean = (skin.dress & Dress.Clean) !== 0, inv = c.hz.inverted;
   contact(c, b.x0, b.x1, b.s0, b.s1, b.y0 + 0.01, 0.7, 0.3);
   c.K.capY = b.y0 + CAMERA.xrayCapY;
+  drawVehicle(c.K, hazardSpec(c, ob, b.x0, b.x1, b.s0, b.s1, b.y0, b.y1 - b.y0));
+  c.K.capY = null;
+}
+
+/** The hazard VehicleSpec of an obstacle's skin over the given (prop-frame) box. */
+function hazardSpec(c: KitCtx, ob: Obstacle, x0: number, x1: number, s0: number, s1: number, y: number, h: number): VehicleSpec {
+  const skin = DRESSER.skin, body: VehicleBody = isVehicle(skin.body) ? skin.body : ob.kind === 'parked_van' || ob.kind === 'van_across' ? 'panel_van' : 'sedan';
+  const clean = (skin.dress & Dress.Clean) !== 0, inv = c.hz.inverted;
   const neonBody = RECLAIM.neonCarBody[body === 'taxi' ? 3 : (ob.id + ob.variant) % 3]!;
-  drawVehicle(c.K, {
-    body, x0: b.x0, x1: b.x1, s0: b.s0, s1: b.s1, y: b.y0, h: b.y1 - b.y0,
-    paint: inv ? shade(neonBody, 0.14) : paintOf(skin.paint),
+  return {
+    body, x0, x1, s0, s1, y, h,
+    // (Neon, Phase B: taxis and kei vans are in-corridor hazards now, beside the lit kerbs and puddles; their roofs take
+    // the Neon hazard top, tinted by the body, and a little more glow, so they hold the ≥ 2.5:1 pixel gate)
+    paint: inv ? mixHex(c.hz.top, neonBody, 0.25) : paintOf(skin.paint),
     side: inv ? neonBody : CAR_BODIES[(ob.variant + ob.id) % CAR_BODIES.length]!,
     stripe: inv || clean ? -1 : c.hz === HAZARD.docks ? HAZARD.docks.accent2 : c.hz.accent,
-    hazard: true, inverted: inv, rim: c.hz.rim, glow: c.hz.glow, nosedIn: skin.nosedIn,
+    hazard: true, inverted: inv, rim: c.hz.rim, glow: c.hz.glow * (inv ? NEON_VEHICLE_GLOW : 1), nosedIn: skin.nosedIn,
     livery: skin.livery >= 0 ? `b:${ob.area}:${skin.livery}` : null,
     helper: clean ? c.hz.accent2 : -1, reverseLights: ob.kind === 'backout_car', cat: ob.area === 'neon' ? null : 'tabby',
-  });
-  c.K.capY = null;
+  };
+}
+
+/** van_across (Phase B, THEME §3.4): a delivery van nosed into the side loading entrance at the corridor edge it
+ *  faces (the sign of x), its tail out into the street. The vehicle builder draws it in a prop frame turned a
+ *  quarter about the box centre (its long axis along x, the nose toward the edge); the dresser sees the obstacle in
+ *  that frame too, so the dressing rules clamp to the same footprint. */
+export function vanAcrossKit(c: KitCtx, ob: Obstacle): void {
+  const b = ob.solids[0]?.box;
+  if (!b) return;
+  contact(c, b.x0, b.x1, b.s0, b.s1, b.y0 + 0.01, 0.7, 0.3);
+  const sd = Math.sign(ob.x) || -1, cx = (b.x0 + b.x1) / 2, cs = (b.s0 + b.s1) / 2;
+  const hw = (b.s1 - b.s0) / 2, hl = (b.x1 - b.x0) / 2;           // local half width (track s) and half length (x)
+  // Local +s → the nose: yaw +90° maps local +s to −x, −90° to +x (Kit.frame).
+  const K = c.K, real = DRESSER.ob!, d = DRESSER;
+  const local: Obstacle = { ...real, edges: [], solids: real.solids.map((so) => ({ ...so, box: { ...so.box, x0: -hw, x1: hw, s0: -hl, s1: hl } })) };
+  const keep = [d.fx0, d.fx1, d.fs0, d.fs1] as const;
+  d.ob = local; d.fx0 = -hw; d.fx1 = hw; d.fs0 = -hl; d.fs1 = hl;
+  K.frame(cx, 0, cs, sd < 0 ? Math.PI / 2 : -Math.PI / 2);
+  drawVehicle(K, { ...hazardSpec(c, ob, -hw, hw, -hl, hl, b.y0, b.y1 - b.y0), nosedIn: false });
+  K.frame(0, 0, 0);
+  d.ob = real; [d.fx0, d.fx1, d.fs0, d.fs1] = keep;
 }
 
 // ── decor vehicles (kits/decor.ts parked_car_side) ─────────────────────────────────────────────────────────────

@@ -467,6 +467,7 @@ export function bladeSignAt(c: KitCtx, xFace: number, s: number, y0: number, h: 
 /** Cross-street end wall (every 8–12 s): a corner shopfront, pastel ribbed shutters (Neon), warehouse doors (Docks)
  *  or a house front (Suburbs), facing the camera; its inner edge at |x| ≥ 4.6. */
 export function endWall(c: KitCtx, d: Decor): void {
+  if (num(d, 'style', -1) === 4) { loadingEntrance(c, d); return; }
   const K = c.K, area = c.areaAt(d.s), out = Math.sign(d.x) || 1, sc = d.scale || 1;
   const w = num(d, 'w', 9) * sc, h = num(d, 'h', 8) * sc, depth = 1.2;
   const xin = Math.sign(d.x) * Math.max(4.6, Math.abs(d.x));
@@ -517,6 +518,25 @@ export function endWall(c: KitCtx, d: Decor): void {
   // (Neon: night ivy only beside the sign, never over it.)
   if (ivy > 0 && style !== 2) wallDrape(K, 'front', 0, s0 - 0.03, style === 1 ? Math.min(x1 - 0.6, x0 + 5.7) : x0 + 0.2, x1 - 0.2, y + h - 0.35, y + 0.05, ivy, FLORA[area].ivy, (d.s * 17 + d.x) | 0, near, 7, PAT.grass, true);
   windows(c, (d.s * 5 + d.x) | 0, 'front', x0 + 0.5, x1 - 0.5, s0, 0, y + 4.6, y + h - 0.4, 2.4, 0xffc98a, near, area);
+}
+
+/** Phase B (THEME §3.4) `end_wall` style 4: the loading entrance a van_across is nosed into. A low block beside the
+ *  corridor whose street face (|x| = 4.6) carries a closed, faded roller door under a dark lintel, with a moss line
+ *  along the eaves; it spans `len` along s from d.s and `w` outward. Nothing over the corridor. */
+function loadingEntrance(c: KitCtx, d: Decor): void {
+  const K = c.K, area = c.areaAt(d.s), sd = Math.sign(d.x) || 1, sc = d.scale || 1;
+  const w = num(d, 'w', 3) * sc, h = num(d, 'h', 4.2) * sc, len = num(d, 'len', 2.8), y = d.y;
+  const xin = sd * 4.6, x0 = Math.min(xin, sd * (4.6 + w)), x1 = Math.max(xin, sd * (4.6 + w)), s0 = d.s, s1 = d.s + len;
+  const near = d.x > 0 ? FX.near : 0, face = sd > 0 ? FACE.left : FACE.right;
+  const base = shade(FACADES[area][d.variant % FACADES[area].length]!, -0.08);
+  const wall = area === 'neon' ? base : mixHex(base, fadePaint(base), 0.8);
+  K.reset().to('b').lit(area === 'neon' ? 0 : PAT.brickWall, 0, near).col(wall).box(x0, y, s0, x1, y + h, s1);
+  const fx = xin - sd * 0.03, dx0 = Math.min(xin, fx), dx1 = Math.max(xin, fx);
+  // The door (ribbed, faded), a dark lintel and jambs, and a moss line along the eaves.
+  K.lit(PAT.ribsH, 0, near).col(area === 'neon' ? mixHex(0x9a90c0, RECLAIM.deadTube, 0.35) : fadePaint(0x8e8a94)).box(dx0, y + 0.02, s0 + 0.3, dx1, y + 2.5, s1 - 0.3, face);
+  K.lit(0, 0, near).col(shade(wall, -0.4)).box(dx0 - 0.02, y + 2.5, s0 + 0.15, dx1 + 0.02, y + 2.75, s1 - 0.15, face | FACE.top);
+  K.box(dx0 - 0.02, y, s0 + 0.15, dx1 + 0.02, y + 2.5, s0 + 0.3, face | FACE.top); K.box(dx0 - 0.02, y, s1 - 0.3, dx1 + 0.02, y + 2.5, s1 - 0.15, face | FACE.top);
+  if (area !== 'neon') K.lit(PAT.grass, 0, near).col(FLORA[area].ivy[0]!).box(x0, y + h, s0, x1, y + h + 0.04, s1, FACE.top);
 }
 
 /** Stacked shipping containers as backdrop (6.1 × 2.4 × 2.6 each), long axis along s. */

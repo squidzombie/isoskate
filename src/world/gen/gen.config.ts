@@ -23,9 +23,11 @@ export const GEN = {
   weights: {
     S_CONES: 1.0, S_TRENCH: 0, S_BARRIER: 0, S_LADDER: 1.2, S_GATE: 0.6, S_PADS: 1.0, S_STAIRS: 0.8,
     DT_LEDGE: 3, DT_BENCHES: 2.5, DT_PLANTERS: 2.5, DT_TERRACE: 1.5, DT_RUSH: 1.2, DT_BIG7: 1.2,
-    SB_WALL: 3, SB_HILL: 0, SB_DRIVEWAYS: 2.5, SB_BINDAY: 2.5, SB_PICKET: 2.5, SB_SCOOPS: 2,
+    SB_WALL: 3, SB_HILL: 0, SB_DRIVEWAYS: 3.5, SB_BINDAY: 2.5, SB_PICKET: 2.5, SB_SCOOPS: 2,
     IN_BEAM: 3, IN_LIP: 3, IN_PALLETS: 2.5, IN_CHANNEL: 2.5, IN_DOCK_UP: 2, IN_GAUNTLET: 2,
     NE_RAIL: 3, NE_PILLARS: 2.5, NE_VENDING: 2.5, NE_SAKURA: 2.5, NE_SKYWALK: 1.6, NE_GAUNTLET: 2,
+    // Phase B parked rows (THEME §3.4, theme T8): weighted toward the per-area car-share targets.
+    DT_PARKED_ROW: 3.5, SB_DRIVEWAY_ROW: 11, IN_LOADING_ROW: 14, NE_TAXI_RANK: 3,
   } as Record<string, number>,
   /** Area breathers drawn instead of S_OPEN when a breather is due (SB_HILL in the Suburbs). */
   breatherTemplate: { suburbs: 'SB_HILL' } as Partial<Record<AreaId, string>>,

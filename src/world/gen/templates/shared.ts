@@ -14,8 +14,8 @@ import { rMinAt } from '../validator/sweep';
 import { ObTag } from '../../../core/world';
 import { GEN } from '../gen.config';
 import { buildBarrier, buildBench, buildCone, buildFlatbar, buildHandrail, buildIncline, buildPad, buildSideSet,
-  buildTerrace, buildTrench, stairDrop, STAIR } from '../props/shared';
-import { gateOpenings, gateRow, lanesApart, openingLanes } from '../rows';
+  buildTerrace, buildTrench, carDriveways, stairDrop, STAIR } from '../props/shared';
+import { deepFree, gateOpenings, gateRow, lanesApart, openingLanes } from '../rows';
 import { LIP } from '../props/street';
 import type { Template, TemplateCtx, TemplateOut } from './types';
 import { actFrom, contentFrom, edgeCoins, endAfter, put, roadHalf, side, sOf } from './util';
@@ -195,7 +195,10 @@ export const S_GATE: Template = {
       const pad = put(c, buildPad(round1cm(sAt(pB) - len), padX, len, c.props));
       c.coins.string(pad.s + 0.4, pad.s + pad.len - 0.4, pad.x, c.datum + 0.15 + GEN.coins.padUp, c.v);
     }
-    for (const ob of gateRow(sRow, centres, w, c.props, c.rng)) put(c, ob);
+    // (Phase B, THEME §3.4: vehicles at the corridor edges; the easy re-rolls stand the kit-only row)
+    const rowObs = gateRow(sRow, centres, w, c.props, c.rng, [], c.attempt < GEN.easyFrom ? deepFree(c.obstacles) : null);
+    for (const ob of rowObs) put(c, ob);
+    c.driveways.push(...carDriveways(rowObs));
     const tr = tAt(sRow);
     return { t1: tAt(sRow + 1.2) + 0.5, gateX: centres, gateT: tr, ...(withA3 ? { fullWidth: true } : {}),
       guides: [{ t0: tr - 0.45, t1: tr + 0.15, x0: pick - 0.25, x1: pick + 0.25 }] };

@@ -21,12 +21,12 @@ import { emitDecor } from './decor';
 import { GEN, GEN_FLAGS, type PhaseId, type Tier } from './gen.config';
 import { LESSON_PARTS, ROLLOUT, ROLLOUT_DECOR_SEED } from './lesson';
 import type { PropCtx } from './props/common';
-import { buildFiller, fillerKinds } from './props/shared';
+import { buildFiller, buildVanAcross, carDriveways, fillerKinds } from './props/shared';
 import { LAYOUTS, LIP, bandRange, buildLipBody, buildLipEdges, buildStreet, type StreetLayout } from './props/street';
 import type { SafeLine } from './safe';
 import { a3Range, gatewayWindow, nextFullWidthDue, phaseAt, planSegment, type Plan } from './schedule';
 import { GATEWAYS, TEMPLATES, type Template, type TemplateCtx, type TemplateOut } from './templates';
-import { gateOpenings, gateRow, lanesApart, openingLanes, rowLanes } from './rows';
+import { deepFree, gateOpenings, gateRow, kitRun, lanesApart, openingLanes, rowLanes, VEHICLE_KINDS } from './rows';
 import { spacingAfter } from './validator/sweep';
 import { initialState, validate, type ValResult } from './validator/validate';
 
@@ -348,6 +348,11 @@ export class Generator implements WorldGen {
     const intoGw = !gateway && Math.abs(t1 - gwNextStart) < 1e-6;
     const exit = intoGw ? (out.exit ?? [[-4.5, 4.5]]).map(([a, b]) => [Math.max(a, -GEN.gwEntry), Math.min(b, GEN.gwEntry)] as [number, number]).filter(([a, b]) => b > a)
       : out.exit ?? [[-4.5, 4.5]];
+    // (T8) The exit set only has to be open at the end, and a T0 filler before a gateway may not move: the last segment
+    // with actions before a gateway (≤ 3.2 s before it) guides its committed line into the gateway's corridor over its
+    // last 0.4 s, so the gateway (T0: no required move) never starts from the sidewalk.
+    const gwGap = gwNextStart - t1;
+    const gwGuide = !gateway && !t0Stretch && gwGap > -1e-6 && gwGap < 3.2 ? [{ t0: t1 - 0.4, t1, x0: -GEN.gwEntry + 0.3, x1: GEN.gwEntry - 0.3 }] : [];
     // No base edge may end in the 2.2 s before a gate row: its exit zone would face the row far from the openings.
     const rowBan = (tr: number): [number, number, number] => [round1cm(sAt(tr - GEN.gate.edgeBan)), round1cm(sAt(tr) + 0.3), Number.NaN];
     if (out.gateT !== undefined) noEdges.push(rowBan(out.gateT));
@@ -367,7 +372,7 @@ export class Generator implements WorldGen {
         obstacles: win, seg, t0, t1, s1, layoutEnd: layout, datumEnd, exit,
         earliest: Math.max(c.firstActionT, t0), last: c.last, noActions: t0Stretch,
         headSec: fixed ? 0.3 : GEN.noActionHead, tailSec: fixed ? 0.2 : GEN.noActionTail,
-        groundHi, greedy: true, guides: [...(out.guides ?? []), ...(guides ?? [])], relax: bare && attempt > GEN.rerolls + 2,
+        groundHi, greedy: true, guides: [...(out.guides ?? []), ...(guides ?? []), ...gwGuide], relax: bare && attempt > GEN.rerolls + 2,
       });
       // Every validation counts (DESIGN §10.6.7 rejection rate): overlays, edge trims and re-rolls alike.
       this.valCalls++;
@@ -485,19 +490,27 @@ export class Generator implements WorldGen {
           break;
         }
       }
-      for (const { tr, centres, keepOut, tail } of tries) {
+      // Phase B (THEME §3.4): each slot first with vehicles at the corridor edges, then (when that fails) the kit-only row.
+      const free = deepFree([...obstacles, ...persistentNew, ...c.persistent]);
+      const slots = tries.flatMap((tt) => [{ ...tt, veh: true }, { ...tt, veh: false }]);
+      let vehFailed = -1;
+      for (const { tr, centres, keepOut, tail, veh } of slots) {
+        if (!veh && vehFailed !== tr) continue;        // the kit-only row only after its vehicle row failed
         const sr = round1cm(sAt(tr));
-        const rowObs = gateRow(sr, centres, w, props, rng, keepOut);
+        const rowObs = gateRow(sr, centres, w, props, rng, keepOut, veh ? free : null);
+        if (veh && !rowObs.some((o) => VEHICLE_KINDS.has(o.kind))) { vehFailed = tr; continue; }   // none fitted: same row
         const lanes = rowLanes(sr, [...obstacles, ...rowObs, ...persistentNew, ...c.persistent]);
-        if (!lanesApart(lanes, c.lastGateOpen)) continue;
+        if (!lanesApart(lanes, c.lastGateOpen)) { if (veh) vehFailed = tr; continue; }
         const guide = [{ t0: tr - 0.45, t1: tr + 0.15, x0: centres[0]! - 0.25, x1: centres[0]! + 0.25 }];
-        const nb = noEdges.length, t1o = t1;
+        const nb = noEdges.length, t1o = t1, nd = driveways.length;
         noEdges.push(rowBan(tr));
+        driveways.push(...carDriveways(rowObs));
         if (tail) { t1 = Math.max(t1, tAt(sr + 1.2) + 0.5); s1 = sAt(t1); }
         const r2 = run([...obstacles, ...rowObs], guide);
         if (!r2.ok) {
-          noEdges.length = nb; t1 = t1o; s1 = sAt(t1);
+          noEdges.length = nb; t1 = t1o; s1 = sAt(t1); driveways.length = nd;
           GEN_DEBUG.onReject?.({ index, t0, tpl: tpl.id, tier: plan.tier, attempt, why: `  detail overlay@${tr.toFixed(2)}${tail ? 'T' : ''} ${r2.why} ${r2.detail ?? ''}` });
+          if (veh) vehFailed = tr;
           continue;
         }
         obstacles.push(...rowObs); res = r2; row = { t: tAt(sr), lanes };
@@ -515,10 +528,13 @@ export class Generator implements WorldGen {
       let w = trackWander(res.line, t0, t1, c.wander, aOf);
       if (aEnd - w.lastA > P2 + 1e-6) {
         const tw = this.wallTime(obstacles, t0, Math.min(t1 - 0.5, tOfA(c.wander.lastA + P2)));
-        if (tw !== null) {
-          const trial = [...obstacles, ...this.wanderWall(tw, res.line.xAt(tw), props)];
+        // (Phase B, THEME §3.4: a van_across and one filler first; the filler wall is the fallback.)
+        for (const van of tw !== null ? [true, false] : []) {
+          const wall = this.wanderWall(tw!, res.line.xAt(tw!), props, rng, van);
+          if (!wall) continue;
+          const trial = [...obstacles, ...wall];
           const r2 = run(trial);
-          if (r2.ok) { obstacles.length = 0; obstacles.push(...trial); res = r2; walls++; w = trackWander(res.line, t0, t1, c.wander, aOf); }
+          if (r2.ok) { obstacles.length = 0; obstacles.push(...trial); res = r2; walls++; w = trackWander(res.line, t0, t1, c.wander, aOf); break; }
         }
       }
       wander = w;
@@ -554,12 +570,24 @@ export class Generator implements WorldGen {
     return null;
   }
 
-  /** A 6 m wall of area fillers centred on the line x (A2 overdue, DESIGN §10.6.7): the line must move ≥ 3 m. */
-  private wanderWall(t: number, x: number, p: PropCtx): Obstacle[] {
+  /** A 6 m wall of area fillers centred on the line x (A2 overdue, DESIGN §10.6.7): the line must move ≥ 3 m. Phase B
+   *  (THEME §3.4, `van`): a van_across nosed in at the nearer corridor edge (the left one in the Docks), and fillers
+   *  from its tail to the wall's far end (one 0.6 m filler in the usual case); null when the van would not reach. */
+  private wanderWall(t: number, x: number, p: PropCtx, rng: Sfc32, van = false): Obstacle[] | null {
     const xc = x;
     const f = fillerKinds(p.area)[0]!;
     const out: Obstacle[] = [];
     const a = Math.max(-4.5, xc - 3.0), b = Math.min(4.5, xc + 3.0);
+    if (van) {
+      // (in the Docks only from the dock side, and not when the wall would then close the apron)
+      if (p.area === 'docks' && xc > 0.5) return null;
+      const sd: -1 | 1 = p.area === 'docks' || xc < 0 ? -1 : 1;
+      out.push(buildVanAcross(round1cm(sAt(t)), sd, p, 0, ObTag.Filler));
+      // Kit pieces from 0.1 m past the van's tail (±0.1) to the wall's far end (usually one); the line keeps its ≥ 3 m
+      // move on the open side.
+      if (sd < 0) kitRun(out, 0, b, round1cm(sAt(t)), p, rng, 0, true); else kitRun(out, a, 0, round1cm(sAt(t)), p, rng, 0, false, true);
+      return out;
+    }
     const pitch = f.wid + 0.1, n = Math.max(1, Math.ceil((b - a - f.wid) / pitch) + 1);
     const step = n > 1 ? (b - a - f.wid) / (n - 1) : 0;
     for (let k = 0; k < n; k++) out.push(buildFiller(round1cm(sAt(t)), round1cm(a + f.wid / 2 + k * step), false, p, k % 3));
@@ -582,6 +610,7 @@ export class Generator implements WorldGen {
     }
     const decor: Decor[] = [];
     const denv = { area, gateway, s0, s1, datum: Math.max(c.datum, b.datumEnd), driveways: b.driveways,
+      vehicles: b.obstacles.filter((o) => o.kind === 'van_across' || o.kind === 'parked_car'),
       nextEndWall: this.decorState.nextEndWall, backNext: this.decorState.backNext, areaEndS: sAt(areaEndT), visit: this.decorState.visit };
     emitDecor(decor, denv, decorRng);
     this.decorState.nextEndWall = denv.nextEndWall;

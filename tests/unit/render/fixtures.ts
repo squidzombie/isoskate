@@ -11,7 +11,7 @@ import { ObTag } from '../../../src/core/world';
 
 export const AREAS: readonly AreaId[] = ['downtown', 'suburbs', 'docks', 'neon'];
 export const ALL_PROP_KINDS: readonly PropKind[] = [
-  'curb', 'flatbar', 'bench', 'manual_pad', 'trash_can', 'cone', 'barrier_low', 'trench', 'stairs', 'handrail', 'hubba', 'incline', 'terrace', 'filler',
+  'curb', 'flatbar', 'bench', 'manual_pad', 'trash_can', 'cone', 'barrier_low', 'trench', 'stairs', 'handrail', 'hubba', 'incline', 'terrace', 'filler', 'van_across',
   'granite_ledge', 'planter', 'planter_tree', 'fountain', 'bollard_row', 'kiosk', 'parked_car', 'bike_rack', 'cafe_set', 'news_box', 'crosswalk_car',
   'garden_wall', 'hedge', 'picket_fence', 'mailbox', 'wheelie_bins', 'parked_van', 'porch_steps', 'yard_table', 'crate_stack', 'speed_hump', 'hoop_pole', 'bus_shelter', 'backout_car',
   'container', 'pallet_1', 'pallet_2', 'pallet_3', 'pallet_tall', 'ibeam', 'loading_dock', 'drum_cluster', 'spool_standing', 'spool_lying', 'mooring_bollard', 'dock_lip', 'rail_track', 'forklift',
@@ -131,6 +131,7 @@ export function obstacleOf(kind: PropKind, area: AreaId, s: number, x: number, v
     case 'kiosk': return [P({ len: 1.6, wid: 1.6, hgt: 2.4 })];
     case 'parked_car': case 'crosswalk_car': case 'backout_car': return [P({ len: kind === 'crosswalk_car' ? 4.2 : 4.4, wid: 1.8, hgt: 1.4 })];
     case 'parked_van': return [P({ len: 4.6, wid: 1.9, hgt: 1.9 })];
+    case 'van_across': return [P({ len: 1.8, wid: 4.4, hgt: 1.4 })];
     case 'bike_rack': return [P({ len: 2.4, wid: 0.7, hgt: 1.15 })];
     case 'cafe_set': return [P({ len: 1.2, wid: 1.2, hgt: 1.2 })];
     case 'news_box': return [P({ len: 0.5, wid: 0.5, hgt: 1.15, ground })];

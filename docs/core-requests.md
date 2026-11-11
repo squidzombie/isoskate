@@ -812,6 +812,17 @@ recognizer, so the frozen `InputFrame`, the sim, scoring, the generator, replays
 - What other packages can rely on: WG emits them (`world/gen/decor.ts`, tunables `GEN.reclaim`), one `vista` per area visit and at most one `wildlife` (the generator's decor state carries the visit); WA renders every one (`kits/reclaim.ts`; birds, critters and drips are `vfx/critters.ts`); warmup covers them through `DECOR_KINDS`. `KitCtx.edges` (world/render, not core) lists the chunk's grind edges for the rule-5 clearance. Obstacles, coins, the safe line and every bot are untouched: `tests/unit/gen/gen.test.ts` now holds two golden chains, obstacles (identical through T7a) and decor (re-baselined here).
 - Local workaround meanwhile: n/a.
 
+### Phase B (T8): cars as the main blocker (additive)   (status: applied @theme T8 on DEV; TECH §4.1, §4.14, §4.15)
+- **core/ids.ts › PropKind** gains `'van_across'` (every area; DESIGN §10.3: 1.8 × 4.4 × 1.4, A, `crash` top). Built by
+  `world/gen/props/shared.ts` `buildVanAcross` (nose flush with the corridor edge, x = ±2.3), drawn by `kits/car.ts`
+  `vanAcrossKit` (the vehicle builder in a quarter-turned prop frame), registered in `SHARED_KITS`.
+- **core/skins.ts › propSkin** gains the `van_across` case: DT / SB `panel_van` with an area livery, the Docks in Brindle
+  Freight livery, Neon a `kei_van`; noun "van". `ui/format.ts` GENERIC gains it.
+- **core/decor.ts**: `parking_bay` lists every area (was Downtown only) and gains `perp` / `w` (one perpendicular bay under
+  a `van_across`); `end_wall` gains `style` 4 (a loading entrance with a closed roller door facing the street) and `len`.
+- No sim, tuning, validator or world-model change: every footprint, class, top and hitbox rule is the existing one.
+  Golden obstacle and decor hashes re-baselined once (tests/unit/gen/gen.test.ts, with the reason).
+
 ### What T1 / T2 / T3 / T6 build on (no further core change in T0)
 - **T1 (kits, vehicle builder):** `DRESSER.skin` (body, paint, dress, livery, nosedIn), `DRESSER.box(K, role, x0, y0, s0, x1, y1, s1, faces?)` for every dressing box (roles `life`, `cat`, `animal`, `foliage`, `wear`, `sapling`), `DRESSER.life` / `lifeDisc` for accents drawn another way, `DRESSER.has(flag)`, `DRESSER.sapling`; colours from `palette.ts` `RECLAIM` and `dress.ts` `mossOn` / `rustOn` / `foliageFor`; `isIsolatedFiller(ob, chunkObstacles)` for the chunk-builder flag, passed as `drawObstacle(c, ob, chunkIndex, first, isolated)`. `tests/unit/render/dress.test.ts` already draws every kit in every skin and checks the life budget, refusals and clean machines.
 - **T2 (render-side overgrowth):** `RECLAIM` tokens, `fadePaint`, `withLum`, `contrastRatio`, the zone helpers `inCleanCore` / `flatWeedOk` / `vegOk`, `edgeBandDecalOk`, `clearOfEdges`, `GREEN_SHARE`.

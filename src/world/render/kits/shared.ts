@@ -12,6 +12,7 @@ import { FACE, FX } from '../writer';
 import { WARN, chevrons, contact, groundChevrons, groundOf, isFull, rnd, setArea, solidsFallback, surfaceLook, type KitCtx } from './common';
 import { DRESS, DRESSER, clearOfEdges, mossOn, rustOn, type DressRole } from './dress';
 import { FLORA } from './buildings';
+import { vanAcrossKit } from './car';
 
 export type KitFn = (c: KitCtx, ob: Obstacle) => void;
 export interface KitDef { draw: KitFn; long?: boolean }
@@ -622,6 +623,7 @@ export const randOf = (ob: Obstacle, k = 0) => rnd(ob.id, k, ob.variant);
 
 export const SHARED_KITS: Readonly<Partial<Record<Obstacle['kind'], KitDef>>> = {
   curb: { draw: curb, long: true }, flatbar: { draw: flatbar, long: true }, bench: { draw: bench },
+  van_across: { draw: vanAcrossKit },   // Phase B (theme T8): the vehicle builder turned across, every area
   manual_pad: { draw: manualPad, long: true }, trash_can: { draw: trashCan }, cone: { draw: cone },
   barrier_low: { draw: barrier }, trench: { draw: trench }, stairs: { draw: stairs, long: true },
   handrail: { draw: handrail, long: true }, hubba: { draw: hubba, long: true }, incline: { draw: incline, long: true },

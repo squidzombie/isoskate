@@ -59,7 +59,7 @@ describe('kits', () => {
         const r = only(obs, area);
         const tris = r.tris - base;
         expect(tris, `${area} ${kind}`).toBeGreaterThan(0);
-        const car = ['parked_car', 'parked_van', 'crosswalk_car', 'backout_car', 'forklift'].includes(kind);
+        const car = ['parked_car', 'parked_van', 'van_across', 'crosswalk_car', 'backout_car', 'forklift'].includes(kind);
         const big = ['fountain', 'bollard_row', 'bike_rack', 'bike_row', 'skywalk', 'vending_bank', 'drum_cluster', 'picket_fence', 'barrier_low', 'holo_gate', 'terrace', 'stairs', 'handrail', 'hubba', 'trench', 'cherry_planter', 'planter', 'planter_tree', 'food_cart', 'loading_dock', 'hedge', 'yard_table', 'cafe_set', 'kiosk', 'container', 'bus_shelter'].includes(kind);
         expect(tris, `${area} ${kind}`).toBeLessThanOrEqual(car ? 1500 : big ? 900 : 400);
       }
@@ -215,7 +215,7 @@ describe('RECLAIM kits (DESIGN §18.4 dressing rules 5 and 8, §18.5 vehicle bui
     }
   });
   it('rule 5: vehicles carry no chrome: no cream, near-white or chrome colour on any body, in any skin', () => {
-    for (const area of AREAS) for (const kind of ['parked_car', 'parked_van', 'crosswalk_car', 'backout_car', 'container'] as const) {
+    for (const area of AREAS) for (const kind of ['parked_car', 'parked_van', 'van_across', 'crosswalk_car', 'backout_car', 'container'] as const) {
       for (let id = 1; id < 40; id++) {
         resetIds();
         const obs = obstacleOf(kind, area, 2 * CHUNK_LEN + 6, 1, id % 4);

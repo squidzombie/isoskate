@@ -212,7 +212,7 @@ Only the integrator merges into `main`, at gates.
 4. Play in the browser on both projects. Tune only via config files.
 5. Tag `m1`.
 6. **G1b (owner phone playtest after `m1`):** merge `pkg/fix-locker` (a Locker tap equips; try-ons per slot), `pkg/ctl` (two thumbs: left steers, right tricks; DESIGN row 71), `pkg/steer` (direct touch steering: lead cap, fast thumb, release brake; row 72) and `pkg/cam` (telephoto perspective run camera and occlusion cure; row 73) onto the G1 tune, re-run every gate, and record the result as the base of the approved re-theme ("Reclaim").
-7. **Re-theme RECLAIM (DESIGN §24 row 74):** T0 docs, `RECLAIM` tokens, `core/skins.ts` `propSkin`, `kits/dress.ts` dressing rules and life accounting → T1 vehicles and kits ∥ T2 render-side overgrowth ∥ T5 audio → T3 decor kinds (split golden hash) → T4 VFX → T6 copy and Title → T7a Phase A review (obstacle hashes identical, bots unchanged) → T8 Phase B (cars as the main blocker) → T7b final review and release prep.
+7. **Re-theme RECLAIM (DESIGN §24 row 74):** T0 docs, `RECLAIM` tokens, `core/skins.ts` `propSkin`, `kits/dress.ts` dressing rules and life accounting → T1 vehicles and kits ∥ T2 render-side overgrowth ∥ T5 audio → T3 decor kinds (split golden hash) → T4 VFX → T6 copy and Title → T7a Phase A review (obstacle hashes identical, bots unchanged) → T8 Phase B (cars as the main blocker; done at G1b: `van_across`, vehicles at the row edges, four parked-row templates, car share per area in DESIGN §10.4, obstacle hashes re-baselined once) → T7b final review and release prep.
 
 ---
 

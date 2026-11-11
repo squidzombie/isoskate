@@ -18,6 +18,7 @@ export type TemplateId =
   | 'SB_WALL' | 'SB_HILL' | 'SB_DRIVEWAYS' | 'SB_BINDAY' | 'SB_PICKET' | 'SB_SCOOPS'
   | 'IN_BEAM' | 'IN_LIP' | 'IN_PALLETS' | 'IN_CHANNEL' | 'IN_DOCK_UP' | 'IN_GAUNTLET'
   | 'NE_RAIL' | 'NE_PILLARS' | 'NE_VENDING' | 'NE_SAKURA' | 'NE_SKYWALK' | 'NE_GAUNTLET'
+  | 'DT_PARKED_ROW' | 'SB_DRIVEWAY_ROW' | 'IN_LOADING_ROW' | 'NE_TAXI_RANK'   // Phase B parked rows (theme T8)
   | 'FALLBACK';
 
 export interface TemplateCtx {
