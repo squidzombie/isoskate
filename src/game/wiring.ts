@@ -109,6 +109,7 @@ export function wire(root: HTMLElement): Game {
   onBirdFlutter(vfx, (pan) => audio.sfx('birdFlutter', { pan }));   // RECLAIM: perched birds take off (vfx/critters.ts)
   ui.attach(gameBus, appBus, meta);
   bindHaptics(gameBus, haptics, () => save.data.settings.haptics);
+  bindRevealHaptics(appBus, haptics, () => save.data.settings.haptics);
   const session = createRunSession(save, flags.seed);
   const hints = new FirstRunHints(ui.hud, gameBus, {
     save, touch: () => typeof matchMedia !== 'function' || matchMedia('(pointer: coarse)').matches,   // the UI's `coarse`
@@ -332,5 +333,16 @@ export function bindHaptics(bus: Bus<GameEvent>, h: Haptics, level: () => 'off' 
       case 'areaEnter': if (e.firstThisRun) h.pulse(15); break;
       default: break;
     }
+  });
+}
+
+/** The crate reveal's haptics (DESIGN §9 haptic column, §16.3), Key moments: each of the first two shake taps 15 ms;
+ *  the lid pop 20 ms, or two pulses for Epic and Legendary. The third tap opens the crate in the same frame, so it
+ *  leaves its pulse to the pop (the 120 ms gap would drop one of the two). */
+export function bindRevealHaptics(bus: Bus<AppEvent>, h: Haptics, level: () => 'off' | 'key' | 'all'): () => void {
+  return bus.onAny((e) => {
+    if (level() === 'off') return;
+    if (e.t === 'crateShake') { if (e.n < 3) h.pulse(15); }
+    else if (e.t === 'crateReveal') h.pulse(e.rarity === 'epic' || e.rarity === 'legendary' ? [15, 40, 15] : 20);
   });
 }

@@ -575,6 +575,7 @@ Against the ortho camera at 10.5 m/s: the skater is 49 px instead of 51 at 390×
 | New best | Painted "BEST" line across the road (with a flag streamer) comes into view; crossing it bursts leaves or petals by area | Vocal-chop-style synth flourish | 20 ms (Key) |
 | Speed | From 9.0 m/s: speed lines **outside the corridor only** (alpha ≤ 0.15) and parallax streaks on the side dressing. A small HUD stamp on each speed tier: **CRUISE** (8.0 m/s), **FLOW** (9.0), **FULL SEND** (10.5). | Wheel roar pitch rises with speed; a wind bed fades in from 8.0 m/s | n/a |
 | New area | Area title card slides in for 1.5 s ("SUBURBS"), +500 New Ground | Pivot chord, then the new area's groove | 15 ms (Key) |
+| Crate shake / lid pop | Light leaks from the lid seam, stronger each tap (§16.3) | Cardboard thump +2 semitones per tap; the rarity stinger | Taps 1–2: 15 ms; pop: 20 ms, 2 × 15 ms for Epic and Legendary (Key) |
 
 **Retry speed.** A fresh touch that goes down ≥ 0.6 s after a crash starts a new run in under 1 s (§17.3). Panic taps during the tumble never skip the results by accident.
 
@@ -1440,11 +1441,12 @@ Buying everything purchasable costs about 62k coins. That is about 22 h of avera
 
 **Reveal**
 1. Tap the crate 3 times. It shakes harder each time, and each tap plays a note 2 semitones higher.
-2. The tape rips and the lid pops. A light beam shows the rarity colour: Common cream, Rare teal-blue, Epic violet, Legendary an animated gold-to-pink gradient.
-3. The item rises spinning on a turntable with a "NEW!" badge. Buttons: Equip / Open another / Back.
+   Light leaks from under the lid as it shakes: warm white on tap 1, the rarity colour on tap 2 (the tease; tap 3 opens it).
+2. The tape rips, the box squashes and the lid pops with a flash ring. A soft light beam and slow sun rays show the rarity colour: Common cream, Rare teal-blue, Epic violet, Legendary an animated gold-to-pink gradient.
+3. The item rises spinning on a turntable with a "NEW!" badge, landing with a small overshoot, while sparkles burst out (8 for Common and coins, 12 for Rare, 16 for Epic and Legendary). Rare and up get one shine sweep across the card. A coin total counts up. Buttons: Equip / Open another / Back (their space is kept from the start, so nothing jumps).
 4. A duplicate gets a "DUPLICATE" stamp, shatters into coins, and the coins fly to the counter.
 
-After the first reveal ever, a tap skips the animation.
+After the first reveal ever, a tap skips the animation. Reduce Motion (the OS setting, Settings › Reduce motion or Reduce effects) keeps the colours and light and drops the movement: no shake, no flying lid, no rays turning, the card fades in. Everything animates transform and opacity only.
 
 ---
 

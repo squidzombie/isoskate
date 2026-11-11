@@ -8,6 +8,10 @@
 //      counter. Buttons: Equip / Open another / Back.
 //   After the first reveal ever, a tap skips the animation. A reveal that opened by itself (`later`) offers "Later"
 //   while the crate is still closed; the result stays pending and comes back on the next visit.
+// Polish: light leaks from the crate's seam as it is shaken (warm white, then the rarity colour on tap 2); the
+// box squashes and pops; a flash ring and slow sun rays behind the item; sparkles scaled by rarity; the coin total
+// counts up. Transform/opacity only (compositor-friendly on phones). Reduce Motion (the OS query or Settings › Reduce
+// motion / Reduce effects) keeps the colours and drops the movement (`.calm`).
 import type { CrateTier } from '../core/ids';
 import type { CrateResult } from '../core/meta';
 import { isMetaExt } from '../meta';
@@ -32,8 +36,13 @@ export function createReveal(ctx: ScreenCtx): Reveal {
   const dots = h('div', { class: 'rv-dots', 'aria-hidden': 'true' }, h('i'), h('i'), h('i'));
   const hint = h('div', { class: 'rv-hint' }, 'TAP TO OPEN');
   const crate = h('button', { type: 'button', class: 'rv-crate', 'aria-label': 'Tap the crate to open it' },
-    h('span', { class: 'rv-lid' }), h('span', { class: 'rv-body' }, h('span', { class: 'rv-tape' }), h('span', { class: 'rv-mark' }, '?')));
+    h('span', { class: 'rv-seam' }), h('span', { class: 'rv-lid' }), h('span', { class: 'rv-body' }, h('span', { class: 'rv-tape' }), h('span', { class: 'rv-mark' }, '?')));
   const beam = h('div', { class: 'rv-beam', 'aria-hidden': 'true' });
+  const rays = h('div', { class: 'rv-rays', 'aria-hidden': 'true' });
+  const flash = h('div', { class: 'rv-flash', 'aria-hidden': 'true' });
+  // Sparkles: 16 fixed directions and reaches (no randomness: the same crate always looks the same); rarity shows more.
+  const sparks = h('div', { class: 'rv-sparks', 'aria-hidden': 'true' }, ...Array.from({ length: 16 }, (_, i) =>
+    h('i', { style: `--a:${i * 22.5 + (i % 2) * 9}deg;--r:${96 + ((i * 37) % 64)}px;--d:${(i % 4) * 45}ms;--s:${(0.7 + ((i * 7) % 5) * 0.12).toFixed(2)}` })));
   const art = h('img', { class: 'rv-art', alt: '', draggable: 'false' });
   const band = h('span', { class: 'card-band' }, '');
   const name = h('div', { class: 'rv-name' }, '');
@@ -48,12 +57,28 @@ export function createReveal(ctx: ScreenCtx): Reveal {
   const actions = h('div', { class: 'rv-actions' }, equipBtn, h('div', { class: 'row' }, againBtn, backBtn));
   const postponed = new Set<string>();
   const laterBtn = btn('Later', () => { if (res) postponed.add(keyOf(res)); close(); }, ctx, 'rv-later', 'Open it later', 'back');
-  const el = h('div', { class: 'reveal', dataset: { stage: 'closed' } }, tierName, h('div', { class: 'rv-stage' }, beam, crate, item), dots, hint, laterBtn, actions);
+  const el = h('div', { class: 'reveal', dataset: { stage: 'closed' } }, tierName, h('div', { class: 'rv-stage' }, rays, beam, flash, crate, sparks, item), dots, hint, laterBtn, actions);
 
   let res: CrateResult | null = null, opts: RevealOptions = {};
   let taps = 0, stage: 'closed' | 'opening' | 'item' | 'done' = 'closed', timers: ReturnType<typeof setTimeout>[] = [];
-  let skippable = false;
-  const clear = () => { for (const t of timers) clearTimeout(t); timers = []; };
+  let skippable = false, raf = 0;
+  const clear = () => { for (const t of timers) clearTimeout(t); timers = []; if (raf) cancelAnimationFrame(raf); raf = 0; };
+  const calm = () => ctx.lofi.state.reducedMotion || !ctx.lofi.state.effects
+    || (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const coinText = () => (coinsBig.querySelector('.coins-tag')?.lastChild ?? null) as Text | null;
+  /** The coin total counts up from 0 as the item rises (ease-out); skipping or Reduce Motion shows the total at once. */
+  const countUp = () => {
+    const t = coinText(), n = res?.coins ?? 0;
+    if (!t || n <= 0 || calm() || typeof requestAnimationFrame !== 'function') return;
+    const t0 = performance.now();
+    const step = (now: number) => {
+      const u = Math.min(1, (now - t0) / REVEAL.countMs);
+      t.data = `+${fmtN(Math.round(n * (1 - (1 - u) ** 3)))}`;
+      raf = u < 1 ? requestAnimationFrame(step) : 0;
+    };
+    t.data = '+0';
+    raf = requestAnimationFrame(step);
+  };
   const setStage = (s: typeof stage) => { stage = s; el.dataset.stage = s; };
   const ext = () => { const m = ctx.meta(); return isMetaExt(m) ? m : null; };
 
@@ -62,6 +87,8 @@ export function createReveal(ctx: ScreenCtx): Reveal {
     setStage('done');
     const m = ext();
     if (!res) return;
+    const t = coinText();
+    if (t) t.data = `+${fmtN(res.coins)}`;
     const canEquip = !!res.item && !res.dup && !!m?.owns(res.item);
     equipBtn.style.display = canEquip ? '' : 'none';
     setText(equipBtn, opts.equipLabel ?? 'Equip');
@@ -81,7 +108,7 @@ export function createReveal(ctx: ScreenCtx): Reveal {
     if (res.item && !res.dup) { const it = x?.item(res.item); if (it) ctx.emit({ t: 'itemGranted', id: it.id, rarity: it.rarity, duplicateCoins: 0 }); }
     const coinsAfter = x?.data.wallet.coins ?? coinsBefore;
     if (coinsAfter !== coinsBefore) ctx.emit({ t: 'coinsChanged', coins: coinsAfter, delta: coinsAfter - coinsBefore });
-    timers.push(setTimeout(() => setStage('item'), REVEAL.lidMs));
+    timers.push(setTimeout(() => { setStage('item'); countUp(); }, REVEAL.lidMs));
     timers.push(setTimeout(finish, REVEAL.lidMs + REVEAL.riseMs + (res.dup ? REVEAL.coinsMs * 0.5 : 0)));
   };
   const onTap = (e: Event) => {
@@ -142,6 +169,10 @@ export function createReveal(ctx: ScreenCtx): Reveal {
       } else card.style.display = 'none';
       setText(stamp, r.dup ? 'DUPLICATE' : r.item ? 'NEW!' : '');
       coinsBig.replaceChildren(...(r.coins > 0 ? [coinTag(`+${fmtN(r.coins)}`, 'big')] : []));
+      // The buttons the result will offer take their space now (hidden until done), so nothing jumps when they appear.
+      equipBtn.style.display = r.item && !r.dup ? '' : 'none';
+      againBtn.style.display = (m?.crateHeld(r.tier) ?? 0) > 0 ? '' : 'none';
+      el.classList.toggle('calm', calm());
       setStage('closed');
       ctx.modal.show(el, { cls: 'reveal-modal', dismissable: false, onClose: () => { clear(); opts.onClose?.(); } });
     },

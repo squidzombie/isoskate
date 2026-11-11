@@ -23,7 +23,7 @@ export const ZONE_CUE = { sec: 3, firstOfSession: true } as const;
  *  mirrors RecognizerConfig.splitFrac. */
 export const WRONG_SIDE = { split: 0.5, tapMs: 350, tapPx: 14, dragMs: 300, dragPx: 40 } as const;
 /** Crate reveal (DESIGN §16.3): 3 taps, lid + beam, the card rising, the duplicate shatter. */
-export const REVEAL = { taps: 3, lidMs: 520, riseMs: 950, coinsMs: 900 } as const;
+export const REVEAL = { taps: 3, lidMs: 520, riseMs: 950, coinsMs: 900, countMs: 700 } as const;
 /** Results tallies (DESIGN §17.2): score 0.8 s, then coins, the XP bar (per level crossed) and the rewards strip. */
 export const RESULTS_ANIM = { scoreMs: 800, coinsAt: 450, coinsMs: 700, xpAt: 900, xpMsPerLevel: 650, rewardsAt: 1300,
   /** A crate this run earned (the Level 2 crate) opens its reveal this long after the rewards strip appears. */
