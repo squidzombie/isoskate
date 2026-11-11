@@ -1,0 +1,1170 @@
+diff --git a/docs/DESIGN.md b/docs/DESIGN.md
+index 868f57c..02ee2ca 100644
+--- a/docs/DESIGN.md
++++ b/docs/DESIGN.md
+@@ -659,6 +659,7 @@ Area layouts blend over the 4 s gateway (§12.2).
+ | `handrail` | follows the stairs: 0.60 above the nosing line, 0.5 m flat kink at the top, 0.05 wide | Low | G. Top end post is a crash face. |
+ | `hubba` | follows the stairs: 0.45 above the nosing, 0.6 wide | Low | G, T |
+ | `incline` | slope ≤ 1:10, ≥ 1.0 s·v long, rounded crest | Ground | Rideable. At the crest `vy` is clamped to the surface, so there is no launch. |
++| `van_across` | 1.8 × 4.4 × 1.4 (its long axis across the street) | Tall | A, every area (Phase B, theme T8): a delivery van nosed into a side loading entrance, its tail out into the street; its nose is flush with the corridor edge (x = ±2.3). Drawn by the vehicle builder turned a quarter: DT / SB panel van in an area livery, the Docks in Brindle Freight livery (left side only, the dock side), Neon a kei van. The generator puts a faded perpendicular bay under it and a loading entrance (`end_wall` style 4, a closed roller door facing the street) on the side band it faces (not in Neon, which stays net-negative near the corridor). Crash noun "van". |
+ 
+ **Downtown Plaza**
+ 
+@@ -785,6 +786,7 @@ A template is a parametric script. Element times `t` are in seconds from the seg
+ | DT_HUBBA_KIOSK | T3 | 3.0 | Stairs with hubbas both sides, kiosk at the bottom centre | Hubba | Pick a side | Hubba |
+ | DT_RUSH **v1** | T3–T4 | 3.5 | Both parking lanes full, a double-parked car in the centre | Sidewalk ledges and rails | Zig-zag | Rails |
+ | DT_BIG7 **v1** | T3 | 3.0 | **"Amberlane Seven"**: full-width 7-stair with a long handrail (Landmark) | Rail, or tre flip down | Roll down | Rail |
++| DT_PARKED_ROW **B** | T1–T2 | 4.0 | Phase B (theme T8): 3–4 cars in the curb lane (±2.15) along one side, an empty bay apart (out of each other's 35° shadow, rule g), all rear to the camera; in a plaza, along its edge | Granite ledge on the far sidewalk | Road on the other side | Ledge |
+ 
+ **Suburbs**
+ 
+@@ -793,6 +795,7 @@ A template is a parametric script. Element times `t` are in seconds from the seg
+ | SB_WALL **v1** | T1 | 2.5 | Long garden wall | Grind or manual on top | Road | Wall top |
+ | SB_HILL **v1** | T0 | 3.0 | 1:15 dip and crest (breather) | Crest flips | Anywhere | Crests |
+ | SB_DRIVEWAYS **v1** | T2 | 3.0 | Parked cars jutting out, alternating sides | Curb grinds (pick) | Weave | Curbs |
++| SB_DRIVEWAY_ROW **B** | T1–T2 | 4.0 | Phase B: 3–4 cars on the driveway aprons (±3.5, the curb cut behind each), an empty bay apart, all one way | Garden wall on the far sidewalk | Road | Wall top |
+ | SB_BINDAY **v1** | T2 | 3.0 | Bin pairs every 0.6 s, alternating | Curb grinds between (pick) | Centre, weaving | Curb |
+ | SB_DITCH | T2 | 2.0 | Ditch + culvert slab | Flip the ditch | Slab | Air arc |
+ | SB_PORCH | T2 | 3.0 | Side porch drop + rail, incline back up | Rail | Road | Rail |
+@@ -817,6 +820,7 @@ A template is a parametric script. Element times `t` are in seconds from the seg
+ | IN_FORKLIFT | T3 | 3.0 | Phase-locked forklift + pallets | Pallet manual | Pass behind | Pallets |
+ | IN_PLATEGAP | T3 | 2.5 | Beam leading into a plate gap | Grind → gap | Steer onto a plate | Air arc |
+ | IN_GAUNTLET **v1** | T4 | 4.0 | Loading-dock high line with gaps (0.3 s·v), drums on the low line | Gap to gap | Thread the drums | High line |
++| IN_LOADING_ROW **B** | T1–T2 | 4.2 | Phase B: 3 box trucks (container size, truck skin) backed up along the dock band (−3.25), an empty bay apart | I-beam on the apron | Apron | Beam |
+ 
+ **Neon City**
+ 
+@@ -833,6 +837,9 @@ A template is a parametric script. Element times `t` are in seconds from the seg
+ | NE_SCRAMBLE | T3 | 3.0 | Zebra scramble crossing, 2 phase-locked robots, flat bar (mover) | Bar | Gap between robots | Bar |
+ | NE_BIKES | T3 | 3.0 | Bike rows lining the lanes, flat bars between | Bars | Lanes | Bars |
+ | NE_GAUNTLET **v1** | T4 | 4.0 | Pillars + holo gate + rail transfer | Transfer → gate flip | Narrow weave | Line |
++| NE_TAXI_RANK **B** | T1–T2 | 4.0 | Phase B: 3–4 taxis (Neon `parked_car`, no cats) in the curb lane along one side, an empty bay apart | Glowing guard rail on the far side | Road | Rail |
++
++**Phase B (theme T8, THEME §3.4): cars as the main blocker.** The anti-straight rows (S_GATE and the overlaid rows) start each run at the corridor edge with a vehicle when one fits and its deep box is clear (`rows.ts` `edgeVehicle`, `deepFree`): a `van_across` when the run takes its 4.4 m, else a parked car beside the road (Downtown / Neon in the curb lane at ±2.15, else half up on the sidewalk at ±3.6; Suburbs on a driveway apron at ±3.5 with the curb cut behind it), else a Docks box truck along the dock band. A vehicle row that fails validation or the lanes rule is rebuilt kit-only. What is left beside a vehicle takes kit pieces or stays a hole ≤ 0.3 m beside the opening; kit runs close with the fewest pieces (a hole ≤ GAP_MAX only against the corridor edge or a vehicle, never beside an opening), and the row kit gains a litter bin in the Suburbs. The A2 wander wall is a `van_across` from the nearer edge (the dock side in the Docks) plus kit pieces to the wall's far end, the filler wall its fallback. Every validator rule, A1–A6, R_MIN, look-ahead and decision time is unchanged. Measured car share of tall blockers (60 seeds × 3.2 km): Downtown 1.0 → 40.9 %, Suburbs 1.0 → 35.9 %, Docks 2.7 → 21.6 % (trucks, buses and vans), Neon 0 → 34.2 %; every Downtown run shows a car ~11 m after the Roll-out (the first row).
+ 
+ Areas get about equal template variety: 11 Downtown, 12 Suburbs, 10 Docks and 11 Neon, plus 9 shared templates (re-skinned per area; the Neon S_BARRIER skin is the holo gate) and 4 gateways. v1 ships 6 per area. Neon's look in v1 (vending machines, lantern stands, shutters, billboards, maglev, guard rails, cherry planters) also comes from its column fillers (vending machine, lantern stand) and decor, not only from templates.
+ 
+@@ -2183,3 +2190,4 @@ Every MUST-FIX was applied. The rows below record decisions where critiques conf
+ | 72 | Steering kept going after the thumb stopped | Owner on a phone: "if I slide it to the left or right and kind of flick it, it will continue to turn even when I take my finger off it." Relative steering put targetX wherever the thumb went (a 60–120 px slide in 120–250 ms threw it 2.5–5 m), and the skater, limited to 5.5 m/s, kept sliding 2.3–3.6 m for 0.45–0.8 s after the thumb had stopped or lifted (2.4–3.9 m in the air). | **Direct touch steering** (§4.2, §5.2; measured with recorded thumb traces through the real recognizer, table in §4.2): the target leads the skater by ≤ 0.8 m; a thumb that outruns the skater drives it at up to 7 m/s (80 m/s² on the ground); a release brake stops it within ~0.35 m when that thumb stops or lifts (0.1–0.33 m on the ground, 0.20–0.27 m in the air, no overshoot). **The cost:** a quick slide now dodges as far as the skater can go while the thumb moves, not as far as the thumb drew: 60 px / 120 ms moves 0.6–0.8 m (was 2.5 m), 120 px / 250 ms 1.2–1.8 m (was 4.3 m); a 2 m dodge needs the thumb to keep moving ~0.3 s (0.32 s for a 0.5 px/ms thumb kept moving until the skater is there); a 2 m drag drawn in 300 / 400 / 500 / 600 ms ends at 1.1 / 1.5 / 1.9 / 2.0 m; a 40 px flick is a 0.33 m hop (was 1.7 m). Against a late hazard at plateau speed (the latest start before its face that still dodges a crash box centred on the skater): a slide that moves the skater far enough dodges about as late as before or later (1.6 m box: 120 px / 250 ms 0.22 s, was 0.26; 2 m drawn in 300 ms 0.26 s, was 0.32; 90 px / 180 ms 0.30 s, was 0.26), a sustained drag as before (48 px / 600 ms 0.40 s, was 0.40); a slide too short for the hazard does not dodge it at all (60 px / 120 ms never clears a 1.0 m box, was 0.20 s; under ~0.25 s of thumb motion never clears 2.4 m). **The owner should try quick dodges on the preview.** **Measured and rejected:** the cap alone (0.6 m: 0.43–0.54 m after a stop, 0.54–0.65 m in the air with a 0.12 m float past; 0.9 m: 0.72–0.84 m); a higher air acceleration (30: no float, but 0.46–0.52 m, and it changes keys, bots and the magnet in the air); a brake to the stopping point with no rest lead (0.12–0.33 m, but a flick moved 0.1 m and natural drags lost up to 0.4 m); the cap and brake without the fast thumb (first preview, 15cac29: 60 px / 120 ms moved 0.45 m, 120 px / 250 ms 1.0 m; quick slides of 60–90 px never cleared a 1.6 m box); arming the brake at a 0.6 m lead (it also armed for the thumb bot dragging through a hop, 0.62–0.66 m ahead, and changed its path); a higher fast-thumb speed (7.5–8 m/s: +5–6% distance, stops up to 0.355 m, and the board heads more sideways than forward at the 7 m/s start speed); a restLead of 0.35 / 0.4 m for a little throw (+0.15 / +0.2 m per slide, but stops at 0.26–0.48 / 0.31–0.53 m, past the 0.35 m target: the tunable to try if quick dodges feel short). Keys, bots (bit-identical paths to before @steer: never at the cap), the magnet, ground align, re-anchors and landing nudges never meet the cap, the fast thumb or the brake; `V_LAT_MAX`, the accelerations and `T_SHIFT` are unchanged, so the validator and every generated line are untouched. On a phone that delivers one sample every 40–67 ms (no coalesced events below 25 fps) the stop window widens, so a drag stays smooth (3.9–4.0 m of a 4.0 m drag) and the stop takes 0.43–0.54 m. |
+ | 73 | Run camera reads flat on phones (@cam) | Owner, after a phone playtest: "I thought it would be like angled view instead of straight down that street… maybe closer perspective?"; DESIGN §8 had ortho, pitch 35°, ψ = 0 in portrait. A prototype of 8 cameras (ortho pitch/yaw variants, telephoto perspective) and three judges: readability (winner perspective p34 ψ 9 FOV 24), art direction (perspective p34 ψ 10 FOV 22), game design (perspective ψ 0, warning that any yaw tilts the lane read; ≤ 4–6° if angled) | **Perspective, pitch 34°, ψ 9° in portrait (30° at aspect ≥ 1.25), window FOV 24°, D solved per frame**, anchor 74%, 15% lateral follow fitted into the solver. It answers both owner points: the street runs diagonally and both walls show (angled), and hazards grow as they approach while the skater stays ~50 px (closer, 31 → 50 px on the SE). Cost: the 2.5 s hazard is 20% smaller at 390×844 (22.7 vs 28.3 px; +22% at 375×548), a ≈ 1.7 m lane tilt 1 s ahead, coarser shadows (the shadow box grows to the ground shown). Same change: grind stripes and coins floored per view depth (constant ~3 px stripes, ink underline down the faces: the contrast gate passes from every angle), x-ray cap 1.6 → 1.2 m, and the occlusion cure the owner asked for separately (Neon decor "covered the skate area"): camera-side cut at the corridor edge, overhead spans faded over the look-ahead zone, the maglev moved to the far facade line. `?debug=1&cam=A` keeps the old camera for comparisons. |
+ | 74 | Re-theme "RECLAIM" (owner-approved) | Owner, after a phone playtest: "instead of the weird random shapes that are kind of the blocking parts, it could just be cars"; a quiet, peaceful, nature-reclaimed abandoned city, real objects instead of abstract blockers, overgrowth on buildings and verges, clean skateable streets, no zombies, people or gore; same four areas, lighting, lo-fi vibe and gameplay. Also: pit gaps should look like jagged cracks you obviously jump; manhole and drain decals were far too large; road arrows did not make sense | **Accepted (theme spec, work packages T0–T8).** Phase A changes only look, decor, ambience and copy: every PropKind keeps its footprint, class, top type, solids, edges and hitboxes; the validator, bot gates, controls, scoring, camera rules, contrast gate and perf budgets are unchanged, and the golden obstacle hashes stay identical through the Phase A review (T3 splits the golden test into obstacle and decor chains and re-baselines only decor). The theme lives in §1, §10.3 (skin notes), §12.3/§12.4 (the Roll-out ollie is a road-works barrier on trestles; no chains anywhere), §18.1 (`RECLAIM` tokens, green-share bands), §18.4 (ten dressing rules, enforced and accounted by `kits/dress.ts`, the life budget ≤ 10% checked per variant), §18.5 (vehicle builder: dark glass framing a paint roof, tyre nubs, one accent stripe, no chrome), §18.6–18.8 and §19.1. `core/skins.ts` `propSkin` (additive core request THEME) makes the drawn object and the crash noun one deterministic choice. **Phase B** (T8, same release, owner-requested): cars become the main blocker with a new `van_across` kind and parked-row templates; it re-runs every bot gate and re-baselines the obstacle hash once. Players never see a theme name and are never told why people left. New player-facing strings use the game's name Isoskate where a name appears. |
++| 75 | Phase B: cars as the main blocker (theme T8) | Owner: "it could just be cars"; THEME §3.4 targets by count of tall blockers (DT/SB ≥ 35 %, IN ≥ 20 %, NE ≥ 15 %) and a car early in every Downtown run; the validator, A1–A6 and every bot gate stay binding | **Vehicles at the edges of the anti-straight rows** (99 % of tall blockers are row pieces, so parked-row templates alone cannot move the share), the van wander wall, four parked-row templates, fewest-pieces row fill. Parked rows keep an empty bay between cars (rule g occlusion), not 0.6 m; holes beside openings are capped (0.3 m) and kit runs keep end holes only against edges and vehicles, because wider openings let straight lanes live longer (straight-bot gate). Neon gets no loading-entrance block (its near-corridor decor rule). Obstacle golden hashes re-baselined once (§10.4 Phase B note). |
+diff --git a/docs/ROADMAP.md b/docs/ROADMAP.md
+index 431f40b..70d73f9 100644
+--- a/docs/ROADMAP.md
++++ b/docs/ROADMAP.md
+@@ -212,7 +212,7 @@ Only the integrator merges into `main`, at gates.
+ 4. Play in the browser on both projects. Tune only via config files.
+ 5. Tag `m1`.
+ 6. **G1b (owner phone playtest after `m1`):** merge `pkg/fix-locker` (a Locker tap equips; try-ons per slot), `pkg/ctl` (two thumbs: left steers, right tricks; DESIGN row 71), `pkg/steer` (direct touch steering: lead cap, fast thumb, release brake; row 72) and `pkg/cam` (telephoto perspective run camera and occlusion cure; row 73) onto the G1 tune, re-run every gate, and record the result as the base of the approved re-theme ("Reclaim").
+-7. **Re-theme RECLAIM (DESIGN §24 row 74):** T0 docs, `RECLAIM` tokens, `core/skins.ts` `propSkin`, `kits/dress.ts` dressing rules and life accounting → T1 vehicles and kits ∥ T2 render-side overgrowth ∥ T5 audio → T3 decor kinds (split golden hash) → T4 VFX → T6 copy and Title → T7a Phase A review (obstacle hashes identical, bots unchanged) → T8 Phase B (cars as the main blocker) → T7b final review and release prep.
++7. **Re-theme RECLAIM (DESIGN §24 row 74):** T0 docs, `RECLAIM` tokens, `core/skins.ts` `propSkin`, `kits/dress.ts` dressing rules and life accounting → T1 vehicles and kits ∥ T2 render-side overgrowth ∥ T5 audio → T3 decor kinds (split golden hash) → T4 VFX → T6 copy and Title → T7a Phase A review (obstacle hashes identical, bots unchanged) → T8 Phase B (cars as the main blocker; done at G1b: `van_across`, vehicles at the row edges, four parked-row templates, car share per area in DESIGN §10.4, obstacle hashes re-baselined once) → T7b final review and release prep.
+ 
+ ---
+ 
+diff --git a/docs/TECH.md b/docs/TECH.md
+index 260558b..3a4a49d 100644
+--- a/docs/TECH.md
++++ b/docs/TECH.md
+@@ -171,6 +171,7 @@ export type PropKind =
+   // shared
+   | 'curb' | 'flatbar' | 'bench' | 'manual_pad' | 'trash_can' | 'cone' | 'barrier_low' | 'trench'
+   | 'stairs' | 'handrail' | 'hubba' | 'incline' | 'terrace' | 'filler'
++  | 'van_across'                                     // every area: a van nosed into a side loading entrance (@theme T8)
+   // downtown
+   | 'granite_ledge' | 'planter' | 'planter_tree' | 'fountain' | 'bollard_row' | 'kiosk' | 'parked_car'
+   | 'bike_rack' | 'cafe_set' | 'news_box' | 'crosswalk_car'
+@@ -1142,6 +1143,7 @@ export function renderOffline(area: AreaId, sec: number): Promise<AudioBuffer |
+ - A gateway id in `areas` means "inside that gateway's 4 s segment". The generic street kinds (decals, lamps, sign posts, wires, verge, shadow casters, end walls) list every area **and** every gateway.
+ - **`Decor.y` (one definition since G1).** `y` is the base height of the surface the element stands on or hangs from (ground, sidewalk, the foot of the facade or post) for every ground, side and backdrop kind. Kinds hung above that surface take their own mounting height from a documented `mount` param (lowest point = `y + mount`): `awning` (underside, default 2.4 m), `blade_sign` (sign bottom, 2.6 m), `banner` (banner bottom, 3.0 m). Only `overhead` kinds give their lowest point in `y`. WG emits `y` = sidewalk with `mount` 2.6 / 2.8 / 2.4 / 3.0; WA draws at `y + mount`.
+ - **RECLAIM kinds (added @theme T3; docs/core-requests.md THEME T3; theme §4).** Twelve additive kinds: `weed_edge`, `moss_patch`, `root_lift` (ground decals at |x| ≥ 3.6, ≤ 1.3:1 against the surface, ≥ 0.3 m from every grind edge: `KitCtx.edges`); `wild_grass`, `shrub_wild`, `sapling`, `cart_planter` (side, 3D only at |x| ≥ 4.6); `perched_birds` (side, `x0`/`x1` both at |x| ≥ 4.6; drawn and taken off by `vfx/critters.ts`, so the renderer emits only an ambient record); `wildlife` (backdrop, at most one per area visit, never in Neon); `critter_emitter` and `drips` (ambient); `vista` (backdrop, one per area visit: a far-side block, or the Docks water-side crane). New optional params on existing kinds (`fade`, `roofGreen`, `roofTree`, `ivy`, `live`, `lit`, `vine`, `bloom`, `roses`, `moss`, `nest`, `tree`, `litRatio`, `body`, `age`, `cat`, shadow-caster shapes 4/5, tree species 3–5) document what the T2 renderer already reads; absent, each falls back to its hash. `parked_car_side` gains `docks`, `leaf_emitter` every area. Ambient records (`world/render` `AmbientRec`) gain `critters`, `drips`, `birds` and `puddle` (Neon puddles, for drip ripples). Nothing here changes `Obstacle`, the validator or any bot: the golden test is split into an obstacle chain (bit-identical) and a decor chain (re-baselined in T3).
++- **Phase B params (added @theme T8; docs/core-requests.md THEME T8).** `parking_bay` lists every area and gateway (it was Downtown only) and takes `perp` (0/1: one perpendicular bay, x its centre, `w` across and `len` along s) for the bay under a `van_across`; `end_wall` takes `style` 4 (the loading entrance a `van_across` is nosed into: a low block whose street face at |x| = 4.6 carries a closed roller door; `len` its length along s). Additive: existing records keep their meaning.
+ 
+ 
+ ### 4.15 `core/skins.ts`: the RECLAIM skin chooser (added @theme T0; docs/core-requests.md THEME; DESIGN §10.3, §18.5, §24 row 74)
+@@ -1158,6 +1160,7 @@ export const VEHICLE_BODIES, CAR_PAINTS, SAPLING_KINDS, MOVER_KINDS; export func
+ - **Pure and deterministic** in `(kind, area, id, variant, h)` (core/rng `hash32`): the kits (through `kits/dress.ts` `DRESSER.begin`, which drawObstacle calls) and the crash copy (`ui/format.ts`, T6) call it with `(ob.kind, ob.area, ob.id, ob.variant, ob.hgt)`, so the crash noun always names what was drawn. `out` avoids an allocation per call.
+ - **No gameplay effect.** Footprints, classes, tops, solids, edges and hitboxes come from the generator and never read a skin; the golden obstacle hashes do not change.
+ - **Shares:** parked cars sedan / estate / pickup (+ SUV at h ≥ 1.5), four paints, 30% nosed in, a cat on 1 in 8 sedans and estates (never Neon); vans 55% panel (livery index into `DECOR_BRANDS[area]`) / camper; Docks containers 60% container / 25% box truck (Brindle Freight) / 15% shuttle bus (Saltwick Shipping); bike racks bikes / carts and wheelie bins pair / dumpster 50/50; movers `Clean` (slate on the car movers); lidded column fillers outside Neon roll `Sapling` 1 in 4 (drawn only when the chunk builder marks the filler isolated, which never changes the noun). Neon `parked_car` (Phase B) is a taxi with no paint and no cat.
++- **`van_across`** (@theme T8): DT / SB `panel_van` with an area livery, the Docks `panel_van` in Brindle Freight livery, Neon a `kei_van` (no cat, no livery); noun "van". The kit (`kits/car.ts` `vanAcrossKit`) draws it with the vehicle builder in a prop frame turned a quarter, its nose toward the corridor edge on the side of its x.
+ - **Nouns** are plain (DESIGN §9): "car", "pickup", "van", "truck", "bus", "bin", "bins", "barrier" / "log" / "pipe" / "holo gate", "gap" / "ditch" / "gap" / "trench", …; `plural` marks nouns that take no "a"/"an".
+ 
+ ---
+diff --git a/docs/core-requests.md b/docs/core-requests.md
+index 9798373..c1f8d0a 100644
+--- a/docs/core-requests.md
++++ b/docs/core-requests.md
+@@ -812,6 +812,17 @@ recognizer, so the frozen `InputFrame`, the sim, scoring, the generator, replays
+ - What other packages can rely on: WG emits them (`world/gen/decor.ts`, tunables `GEN.reclaim`), one `vista` per area visit and at most one `wildlife` (the generator's decor state carries the visit); WA renders every one (`kits/reclaim.ts`; birds, critters and drips are `vfx/critters.ts`); warmup covers them through `DECOR_KINDS`. `KitCtx.edges` (world/render, not core) lists the chunk's grind edges for the rule-5 clearance. Obstacles, coins, the safe line and every bot are untouched: `tests/unit/gen/gen.test.ts` now holds two golden chains, obstacles (identical through T7a) and decor (re-baselined here).
+ - Local workaround meanwhile: n/a.
+ 
++### Phase B (T8): cars as the main blocker (additive)   (status: applied @theme T8 on DEV; TECH §4.1, §4.14, §4.15)
++- **core/ids.ts › PropKind** gains `'van_across'` (every area; DESIGN §10.3: 1.8 × 4.4 × 1.4, A, `crash` top). Built by
++  `world/gen/props/shared.ts` `buildVanAcross` (nose flush with the corridor edge, x = ±2.3), drawn by `kits/car.ts`
++  `vanAcrossKit` (the vehicle builder in a quarter-turned prop frame), registered in `SHARED_KITS`.
++- **core/skins.ts › propSkin** gains the `van_across` case: DT / SB `panel_van` with an area livery, the Docks in Brindle
++  Freight livery, Neon a `kei_van`; noun "van". `ui/format.ts` GENERIC gains it.
++- **core/decor.ts**: `parking_bay` lists every area (was Downtown only) and gains `perp` / `w` (one perpendicular bay under
++  a `van_across`); `end_wall` gains `style` 4 (a loading entrance with a closed roller door facing the street) and `len`.
++- No sim, tuning, validator or world-model change: every footprint, class, top and hitbox rule is the existing one.
++  Golden obstacle and decor hashes re-baselined once (tests/unit/gen/gen.test.ts, with the reason).
++
+ ### What T1 / T2 / T3 / T6 build on (no further core change in T0)
+ - **T1 (kits, vehicle builder):** `DRESSER.skin` (body, paint, dress, livery, nosedIn), `DRESSER.box(K, role, x0, y0, s0, x1, y1, s1, faces?)` for every dressing box (roles `life`, `cat`, `animal`, `foliage`, `wear`, `sapling`), `DRESSER.life` / `lifeDisc` for accents drawn another way, `DRESSER.has(flag)`, `DRESSER.sapling`; colours from `palette.ts` `RECLAIM` and `dress.ts` `mossOn` / `rustOn` / `foliageFor`; `isIsolatedFiller(ob, chunkObstacles)` for the chunk-builder flag, passed as `drawObstacle(c, ob, chunkIndex, first, isolated)`. `tests/unit/render/dress.test.ts` already draws every kit in every skin and checks the life budget, refusals and clean machines.
+ - **T2 (render-side overgrowth):** `RECLAIM` tokens, `fadePaint`, `withLum`, `contrastRatio`, the zone helpers `inCleanCore` / `flatWeedOk` / `vegOk`, `edgeBandDecalOk`, `clearOfEdges`, `GREEN_SHARE`.
+diff --git a/src/core/decor.ts b/src/core/decor.ts
+index 1a3d1ab..7a85486 100644
+--- a/src/core/decor.ts
++++ b/src/core/decor.ts
+@@ -159,11 +159,13 @@ export const DECOR_KINDS = {
+       + 'shopfront or shutters facing the camera. Inner edge at |x| ≥ 4.6 (beside the corridor, never across it).',
+     params: {
+       w: 'lateral span, m (4–14, default 9)', h: 'height, m (4–20, default 8)',
+-      style: 'face: 0 corner shopfront, 1 pastel ribbed shutters (Neon), 2 warehouse doors (Docks), 3 house front (Suburbs)',
++      style: 'face: 0 corner shopfront, 1 pastel ribbed shutters (Neon), 2 warehouse doors (Docks), 3 house front (Suburbs), '
++        + '4 loading entrance (a closed roller door a van_across is nosed into; Phase B, theme T8)',
+       brand: 'shopfront sign brand index into DECOR_BRANDS[area] (−1 none)',
+       word: 'Neon only: NEON_SIGN_WORDS index for the sign (−1 = Latin brand)',
+       shutters: 'number of shutter bays for style 1 (1–6, default 3)',
+-      live: 'Neon: 0/1 one lit 営業中 or 喫茶 sign (default: 1 in 4)', ...RECLAIMED,
++      live: 'Neon: 0/1 one lit 営業中 or 喫茶 sign (default: 1 in 4)',
++      len: 'style 4: the loading entrance\'s length along s, m (default 2.8); its door faces the street', ...RECLAIMED,
+     },
+   },
+   chain_link: {
+@@ -408,9 +410,11 @@ export const DECOR_KINDS = {
+     params: { len: 'length along s, m', dash: 'dash length, m (0 = solid, default 3)', gap: 'gap length, m (default 3)', color: '0 paint white, 1 yellow' },
+   },
+   parking_bay: {
+-    zone: 'ground', areas: ['downtown'], castShadow: false,
+-    doc: 'Parking bay lines in the ±2.0…±3.0 bands (DESIGN §10.2).',
+-    params: { len: 'length along s, m', bays: 'bays along s (default len/5)' },
++    zone: 'ground', areas: ANY, castShadow: false,
++    doc: 'Parking bay lines in the ±2.0…±3.0 bands (DESIGN §10.2). Phase B (theme T8): faded bays under the parked rows in '
++      + 'every area, and one perpendicular bay (perp 1) under each van_across, open toward the road.',
++    params: { len: 'length along s, m', bays: 'bays along s (default len/5)',
++      perp: '0/1 one perpendicular bay (x = its centre; w across, len along s) under a van_across (default 0)', w: 'perp: width across, m (default 4.6)' },
+   },
+   road_arrow: {
+     zone: 'ground', areas: ['downtown', 'suburbs', 'neon'], castShadow: false,
+diff --git a/src/core/ids.ts b/src/core/ids.ts
+index 4fbc0db..ed37510 100644
+--- a/src/core/ids.ts
++++ b/src/core/ids.ts
+@@ -17,6 +17,7 @@ export type PropKind =
+   // shared
+   | 'curb' | 'flatbar' | 'bench' | 'manual_pad' | 'trash_can' | 'cone' | 'barrier_low' | 'trench'
+   | 'stairs' | 'handrail' | 'hubba' | 'incline' | 'terrace' | 'filler'
++  | 'van_across'                                     // every area: a van nosed into a side loading entrance (@theme T8)
+   // downtown
+   | 'granite_ledge' | 'planter' | 'planter_tree' | 'fountain' | 'bollard_row' | 'kiosk' | 'parked_car'
+   | 'bike_rack' | 'cafe_set' | 'news_box' | 'crosswalk_car'
+diff --git a/src/core/skins.ts b/src/core/skins.ts
+index 4841f57..8d79093 100644
+--- a/src/core/skins.ts
++++ b/src/core/skins.ts
+@@ -146,6 +146,13 @@ export function propSkin(kind: PropKind, area: AreaId, id: number, variant: numb
+         ? set(out, 'panel_van', 'van', wear | Dress.Livery, paint, brand(area, roll(id, variant, 5)), nosed)
+         : set(out, 'camper', 'van', wear, paint, -1, nosed);
+     }
++    case 'van_across': {
++      // Phase B (theme T8): a delivery van nosed into a side loading entrance, its tail out into the street. Neon: a kei
++      // van (inverted body and rim); the Docks: Brindle Freight livery; Downtown / Suburbs: an area brand.
++      if (area === 'neon') return set(out, 'kei_van', 'van', I);
++      const liv = area === 'docks' ? BRINDLE : brand(area, roll(id, variant, 5));
++      return set(out, 'panel_van', 'van', wear | Dress.Livery, paint, liv);
++    }
+     case 'container': {
+       if (u < 0.6) return set(out, 'container', 'container', R | I);
+       const liv = area === 'docks' ? Dress.Livery : 0;                                     // brands are the Docks' own
+diff --git a/src/ui/format.ts b/src/ui/format.ts
+index e06e697..672d201 100644
+--- a/src/ui/format.ts
++++ b/src/ui/format.ts
+@@ -31,7 +31,7 @@ export const areaName = (a: AreaId) => AREA_NAMES[a];
+ 
+ /** Kinds whose drawn object varies by roll (core/skins propSkin): the generic noun when the obstacle is unknown. */
+ const GENERIC: Partial<Record<PropKind, readonly [noun: string, plural: boolean]>> = {
+-  parked_car: ['car', false], parked_van: ['van', false], container: ['container', false], wheelie_bins: ['bins', true],
++  parked_car: ['car', false], parked_van: ['van', false], van_across: ['van', false], container: ['container', false], wheelie_bins: ['bins', true],
+   bike_rack: ['bike rack', false] };
+ const SKIN = newSkin();
+ /** The obstacle fields that pick its skin (the kits draw the same skin from the same fields). */
+diff --git a/src/world/gen/decor.ts b/src/world/gen/decor.ts
+index 6148d21..889fe45 100644
+--- a/src/world/gen/decor.ts
++++ b/src/world/gen/decor.ts
+@@ -10,7 +10,7 @@ import type { AreaId, GatewayId } from '../../core/ids';
+ import { round1cm } from '../../core/math';
+ import { hash32, type Sfc32 } from '../../core/rng';
+ import { speedAt, tAt } from '../../core/tuning';
+-import type { Decor } from '../../core/world';
++import type { Decor, Obstacle } from '../../core/world';
+ import { DECOR_BRANDS, DECOR_KINDS, DECOR_LIMITS, NEON_SIGN_WORDS, type DecorKind } from '../../core/decor';
+ import { GEN } from './gen.config';
+ 
+@@ -29,6 +29,8 @@ export interface DecorEnv {
+   backNext: [number, number];
+   /** End of the area visit (s): backdrop blocks never reach into the next gateway. */
+   areaEndS: number;
++  /** Phase B (THEME §3.4): the segment's vans across and parked cars, for their bays and loading entrances. */
++  vehicles?: readonly Obstacle[];
+   /** The current area visit (carried, updated in place): its start and whether its vista and its one animal are out
+    *  (RECLAIM theme §4, §6: one vista per visit, at most one animal). */
+   visit?: { end: number; start: number; vista: boolean; wildlife: boolean };
+@@ -189,6 +191,7 @@ export function emitDecor(out: Decor[], env: DecorEnv, rng: Sfc32): number {
+       break;
+   }
+   groundDecals(o, a, rng, v);
++  vehicleDecor(o, env);
+   const next = endWalls(o, rng, env, v);
+   nature(o, a, rng, visit, v);   // (last: the RECLAIM draws come after every pre-theme one)
+   return next;
+@@ -255,6 +258,25 @@ function groundDecals(o: Out, a: AreaId, rng: Sfc32, v: number): void {
+   }
+ }
+ 
++/** Phase B (THEME §3.4): under every van_across a faded perpendicular bay, and on the side band it faces its loading
++ *  entrance (an end wall with a closed roller door facing the street; not in Neon, see below); a faded bay under each
++ *  car in a curb lane.
++ *  Placed from the obstacles alone (no draw from the segment's decor stream). */
++function vehicleDecor(o: Out, env: DecorEnv): void {
++  for (const ob of env.vehicles ?? []) {
++    const sd = Math.sign(ob.x) || -1;
++    if (ob.kind === 'van_across') {
++      o.add('parking_bay', ob.s - 0.4, ob.x, env.datum, { perp: 1, w: 4.6, len: ob.len + 0.8 });
++      // (Neon: the kei van noses into the frontage's own ground-floor shutters; no extra block beside the corridor,
++      // so Neon stays net-negative near it, THEME §6 / owner note 6)
++      if (env.area !== 'neon') o.add('end_wall', ob.s - 0.5, sd * 4.7, env.datum, { style: 4, w: 2.2 + hv(ob.s, 93) * 1.6, h: 3.6 + hv(ob.s, 94) * 1.6,
++        len: ob.len + 1.0, brand: Math.floor(hv(ob.s, 95) * 8) }, { variant: Math.floor(hv(ob.s, 96) * 4) });
++    } else if (Math.abs(Math.abs(ob.x) - 2.15) < 0.01) {
++      o.add('parking_bay', ob.s - 0.4, sd * 2.5, env.datum, { len: ob.len + 0.8, bays: 1 });
++    }
++  }
++}
++
+ function endWalls(o: Out, rng: Sfc32, env: DecorEnv, v: number): number {
+   let next = Math.max(env.nextEndWall, env.s0 - 1e-6);
+   const style = env.area === 'neon' ? 1 : env.area === 'docks' ? 2 : env.area === 'suburbs' ? 3 : 0;
+diff --git a/src/world/gen/gen.config.ts b/src/world/gen/gen.config.ts
+index 6e4b155..cf80f9d 100644
+--- a/src/world/gen/gen.config.ts
++++ b/src/world/gen/gen.config.ts
+@@ -23,9 +23,11 @@ export const GEN = {
+   weights: {
+     S_CONES: 1.0, S_TRENCH: 0, S_BARRIER: 0, S_LADDER: 1.2, S_GATE: 0.6, S_PADS: 1.0, S_STAIRS: 0.8,
+     DT_LEDGE: 3, DT_BENCHES: 2.5, DT_PLANTERS: 2.5, DT_TERRACE: 1.5, DT_RUSH: 1.2, DT_BIG7: 1.2,
+-    SB_WALL: 3, SB_HILL: 0, SB_DRIVEWAYS: 2.5, SB_BINDAY: 2.5, SB_PICKET: 2.5, SB_SCOOPS: 2,
++    SB_WALL: 3, SB_HILL: 0, SB_DRIVEWAYS: 3.5, SB_BINDAY: 2.5, SB_PICKET: 2.5, SB_SCOOPS: 2,
+     IN_BEAM: 3, IN_LIP: 3, IN_PALLETS: 2.5, IN_CHANNEL: 2.5, IN_DOCK_UP: 2, IN_GAUNTLET: 2,
+     NE_RAIL: 3, NE_PILLARS: 2.5, NE_VENDING: 2.5, NE_SAKURA: 2.5, NE_SKYWALK: 1.6, NE_GAUNTLET: 2,
++    // Phase B parked rows (THEME §3.4, theme T8): weighted toward the per-area car-share targets.
++    DT_PARKED_ROW: 3.5, SB_DRIVEWAY_ROW: 11, IN_LOADING_ROW: 14, NE_TAXI_RANK: 3,
+   } as Record<string, number>,
+   /** Area breathers drawn instead of S_OPEN when a breather is due (SB_HILL in the Suburbs). */
+   breatherTemplate: { suburbs: 'SB_HILL' } as Partial<Record<AreaId, string>>,
+diff --git a/src/world/gen/generator.ts b/src/world/gen/generator.ts
+index 8e7a1b0..86a940f 100644
+--- a/src/world/gen/generator.ts
++++ b/src/world/gen/generator.ts
+@@ -21,12 +21,12 @@ import { emitDecor } from './decor';
+ import { GEN, GEN_FLAGS, type PhaseId, type Tier } from './gen.config';
+ import { LESSON_PARTS, ROLLOUT, ROLLOUT_DECOR_SEED } from './lesson';
+ import type { PropCtx } from './props/common';
+-import { buildFiller, fillerKinds } from './props/shared';
++import { buildFiller, buildVanAcross, carDriveways, fillerKinds } from './props/shared';
+ import { LAYOUTS, LIP, bandRange, buildLipBody, buildLipEdges, buildStreet, type StreetLayout } from './props/street';
+ import type { SafeLine } from './safe';
+ import { a3Range, gatewayWindow, nextFullWidthDue, phaseAt, planSegment, type Plan } from './schedule';
+ import { GATEWAYS, TEMPLATES, type Template, type TemplateCtx, type TemplateOut } from './templates';
+-import { gateOpenings, gateRow, lanesApart, openingLanes, rowLanes } from './rows';
++import { deepFree, gateOpenings, gateRow, kitRun, lanesApart, openingLanes, rowLanes, VEHICLE_KINDS } from './rows';
+ import { spacingAfter } from './validator/sweep';
+ import { initialState, validate, type ValResult } from './validator/validate';
+ 
+@@ -348,6 +348,11 @@ export class Generator implements WorldGen {
+     const intoGw = !gateway && Math.abs(t1 - gwNextStart) < 1e-6;
+     const exit = intoGw ? (out.exit ?? [[-4.5, 4.5]]).map(([a, b]) => [Math.max(a, -GEN.gwEntry), Math.min(b, GEN.gwEntry)] as [number, number]).filter(([a, b]) => b > a)
+       : out.exit ?? [[-4.5, 4.5]];
++    // (T8) The exit set only has to be open at the end, and a T0 filler before a gateway may not move: the last segment
++    // with actions before a gateway (≤ 3.2 s before it) guides its committed line into the gateway's corridor over its
++    // last 0.4 s, so the gateway (T0: no required move) never starts from the sidewalk.
++    const gwGap = gwNextStart - t1;
++    const gwGuide = !gateway && !t0Stretch && gwGap > -1e-6 && gwGap < 3.2 ? [{ t0: t1 - 0.4, t1, x0: -GEN.gwEntry + 0.3, x1: GEN.gwEntry - 0.3 }] : [];
+     // No base edge may end in the 2.2 s before a gate row: its exit zone would face the row far from the openings.
+     const rowBan = (tr: number): [number, number, number] => [round1cm(sAt(tr - GEN.gate.edgeBan)), round1cm(sAt(tr) + 0.3), Number.NaN];
+     if (out.gateT !== undefined) noEdges.push(rowBan(out.gateT));
+@@ -367,7 +372,7 @@ export class Generator implements WorldGen {
+         obstacles: win, seg, t0, t1, s1, layoutEnd: layout, datumEnd, exit,
+         earliest: Math.max(c.firstActionT, t0), last: c.last, noActions: t0Stretch,
+         headSec: fixed ? 0.3 : GEN.noActionHead, tailSec: fixed ? 0.2 : GEN.noActionTail,
+-        groundHi, greedy: true, guides: [...(out.guides ?? []), ...(guides ?? [])], relax: bare && attempt > GEN.rerolls + 2,
++        groundHi, greedy: true, guides: [...(out.guides ?? []), ...(guides ?? []), ...gwGuide], relax: bare && attempt > GEN.rerolls + 2,
+       });
+       // Every validation counts (DESIGN §10.6.7 rejection rate): overlays, edge trims and re-rolls alike.
+       this.valCalls++;
+@@ -485,19 +490,27 @@ export class Generator implements WorldGen {
+           break;
+         }
+       }
+-      for (const { tr, centres, keepOut, tail } of tries) {
++      // Phase B (THEME §3.4): each slot first with vehicles at the corridor edges, then (when that fails) the kit-only row.
++      const free = deepFree([...obstacles, ...persistentNew, ...c.persistent]);
++      const slots = tries.flatMap((tt) => [{ ...tt, veh: true }, { ...tt, veh: false }]);
++      let vehFailed = -1;
++      for (const { tr, centres, keepOut, tail, veh } of slots) {
++        if (!veh && vehFailed !== tr) continue;        // the kit-only row only after its vehicle row failed
+         const sr = round1cm(sAt(tr));
+-        const rowObs = gateRow(sr, centres, w, props, rng, keepOut);
++        const rowObs = gateRow(sr, centres, w, props, rng, keepOut, veh ? free : null);
++        if (veh && !rowObs.some((o) => VEHICLE_KINDS.has(o.kind))) { vehFailed = tr; continue; }   // none fitted: same row
+         const lanes = rowLanes(sr, [...obstacles, ...rowObs, ...persistentNew, ...c.persistent]);
+-        if (!lanesApart(lanes, c.lastGateOpen)) continue;
++        if (!lanesApart(lanes, c.lastGateOpen)) { if (veh) vehFailed = tr; continue; }
+         const guide = [{ t0: tr - 0.45, t1: tr + 0.15, x0: centres[0]! - 0.25, x1: centres[0]! + 0.25 }];
+-        const nb = noEdges.length, t1o = t1;
++        const nb = noEdges.length, t1o = t1, nd = driveways.length;
+         noEdges.push(rowBan(tr));
++        driveways.push(...carDriveways(rowObs));
+         if (tail) { t1 = Math.max(t1, tAt(sr + 1.2) + 0.5); s1 = sAt(t1); }
+         const r2 = run([...obstacles, ...rowObs], guide);
+         if (!r2.ok) {
+-          noEdges.length = nb; t1 = t1o; s1 = sAt(t1);
++          noEdges.length = nb; t1 = t1o; s1 = sAt(t1); driveways.length = nd;
+           GEN_DEBUG.onReject?.({ index, t0, tpl: tpl.id, tier: plan.tier, attempt, why: `  detail overlay@${tr.toFixed(2)}${tail ? 'T' : ''} ${r2.why} ${r2.detail ?? ''}` });
++          if (veh) vehFailed = tr;
+           continue;
+         }
+         obstacles.push(...rowObs); res = r2; row = { t: tAt(sr), lanes };
+@@ -515,10 +528,13 @@ export class Generator implements WorldGen {
+       let w = trackWander(res.line, t0, t1, c.wander, aOf);
+       if (aEnd - w.lastA > P2 + 1e-6) {
+         const tw = this.wallTime(obstacles, t0, Math.min(t1 - 0.5, tOfA(c.wander.lastA + P2)));
+-        if (tw !== null) {
+-          const trial = [...obstacles, ...this.wanderWall(tw, res.line.xAt(tw), props)];
++        // (Phase B, THEME §3.4: a van_across and one filler first; the filler wall is the fallback.)
++        for (const van of tw !== null ? [true, false] : []) {
++          const wall = this.wanderWall(tw!, res.line.xAt(tw!), props, rng, van);
++          if (!wall) continue;
++          const trial = [...obstacles, ...wall];
+           const r2 = run(trial);
+-          if (r2.ok) { obstacles.length = 0; obstacles.push(...trial); res = r2; walls++; w = trackWander(res.line, t0, t1, c.wander, aOf); }
++          if (r2.ok) { obstacles.length = 0; obstacles.push(...trial); res = r2; walls++; w = trackWander(res.line, t0, t1, c.wander, aOf); break; }
+         }
+       }
+       wander = w;
+@@ -554,12 +570,24 @@ export class Generator implements WorldGen {
+     return null;
+   }
+ 
+-  /** A 6 m wall of area fillers centred on the line x (A2 overdue, DESIGN §10.6.7): the line must move ≥ 3 m. */
+-  private wanderWall(t: number, x: number, p: PropCtx): Obstacle[] {
++  /** A 6 m wall of area fillers centred on the line x (A2 overdue, DESIGN §10.6.7): the line must move ≥ 3 m. Phase B
++   *  (THEME §3.4, `van`): a van_across nosed in at the nearer corridor edge (the left one in the Docks), and fillers
++   *  from its tail to the wall's far end (one 0.6 m filler in the usual case); null when the van would not reach. */
++  private wanderWall(t: number, x: number, p: PropCtx, rng: Sfc32, van = false): Obstacle[] | null {
+     const xc = x;
+     const f = fillerKinds(p.area)[0]!;
+     const out: Obstacle[] = [];
+     const a = Math.max(-4.5, xc - 3.0), b = Math.min(4.5, xc + 3.0);
++    if (van) {
++      // (in the Docks only from the dock side, and not when the wall would then close the apron)
++      if (p.area === 'docks' && xc > 0.5) return null;
++      const sd: -1 | 1 = p.area === 'docks' || xc < 0 ? -1 : 1;
++      out.push(buildVanAcross(round1cm(sAt(t)), sd, p, 0, ObTag.Filler));
++      // Kit pieces from 0.1 m past the van's tail (±0.1) to the wall's far end (usually one); the line keeps its ≥ 3 m
++      // move on the open side.
++      if (sd < 0) kitRun(out, 0, b, round1cm(sAt(t)), p, rng, 0, true); else kitRun(out, a, 0, round1cm(sAt(t)), p, rng, 0, false, true);
++      return out;
++    }
+     const pitch = f.wid + 0.1, n = Math.max(1, Math.ceil((b - a - f.wid) / pitch) + 1);
+     const step = n > 1 ? (b - a - f.wid) / (n - 1) : 0;
+     for (let k = 0; k < n; k++) out.push(buildFiller(round1cm(sAt(t)), round1cm(a + f.wid / 2 + k * step), false, p, k % 3));
+@@ -582,6 +610,7 @@ export class Generator implements WorldGen {
+     }
+     const decor: Decor[] = [];
+     const denv = { area, gateway, s0, s1, datum: Math.max(c.datum, b.datumEnd), driveways: b.driveways,
++      vehicles: b.obstacles.filter((o) => o.kind === 'van_across' || o.kind === 'parked_car'),
+       nextEndWall: this.decorState.nextEndWall, backNext: this.decorState.backNext, areaEndS: sAt(areaEndT), visit: this.decorState.visit };
+     emitDecor(decor, denv, decorRng);
+     this.decorState.nextEndWall = denv.nextEndWall;
+diff --git a/src/world/gen/props/shared.ts b/src/world/gen/props/shared.ts
+index e8989bd..59a9983 100644
+--- a/src/world/gen/props/shared.ts
++++ b/src/world/gen/props/shared.ts
+@@ -4,6 +4,7 @@
+ // Area skins: `variant` = the area index (AREA_ORDER), so WA's kits pick the skin; geometry rules are shared.
+ import type { AreaId, PropKind } from '../../../core/ids';
+ import { AREA_ORDER } from '../../../core/ids';
++import { newSkin, propSkin, type PropSkin } from '../../../core/skins';
+ import { round1cm } from '../../../core/math';
+ import { HAZARD_WARN_SEC, HEIGHT, STEP_UP } from '../../../core/tuning';
+ import type { GroundSlab, Obstacle } from '../../../core/world';
+@@ -67,6 +68,52 @@ export function buildFiller(s: number, x: number, wide: boolean, p: PropCtx, var
+   return buildTall(f.kind, s, x, f.len, f.wid, f.hgt, p, { variant, tags: ObTag.Filler, params });
+ }
+ 
++// ── Phase B (theme T8, THEME §3.4): cars as the main blocker ──────────────────────────────────────────────────────
++/** van_across: a delivery van nosed into a side loading entrance, its tail out into the street (DESIGN §10.3). */
++export const VAN_ACROSS = { len: 1.8, wid: 4.4, hgt: 1.4 } as const;
++/** A van_across on side `sd`, its nose flush with the corridor edge (the loading entrance is just beyond it). The kit
++ *  reads the side from the sign of x. */
++export function buildVanAcross(s: number, sd: -1 | 1, p: PropCtx, variant = 0, tags = 0): Obstacle {
++  return buildTall('van_across', s, round1cm(sd * (4.5 - VAN_ACROSS.wid / 2)), VAN_ACROSS.len, VAN_ACROSS.wid, VAN_ACROSS.hgt, p, { variant, tags });
++}
++/** Where a parked car stands beside the road, parallel to s (DESIGN §10.2), in the order a row tries them: Downtown
++ *  and Neon (a taxi, THEME §3.4) in the curb lane beside the curb, else half up on the sidewalk at the corridor edge
++ *  (the plaza's edge where there is no curb); the Suburbs on a driveway apron over the sidewalk and lawn (the curb is
++ *  cut behind it). Centre |x| and size (the area's parked_car); empty where the street has neither (the Docks). */
++export interface CurbSlot { x: number; len: number; wid: number; hgt: number; driveway: boolean }
++export function curbSlots(a: AreaId): readonly CurbSlot[] {
++  switch (a) {
++    case 'downtown': case 'neon': return [{ x: 2.15, len: 4.4, wid: 1.8, hgt: 1.4, driveway: false }, { x: 3.6, len: 4.4, wid: 1.8, hgt: 1.4, driveway: false }];
++    case 'suburbs': return [{ x: 3.5, len: 4.6, wid: 1.9, hgt: 1.5, driveway: true }];
++    default: return [];
++  }
++}
++/** A parked car in slot `slot` of curbSlots on side `sd` (null where the area has none). Rear to the camera. */
++export function buildCurbCar(s: number, sd: -1 | 1, p: PropCtx, variant = 0, tags = 0, slot = 0): Obstacle | null {
++  const c = curbSlots(p.area)[slot];
++  if (!c) return null;
++  const ob = buildTall('parked_car', s, round1cm(sd * c.x), c.len, c.wid, c.hgt, p, { variant, tags });
++  ob.variant = skinVariant(ob, (k) => !k.nosedIn);
++  return ob;
++}
++/** Bumper-to-bumper gap of a parked row whose next car stays out of the one before's 35° shadow (validator rule g:
++ *  h·cot 35° + 0.5 m, h ≤ the 1.6 m x-ray cap): an empty bay between cars. */
++export const rowGap = (h: number): number => Math.min(h, 1.6) / Math.tan((35 * Math.PI) / 180) + 0.5 + 0.1;
++/** The driveway curb cuts [s0, s1, side] under the Suburbs' driveway cars among `obs` (a row's or a template's). */
++export function carDriveways(obs: readonly Obstacle[]): [number, number, number][] {
++  const out: [number, number, number][] = [];
++  for (const o of obs) if (o.kind === 'parked_car' && o.area === 'suburbs' && Math.abs(Math.abs(o.x) - 3.5) < 0.01) out.push([round1cm(o.s - 0.4), round1cm(o.s + o.len + 0.4), Math.sign(o.x)]);
++  return out;
++}
++/** The first variant ≥ the obstacle's own (up to 16 on) whose skin (core/skins propSkin) passes `ok`: a row of
++ *  parked cars that all face the same way, the Docks' trucks. The variant only picks the skin (WA kits use it modulo
++ *  their own counts), so this never changes a footprint. */
++export function skinVariant(ob: Obstacle, ok: (s: PropSkin) => boolean): number {
++  for (let v = ob.variant; v < ob.variant + 16; v++) if (ok(propSkin(ob.kind, ob.area, ob.id, v, ob.hgt, SKIN))) return v;
++  return ob.variant;
++}
++const SKIN = newSkin();
++
+ /** A tall column blocker (trash can 0.6 × 0.6, news box 0.5 × 0.5) standing on the street or the sidewalk. */
+ export function buildBlocker(kind: 'trash_can' | 'news_box', s: number, x: number, p: PropCtx, variant = 0): Obstacle {
+   const w = kind === 'trash_can' ? 0.6 : 0.5;
+diff --git a/src/world/gen/rows.ts b/src/world/gen/rows.ts
+index abb613f..e3d45fe 100644
+--- a/src/world/gen/rows.ts
++++ b/src/world/gen/rows.ts
+@@ -13,6 +13,7 @@ import { ObTag } from '../../core/world';
+ import type { Sfc32 } from '../../core/rng';
+ import { GEN, type Tier } from './gen.config';
+ import { buildTall, type PropCtx } from './props/common';
++import { buildCurbCar, buildVanAcross, curbSlots, skinVariant, VAN_ACROSS } from './props/shared';
+ import { LIP } from './props/street';
+ import type { AreaId } from '../../core/ids';
+ import type { PropKind } from '../../core/ids';
+@@ -69,8 +70,10 @@ export function rowPalette(a: AreaId): RowPiece[] {
+     case 'downtown': return [
+       { kind: 'news_box', len: 0.5, wid: 0.5, hgt: 1.15, w8: 2 }, { kind: 'trash_can', len: 0.6, wid: 0.6, hgt: 1.15, w8: 3 },
+       { kind: 'cafe_set', len: 1.2, wid: 1.2, hgt: 1.2, w8: 2, params: { canopyY: 2.2 } }, { kind: 'kiosk', len: 1.6, wid: 1.6, hgt: 2.4, w8: 1 }];
++    // (Phase B: a litter bin as well, so the runs beside the vehicles close with a few pieces, not a fence of mailboxes)
+     case 'suburbs': return [
+-      { kind: 'mailbox', len: 0.4, wid: 0.4, hgt: 1.2, w8: 1 }, { kind: 'wheelie_bins', len: 0.7, wid: 1.5, hgt: 1.2, w8: 4 }];
++      { kind: 'mailbox', len: 0.4, wid: 0.4, hgt: 1.2, w8: 1 }, { kind: 'wheelie_bins', len: 0.7, wid: 1.5, hgt: 1.2, w8: 4 },
++      { kind: 'trash_can', len: 0.6, wid: 0.6, hgt: 1.15, w8: 2 }];
+     case 'docks': return [
+       { kind: 'pallet_tall', len: 1.2, wid: 1.0, hgt: 1.2, w8: 2 },
+       { kind: 'drum_cluster', len: 0.7, wid: 1.3, hgt: 1.15, w8: 2, params: { drums: 2 } },
+@@ -86,10 +89,89 @@ const LIP_CLEAR = 0.05;
+ /** Pieces 0.05–0.14 m apart (with the 0.08 m insets a gap stays < the 0.40 m hitbox), filling [r0, r1] exactly. */
+ const GAP_MIN = 0.05, GAP_MAX = 0.14;
+ 
++/** The kinds a row's edge vehicle can be (THEME §3.4; the Docks' trucks are container-kind skins). */
++export const VEHICLE_KINDS: ReadonlySet<PropKind> = new Set<PropKind>(['van_across', 'parked_car', 'container']);
++/** The Docks row truck: a container-size box truck 0.05 m in from the corridor edge, along the dock band. */
++const DOCK_TRUCK = { len: 6.1, wid: 2.4, hgt: 2.6, edge: 0.05 } as const;
++/** The widest hole a vehicle may leave beside an opening (it widens the opening by that much; the straight-bot gate
++ *  measures what that costs). */
++const HOLE_MAX = 0.3;
++
++/** Is the plan box [x0, x1] × [s0, s1] clear of `obs` (solids, pits and raised slabs, with a margin), and of their
++ *  grind edges (a rider coming off one sideways must not meet it)? For a row's deep pieces (THEME §3.4 vehicles):
++ *  a curb car reaches 4.6 m along s, past the row band the keep-out spans cover. */
++/** Clear room behind a deep piece: its 35° shadow (validator rule g, h ≤ 1.6 m: 2.8 m) plus a margin. */
++const BEHIND = 3.0;
++export function deepFree(obs: readonly Obstacle[]): (x0: number, x1: number, s0: number, s1: number) => boolean {
++  return (x0, x1, s0, s1) => {
++    for (const o of obs) {
++      if (o.kind === 'curb' || o.kind === 'dock_lip' || o.s > s1 + 3 || o.s + o.len < s0 - 3) continue;
++      for (const so of o.solids) { const b = so.box; if (b.x1 > x0 - 0.3 && b.x0 < x1 + 0.3 && b.s1 > s0 - 0.3 && b.s0 < s1 + BEHIND) return false; }
++      for (const pt of o.pits) if (pt.x1 > x0 - 0.3 && pt.x0 < x1 + 0.3 && pt.s1 > s0 - 0.3 && pt.s0 < s1 + BEHIND) return false;
++      for (const sl of o.slabs) if ((sl.kind !== 'flat' || sl.layer === 1) && sl.x1 > x0 - 0.3 && sl.x0 < x1 + 0.3 && sl.s1 > s0 - 0.3 && sl.s0 < s1 + 1.0) return false;
++      for (const e of o.edges) {
++        const ex0 = Math.min(e.a.x, e.b.x), ex1 = Math.max(e.a.x, e.b.x);
++        if (ex1 > x0 - 1.0 && ex0 < x1 + 1.0 && e.b.s > s0 - 3 && e.a.s < s1 + 1.0) return false;
++      }
++    }
++    return true;
++  };
++}
++
++/** Phase B (THEME §3.4, theme T8): the vehicle that starts a row's edge run [r0, r1] on side sd, and the sub-runs
++ *  left for the kit pieces. A van_across (nose flush with the corridor edge) when the run takes its 4.4 m; else a car
++ *  at the curb (Downtown, Suburbs; Neon taxis) when the run reaches past the parking lane; else null. What is left
++ *  between a vehicle and the opening is either a hole (an opening a little wider) or room for kit pieces. */
++function edgeVehicle(sd: -1 | 1, r0: number, r1: number, sRow: number, props: PropCtx, minW: number,
++  free: (x0: number, x1: number, s0: number, s1: number) => boolean, variant: number): { ob: Obstacle; sub: [number, number][] } | null {
++  const L = r1 - r0, inner = (d: number) => (sd < 0 ? [r0 + d, r1] : [r0, r1 - d]) as [number, number];
++  // What is left beside a vehicle takes kit pieces, or stays a hole: at the corridor edge ≤ GAP_MAX; at the run's
++  // inner end (an opening, or a template obstacle's keep-out) ≤ HOLE_MAX, the opening a little wider (the generator
++  // re-measures the row's lanes, so a lane this opens is still kept apart from the last row's).
++  const leftover = (rem: number) => rem <= GAP_MAX + 1e-6 || rem >= GAP_MIN + minW - 1e-6;
++  const innerOk = (rem: number) => rem >= -1e-6 && (rem <= HOLE_MAX + 1e-6 || rem >= GAP_MIN + minW - 1e-6);
++  const innerHole = (rem: number) => rem <= HOLE_MAX + 1e-6;
++  if (innerOk(L - VAN_ACROSS.wid)) {
++    const x0 = sd < 0 ? -4.5 : 4.5 - VAN_ACROSS.wid, x1 = x0 + VAN_ACROSS.wid;
++    if (free(x0, x1, sRow, sRow + VAN_ACROSS.len)) {
++      const rem = L - VAN_ACROSS.wid;
++      return { ob: buildVanAcross(sRow, sd, props, variant, ObTag.Filler), sub: innerHole(rem) ? [] : [inner(VAN_ACROSS.wid + GAP_MIN)] };
++    }
++  }
++  if (props.area === 'docks') {
++    // A box truck backed up along the dock band (a container-kind truck skin; THEME §3.4 "IN ≥ 20 % (trucks)").
++    // (parked a little off the edge, ≤ 0.3 m: never a lane there, when that closes the run without a hole too wide)
++    const T = DOCK_TRUCK, room = r1 - (-4.5 + T.edge + T.wid);
++    const shift = innerOk(room) ? 0 : Math.min(room - HOLE_MAX, 0.3 - T.edge);
++    const x0 = -4.5 + T.edge + Math.max(0, shift), x1 = x0 + T.wid, inRem = r1 - x1;
++    if (sd > 0 || !innerOk(inRem) || !free(x0, x1, sRow, sRow + T.len)) return null;
++    const ob = buildTall('container', sRow, round1cm((x0 + x1) / 2), T.len, T.wid, T.hgt, props, { variant, tags: ObTag.Filler });
++    ob.variant = skinVariant(ob, (k) => k.body === 'box_truck' || k.body === 'shuttle_bus');
++    return { ob, sub: innerHole(inRem) ? [] : [[x1 + GAP_MIN, r1]] };
++  }
++  const slots = curbSlots(props.area);
++  for (let k = 0; k < slots.length; k++) {
++    const cc = slots[k]!;
++    const cIn = cc.x - cc.wid / 2, cOut = cc.x + cc.wid / 2;          // |x| of the car's road side and outer side
++    const reach = Math.abs(sd < 0 ? r1 : r0);                          // the run's inner end (|x|)
++    const inRem = cIn - reach, outRem = 4.5 - cOut;                     // to the opening, to the corridor edge
++    if (!innerOk(inRem) || !leftover(outRem)) continue;
++    const x0 = sd < 0 ? -cOut : cIn, x1 = sd < 0 ? -cIn : cOut;
++    if (!free(x0, x1, sRow, sRow + cc.len)) continue;
++    const ob = buildCurbCar(sRow, sd, props, variant, ObTag.Filler, k);
++    if (!ob) continue;
++    const sub: [number, number][] = outRem > GAP_MAX + 1e-6 ? [sd < 0 ? [-4.5, -cOut - GAP_MIN] : [cOut + GAP_MIN, 4.5]] : [];
++    if (!innerHole(inRem)) sub.push(sd < 0 ? [-cIn + GAP_MIN, r1] : [r0, cIn - GAP_MIN]);
++    return { ob, sub };
++  }
++  return null;
++}
++
+ /** A row across the corridor at sRow except the openings (width w) and the spans of `keepOut` (template obstacles
+- *  beside it, kept GEN.gate.keepPad clear): mixed pieces of the area kit, filling each run edge to edge. */
++ *  beside it, kept GEN.gate.keepPad clear): mixed pieces of the area kit, filling each run edge to edge. Phase B
++ *  (THEME §3.4): a run at the corridor edge starts with a vehicle when one fits and `free` clears its deep box. */
+ export function gateRow(sRow: number, centres: readonly number[], w: number, props: PropCtx, rng: Sfc32,
+-  keepOut: readonly (readonly [number, number])[] = []): Obstacle[] {
++  keepOut: readonly (readonly [number, number])[] = [], free: ((x0: number, x1: number, s0: number, s1: number) => boolean) | null = null): Obstacle[] {
+   const out: Obstacle[] = [];
+   const pad = GEN.gate.keepPad;
+   const open = [...centres.map((x) => [x - w / 2, x + w / 2] as [number, number]), ...keepOut.map(([a, b]) => [a - pad, b + pad] as [number, number])]
+@@ -103,44 +185,81 @@ export function gateRow(sRow: number, centres: readonly number[], w: number, pro
+   for (const [o0, o1] of open) { if (o0 > a) runs.push([a, Math.min(o0, xEnd)]); a = Math.max(a, o1); }
+   if (a < xEnd) runs.push([a, xEnd]);
+   let variant = 0;
++  const all: [number, number][] = [];
+   for (const [r0, r1] of runs) {
+-    const L = r1 - r0;
+-    if (L < 0.25) continue;
+-    const pieces = fillRun(L, pal, minW, rng);
+-    const total = pieces.reduce((s, p) => s + p.wid, 0);
+-    const gap = pieces.length > 1 ? (L - total) / (pieces.length - 1) : 0;
+-    // (a run narrower than its piece: the piece keeps flush with the corridor edge or the lip, else centred)
+-    const one = pieces.length === 1 ? pieces[0]!.wid : 0;
+-    let x = !one ? r0 : r1 >= xEnd - 1e-6 && one > L ? r1 - one : r0 <= -4.5 + 1e-6 && one > L ? r0 : (r0 + r1) / 2 - one / 2;
+-    for (const p of pieces) {
+-      const ob = buildTall(p.kind, sRow, round1cm(x + p.wid / 2), p.len, p.wid, p.hgt, props,
+-        { variant: variant++ % 3, tags: ObTag.Filler, ...(p.params ? { params: p.params } : {}) });
+-      out.push(ob);
+-      x += p.wid + gap;
+-    }
++    const atL = r0 <= -4.5 + 1e-6, atR = r1 >= 4.5 - 1e-6;
++    const veh = free && atL !== atR ? edgeVehicle(atL ? -1 : 1, r0, r1, sRow, props, minW, free, rng.int(0, 7)) : null;
++    if (veh) { out.push(veh.ob); all.push(...veh.sub); } else all.push([r0, r1]);
+   }
++  // (an end may keep a hole ≤ GAP_MAX only against the corridor edge or a vehicle, never beside an opening: a wider
++  // opening would let straight lanes live longer)
++  const veh = out.map((o) => o.solids[0]!.box);
++  const byVeh = (x: number) => veh.some((b) => Math.abs(b.x1 - x) < GAP_MIN + 0.01 || Math.abs(b.x0 - x) < GAP_MIN + 0.01);
++  for (const [r0, r1] of all) variant = kitRun(out, r0, r1, sRow, props, rng, variant, byVeh(r0), byVeh(r1));
+   return out;
+ }
+ 
+-/** Pieces whose widths plus GAP_MIN–GAP_MAX gaps fill L (one piece centred when L is below every width). */
+-function fillRun(L: number, pal: readonly RowPiece[], minW: number, rng: Sfc32): RowPiece[] {
++/** Fills the run [r0, r1] at sRow with pieces of the area's row kit, edge to edge (GAP_MIN–GAP_MAX apart), into
++ *  `out`; returns the next variant. Runs under 0.25 m stay open. Also the remainder of a van wander wall. An end at
++ *  the corridor edge (or the lip), or one the caller marks (`holeL` / `holeR`: against a vehicle), may keep a hole
++ *  ≤ GAP_MAX, so fewer pieces close the run; an end beside an opening never does (Phase B, theme T8). */
++export function kitRun(out: Obstacle[], r0: number, r1: number, sRow: number, props: PropCtx, rng: Sfc32, variant = 0,
++  holeL = false, holeR = false): number {
++  const L = r1 - r0;
++  if (L < 0.25) return variant;
++  const pal = rowPalette(props.area), minW = Math.min(...pal.map((p) => p.wid));
++  const xEnd = props.area === 'docks' ? LIP.x0 - LIP_CLEAR : 4.5;
++  const hL = holeL || r0 <= -4.5 + 1e-6, hR = holeR || r1 >= xEnd - 1e-6;
++  const pieces = fillRun(L, pal, minW, rng, (hL ? 1 : 0) + (hR ? 1 : 0));
++  const total = pieces.reduce((s, p) => s + p.wid, 0);
++  // Pieces GAP_MIN–GAP_MAX apart; what is left goes to the ends that may keep a hole.
++  const gap = pieces.length > 1 ? Math.min(GAP_MAX, (L - total) / (pieces.length - 1)) : 0;
++  const extra = L - total - gap * (pieces.length - 1);
++  // (a run narrower than its piece: the piece keeps flush with the corridor edge or the lip, else centred)
++  const one = pieces.length === 1 ? pieces[0]!.wid : 0;
++  let x = !one ? r0 + (hL && hR ? extra / 2 : hL ? extra : 0)
++    : r1 >= xEnd - 1e-6 && one > L ? r1 - one : r0 <= -4.5 + 1e-6 && one > L ? r0 : (r0 + r1) / 2 - one / 2;
++  for (const p of pieces) {
++    const ob = buildTall(p.kind, sRow, round1cm(x + p.wid / 2), p.len, p.wid, p.hgt, props,
++      { variant: variant++ % 3, tags: ObTag.Filler, ...(p.params ? { params: p.params } : {}) });
++    out.push(ob);
++    x += p.wid + gap;
++  }
++  return variant;
++}
++
++/** Pieces whose widths plus GAP_MIN–GAP_MAX gaps (and ≤ GAP_MAX at each of `holes` ends) fill L (one piece centred
++ *  when L is below every width). Phase B
++ *  (theme T8): the fewest pieces that close the run, so a row reads as a few real things, not a fence of the
++ *  narrowest kit piece: among the piece multisets of the smallest count that fit, one is drawn by the product of the
++ *  pieces' weights, in a shuffled order. */
++function fillRun(L: number, pal: readonly RowPiece[], minW: number, rng: Sfc32, holes: number): RowPiece[] {
+   const narrow = pal.reduce((m, p) => (p.wid < m.wid ? p : m));
+   if (L <= minW + 1e-6) return [narrow];
+-  for (let attempt = 0; attempt < 4; attempt++) {
++  const k = pal.length, cnt = new Array<number>(k).fill(0);
++  for (let n = 1; n <= 14; n++) {
++    const found: { c: number[]; w: number }[] = [];
++    // Every multiset of n pieces (counts per palette entry).
++    const walk = (i: number, left: number, T: number, w: number): void => {
++      if (i === k - 1) {
++        const tot = T + left * pal[i]!.wid, ww = w * pal[i]!.w8 ** left;
++        cnt[i] = left;
++        // (one piece is centred, ≤ GAP_MAX each side, as before; several are ≤ GAP_MAX apart, plus ≤ GAP_MAX at each
++        // end that may keep a hole)
++        const ok = n === 1 ? tot <= L + 1e-6 && L - tot <= 2 * GAP_MAX + 1e-6
++          : tot + (n - 1) * GAP_MIN <= L + 1e-6 && tot + (n - 1 + holes) * GAP_MAX >= L - 1e-6;
++        if (ok && ww > 0) found.push({ c: cnt.slice(), w: ww });
++        return;
++      }
++      for (let m = 0; m <= left; m++) { cnt[i] = m; walk(i + 1, left - m, T + m * pal[i]!.wid, w * pal[i]!.w8 ** m); }
++    };
++    walk(0, n, 0, 1);
++    if (!found.length) continue;
++    const pick = rng.weighted(found.map((f) => [f.c, f.w] as const));
+     const out: RowPiece[] = [];
+-    let used = 0;
+-    for (;;) {
+-      const room = L - used - (out.length ? GAP_MIN : 0);
+-      const fit = pal.filter((p) => p.wid <= room + 1e-6);
+-      if (!fit.length) break;
+-      const p = rng.weighted(fit.map((q) => [q, q.w8] as const));
+-      used += p.wid + (out.length ? GAP_MIN : 0);
+-      out.push(p);
+-    }
+-    const total = out.reduce((s, p) => s + p.wid, 0);
+-    const gap = out.length > 1 ? (L - total) / (out.length - 1) : L - total;
+-    if (out.length > 1 && gap <= GAP_MAX + 1e-6) return out;
+-    if (out.length === 1 && L - total <= 2 * GAP_MAX) return out;
++    pick.forEach((m, i) => { for (let j = 0; j < m; j++) out.push(pal[i]!); });
++    for (let i = out.length - 1; i > 0; i--) { const j = rng.int(0, i); const t = out[i]!; out[i] = out[j]!; out[j] = t; }
++    return out;
+   }
+   // Uniform narrow pieces (always closes the run).
+   const n = Math.max(1, Math.ceil((L - narrow.wid) / (narrow.wid + GAP_MAX)) + 1);
+diff --git a/src/world/gen/templates/index.ts b/src/world/gen/templates/index.ts
+index 4b065c4..2706c12 100644
+--- a/src/world/gen/templates/index.ts
++++ b/src/world/gen/templates/index.ts
+@@ -1,5 +1,6 @@
+ // world/gen/templates/index.ts: the template registry (DESIGN §10.4 v1 set: 9 shared, 6 per area, 4 gateways, the
+-// Roll-out and the Lesson Line parts). The 20 non-v1 templates are M5 stretch.
++// Roll-out and the Lesson Line parts), plus the Phase B parked rows (theme T8, one per area). The 20 non-v1 templates are
++// M5 stretch.
+ import type { AreaId } from '../../../core/ids';
+ import type { Tier } from '../gen.config';
+ import { ROLLOUT } from '../lesson';
+@@ -7,16 +8,17 @@ import { DT_BENCHES, DT_BIG7, DT_LEDGE, DT_PLANTERS, DT_RUSH, DT_TERRACE } from
+ import { IN_BEAM, IN_CHANNEL, IN_DOCK_UP, IN_GAUNTLET, IN_LIP, IN_PALLETS } from './docks';
+ import { GW_greenway, GW_harborBridge, GW_levelCrossing, GW_underpass } from './gateways';
+ import { NE_GAUNTLET, NE_PILLARS, NE_RAIL, NE_SAKURA, NE_SKYWALK, NE_VENDING } from './neon';
++import { DT_PARKED_ROW, IN_LOADING_ROW, NE_TAXI_RANK, SB_DRIVEWAY_ROW } from './parked';
+ import { S_BARRIER, S_CONES, S_GATE, S_INCLINE_UP, S_LADDER, S_OPEN, S_PADS, S_STAIRS, S_TRENCH } from './shared';
+ import { SB_BINDAY, SB_DRIVEWAYS, SB_HILL, SB_PICKET, SB_SCOOPS, SB_WALL } from './suburbs';
+ import type { Template, TemplateId } from './types';
+ 
+ export const SHARED: readonly Template[] = [S_OPEN, S_CONES, S_TRENCH, S_BARRIER, S_LADDER, S_GATE, S_PADS, S_STAIRS, S_INCLINE_UP];
+ export const AREA_TEMPLATES: Readonly<Record<AreaId, readonly Template[]>> = {
+-  downtown: [DT_LEDGE, DT_BENCHES, DT_PLANTERS, DT_TERRACE, DT_RUSH, DT_BIG7],
+-  suburbs: [SB_WALL, SB_HILL, SB_DRIVEWAYS, SB_BINDAY, SB_PICKET, SB_SCOOPS],
+-  docks: [IN_BEAM, IN_LIP, IN_PALLETS, IN_CHANNEL, IN_DOCK_UP, IN_GAUNTLET],
+-  neon: [NE_RAIL, NE_PILLARS, NE_VENDING, NE_SAKURA, NE_SKYWALK, NE_GAUNTLET],
++  downtown: [DT_LEDGE, DT_BENCHES, DT_PLANTERS, DT_TERRACE, DT_RUSH, DT_BIG7, DT_PARKED_ROW],
++  suburbs: [SB_WALL, SB_HILL, SB_DRIVEWAYS, SB_BINDAY, SB_PICKET, SB_SCOOPS, SB_DRIVEWAY_ROW],
++  docks: [IN_BEAM, IN_LIP, IN_PALLETS, IN_CHANNEL, IN_DOCK_UP, IN_GAUNTLET, IN_LOADING_ROW],
++  neon: [NE_RAIL, NE_PILLARS, NE_VENDING, NE_SAKURA, NE_SKYWALK, NE_GAUNTLET, NE_TAXI_RANK],
+ };
+ export const GATEWAYS = { greenway: GW_greenway, levelCrossing: GW_levelCrossing, harborBridge: GW_harborBridge, underpass: GW_underpass } as const;
+ 
+diff --git a/src/world/gen/templates/parked.ts b/src/world/gen/templates/parked.ts
+new file mode 100644
+index 0000000..94c35da
+--- /dev/null
++++ b/src/world/gen/templates/parked.ts
+@@ -0,0 +1,94 @@
++// world/gen/templates/parked.ts: Phase B parked rows (THEME §3.4, theme T8; DESIGN §10.4): cars as the main blocker.
++// One per area. The vehicles stand in painted bays along ONE side only, parallel to s, an empty bay apart (≥ 0.6 m;
++// out of each other's 35° shadow, validator rule g) and all facing the same way (rear to the camera); never two rows
++// facing each other, never a row in the centre lanes. The other side carries the area's trick line, so riding past a
++// row is a line, not a wait.
++//   DT_PARKED_ROW   T1–T2  4.0 s  3–4 cars in the curb lane (±2.15; a plaza: its edge), a ledge on the far side
++//   SB_DRIVEWAY_ROW T1–T2  4.0 s  3–4 cars on the driveway aprons (±3.5, curb cuts behind them), a garden wall on the far side
++//   IN_LOADING_ROW  T1–T2  4.2 s  3 box trucks backed up along the dock band (−3.25), an I-beam on the apron
++//   NE_TAXI_RANK    T1–T2  4.0 s  3–4 taxis in the curb lane (±2.15), a glowing guard rail on the far side
++import { round1cm } from '../../../core/math';
++import type { Obstacle } from '../../../core/world';
++import { buildLedge } from '../props/downtown';
++import { buildIbeam } from '../props/docks';
++import { buildGuardRail } from '../props/neon';
++import { buildGardenWall } from '../props/suburbs';
++import { buildTall } from '../props/common';
++import { buildCurbCar, carDriveways, rowGap, skinVariant } from '../props/shared';
++import { GEN } from '../gen.config';
++import type { Template, TemplateCtx, TemplateOut } from './types';
++import { contentFrom, edgeCoins, endAfter, put, side, sOf } from './util';
++
++/** Up to n vehicles from s along one side (each `make(s)`), an empty bay apart: the gap keeps each car out of the
++ *  one before's 35° shadow (rowGap, validator rule g), so it is ≥ 0.6 m and reads as bays. The count fits the
++ *  vehicles into ~2.8 s at the template's speed. Returns [first s, last end s]. */
++function row(c: TemplateCtx, s: number, n: number, len: number, h: number, make: (s: number) => Obstacle | null): [number, number] {
++  const gap = rowGap(h), fit = Math.max(2, Math.floor((c.v * 2.8 + gap) / (len + gap)));
++  let at = s, end = s;
++  for (let k = 0; k < Math.min(n, fit); k++) {
++    const ob = make(round1cm(at));
++    if (!ob) break;
++    put(c, ob);
++    end = ob.s + ob.len;
++    at = end + gap + c.rng.range(0, 0.5);
++  }
++  return [s, end];
++}
++
++export const DT_PARKED_ROW: Template = {
++  id: 'DT_PARKED_ROW', area: 'downtown', tiers: [1, 2], durMax: 4.4, mirror: true,
++  build(c: TemplateCtx): TemplateOut | null {
++    // (a plaza has no curb lane: the cars stand in bays along its edge, half up on the paving)
++    const sd = side(c), tA = contentFrom(c) + 0.6, slot = c.layout.curbX === null ? 1 : 0;
++    const [s0, s1] = row(c, sOf(tA), c.rng.int(3, 4), 4.4, 1.4, (s) => buildCurbCar(s, sd, c.props, c.rng.int(0, 7), 0, slot));
++    const ledge = put(c, buildLedge(round1cm(s0 + c.v * 0.2), round1cm(-sd * 3.75), round1cm(s1 - s0), c.props));
++    edgeCoins(c, ledge);
++    return { t1: endAfter(c, 0.6) };
++  },
++};
++
++export const SB_DRIVEWAY_ROW: Template = {
++  id: 'SB_DRIVEWAY_ROW', area: 'suburbs', tiers: [1, 2], durMax: 4.4, mirror: true,
++  build(c: TemplateCtx): TemplateOut | null {
++    if (c.layout.curbX === null) return null;
++    // Parked on the driveway aprons beside the road (sidewalk and lawn band), the curb cut behind each car.
++    const sd = side(c), tA = contentFrom(c) + 0.6;
++    const [s0, s1] = row(c, sOf(tA), 4, 4.6, 1.5, (s) => {
++      const ob = buildCurbCar(s, sd, c.props, c.rng.int(0, 7));
++      if (ob) c.driveways.push(...carDriveways([ob]));
++      return ob;
++    });
++    // A garden wall on the far sidewalk past the row (grind or manual on top).
++    const wall = put(c, buildGardenWall(round1cm(s0 + c.v * 0.2), round1cm(-sd * 3.2), round1cm(Math.max(3, s1 - s0)), c.props));
++    c.coins.string(wall.s + 0.3 * c.v, wall.s + wall.len - 0.2 * c.v, wall.x, wall.solids[0]!.box.y1 + GEN.coins.edgeUp, c.v);
++    return { t1: endAfter(c, 0.6) };
++  },
++};
++
++export const IN_LOADING_ROW: Template = {
++  id: 'IN_LOADING_ROW', area: 'docks', tiers: [1, 2], durMax: 4.6, mirror: false,
++  build(c: TemplateCtx): TemplateOut {
++    // Box trucks backed up along the dock band (a container-size truck skin), an I-beam on the apron beside them.
++    const tA = contentFrom(c) + 0.6;
++    const [s0, s1] = row(c, sOf(tA), 3, 6.1, 2.6, (s) => {
++      const ob = buildTall('container', s, -3.25, 6.1, 2.4, 2.6, c.props, { variant: c.rng.int(0, 7) });
++      ob.variant = skinVariant(ob, (k) => k.body === 'box_truck' && !k.nosedIn);
++      return ob;
++    });
++    const beam = put(c, buildIbeam(round1cm(s0 + c.v * 0.3), round1cm(c.rng.range(0.6, 2.2)), round1cm(Math.max(4, s1 - s0 - c.v * 0.6)), c.props));
++    edgeCoins(c, beam);
++    return { t1: endAfter(c, 0.6) };
++  },
++};
++
++export const NE_TAXI_RANK: Template = {
++  id: 'NE_TAXI_RANK', area: 'neon', tiers: [1, 2], durMax: 4.4, mirror: true,
++  build(c: TemplateCtx): TemplateOut | null {
++    if (c.layout.curbX === null) return null;
++    const sd = side(c), tA = contentFrom(c) + 0.6;
++    const [s0, s1] = row(c, sOf(tA), c.rng.int(3, 4), 4.4, 1.4, (s) => buildCurbCar(s, sd, c.props, c.rng.int(0, 7)));
++    const rail = put(c, buildGuardRail(round1cm(s0 + c.v * 0.2), round1cm(-sd * 2.95), round1cm(s1 - s0), c.props));
++    edgeCoins(c, rail);
++    return { t1: endAfter(c, 0.6) };
++  },
++};
+diff --git a/src/world/gen/templates/shared.ts b/src/world/gen/templates/shared.ts
+index 12f4746..95da38f 100644
+--- a/src/world/gen/templates/shared.ts
++++ b/src/world/gen/templates/shared.ts
+@@ -14,8 +14,8 @@ import { rMinAt } from '../validator/sweep';
+ import { ObTag } from '../../../core/world';
+ import { GEN } from '../gen.config';
+ import { buildBarrier, buildBench, buildCone, buildFlatbar, buildHandrail, buildIncline, buildPad, buildSideSet,
+-  buildTerrace, buildTrench, stairDrop, STAIR } from '../props/shared';
+-import { gateOpenings, gateRow, lanesApart, openingLanes } from '../rows';
++  buildTerrace, buildTrench, carDriveways, stairDrop, STAIR } from '../props/shared';
++import { deepFree, gateOpenings, gateRow, lanesApart, openingLanes } from '../rows';
+ import { LIP } from '../props/street';
+ import type { Template, TemplateCtx, TemplateOut } from './types';
+ import { actFrom, contentFrom, edgeCoins, endAfter, put, roadHalf, side, sOf } from './util';
+@@ -195,7 +195,10 @@ export const S_GATE: Template = {
+       const pad = put(c, buildPad(round1cm(sAt(pB) - len), padX, len, c.props));
+       c.coins.string(pad.s + 0.4, pad.s + pad.len - 0.4, pad.x, c.datum + 0.15 + GEN.coins.padUp, c.v);
+     }
+-    for (const ob of gateRow(sRow, centres, w, c.props, c.rng)) put(c, ob);
++    // (Phase B, THEME §3.4: vehicles at the corridor edges; the easy re-rolls stand the kit-only row)
++    const rowObs = gateRow(sRow, centres, w, c.props, c.rng, [], c.attempt < GEN.easyFrom ? deepFree(c.obstacles) : null);
++    for (const ob of rowObs) put(c, ob);
++    c.driveways.push(...carDriveways(rowObs));
+     const tr = tAt(sRow);
+     return { t1: tAt(sRow + 1.2) + 0.5, gateX: centres, gateT: tr, ...(withA3 ? { fullWidth: true } : {}),
+       guides: [{ t0: tr - 0.45, t1: tr + 0.15, x0: pick - 0.25, x1: pick + 0.25 }] };
+diff --git a/src/world/gen/templates/types.ts b/src/world/gen/templates/types.ts
+index fb77859..ba7e78b 100644
+--- a/src/world/gen/templates/types.ts
++++ b/src/world/gen/templates/types.ts
+@@ -18,6 +18,7 @@ export type TemplateId =
+   | 'SB_WALL' | 'SB_HILL' | 'SB_DRIVEWAYS' | 'SB_BINDAY' | 'SB_PICKET' | 'SB_SCOOPS'
+   | 'IN_BEAM' | 'IN_LIP' | 'IN_PALLETS' | 'IN_CHANNEL' | 'IN_DOCK_UP' | 'IN_GAUNTLET'
+   | 'NE_RAIL' | 'NE_PILLARS' | 'NE_VENDING' | 'NE_SAKURA' | 'NE_SKYWALK' | 'NE_GAUNTLET'
++  | 'DT_PARKED_ROW' | 'SB_DRIVEWAY_ROW' | 'IN_LOADING_ROW' | 'NE_TAXI_RANK'   // Phase B parked rows (theme T8)
+   | 'FALLBACK';
+ 
+ export interface TemplateCtx {
+diff --git a/src/world/render/kits/buildings.ts b/src/world/render/kits/buildings.ts
+index 208c802..e2edfe1 100644
+--- a/src/world/render/kits/buildings.ts
++++ b/src/world/render/kits/buildings.ts
+@@ -467,6 +467,7 @@ export function bladeSignAt(c: KitCtx, xFace: number, s: number, y0: number, h:
+ /** Cross-street end wall (every 8–12 s): a corner shopfront, pastel ribbed shutters (Neon), warehouse doors (Docks)
+  *  or a house front (Suburbs), facing the camera; its inner edge at |x| ≥ 4.6. */
+ export function endWall(c: KitCtx, d: Decor): void {
++  if (num(d, 'style', -1) === 4) { loadingEntrance(c, d); return; }
+   const K = c.K, area = c.areaAt(d.s), out = Math.sign(d.x) || 1, sc = d.scale || 1;
+   const w = num(d, 'w', 9) * sc, h = num(d, 'h', 8) * sc, depth = 1.2;
+   const xin = Math.sign(d.x) * Math.max(4.6, Math.abs(d.x));
+@@ -519,6 +520,25 @@ export function endWall(c: KitCtx, d: Decor): void {
+   windows(c, (d.s * 5 + d.x) | 0, 'front', x0 + 0.5, x1 - 0.5, s0, 0, y + 4.6, y + h - 0.4, 2.4, 0xffc98a, near, area);
+ }
+ 
++/** Phase B (THEME §3.4) `end_wall` style 4: the loading entrance a van_across is nosed into. A low block beside the
++ *  corridor whose street face (|x| = 4.6) carries a closed, faded roller door under a dark lintel, with a moss line
++ *  along the eaves; it spans `len` along s from d.s and `w` outward. Nothing over the corridor. */
++function loadingEntrance(c: KitCtx, d: Decor): void {
++  const K = c.K, area = c.areaAt(d.s), sd = Math.sign(d.x) || 1, sc = d.scale || 1;
++  const w = num(d, 'w', 3) * sc, h = num(d, 'h', 4.2) * sc, len = num(d, 'len', 2.8), y = d.y;
++  const xin = sd * 4.6, x0 = Math.min(xin, sd * (4.6 + w)), x1 = Math.max(xin, sd * (4.6 + w)), s0 = d.s, s1 = d.s + len;
++  const near = d.x > 0 ? FX.near : 0, face = sd > 0 ? FACE.left : FACE.right;
++  const base = shade(FACADES[area][d.variant % FACADES[area].length]!, -0.08);
++  const wall = area === 'neon' ? base : mixHex(base, fadePaint(base), 0.8);
++  K.reset().to('b').lit(area === 'neon' ? 0 : PAT.brickWall, 0, near).col(wall).box(x0, y, s0, x1, y + h, s1);
++  const fx = xin - sd * 0.03, dx0 = Math.min(xin, fx), dx1 = Math.max(xin, fx);
++  // The door (ribbed, faded), a dark lintel and jambs, and a moss line along the eaves.
++  K.lit(PAT.ribsH, 0, near).col(area === 'neon' ? mixHex(0x9a90c0, RECLAIM.deadTube, 0.35) : fadePaint(0x8e8a94)).box(dx0, y + 0.02, s0 + 0.3, dx1, y + 2.5, s1 - 0.3, face);
++  K.lit(0, 0, near).col(shade(wall, -0.4)).box(dx0 - 0.02, y + 2.5, s0 + 0.15, dx1 + 0.02, y + 2.75, s1 - 0.15, face | FACE.top);
++  K.box(dx0 - 0.02, y, s0 + 0.15, dx1 + 0.02, y + 2.5, s0 + 0.3, face | FACE.top); K.box(dx0 - 0.02, y, s1 - 0.3, dx1 + 0.02, y + 2.5, s1 - 0.15, face | FACE.top);
++  if (area !== 'neon') K.lit(PAT.grass, 0, near).col(FLORA[area].ivy[0]!).box(x0, y + h, s0, x1, y + h + 0.04, s1, FACE.top);
++}
++
+ /** Stacked shipping containers as backdrop (6.1 × 2.4 × 2.6 each), long axis along s. */
+ export function containerStack(c: KitCtx, d: Decor): void {
+   const K = c.K, out = Math.sign(d.x) || 1;
+diff --git a/src/world/render/kits/car.ts b/src/world/render/kits/car.ts
+index e342c90..9ad7021 100644
+--- a/src/world/render/kits/car.ts
++++ b/src/world/render/kits/car.ts
+@@ -21,6 +21,8 @@ import { DRESSER, foliageFor, mossOn, rustOn, type DressRole } from './dress';
+ export const CAR_BODIES = [0x1c1430, 0x141a2e, 0x1d1420, 0x122220, 0x221830, 0x17142a] as const;
+ type Target = Kit['t'];
+ const TYRE = 0x171221, LENS = 0x3c3a52, CURTAIN = 0x5e5248, HELPER_DOME = 0x8a8fb0;
++/** Neon vehicles' body glow, × the Neon hazard glow (Phase B, the contrast gate). */
++const NEON_VEHICLE_GLOW = 1.35;
+ 
+ export interface VehicleSpec {
+   body: VehicleBody;
+@@ -387,21 +389,49 @@ export const paintOf = (p: keyof typeof RECLAIM.carPaint | null) => RECLAIM.carP
+ export function vehicleKit(c: KitCtx, ob: Obstacle): void {
+   const b = ob.solids[0]?.box;
+   if (!b) return;
+-  const skin = DRESSER.skin, body: VehicleBody = isVehicle(skin.body) ? skin.body : ob.kind === 'parked_van' ? 'panel_van' : 'sedan';
+-  const clean = (skin.dress & Dress.Clean) !== 0, inv = c.hz.inverted;
+   contact(c, b.x0, b.x1, b.s0, b.s1, b.y0 + 0.01, 0.7, 0.3);
+   c.K.capY = b.y0 + CAMERA.xrayCapY;
++  drawVehicle(c.K, hazardSpec(c, ob, b.x0, b.x1, b.s0, b.s1, b.y0, b.y1 - b.y0));
++  c.K.capY = null;
++}
++
++/** The hazard VehicleSpec of an obstacle's skin over the given (prop-frame) box. */
++function hazardSpec(c: KitCtx, ob: Obstacle, x0: number, x1: number, s0: number, s1: number, y: number, h: number): VehicleSpec {
++  const skin = DRESSER.skin, body: VehicleBody = isVehicle(skin.body) ? skin.body : ob.kind === 'parked_van' || ob.kind === 'van_across' ? 'panel_van' : 'sedan';
++  const clean = (skin.dress & Dress.Clean) !== 0, inv = c.hz.inverted;
+   const neonBody = RECLAIM.neonCarBody[body === 'taxi' ? 3 : (ob.id + ob.variant) % 3]!;
+-  drawVehicle(c.K, {
+-    body, x0: b.x0, x1: b.x1, s0: b.s0, s1: b.s1, y: b.y0, h: b.y1 - b.y0,
+-    paint: inv ? shade(neonBody, 0.14) : paintOf(skin.paint),
++  return {
++    body, x0, x1, s0, s1, y, h,
++    // (Neon, Phase B: taxis and kei vans are in-corridor hazards now, beside the lit kerbs and puddles; their roofs take
++    // the Neon hazard top, tinted by the body, and a little more glow, so they hold the ≥ 2.5:1 pixel gate)
++    paint: inv ? mixHex(c.hz.top, neonBody, 0.25) : paintOf(skin.paint),
+     side: inv ? neonBody : CAR_BODIES[(ob.variant + ob.id) % CAR_BODIES.length]!,
+     stripe: inv || clean ? -1 : c.hz === HAZARD.docks ? HAZARD.docks.accent2 : c.hz.accent,
+-    hazard: true, inverted: inv, rim: c.hz.rim, glow: c.hz.glow, nosedIn: skin.nosedIn,
++    hazard: true, inverted: inv, rim: c.hz.rim, glow: c.hz.glow * (inv ? NEON_VEHICLE_GLOW : 1), nosedIn: skin.nosedIn,
+     livery: skin.livery >= 0 ? `b:${ob.area}:${skin.livery}` : null,
+     helper: clean ? c.hz.accent2 : -1, reverseLights: ob.kind === 'backout_car', cat: ob.area === 'neon' ? null : 'tabby',
+-  });
+-  c.K.capY = null;
++  };
++}
++
++/** van_across (Phase B, THEME §3.4): a delivery van nosed into the side loading entrance at the corridor edge it
++ *  faces (the sign of x), its tail out into the street. The vehicle builder draws it in a prop frame turned a
++ *  quarter about the box centre (its long axis along x, the nose toward the edge); the dresser sees the obstacle in
++ *  that frame too, so the dressing rules clamp to the same footprint. */
++export function vanAcrossKit(c: KitCtx, ob: Obstacle): void {
++  const b = ob.solids[0]?.box;
++  if (!b) return;
++  contact(c, b.x0, b.x1, b.s0, b.s1, b.y0 + 0.01, 0.7, 0.3);
++  const sd = Math.sign(ob.x) || -1, cx = (b.x0 + b.x1) / 2, cs = (b.s0 + b.s1) / 2;
++  const hw = (b.s1 - b.s0) / 2, hl = (b.x1 - b.x0) / 2;           // local half width (track s) and half length (x)
++  // Local +s → the nose: yaw +90° maps local +s to −x, −90° to +x (Kit.frame).
++  const K = c.K, real = DRESSER.ob!, d = DRESSER;
++  const local: Obstacle = { ...real, edges: [], solids: real.solids.map((so) => ({ ...so, box: { ...so.box, x0: -hw, x1: hw, s0: -hl, s1: hl } })) };
++  const keep = [d.fx0, d.fx1, d.fs0, d.fs1] as const;
++  d.ob = local; d.fx0 = -hw; d.fx1 = hw; d.fs0 = -hl; d.fs1 = hl;
++  K.frame(cx, 0, cs, sd < 0 ? Math.PI / 2 : -Math.PI / 2);
++  drawVehicle(K, { ...hazardSpec(c, ob, -hw, hw, -hl, hl, b.y0, b.y1 - b.y0), nosedIn: false });
++  K.frame(0, 0, 0);
++  d.ob = real; [d.fx0, d.fx1, d.fs0, d.fs1] = keep;
+ }
+ 
+ // ── decor vehicles (kits/decor.ts parked_car_side) ─────────────────────────────────────────────────────────────
+diff --git a/src/world/render/kits/decor.ts b/src/world/render/kits/decor.ts
+index 79a6c64..ddb2125 100644
+--- a/src/world/render/kits/decor.ts
++++ b/src/world/render/kits/decor.ts
+@@ -652,6 +652,12 @@ const laneDash: DecorFn = (c, d) => {
+ };
+ const parkingBay: DecorFn = (c, d) => {
+   const len = num(d, 'len', 10), bays = Math.max(1, num(d, 'bays', Math.round(len / 5)));
++  // Phase B (THEME §3.4): one perpendicular bay under a van_across, its back line at the corridor edge, open toward the road.
++  if (num(d, 'perp', 0) === 1) {
++    const sd = Math.sign(d.x) || 1;
++    dec(c, DECAL.bayPerp, d, len, num(d, 'w', 4.6), 0xede3d3, 0.6 * PAINT_FADE, sd < 0 ? Math.PI / 2 : -Math.PI / 2, 0, d.x, d.s + len / 2);
++    return;
++  }
+   roadMarks(c).bay = Math.sign(d.x);
+   for (let k = 0; k <= bays; k++) dec(c, DECAL.parkT, d, 1.0, 1.0, 0xede3d3, 0.75 * PAINT_FADE, 0, 0, d.x, d.s + (len * k) / bays);
+ };
+diff --git a/src/world/render/kits/shared.ts b/src/world/render/kits/shared.ts
+index feadf12..c00438c 100644
+--- a/src/world/render/kits/shared.ts
++++ b/src/world/render/kits/shared.ts
+@@ -12,6 +12,7 @@ import { FACE, FX } from '../writer';
+ import { WARN, chevrons, contact, groundChevrons, groundOf, isFull, rnd, setArea, solidsFallback, surfaceLook, type KitCtx } from './common';
+ import { DRESS, DRESSER, clearOfEdges, mossOn, rustOn, type DressRole } from './dress';
+ import { FLORA } from './buildings';
++import { vanAcrossKit } from './car';
+ 
+ export type KitFn = (c: KitCtx, ob: Obstacle) => void;
+ export interface KitDef { draw: KitFn; long?: boolean }
+@@ -622,6 +623,7 @@ export const randOf = (ob: Obstacle, k = 0) => rnd(ob.id, k, ob.variant);
+ 
+ export const SHARED_KITS: Readonly<Partial<Record<Obstacle['kind'], KitDef>>> = {
+   curb: { draw: curb, long: true }, flatbar: { draw: flatbar, long: true }, bench: { draw: bench },
++  van_across: { draw: vanAcrossKit },   // Phase B (theme T8): the vehicle builder turned across, every area
+   manual_pad: { draw: manualPad, long: true }, trash_can: { draw: trashCan }, cone: { draw: cone },
+   barrier_low: { draw: barrier }, trench: { draw: trench }, stairs: { draw: stairs, long: true },
+   handrail: { draw: handrail, long: true }, hubba: { draw: hubba, long: true }, incline: { draw: incline, long: true },
+diff --git a/tests/unit/gen/gen.test.ts b/tests/unit/gen/gen.test.ts
+index 6c44002..27beef7 100644
+--- a/tests/unit/gen/gen.test.ts
++++ b/tests/unit/gen/gen.test.ts
+@@ -422,7 +422,7 @@ describe('the Lesson Line (DESIGN §12.3) and the v1 template set (§10.4)', ()
+     expect(w.groundAt(sAt(40) + 0.5, 0, 0.5).y).toBe(0);
+   });
+ 
+-  it('the v1 templates (9 shared, 6 per area, 4 gateways) are instantiated and validated on 50 seeds; the landmarks appear', () => {
++  it('the templates (9 shared, 6 v1 + 1 Phase B parked row per area, 4 gateways) are instantiated and validated on 50 seeds; the landmarks appear', () => {
+     const seen = new Map<string, number>(), landmarks = new Set<string>();
+     for (let seed = 1; seed <= 50; seed++) {
+       const g = createWorldGen({ seed, mode: 'normal' });
+@@ -432,7 +432,7 @@ describe('the Lesson Line (DESIGN §12.3) and the v1 template set (§10.4)', ()
+     }
+     const ids = [...SHARED, ...Object.values(AREA_TEMPLATES).flat(), ...Object.values(GATEWAYS)].map((t) => t.id);
+     expect(SHARED.length).toBe(9);
+-    for (const a of Object.values(AREA_TEMPLATES)) expect(a.length).toBe(6);
++    for (const a of Object.values(AREA_TEMPLATES)) expect(a.length).toBe(7);   // 6 v1 + the Phase B parked row (theme T8)
+     expect(ids.filter((id) => !seen.has(id))).toEqual([]);
+     for (const l of ['Amberlane Seven', 'Corner Scoops wall', 'Pier 9 lip', 'Sora Line Skywalk']) expect(landmarks.has(l), l).toBe(true);
+   }, 300_000);
+@@ -542,8 +542,13 @@ describe('RECLAIM decor (theme §4, §6; T3)', () => {
+   });
+ });
+ 
+-// Obstacle chain: identical from the T3 split through T7a (the RECLAIM re-skin moves no gameplay); T8 re-baselines it once.
+-const GOLDEN_OBSTACLES = [4059795562, 1058502699, 2849456109];
+-const GOLDEN_OBSTACLES_TRENCH = [123044223, 3914246493, 2655523978];
+-// Decor chain: re-baselined in T3 (RECLAIM decor kinds and emission; was [1783084398, 3361667576, 1795712479] at the split).
+-const GOLDEN_DECOR = [3513787741, 2851077237, 3473871542];
++// Obstacle chain: identical from the T3 split through T7a (the RECLAIM re-skin moves no gameplay); re-baselined once in
++// T8 (Phase B, cars as the main blocker: the van_across kind, vehicles at the edges of the anti-straight rows and the
++// van wander wall, the four parked-row templates and their weights, the fewest-pieces row fill, the Suburbs bin row
++// piece, the pre-gateway line guide). Was [4059795562, 1058502699, 2849456109] / trench [123044223, 3914246493, 2655523978].
++const GOLDEN_OBSTACLES = [3896676665, 3670890132, 1962982555];
++const GOLDEN_OBSTACLES_TRENCH = [1874618390, 480476392, 1207027692];
++// Decor chain: re-baselined in T3 (RECLAIM decor kinds and emission; was [1783084398, 3361667576, 1795712479] at the split),
++// and with the T8 obstacles (decor follows the street; plus the vehicles' bays and loading entrances). Was
++// [3513787741, 2851077237, 3473871542] before T8.
++const GOLDEN_DECOR = [2282354388, 2673347121, 4179237450];
+diff --git a/tests/unit/gen/phaseb.test.ts b/tests/unit/gen/phaseb.test.ts
+new file mode 100644
+index 0000000..d8d98c7
+--- /dev/null
++++ b/tests/unit/gen/phaseb.test.ts
+@@ -0,0 +1,78 @@
++// Phase B (theme T8, THEME §3.4, DESIGN §10.4 Phase B note): cars as the main blocker. Measured on the generated
++// street (24 seeds × 3.2 km): the car share of tall blockers per area, a car early in every Downtown run, the
++// parked rows' rules (one side, an empty bay apart, all one way), and every van's bay and loading entrance.
++import { describe, expect, it } from 'vitest';
++import type { AreaId } from '../../../src/core/ids';
++import { isVehicle, propSkin } from '../../../src/core/skins';
++import { tAt } from '../../../src/core/tuning';
++import type { Decor, Obstacle } from '../../../src/core/world';
++import { createWorldGen, createWorldQuery, Generator } from '../../../src/world/gen';
++import { rowGap } from '../../../src/world/gen/props/shared';
++
++const SEEDS = Array.from({ length: 24 }, (_, i) => (i + 1) * 7919), S_END = 3200;
++const TARGET: Record<AreaId, number> = { downtown: 0.35, suburbs: 0.35, docks: 0.2, neon: 0.15 };
++const PARKED = new Set(['DT_PARKED_ROW', 'SB_DRIVEWAY_ROW', 'IN_LOADING_ROW', 'NE_TAXI_RANK']);
++const isCar = (o: Obstacle) => { const k = propSkin(o.kind, o.area, o.id, o.variant, o.hgt); return isVehicle(k.body) && k.body !== 'sweeper'; };
++
++interface Run { obs: readonly Obstacle[]; decor: Decor[]; gen: Generator }
++const runs: Run[] = SEEDS.map((seed) => {
++  const gen = createWorldGen({ seed, mode: 'normal' }) as Generator;
++  gen.ensure(S_END + 200);
++  const decor: Decor[] = [];
++  for (let i = 0; i * 32 < S_END; i++) decor.push(...gen.chunk(i).decor);
++  return { gen, obs: createWorldQuery(gen).obstacles(0, S_END), decor };
++});
++
++describe('Phase B: cars as the main blocker (theme T8)', () => {
++  it('car share of tall blockers per area meets THEME §3.4 (DT/SB ≥ 35 %, IN ≥ 20 %, NE ≥ 15 %)', () => {
++    const tall: Record<string, number> = {}, cars: Record<string, number> = {};
++    for (const { obs } of runs) for (const o of obs) {
++      const b = o.solids[0];
++      if (!b || !b.tall || b.top !== 'crash') continue;
++      tall[o.area] = (tall[o.area] ?? 0) + 1;
++      if (isCar(o)) cars[o.area] = (cars[o.area] ?? 0) + 1;
++    }
++    for (const a of Object.keys(TARGET) as AreaId[]) expect((cars[a] ?? 0) / tall[a]!, a).toBeGreaterThanOrEqual(TARGET[a]);
++  }, 120_000);
++
++  it('every Downtown run shows a car within 150 m after the Roll-out', () => {
++    for (const { gen, obs } of runs) {
++      const ro = gen.segments().find((sg) => sg.templateId === 'ROLLOUT')!;
++      expect(obs.some((o) => o.area === 'downtown' && o.s >= ro.s1 && o.s < ro.s1 + 150 && isCar(o))).toBe(true);
++    }
++  });
++
++  it('parked rows: one side, an empty bay apart (out of the 35° shadow), all facing the same way', () => {
++    let rows = 0;
++    for (const { gen, obs } of runs) for (const sg of gen.segments()) {
++      if (!PARKED.has(sg.templateId) || sg.s1 > S_END) continue;
++      const cars = obs.filter((o) => o.segment === sg.index && isCar(o)).sort((p, q) => p.s - q.s);
++      if (cars.length < 2) continue;
++      rows++;
++      expect(new Set(cars.map((o) => Math.sign(o.x))).size, sg.templateId).toBe(1);
++      expect(new Set(cars.map((o) => propSkin(o.kind, o.area, o.id, o.variant, o.hgt).nosedIn)).size, sg.templateId).toBe(1);
++      for (let i = 1; i < cars.length; i++) {
++        const gap = cars[i]!.s - (cars[i - 1]!.s + cars[i - 1]!.len);
++        expect(gap, sg.templateId).toBeGreaterThanOrEqual(Math.max(0.6, rowGap(cars[i - 1]!.hgt) - 0.02));
++      }
++      for (const o of cars) expect(Math.abs(o.x), sg.templateId).toBeGreaterThan(1.0);       // never in the centre lanes
++    }
++    expect(rows).toBeGreaterThan(40);
++  });
++
++  it('every van_across noses into the corridor edge, over a perpendicular bay, its loading entrance beside it (not Neon)', () => {
++    let vans = 0;
++    for (const { obs, decor } of runs) for (const o of obs) {
++      if (o.kind !== 'van_across' || o.s + o.len > S_END - 40) continue;
++      vans++;
++      const b = o.solids[0]!.box;
++      expect(Math.max(Math.abs(b.x0), Math.abs(b.x1))).toBeCloseTo(4.5, 2);
++      expect(o.area === 'docks' ? o.x < 0 : true, 'Docks vans are on the dock side').toBe(true);
++      const near = decor.filter((d) => Math.abs(d.s - (o.s - 0.4)) < 0.2 || Math.abs(d.s - (o.s - 0.5)) < 0.2);
++      expect(near.some((d) => d.kind === 'parking_bay' && d.params?.perp === 1)).toBe(true);
++      const entrance = near.some((d) => d.kind === 'end_wall' && d.params?.style === 4 && Math.sign(d.x) === Math.sign(o.x));
++      expect(entrance, `${o.area} @${tAt(o.s).toFixed(1)}`).toBe(o.area !== 'neon');
++    }
++    expect(vans).toBeGreaterThan(100);
++  });
++});
+diff --git a/tests/unit/render/fixtures.ts b/tests/unit/render/fixtures.ts
+index 7aeb3a1..6073fcf 100644
+--- a/tests/unit/render/fixtures.ts
++++ b/tests/unit/render/fixtures.ts
+@@ -11,7 +11,7 @@ import { ObTag } from '../../../src/core/world';
+ 
+ export const AREAS: readonly AreaId[] = ['downtown', 'suburbs', 'docks', 'neon'];
+ export const ALL_PROP_KINDS: readonly PropKind[] = [
+-  'curb', 'flatbar', 'bench', 'manual_pad', 'trash_can', 'cone', 'barrier_low', 'trench', 'stairs', 'handrail', 'hubba', 'incline', 'terrace', 'filler',
++  'curb', 'flatbar', 'bench', 'manual_pad', 'trash_can', 'cone', 'barrier_low', 'trench', 'stairs', 'handrail', 'hubba', 'incline', 'terrace', 'filler', 'van_across',
+   'granite_ledge', 'planter', 'planter_tree', 'fountain', 'bollard_row', 'kiosk', 'parked_car', 'bike_rack', 'cafe_set', 'news_box', 'crosswalk_car',
+   'garden_wall', 'hedge', 'picket_fence', 'mailbox', 'wheelie_bins', 'parked_van', 'porch_steps', 'yard_table', 'crate_stack', 'speed_hump', 'hoop_pole', 'bus_shelter', 'backout_car',
+   'container', 'pallet_1', 'pallet_2', 'pallet_3', 'pallet_tall', 'ibeam', 'loading_dock', 'drum_cluster', 'spool_standing', 'spool_lying', 'mooring_bollard', 'dock_lip', 'rail_track', 'forklift',
+@@ -131,6 +131,7 @@ export function obstacleOf(kind: PropKind, area: AreaId, s: number, x: number, v
+     case 'kiosk': return [P({ len: 1.6, wid: 1.6, hgt: 2.4 })];
+     case 'parked_car': case 'crosswalk_car': case 'backout_car': return [P({ len: kind === 'crosswalk_car' ? 4.2 : 4.4, wid: 1.8, hgt: 1.4 })];
+     case 'parked_van': return [P({ len: 4.6, wid: 1.9, hgt: 1.9 })];
++    case 'van_across': return [P({ len: 1.8, wid: 4.4, hgt: 1.4 })];
+     case 'bike_rack': return [P({ len: 2.4, wid: 0.7, hgt: 1.15 })];
+     case 'cafe_set': return [P({ len: 1.2, wid: 1.2, hgt: 1.2 })];
+     case 'news_box': return [P({ len: 0.5, wid: 0.5, hgt: 1.15, ground })];
+diff --git a/tests/unit/render/kits.test.ts b/tests/unit/render/kits.test.ts
+index 7f819a9..8f30118 100644
+--- a/tests/unit/render/kits.test.ts
++++ b/tests/unit/render/kits.test.ts
+@@ -59,7 +59,7 @@ describe('kits', () => {
+         const r = only(obs, area);
+         const tris = r.tris - base;
+         expect(tris, `${area} ${kind}`).toBeGreaterThan(0);
+-        const car = ['parked_car', 'parked_van', 'crosswalk_car', 'backout_car', 'forklift'].includes(kind);
++        const car = ['parked_car', 'parked_van', 'van_across', 'crosswalk_car', 'backout_car', 'forklift'].includes(kind);
+         const big = ['fountain', 'bollard_row', 'bike_rack', 'bike_row', 'skywalk', 'vending_bank', 'drum_cluster', 'picket_fence', 'barrier_low', 'holo_gate', 'terrace', 'stairs', 'handrail', 'hubba', 'trench', 'cherry_planter', 'planter', 'planter_tree', 'food_cart', 'loading_dock', 'hedge', 'yard_table', 'cafe_set', 'kiosk', 'container', 'bus_shelter'].includes(kind);
+         expect(tris, `${area} ${kind}`).toBeLessThanOrEqual(car ? 1500 : big ? 900 : 400);
+       }
+@@ -215,7 +215,7 @@ describe('RECLAIM kits (DESIGN §18.4 dressing rules 5 and 8, §18.5 vehicle bui
+     }
+   });
+   it('rule 5: vehicles carry no chrome: no cream, near-white or chrome colour on any body, in any skin', () => {
+-    for (const area of AREAS) for (const kind of ['parked_car', 'parked_van', 'crosswalk_car', 'backout_car', 'container'] as const) {
++    for (const area of AREAS) for (const kind of ['parked_car', 'parked_van', 'van_across', 'crosswalk_car', 'backout_car', 'container'] as const) {
+       for (let id = 1; id < 40; id++) {
+         resetIds();
+         const obs = obstacleOf(kind, area, 2 * CHUNK_LEN + 6, 1, id % 4);
