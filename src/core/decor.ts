@@ -407,7 +407,8 @@ export const DECOR_KINDS = {
   lane_dash: {
     zone: 'ground', areas: ANY, castShadow: false,
     doc: 'Painted lane line along s at x (dashed or solid).',
-    params: { len: 'length along s, m', dash: 'dash length, m (0 = solid, default 3)', gap: 'gap length, m (default 3)', color: '0 paint white, 1 yellow' },
+    params: { len: 'length along s, m', dash: 'dash length, m (0 = solid, default 3)', gap: 'gap length, m (default 3)', color: '0 paint white, 1 yellow',
+      w: 'line width, m (default 0.12; the Docks safety line 0.24)' },
   },
   parking_bay: {
     zone: 'ground', areas: ANY, castShadow: false,

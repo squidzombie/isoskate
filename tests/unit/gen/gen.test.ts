@@ -564,6 +564,7 @@ const GOLDEN_OBSTACLES_TRENCH = [2927400757, 1669822620, 2869287646];
 // [3513787741, 2851077237, 3473871542] before T8), and with T8 "where they stopped" (the street it follows, a stopped
 // car's crossing, no zebra under a vehicle or a row's kerb kit, bays only under Downtown kerb cars, the Docks' loading
 // entrance clearing its fence and lamps, the Suburbs' residential lanes without a centre line; was
-// [2282354388, 2673347121, 4179237450]), and as the street it follows moved with the two-cars-passing stagger (was
-// [3837789099, 4040777951, 1416243026]).
-const GOLDEN_DECOR = [3837789099, 4040777951, 3698898893];
+// [2282354388, 2673347121, 4179237450]), as the street it follows moved with the two-cars-passing stagger (was
+// [3837789099, 4040777951, 1416243026]), and for the Docks' yellow safety line at the dock band and its denser apron
+// decals (was [3837789099, 4040777951, 3698898893]).
+const GOLDEN_DECOR = [1781252222, 185677229, 2752258989];

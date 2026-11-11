@@ -648,9 +648,10 @@ const crosswalk: DecorFn = (c, d) => {
 };
 const laneDash: DecorFn = (c, d) => {
   const len = num(d, 'len', 12), dash = num(d, 'dash', 3), gap = num(d, 'gap', 3), yellow = num(d, 'color', 0) !== 0, col = yellow ? 0xf2d064 : 0xede3d3;
+  const w = num(d, 'w', 0.12);
   if (Math.abs(d.x) < 0.5) roadMarks(c).twoWay = yellow;
-  if (dash <= 0) { dec(c, DECAL.solid, d, 0.12, len, col, 0.8 * PAINT_FADE, 0, 0, d.x, d.s + len / 2); return; }
-  for (let s = d.s; s < d.s + len - 0.1; s += dash + gap) dec(c, DECAL.solid, d, 0.12, Math.min(dash, d.s + len - s), col, 0.8 * PAINT_FADE, 0, 0, d.x, s + Math.min(dash, d.s + len - s) / 2);
+  if (dash <= 0) { dec(c, DECAL.solid, d, w, len, col, 0.8 * PAINT_FADE, 0, 0, d.x, d.s + len / 2); return; }
+  for (let s = d.s; s < d.s + len - 0.1; s += dash + gap) dec(c, DECAL.solid, d, w, Math.min(dash, d.s + len - s), col, 0.8 * PAINT_FADE, 0, 0, d.x, s + Math.min(dash, d.s + len - s) / 2);
 };
 const parkingBay: DecorFn = (c, d) => {
   const len = num(d, 'len', 10), bays = Math.max(1, num(d, 'bays', Math.round(len / 5)));

@@ -248,6 +248,10 @@ function groundDecals(o: Out, a: AreaId, rng: Sfc32, v: number): void {
   // a car in a quiet street, never one across a line; DESIGN §10.7 rows note)
   if (a !== 'docks' && a !== 'suburbs') o.add('lane_dash', s0, 0, datum, { len, dash: 3, gap: 3, color: 0 });
   if (a === 'downtown' && rng.chance(0.5)) o.add('parking_bay', s0, (rng.chance(0.5) ? -1 : 1) * 2.5, datum, { len, bays: Math.max(1, Math.floor(len / 5)) });
+  // The Docks: a solid yellow safety line where the metal dock band meets the concrete apron (x = −2.0; drawn just on
+  // the apron side), so the apron reads as a working quay rather than an empty lot. No draw: every later decal keeps
+  // its place.
+  if (a === 'docks') o.add('lane_dash', s0, -1.82, datum, { len, dash: 0, gap: 0, color: 1, w: 0.24 });
   // A road arrow only before a crossing, one per crossing (owner note 8): the renderer paints it 6 m before the zebra,
   // centred in the lane the skater rides and pointing +s. Same s as the crossing, so both land in the same chunk.
   if (a !== 'docks' && rng.chance(0.18)) {
@@ -261,7 +265,8 @@ function groundDecals(o: Out, a: AreaId, rng: Sfc32, v: number): void {
   }
   // (The pre-theme random arrows are gone; their draws stay, so the decals after them keep their places.)
   if (a !== 'docks' && rng.chance(0.3)) { rng.range(0, len); rng.range(-2, 2); rng.int(0, 3); }
-  const n = Math.max(1, Math.round(len / (v * 2.2)));
+  // (the Docks' wide bare apron gets about half again as many stains, patches and cracks: a used quay)
+  const n = Math.max(1, Math.round(len / (v * (a === 'docks' ? 1.5 : 2.2))));
   for (let k = 0; k < n; k++) {
     const s = s0 + rng.range(0, len), x = rng.range(-3.8, 3.8);
     const pool: DecorKind[] = a === 'suburbs' ? ['crack', 'patch', 'leaf_scatter', 'manhole', 'drain', 'puddle']

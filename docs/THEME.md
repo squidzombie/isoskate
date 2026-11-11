@@ -345,7 +345,7 @@ Neon stays distinct because 70% of the remaining signs are live, windows are lit
 **Per-area deltas**
 - **Downtown.** Façades faded. Awning red `#C4473D` → `#B5625A`. Brass → patina. Window lights 0.20 → 0.04, plus sun-catch panes and sky-tinted glass.
 - **Suburbs.** Lawns become meadow `#A9B865` with flower dots. Moss on roofs. Pickets grey. Window lights → 0.04, plus sun-catch panes and sky-tinted glass. 20% of lamps on.
-- **Docks.** Rust up and container paints faded. Seagrass on the apron verge. Window lights → 0.06.
+- **Docks.** Rust up and container paints faded. Seagrass on the apron verge. Window lights → 0.06. A faded yellow safety line (0.24 m) runs where the metal dock band meets the concrete apron, and the apron carries about half again as many stains, patches and cracks as a street: a used quay, not an empty lot.
 - **Neon.**
   - About 70% of the remaining signs live; signage emissive unchanged per live sign.
   - Decor glow cards ≤ 24 per chunk. City glow ×0.85.
